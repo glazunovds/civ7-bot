@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     replacePrevious: true,
     panelLarge: true, // the large panel (wider, down to the bottom of the screen)
     // What the autopilot may do (it is switched on per session, see hud/xpl-autopilot.js).
-    autopilot: { research: true, production: true, wonders: true, maxWonders: 1, growth: true, towns: true, purchases: true, choices: true, closePopups: true, befriend: true, tacks: true, roam: false, explore: false, settlers: false, defend: false, merchants: false, skipUnits: false, endTurn: false, reserveTurns: 2, replanEvery: 5, aiTurns: 5, lastHumanPlayer: -1 },
+    autopilot: { research: true, production: true, wonders: true, maxWonders: 1, growth: true, towns: true, purchases: true, choices: true, closePopups: true, befriend: true, tacks: true, focus: false, victory: "AUTO", resources: true, diplomacy: false, roam: false, explore: false, settlers: false, defend: false, merchants: false, skipUnits: false, endTurn: false, reserveTurns: 2, replanEvery: 5, aiTurns: 5, lastHumanPlayer: -1 },
     buildings: { excluded: [], respectTacks: true, useEngine: true, futureTiles: true, specialists: 0.5, optionsOpen: false, autoTacks: false, lastTarget: null, townsAsCities: false, incremental: true, growthHints: true },
     towns: { expectKeepCities: false },
     wonders: { omniscient: false },
@@ -74,8 +74,9 @@ function sanitize(raw) {
     for (const key of ["includeHidden", "spread", "heatmap", "useAI", "keepHighlights", "replacePrevious", "debug", "panelLarge"]) {
         s[key] = !!s[key];
     }
-    for (const key of ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"]) s.autopilot[key] = !!s.autopilot[key];
+    for (const key of ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"]) s.autopilot[key] = !!s.autopilot[key];
     s.autopilot.maxWonders = clampInt(s.autopilot.maxWonders, 1, 3, DEFAULT_SETTINGS.autopilot.maxWonders);
+    if (!["AUTO", "CULTURE", "SCIENCE", "ECONOMIC"].includes(s.autopilot.victory)) s.autopilot.victory = "AUTO";
     s.autopilot.reserveTurns = clampInt(s.autopilot.reserveTurns, 0, 10, DEFAULT_SETTINGS.autopilot.reserveTurns);
     s.autopilot.replanEvery = clampInt(s.autopilot.replanEvery, 0, 20, DEFAULT_SETTINGS.autopilot.replanEvery);
     s.autopilot.aiTurns = clampInt(s.autopilot.aiTurns, 1, 50, DEFAULT_SETTINGS.autopilot.aiTurns);

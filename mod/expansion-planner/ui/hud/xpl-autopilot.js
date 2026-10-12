@@ -20,8 +20,10 @@ import { allTarget, hasPlanTacks, listTargets, placePlanTacks, startBuildingPlan
 import { startSiteSearch } from '../data/xpl-site-job.js';
 import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
-import { befriendIndependents, considerTownProjects, makeChoices, nextEvent, proposeOpenBorders, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
+import { befriendIndependents, considerTownProjects, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
 import { commandUnits, leadersNearExplorers, releaseStuckOrders, settlerGoals, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
+import { chooseFocus, closeTriumphs, PROFILE_FOR_FOCUS, scoreFocus, TRIUMPH_CATEGORY, wondersAtOnce } from '../core/xpl-victory-focus.js';
+import { disabledVictories, leaderLeaning, legacyStandings, triumphs } from '../data/xpl-victory.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
 const STEP_PAUSE_MS = 250;   // between steps, so the game processes each request
@@ -34,6 +36,8 @@ const SITES_EVERY = 5;       // turns between automatic searches for settlement 
 const SETTLE_TACKS = 3;      // settle tacks: where settlers walk, then the next best sites
 const SETTLE_TACK_TYPE = "BUILDING_CITY_HALL"; // as the Settlements tab places them
 const PLAN_TACKS_PER_SETTLEMENT = 3; // the "map tacks" option: each settlement's next buildings
+const TRACK_TRIUMPHS = 3;    // close triumphs of the focus's kind ticked «Отслеживать»
+const SHOW_TRIUMPHS = 6;     // close triumphs listed in the tab
 // Advice reasons (hud/xpl-recalc-watch.js) after which the plan is recalculated at once.
 const REPLAN_REASONS = ["BUILT", "TILES", "CITY", "UNLOCKED", "UNIQUES", "TACKS"];
 
@@ -141,6 +145,39 @@ async function placeSettleTacks() {
     return added > 0 || r.removed > 0 ? [{ key: "SETTLE_TACKS", args: [added, r.removed] }] : [];
 }
 
+function compose(key, ...args) {
+    try {
+        return Locale.compose(key, ...args);
+    } catch (_e) {
+        return key;
+    }
+}
+
+/**
+ * Victory focus («Фокус на победу»): the legacy path to steer toward this pass
+ * (core/xpl-victory-focus.js, from data/xpl-victory.js), kept in state.autopilot.focus with
+ * each path's standing, the close triumphs (for the tab) and those to track
+ * (hud/xpl-triumph-tracker.js). @returns log entries (when the focus changes)
+ */
+function updateFocus(target = "AUTO") {
+    const all = triumphs();
+    const scores = scoreFocus(legacyStandings(), leaderLeaning(), all, { disabled: disabledVictories() });
+    const pick = chooseFocus(scores, ap().focus ?? {}, { target });
+    const close = closeTriumphs(all);
+    const kind = TRIUMPH_CATEGORY[pick.cls];
+    setAp({
+        focus: {
+            cls: pick.cls, candidate: pick.candidate, streak: pick.streak,
+            scores: scores.map(({ cls, ours, rival, goal, done }) => ({ cls, ours, rival, goal, done })),
+            close: close.slice(0, SHOW_TRIUMPHS).map(({ name, current, total, category }) => ({ name, current, total, category })),
+            track: close.filter((t) => t.category === kind).slice(0, TRACK_TRIUMPHS).map((t) => t.type),
+        },
+    });
+    if (!pick.changed || !pick.cls) return [];
+    const s = scores.find((x) => x.cls === pick.cls);
+    return [{ key: "VICTORY_FOCUS", args: [compose(`LOC_XPL_FOCUS_${pick.cls}`), s?.ours ?? 0, s?.goal ?? 0] }];
+}
+
 /**
  * Runs one step of the pass. A step that fails (the game's API differs from what we expect,
  * e.g. GameInfo tables have no .some) is logged and the pass goes on with the next step; the
@@ -164,8 +201,19 @@ export async function runTurn(force = false) {
     running = true;
     setAp({ running: true });
     try {
-        const s = settings.get();
+        let s = settings.get();
         const o = s.autopilot ?? {};
+        // Victory focus: this pass follows its path's priority profile (research and production
+        // advice, buildings, policies, growth, purchases); culture also builds one more wonder at a time.
+        let focus = null;
+        if (o.focus) {
+            await guarded("focus", () => {
+                record(updateFocus(o.victory ?? "AUTO"));
+                focus = ap().focus?.cls ?? null;
+            });
+        } else if (ap().focus) setAp({ focus: null });
+        if (focus && PROFILE_FOR_FOCUS[focus]) s = { ...s, profile: PROFILE_FOR_FOCUS[focus] };
+        const maxWonders = wondersAtOnce(o.maxWonders ?? 1, focus);
         // Units first: a settler that founds now gives a new city (on turn 1 the capital,
         // before which nothing can be researched or built) handled by the steps below.
         const ordered = new Set();
@@ -173,10 +221,11 @@ export async function runTurn(force = false) {
         const released = new Set(); // their order did not take: skipped, not ordered again this turn
         let threats = [];
         const orderUnits = async () => {
-            if (!(o.explore || o.settlers || o.defend || o.merchants || o.roam)) return;
+            if (!(o.explore || o.settlers || o.defend || o.merchants || o.roam || o.focus)) return;
             const r = commandUnits(s, {
                 explore: !!o.explore, settlers: !!o.settlers, defend: !!o.defend, merchants: !!o.merchants, roam: !!o.roam,
                 approach: unbefriendable(), leave: released, threats: o.defend || o.roam ? threats : [],
+                victory: !!focus, distant: focus === "ECONOMIC",
             });
             record(r.entries);
             for (const k of r.ordered) ordered.add(k);
@@ -195,16 +244,24 @@ export async function runTurn(force = false) {
             record(threats.map((t) => ({ key: "THREAT", args: [t.settlement.name, t.count] })));
         });
         if (o.befriend !== false) await guarded("befriend", () => record(befriendIndependents(threats)));
+        // Other leaders: counter-spy, reconciliation, endeavors (after befriending: Influence goes there first).
+        if (o.diplomacy) await guarded("diplomacy", () => record(tendDiplomacy(s, { threatened: threats.length > 0 })));
         if (o.settlers) await guarded("sites", async () => record(await refreshSitesIfDue(s)));
         await guarded("units", orderUnits);
         if (o.befriend !== false && (o.explore || o.roam)) await guarded("borders", () => record(proposeOpenBorders(leadersNearExplorers({ explore: !!o.explore, roam: !!o.roam }))));
         if (o.settlers && o.tacks !== false) await guarded("tacks", async () => record(await placeSettleTacks()));
         if (o.research !== false) await guarded("research", research);
         if (o.choices !== false) await guarded("choices", async () => record(await makeChoices(s)));
-        const unitOptions = { explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, threats: o.defend || o.roam ? threats : [] };
+        // Damaged buildings first: bought with gold when it covers them, else at the front of the queue.
+        if (o.purchases !== false || o.production !== false) {
+            await guarded("repairs", () => record(steps.repairBuildings({ buy: o.purchases !== false, queue: o.production !== false })));
+        }
+        const unitOptions = { explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, threats: o.defend || o.roam ? threats : [], profile: s.profile };
         const produce = async () => {
             record(await replanIfDue(s));
-            const wonders = o.wonders !== false ? steps.chooseWonders(s, Number(o.maxWonders ?? 1)) : new Map();
+            // The victory focus's own work first (science projects and a Launch Pad; factories).
+            if (focus) record(steps.pushVictoryWork(focus));
+            const wonders = o.wonders !== false ? steps.chooseWonders(s, maxWonders) : new Map();
             record(steps.fillProduction(wonders, unitOptions));
             record(steps.frontLoadUnits(unitOptions));
             await wait(STEP_PAUSE_MS);
@@ -224,6 +281,7 @@ export async function runTurn(force = false) {
             await guarded("towns", () => record(considerTownProjects()));
             await guarded("towns", () => record(steps.convertTowns(s, Number(o.reserveTurns ?? 2))));
         }
+        if (o.resources !== false) await guarded("resources", () => record(steps.assignResources(s)));
         if (o.purchases !== false) {
             await guarded("purchases", async () => {
                 record(steps.buyBuildings(s, Number(o.reserveTurns ?? 2)));

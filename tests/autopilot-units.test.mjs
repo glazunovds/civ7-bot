@@ -33,7 +33,7 @@ const fresh = (list, extra = {}) => {
     units.resetUnitGoals();
     fake.sent.length = 0;
     world.units = list;
-    for (const k of ["startsWar", "claimOk", "aiSuggestions", "rangeTargets", "enemies", "tradeRoutes", "unitCommandOk", "unitCommandResult", "unitCanStart", "tradeCapacity", "unreachable", "owningCity", "expand"]) delete world[k];
+    for (const k of ["startsWar", "claimOk", "aiSuggestions", "rangeTargets", "enemies", "tradeRoutes", "unitCommandOk", "unitCommandResult", "unitCanStart", "tradeCapacity", "unreachable", "owningCity", "expand", "wars"]) delete world[k];
     Object.assign(world, extra);
 };
 
@@ -364,5 +364,175 @@ test("migrants join a town too: the one they stand in, else the nearest settleme
         assert.deepEqual(r.entries[0]?.args, ["LOC_UNIT_MIGRANT_NAME", "Delphi"]);
     } finally {
         world.cities.pop();
+    }
+});
+
+// Settlers keep away from hostile military units (here: a civilization at war with us).
+const AT_WAR = { wars: [1] };
+const foe = (x, y) => ({ x, y, owner: 1, type: "UNIT_WARRIOR" });
+const dist = (a, b) => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y);
+
+test("settlers: no site with an enemy within 3 tiles, no way passing within 2 of one", () => {
+    const enemyNearSite = foe(15, 5); // 3 tiles from the site, more than 2 from its way
+    assert.equal(dist(enemyNearSite, { x: 12, y: 5 }), 3);
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [enemyNearSite] });
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], "the best site has an enemy next to it");
+    // An enemy beside the way to the best site (the site itself 4+ tiles from it).
+    const beside = foe(8, 3);
+    assert.ok(dist(beside, { x: 12, y: 5 }) > 3 && dist(beside, { x: 8, y: 5 }) <= 2);
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [beside] });
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], "its way passes the enemy");
+    // Not at war, no independent: no danger.
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { enemies: [beside] });
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+    delete world.wars;
+});
+
+test("settlers: an enemy within 3 tiles: back to our nearest settlement by a way never next to it; in a settlement it waits", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 8, y: 5 }], { ...AT_WAR, enemies: [foe(10, 5)] });
+    let r = run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [5, 5], JSON.stringify(orders()));
+    assert.equal(r.entries[0]?.key, "SETTLER_RETREAT");
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [foe(7, 5)] });
+    r = run({ settlers: true });
+    assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_SKIP_TURN"]);
+    assert.equal(r.entries[0]?.key, "SETTLER_WAITS");
+    // The enemy stands between it and home: never walk past it; step away instead.
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5 }], { ...AT_WAR, enemies: [foe(10, 5)] });
+    r = run({ settlers: true });
+    assert.equal(r.entries[0]?.key, "SETTLER_AWAY", JSON.stringify(orders()));
+    // Cut off from home: it steps to the reachable tile furthest from the enemy.
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5 }], { ...AT_WAR, enemies: [foe(10, 5)] });
+    world.unreachable = (x, y) => x === 5 && y === 5;
+    r = run({ settlers: true });
+    const to = moveOf(2);
+    assert.ok(to && dist({ x: to.X, y: to.Y }, { x: 10, y: 5 }) > dist({ x: 12, y: 5 }, { x: 10, y: 5 }), JSON.stringify(to));
+    assert.equal(r.entries[0]?.key, "SETTLER_AWAY");
+    delete world.wars;
+});
+
+test("settlers: one already walking gets a new order when an enemy comes near it or its way", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+    // Walking now (two tiles on): nothing new while the way is clear.
+    fake.sent.length = 0;
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 7, y: 5, activity: UnitActivityTypes.OPERATION }];
+    run({ settlers: true });
+    assert.deepEqual(orders(), []);
+    // An enemy turns up on its way: back home.
+    Object.assign(world, AT_WAR, { enemies: [foe(9, 5)] });
+    const r = run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [5, 5], JSON.stringify(r.entries));
+    // On its own site it founds even with an enemy in sight.
+    fake.sent.length = 0;
+    world.enemies = [];
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }];
+    run({ settlers: true });
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5 }];
+    world.enemies = [foe(14, 5)];
+    fake.sent.length = 0;
+    run({ settlers: true });
+    assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
+    delete world.wars;
+});
+
+test("settlers: never a site closer than 5 tiles to another player's settlement (the game's suggestions too)", () => {
+    const babylon = world.cities.find((c) => c.name === "Babylon");
+    state.set({ results: { ...state.get().results, sites: { picks: [{ x: babylon.x - 3, y: babylon.y, rank: 1 }, { x: 12, y: 5, rank: 2 }] } } });
+    try {
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 9, y: 5 }], { aiSuggestions: () => [{ location: { x: babylon.x - 2, y: babylon.y } }] });
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+        state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 9, y: 5 }], { aiSuggestions: () => [{ location: { x: babylon.x - 2, y: babylon.y } }] });
+        run({ settlers: true });
+        assert.equal(moveOf(2), undefined, "the game's suggestion is 2 tiles from Babylon");
+    } finally {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 12, y: 5, rank: 1 }, { x: 9, y: 10, rank: 2 }, { x: 38, y: 18, rank: 3 }] } } });
+    }
+});
+
+test("rough seas: a unit on deep ocean heads for the nearest coast (a ship) or land; the game's own exploring waits for calm seas", () => {
+    const tiles = world.tiles;
+    const age = Game.age;
+    const terrainAt = (x, y) => world.tiles(x, y).terrain;
+    try {
+        Game.age = GameInfo.Ages.lookup("AGE_EXPLORATION").$hash;
+        world.tiles = (x, y) => ({ ...tiles(x, y), terrain: y >= 12 ? "TERRAIN_OCEAN" : y >= 10 ? "TERRAIN_COAST" : "TERRAIN_FLAT" });
+        fresh([{ id: 7, type: "UNIT_GALLEY", x: 5, y: 14 }, { id: 8, type: "UNIT_SCOUT", x: 9, y: 13 }]);
+        const r = run({ explore: true, roam: true });
+        assert.equal(terrainAt(moveOf(7)?.X, moveOf(7)?.Y), "TERRAIN_COAST", JSON.stringify(orders()));
+        assert.equal(terrainAt(moveOf(8)?.X, moveOf(8)?.Y), "TERRAIN_FLAT", "a land unit to land");
+        assert.deepEqual(r.entries.map((e) => e.key), ["LEFT_OCEAN", "LEFT_OCEAN"]);
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 5, y: 5 }]);
+        run({ explore: true });
+        assert.ok(!orders().some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"), "it would sail or embark into the ocean");
+        // A ship roaming the coast: the edge of the fog lies on deep ocean, so it stays.
+        world.tiles = (x, y) => ({ ...tiles(x, y), terrain: y >= 12 ? "TERRAIN_OCEAN" : y >= 10 ? "TERRAIN_COAST" : "TERRAIN_FLAT", revealed: y < 13 });
+        fresh([{ id: 7, type: "UNIT_GALLEY", x: 5, y: 10 }]);
+        run({ roam: true });
+        assert.ok(!orders().some((s) => s.op === UnitOperationTypes.MOVE_TO && terrainAt(s.args.X, s.args.Y) === "TERRAIN_OCEAN"), JSON.stringify(orders()));
+        world.tiles = (x, y) => ({ ...tiles(x, y), terrain: y >= 12 ? "TERRAIN_OCEAN" : y >= 10 ? "TERRAIN_COAST" : "TERRAIN_FLAT" });
+        Game.age = age;
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 5, y: 5 }]);
+        run({ explore: true });
+        assert.ok(orders().some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"), "Antiquity: the game explores");
+    } finally {
+        Game.age = age;
+        world.tiles = tiles;
+    }
+});
+
+test("scouts step away from hostile units, even while exploring by themselves; with one in sight the game's exploring is not used", () => {
+    const here = { x: 8, y: 5 };
+    const enemy = foe(9, 5);
+    fresh([{ id: 8, type: "UNIT_SCOUT", ...here }], { ...AT_WAR, enemies: [enemy] });
+    let r = run({ explore: true });
+    const to = moveOf(8);
+    assert.ok(to && dist({ x: to.X, y: to.Y }, enemy) > dist(here, enemy), JSON.stringify(orders()));
+    assert.equal(r.entries[0]?.key, "UNIT_AWAY");
+    fresh([{ id: 8, type: "UNIT_SCOUT", ...here, activity: 999 }], { ...AT_WAR, enemies: [enemy] });
+    r = run({ explore: true });
+    assert.equal(r.entries[0]?.key, "UNIT_AWAY", "exploring by itself");
+    fresh([{ id: 8, type: "UNIT_SCOUT", ...here }], { ...AT_WAR, enemies: [foe(11, 5)] });
+    run({ explore: true });
+    assert.ok(!orders().some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"));
+});
+
+test("discoveries: none next to hostile units; after a scout died on its way the next one goes around; after two, it is left alone", () => {
+    const structures = world.structures;
+    const CAVE = { x: 12, y: 5 };
+    world.structures = (x, y) => (x === CAVE.x && y === CAVE.y ? { district: null, constructibles: ["IMPROVEMENT_CAVE"] } : { district: null, constructibles: [] });
+    const toCave = () => orders().some((s) => s.op === UnitOperationTypes.MOVE_TO && s.args.X === CAVE.x && s.args.Y === CAVE.y);
+    try {
+        fresh([{ id: 60, type: "UNIT_SCOUT", x: 5, y: 5 }], { ...AT_WAR, enemies: [foe(12, 7)] });
+        run({ explore: true });
+        assert.ok(!toCave(), "an enemy stands 2 tiles from it");
+        // Scout 60 goes for it, gets as far as 8,5 and dies there.
+        fresh([{ id: 60, type: "UNIT_SCOUT", x: 5, y: 5 }]);
+        run({ explore: true });
+        assert.ok(toCave());
+        fake.sent.length = 0;
+        world.units = [{ id: 60, type: "UNIT_SCOUT", x: 8, y: 5, activity: UnitActivityTypes.OPERATION, moved: true }];
+        run({ explore: true });
+        world.units = [{ id: 61, type: "UNIT_SCOUT", x: 5, y: 5 }];
+        fake.sent.length = 0;
+        let r = run({ explore: true });
+        const detour = r.entries.find((e) => e.key === "DETOUR");
+        assert.ok(detour, JSON.stringify(r.entries));
+        const via = moveOf(61);
+        assert.ok(dist({ x: via.X, y: via.Y }, { x: 8, y: 5 }) > 2, "the waypoint keeps clear of where 60 died");
+        assert.ok(dist({ x: via.X, y: via.Y }, CAVE) < dist({ x: 5, y: 5 }, CAVE), "and gets closer to the cave");
+        // Scout 61 dies as well: the cave is left alone for now.
+        world.units = [{ id: 62, type: "UNIT_SCOUT", x: 5, y: 5 }];
+        fake.sent.length = 0;
+        r = run({ explore: true });
+        assert.ok(!r.entries.some((e) => e.key === "DISCOVERY" || e.key === "DETOUR"), JSON.stringify(r.entries));
+    } finally {
+        world.structures = structures;
     }
 });

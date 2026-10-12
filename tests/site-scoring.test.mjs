@@ -149,3 +149,20 @@ test("tiles another civilization owns are lost, free tiles on their border count
     for (const idx of ring3) w2.patch(w2.grid.x(idx), w2.grid.y(idx), { owner: 0 });
     assert.equal(scoreSite(w2.at(15, 10), w2.ctx()).foreignBorderTiles, 0);
 });
+
+test("pipeline: no site closer than 5 tiles to another player's settlement centre", () => {
+    const w = new FakeWorld(40, 24);
+    const own = w.at(14, 12);
+    const foreign = w.at(24, 12);
+    for (const { idx } of w.grid.radius(own, 1)) w.table[idx].owner = 0;
+    const centres = [{ idx: own, kind: "OWN", name: "Rome" }, { idx: foreign, kind: "FOREIGN", name: "Carthage" }];
+    const input = { origins: [own], radius: 9, minSpacing: 3, minPickDist: 4, topN: 8, includeHidden: false, isSettleable: () => true };
+    const res = runToEnd(findSites({ ...input, ctx: w.ctx({ centres }), minForeignDistance: 5 }));
+    assert.ok(res.picks.length > 0);
+    for (const p of res.picks) assert.ok(w.grid.distance(p.idx, foreign) >= 5, `pick ${p.idx} is ${w.grid.distance(p.idx, foreign)} from Carthage`);
+    assert.ok(res.scored.every((s) => w.grid.distance(s.idx, foreign) >= 5), "not even scored");
+    assert.ok(res.stats.rejected.FOREIGN > 0);
+    // Without the rule, sites 4 tiles from Carthage would be candidates.
+    const loose = runToEnd(findSites({ ...input, ctx: w.ctx({ centres }) }));
+    assert.ok(loose.scored.some((s) => w.grid.distance(s.idx, foreign) < 5), "the rule is what keeps them away");
+});

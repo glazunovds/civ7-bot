@@ -1297,7 +1297,7 @@
       <Text>Политики, празднества, события</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_CHOICES_TT" Language="ru_RU">
-      <Text>Делает выборы, которые держат ход: пустые ячейки политик (карта с наибольшей пользой по Policy Yield Previews, если этот мод установлен, иначе первая предложенная), бонус празднества, сюжетные события (вариант, который предпочитает ИИ игры), пантеон, религию и её верования (сначала полезнейшие по Policy Yield Previews), правительство, бонус города-государства, приветствие нового знакомого лидера (дружелюбное, если можно, иначе нейтральное), предложение лидера (самый дешёвый ответ, кроме отказа; отказ никогда: он может означать войну), экраны «просмотрено» и предупреждения советника. Уведомления «Обнаружен шпионаж» прочитываются.</Text>
+      <Text>Делает выборы, которые держат ход: пустые ячейки политик (карта с наибольшей пользой по Policy Yield Previews, если этот мод установлен, иначе первая предложенная), бонус празднества, сюжетные события (вариант, который предпочитает ИИ игры), пантеон, религию и её верования (сначала полезнейшие по Policy Yield Previews), правительство, бонус города-государства, приветствие нового знакомого лидера (дружелюбное, если можно, иначе нейтральное), предложение лидера (самый дешёвый ответ, кроме отказа; отказ никогда: он может означать войну), экраны «просмотрено» и предупреждения советника. Уведомления «Обнаружен шпионаж» прочитываются. Шедевры из архива выставляются в свободные ячейки. В войну по призыву союзника никогда не вступает (это внезапная война с усталостью от войны): призыв откладывается, а отказ (союз расторгается) — только если игра всё ещё держит из-за него ход. Каждому лидеру, воюющему с вами, раз в 3 хода предлагается мир (без уступок с обеих сторон).</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_UNITS_TITLE" Language="ru_RU">
       <Text>Юниты (эти пункты двигают юнитов):</Text>
@@ -1306,13 +1306,13 @@
       <Text>Разведчики исследуют</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_EXPLORE_TT" Language="ru_RU">
-      <Text>Разведчики сначала идут к ближайшему открытию (грот, руины, костёр…) в пределах 4 ходов, даже во время автоматической разведки, затем исследуют (автоматическая разведка игры, иначе край тумана). Города сначала строят разведчиков, пока их не станет 2.</Text>
+      <Text>Разведчики сначала идут к ближайшему открытию (грот, руины, костёр…) в пределах 4 ходов, даже во время автоматической разведки, затем исследуют (автоматическая разведка игры, иначе край тумана). Города сначала строят разведчиков, пока их не станет 2. В новейшее время исследователи выкапывают артефакты (руины, чудеса природы) и ищут новые места раскопок в ваших музеях и университетах; строится до 2, пока есть что копать или исследовать.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_SETTLERS_LABEL" Language="ru_RU">
       <Text>Поселенцы основывают поселения</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_SETTLERS_TT" Language="ru_RU">
-      <Text>Города строят поселенцев (по 2, пока поселений меньше 3, затем по 1, не выше лимита поселений; ставятся в начало очереди). Поселенец без приказа идёт к лучшему свободному месту со вкладки «Поселения» (поиск сам каждые 5 ходов; сначала та роль, что держит города и городки 1 к 1, иначе место, которое советует игра), не дальше 10 ходов, и основывает там поселение; городок на месте города становится городом, когда хватает золота. У каждого поселенца своё место; ни один ход не начнёт войну. Мигрант переселяется в поселение, где стоит («Переселить»; город или городок), иначе идёт в ближайшее ваше; новый житель — на клетку, которую лучше всего оценивают подсказки роста. В эпоху исследований до «Судостроения» ни один сухопутный юнит не идёт через глубокий океан (он останавливается на каждой клетке океана и получает урон); прибрежные воды можно.</Text>
+      <Text>Города строят поселенцев (по 2, пока поселений меньше 3, затем по 1, не выше лимита поселений; ставятся в начало очереди). Поселенец без приказа идёт к лучшему свободному месту со вкладки «Поселения» (поиск сам каждые 5 ходов; сначала та роль, что держит города и городки 1 к 1, иначе место, которое советует игра), не дальше 10 ходов, и основывает там поселение; городок на месте города становится городом, когда хватает золота. У каждого поселенца своё место; ни один ход не начнёт войну. Поселенцы держатся подальше от враждебных военных юнитов: никакого места, если враг в пределах 3 клеток, никакого пути ближе 2 клеток к нему; если враг в пределах 3 клеток, поселенец остаётся в ближайшем вашем поселении или бежит туда (или отходит), даже на ходу. Никакого места ближе 5 клеток к чужому поселению. Мигрант переселяется в поселение, где стоит («Переселить»; город или городок), иначе идёт в ближайшее ваше; новый житель — на клетку, которую лучше всего оценивают подсказки роста. В эпоху исследований до «Судостроения» ни один сухопутный юнит не идёт через глубокий океан (он останавливается на каждой клетке океана и получает урон); прибрежные воды можно.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_DEFEND_LABEL" Language="ru_RU">
       <Text>Армия: стрелять или укрепиться</Text>
@@ -1533,6 +1533,152 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_ESPIONAGE_OPENED" Language="ru_RU">
       <Text>открыт отчёт о шпионаже (игра всё ещё держала ход)</Text>
+    </Replace>
+    <!-- Autopilot: great works and artifacts -->
+    <Replace Tag="LOC_XPL_AP_GREAT_WORK_SLOTTED" Language="ru_RU">
+      <Text>{1_Name}: выставлено в {2_City} ({3_Building})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_EXCAVATED" Language="ru_RU">
+      <Text>{1_Unit} выкапывает артефакт</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESEARCHED_ARTIFACTS" Language="ru_RU">
+      <Text>{1_Unit} исследует места артефактов на этом континенте</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ARTIFACT_MOVE" Language="ru_RU">
+      <Text>{1_Unit} идёт за артефактами к {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_EXPLORER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (артефакты: до {3_Num} исследователей)</Text>
+    </Replace>
+    <!-- Autopilot: victory focus, resources -->
+    <Replace Tag="LOC_XPL_AP_FOCUS_LABEL" Language="ru_RU">
+      <Text>Фокус на победу</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_TT" Language="ru_RU">
+      <Text>Каждый ход автопилот выбирает путь наследия (культура, наука или экономика; никогда военный): тот, где вы дальше всего продвинулись в этой эпохе и сильнее всего опережаете лучшего знакомого соперника, с бонусом за победу, которую предпочитает ваш лидер, и за близкие триумфы этого рода; меняет путь, только если другой лидирует 3 хода подряд или текущий пройден. Затем следует приоритету этого пути (Культура, Наука или Золото: советы по исследованиям и производству, здания, политики, рост, покупки); для культуры строит на одно чудо больше одновременно. Близкие триумфы этого рода отмечаются «Отслеживать». Его собственная работа идёт первой: для науки — все проекты, дающие инновации, и космодром (без него не победить); для экономики — фабрика в каждом городе, Великий банкир открывает офисы Всемирного банка в чужих столицах, а в эпоху исследований (после «Судостроения») поселенцы плывут в Далекие земли (серебряные караваны). Серебряные караваны всегда идут домой и разгружаются. Вкладка показывает фокус, каждый путь против лучшего соперника и близкие триумфы.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESOURCES_LABEL" Language="ru_RU">
+      <Text>Назначать ресурсы</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESOURCES_TT" Language="ru_RU">
+      <Text>Ресурсы, не назначенные ни одному поселению, назначаются в свободные ячейки (как в экране ресурсов игры): сначала самые ценные по вашему приоритету, города раньше городков, только куда игра разрешает. Назначенные ресурсы дают бонусы и засчитываются в экономический путь наследия и триумфы.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_CULTURE" Language="ru_RU">
+      <Text>Культура</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_SCIENCE" Language="ru_RU">
+      <Text>Наука</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_ECONOMIC" Language="ru_RU">
+      <Text>Экономика</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_MILITARY" Language="ru_RU">
+      <Text>Военный</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_NOW" Language="ru_RU">
+      <Text>Фокус на победу: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_NONE" Language="ru_RU">
+      <Text>пока не выбран</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_PATH" Language="ru_RU">
+      <Text>{1_Name}: {2_Num}/{3_Num} (лучший соперник: {4_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_PATH_DONE" Language="ru_RU">
+      <Text>{1_Name}: пройден ({2_Num}/{3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_TRIUMPHS" Language="ru_RU">
+      <Text>Близкие триумфы: {1_List}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESOURCE_ASSIGNED" Language="ru_RU">
+      <Text>{1_Name}: назначен в {2_City}</Text>
+    </Replace>
+    <!-- Autopilot: victory focus log -->
+    <Replace Tag="LOC_XPL_AP_VICTORY_FOCUS" Language="ru_RU">
+      <Text>фокус на победу: {1_Name} ({2_Num}/{3_Num})</Text>
+    </Replace>
+    <!-- Autopilot: diplomacy -->
+    <Replace Tag="LOC_XPL_AP_DIPLOMACY_LABEL" Language="ru_RU">
+      <Text>Дипломатия: контршпионаж, инициативы, отношения</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DIPLOMACY_TT" Language="ru_RU">
+      <Text>С другими лидерами, только то, что игра предлагает сейчас и на что хватает Влияния: «Контршпионаж» против лидера, чьего шпиона поймали у вас (с эпохи исследований); «Примирение» с лидером, который относится к вам недружелюбно или враждебно; одна инициатива за ход с лидером, с которым отношения хуже всего, сначала подходящая вашему приоритету (научное сотрудничество, свободные рынки, культурный обмен, фермерский рынок, местный фестиваль, строительство чудес), только пока Влияние не идёт на дружбу с независимыми; инициативу лидера поддерживает (а не только принимает), если хватает Влияния. Предложения никогда не отклоняются (это портит отношения или означает войну). Пока поселению угрожают, только контршпионаж; никогда с лидером, который воюет с вами.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COUNTER_SPY" Language="ru_RU">
+      <Text>контршпионаж против: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RECONCILE" Language="ru_RU">
+      <Text>примирение с: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ENDEAVOR" Language="ru_RU">
+      <Text>инициатива «{1_Name}» с: {2_Name}</Text>
+    </Replace>
+    <!-- Autopilot: settlers keep away from enemies -->
+    <Replace Tag="LOC_XPL_AP_SETTLER_RETREAT" Language="ru_RU">
+      <Text>{1_Unit} отступает в {2_Name}: рядом враги</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLER_AWAY" Language="ru_RU">
+      <Text>{1_Unit} уходит от врагов на {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLER_WAITS" Language="ru_RU">
+      <Text>{1_Unit} ждёт в {2_Name}: рядом враги</Text>
+    </Replace>
+    <!-- Autopilot: ocean and enemies -->
+    <Replace Tag="LOC_XPL_AP_LEFT_OCEAN" Language="ru_RU">
+      <Text>{1_Unit} уходит из глубокого океана на {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_UNIT_AWAY" Language="ru_RU">
+      <Text>{1_Unit} уходит от врагов на {2_X},{3_Y}</Text>
+    </Replace>
+    <!-- Autopilot: repairs, call to arms -->
+    <Replace Tag="LOC_XPL_AP_REPAIR_BOUGHT" Language="ru_RU">
+      <Text>{1_Name}: отремонтировано в {2_City} за {3_Num} золота</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPAIR_QUEUED" Language="ru_RU">
+      <Text>{2_City}: в очередь ремонт: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPAIR_FIRST" Language="ru_RU">
+      <Text>{1_City}: ремонт первым в очереди</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DECLINED_WAR" Language="ru_RU">
+      <Text>союзник {1_Name} зовёт на войну с {2_Name}: отказ; союз расторгнут</Text>
+    </Replace>
+    <!-- Autopilot: detours -->
+    <Replace Tag="LOC_XPL_AP_DETOUR" Language="ru_RU">
+      <Text>{1_Unit} обходит опасность к {2_X},{3_Y} (через {4_X},{5_Y})</Text>
+    </Replace>
+    <!-- Autopilot: no wars, peace -->
+    <Replace Tag="LOC_XPL_AP_WAR_CALL_SEEN" Language="ru_RU">
+      <Text>союзник {1_Name} зовёт на войну с {2_Name}: не вступаем</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PEACE_PROPOSED" Language="ru_RU">
+      <Text>предложен мир: {1_Name}</Text>
+    </Replace>
+    <!-- Autopilot: victory target -->
+    <Replace Tag="LOC_XPL_AP_VICTORY" Language="ru_RU">
+      <Text>Цель победы</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VICTORY_AUTO" Language="ru_RU">
+      <Text>Авто</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VICTORY_TT" Language="ru_RU">
+      <Text>При включённом «Фокусе на победу»: «Авто» — автопилот сам выбирает путь, на котором ближе к победе; «Культура», «Наука» или «Экономика» — следует этому пути (если эта победа включена в игре). Выключенные в игре победы никогда не выбираются.</Text>
+    </Replace>
+    <!-- Autopilot: victory levers -->
+    <Replace Tag="LOC_XPL_AP_VICTORY_WORK" Language="ru_RU">
+      <Text>{1_City}: сначала {2_Name} — ради победы</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TREASURE_UNLOADED" Language="ru_RU">
+      <Text>серебряный караван разгружен в {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TREASURE_HOME" Language="ru_RU">
+      <Text>серебряный караван идёт домой в {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BANK_OPENED" Language="ru_RU">
+      <Text>{1_Unit}: офис Всемирного банка в {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BANKER_MOVE" Language="ru_RU">
+      <Text>{1_Unit} отправляется в {2_Name}</Text>
     </Replace>
   </LocalizedText>
 </Database>

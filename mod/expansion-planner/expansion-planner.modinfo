@@ -71,6 +71,7 @@
           <Item>ui/core/xpl-town-focus.js</Item>
           <Item>ui/core/xpl-town-scorer.js</Item>
           <Item>ui/core/xpl-tuning.js</Item>
+          <Item>ui/core/xpl-victory-focus.js</Item>
           <Item>ui/core/xpl-wonder-race.js</Item>
           <Item>ui/core/xpl-yields.js</Item>
           <Item>ui/data/xpl-autopilot-choices.js</Item>
@@ -89,6 +90,7 @@
           <Item>ui/data/xpl-site-job.js</Item>
           <Item>ui/data/xpl-tack-orders.js</Item>
           <Item>ui/data/xpl-town-job.js</Item>
+          <Item>ui/data/xpl-victory.js</Item>
           <Item>ui/data/xpl-wonder-job.js</Item>
           <Item>ui/hud/xpl-autopilot-popups.js</Item>
           <Item>ui/hud/xpl-autopilot.js</Item>
@@ -97,6 +99,7 @@
           <Item>ui/hud/xpl-hotkey.js</Item>
           <Item>ui/hud/xpl-production-tacks.js</Item>
           <Item>ui/hud/xpl-recalc-watch.js</Item>
+          <Item>ui/hud/xpl-triumph-tracker.js</Item>
           <Item>ui/integrations/xpl-dmt-bridge.js</Item>
           <Item>ui/integrations/xpl-dmt-status.js</Item>
           <Item>ui/integrations/xpl-tack-registry.js</Item>

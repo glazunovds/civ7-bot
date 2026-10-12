@@ -8,11 +8,12 @@ import { state } from '../services/xpl-state.js';
 import { aiPlayAvailable, isAiPlaying, isAutopilotOn, isControlLost, runTurn, setAutopilot, startAiTurns, stopAiTurns, takeBackControl } from '../hud/xpl-autopilot.js';
 import { log } from '../services/xpl-log.js';
 
-const CHECKS = ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"];
+const CHECKS = ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"];
 const MAX_WONDER_OPTIONS = [1, 2, 3];
 const RESERVE_OPTIONS = [0, 1, 2, 3, 5];
 const REPLAN_OPTIONS = [0, 1, 3, 5, 10];
 const AI_TURN_OPTIONS = [1, 3, 5, 10, 20, 50];
+const VICTORY_OPTIONS = ["AUTO", "CULTURE", "SCIENCE", "ECONOMIC"];
 
 function compose(key, ...args) {
     try {
@@ -43,6 +44,7 @@ export class AutopilotTab {
         this.toggle = q(".xpl-ap-toggle");
         this.now = q(".xpl-ap-now");
         this.logBox = q(".xpl-ap-log");
+        this.focusBox = q(".xpl-ap-focus-box");
         this.aiButton = q(".xpl-ap-ai-start");
         this.aiNote = q(".xpl-ap-ai-note");
         this.lostBox = q(".xpl-ap-lost");
@@ -53,12 +55,13 @@ export class AutopilotTab {
             replanEvery: { el: q(".xpl-ap-replan"), options: REPLAN_OPTIONS, label: (v) => (v === 0 ? compose("LOC_XPL_AP_REPLAN_NEVER") : compose("LOC_XPL_AP_REPLAN_N", v)) },
             aiTurns: { el: q(".xpl-ap-ai-turns"), options: AI_TURN_OPTIONS, label: (v) => compose("LOC_XPL_AP_AI_TURNS_N", v) },
             maxWonders: { el: q(".xpl-ap-max-wonders"), options: MAX_WONDER_OPTIONS, label: (v) => compose("LOC_XPL_AP_MAX_WONDERS_N", v) },
+            victory: { el: q(".xpl-ap-victory"), options: VICTORY_OPTIONS, label: (v) => compose(v === "AUTO" ? "LOC_XPL_AP_VICTORY_AUTO" : `LOC_XPL_FOCUS_${v}`) },
         };
         const o = settings.get().autopilot;
         for (const [k, box] of Object.entries(this.checks)) box?.setAttribute("selected", o[k] ? "true" : "false");
         for (const [k, d] of Object.entries(this.dropdowns)) {
             d.el?.setAttribute("dropdown-items", JSON.stringify(d.options.map((v) => ({ label: d.label(v) }))));
-            d.el?.setAttribute("selected-item-index", String(Math.max(0, d.options.indexOf(Number(o[k])))));
+            d.el?.setAttribute("selected-item-index", String(Math.max(0, d.options.findIndex((v) => v === o[k] || v === Number(o[k])))));
         }
     }
 
@@ -95,7 +98,8 @@ export class AutopilotTab {
         for (const [k, d] of Object.entries(this.dropdowns)) {
             this.listen(d.el, "dropdown-selection-change", (e) => {
                 const v = d.options[e.detail.selectedIndex];
-                if (v !== undefined && v !== Number(settings.get().autopilot[k])) settings.patch({ autopilot: { [k]: v } });
+                const now = settings.get().autopilot[k];
+                if (v !== undefined && v !== now && v !== Number(now)) settings.patch({ autopilot: { [k]: v } });
             });
         }
         this.unsubscribe = state.subscribe((_s, changed) => {
@@ -142,6 +146,7 @@ export class AutopilotTab {
         // The game plays the civ by itself (the slot became AI at an age change during an older run).
         const lost = isControlLost();
         this.lostBox?.classList.toggle("hidden", !lost);
+        this.renderFocus(ap.focus);
         if (!this.logBox) return;
         this.logBox.innerHTML = "";
         const entries = ap.log ?? [];
@@ -156,6 +161,22 @@ export class AutopilotTab {
             const row = el("div", "xpl-ap-log-row");
             row.setAttribute("data-l10n-id", `${compose("LOC_XPL_AP_TURN_N", e.turn)} ${compose(`LOC_XPL_AP_${e.key}`, ...(e.args ?? []))}`);
             this.logBox.appendChild(row);
+        }
+    }
+
+    /** The victory focus: the chosen path, each path against the best rival, the close triumphs. */
+    renderFocus(focus) {
+        if (!this.focusBox) return;
+        this.focusBox.innerHTML = "";
+        this.focusBox.classList.toggle("hidden", !focus);
+        if (!focus) return;
+        const line = (text) => this.focusBox.appendChild(el("div", "xpl-ap-focus-row", text));
+        line(compose("LOC_XPL_AP_FOCUS_NOW", focus.cls ? compose(`LOC_XPL_FOCUS_${focus.cls}`) : compose("LOC_XPL_AP_FOCUS_NONE")));
+        for (const p of focus.scores ?? []) {
+            line(compose(p.done ? "LOC_XPL_AP_FOCUS_PATH_DONE" : "LOC_XPL_AP_FOCUS_PATH", compose(`LOC_XPL_FOCUS_${p.cls}`), p.ours, p.goal, p.rival));
+        }
+        if ((focus.close ?? []).length > 0) {
+            line(compose("LOC_XPL_AP_FOCUS_TRIUMPHS", focus.close.map((t) => `${compose(t.name)} ${t.current}/${t.total}`).join("; ")));
         }
     }
 }

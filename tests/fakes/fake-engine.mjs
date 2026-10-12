@@ -146,6 +146,7 @@ export function installFakeEngine(world, age = "antiquity") {
         isLake: (x, y) => !!tile(x, y).lake,
         isMountain: (x, y) => tile(x, y).terrain === "TERRAIN_MOUNTAIN",
         isNaturalWonder: (x, y) => !!tile(x, y).naturalWonder,
+        getContinentType: (x, y) => tile(x, y).continent ?? 0,
         isNavigableRiver: (x, y) => tile(x, y).terrain === "TERRAIN_NAVIGABLE_RIVER",
         isRiver: (x, y) => !!tile(x, y).river,
         isFreshWater: (x, y) => !!tile(x, y).river,
@@ -165,6 +166,8 @@ export function installFakeEngine(world, age = "antiquity") {
             owner,
             name: c.name,
             isTown: !!c.isTown,
+            // world.cities[i].distant = true: a Distant Lands settlement
+            isDistantLands: !!c.distant,
         // world.cities[i].trains = "UNIT_SCOUT" (a unit in its queue)
             isCapital: i === 0,
             population: c.pop ?? 3,
@@ -188,9 +191,20 @@ export function installFakeEngine(world, age = "antiquity") {
             },
             getSentFoodPerCity: () => c.foodSent ?? 0,
             // world.maintenance(city, type) -> upkeep array by Yields $index (the game's per-city number)
-            Constructibles: { isAdjacencyUnlocked: () => false, getMaintenance: (type) => world.maintenance?.(c, type) },
+            // world.cities[i].gwBuildings = [{ type, slots: [great work index | -1], damaged }]
+            Constructibles: {
+                isAdjacencyUnlocked: () => false,
+                getMaintenance: (type) => world.maintenance?.(c, type),
+                getGreatWorkBuildings: () => (c.gwBuildings ?? []).map((b, j) => {
+                    const id = `gw-${owner}-${i}-${j}`;
+                    componentIds.set(id, { type: info.Constructibles.lookup(b.type).$hash, complete: true, damaged: !!b.damaged });
+                    return { constructibleID: id, slots: b.slots.map((s) => ({ greatWorkIndex: s })) };
+                }),
+            },
             // world.workers(city) -> [{ PlotIndex, IsBlocked, NumWorkers, MaxWorkers, CurrentYields, NextYields, CurrentMaintenance, NextMaintenance }]
             Workers: { GetAllPlacementInfo: () => world.workers?.(c) ?? [], getCityWorkerCap: () => c.workerCap ?? 1 },
+            // world.cities[i].resources = [resource value] (assigned here), resourceCap = slots
+            Resources: { getAssignedResources: () => (c.resources ?? []).map((v) => ({ value: v })), getAssignedResourcesCap: () => c.resourceCap ?? 0 },
             // world.cities[i].connected = [index of another city of the same owner]
             getConnectedCities: () => (c.connected ?? []).map((j) => ({ owner, id: j })),
         }));
@@ -206,6 +220,8 @@ export function installFakeEngine(world, age = "antiquity") {
         getPercentComplete: () => c.queue?.pct ?? 0,
         getQueue: () => [
             ...(c.queue ? [{ kind: 0, constructibleType: info.Constructibles.lookup(c.queue.type).$hash, type: info.Constructibles.lookup(c.queue.type).$hash }] : []),
+            // world.cities[i].queued = [constructible type] (more buildings queued behind the current one)
+            ...(c.queued ?? []).map((t) => ({ kind: 0, constructibleType: info.Constructibles.lookup(t).$hash, type: info.Constructibles.lookup(t).$hash })),
             ...(c.trains ? [{ kind: 1, unitType: info.Units.lookup(c.trains).$hash, type: info.Units.lookup(c.trains).$hash }] : []),
         ],
     });
@@ -223,7 +239,20 @@ export function installFakeEngine(world, age = "antiquity") {
         isIndependent: !!p.isIndependent,
         civilizationName: p.name ?? `PLAYER_${p.id}`,
         Cities: { getCities: () => cityObjects(p.id) },
+        isMajor: !p.isIndependent,
+        // world.distantAt(x, y) -> true on the Distant Lands (for the local player)
+        isDistantLands: (l) => !!world.distantAt?.(l.x, l.y),
+        // world.influence: the local player's Influence
+        DiplomacyTreasury: { get diplomacyBalance() { return world.influence ?? 0; } },
         Diplomacy: {
+            // world.met = [player id], world.wars = [player id], world.relations = { [id]: "UNFRIENDLY" }, world.relationLevels = { [id]: n }
+            hasMet: (o) => (world.met ?? []).includes(o),
+            isAtWarWith: (o) => (world.wars ?? []).includes(o),
+            hasAllied: (o) => (world.allies ?? []).includes(o),
+            // world.peaceOk = [player id] (the game allows peace now)
+            canMakePeaceWith: (o) => ({ Success: (world.peaceOk ?? []).includes(o) }),
+            getRelationshipEnum: (o) => g.DiplomacyPlayerRelationships[`PLAYER_RELATIONSHIP_${world.relations?.[o] ?? "NEUTRAL"}`],
+            getRelationshipLevel: (o) => world.relationLevels?.[o] ?? 0,
             isValidLandClaimLocation: (l) => (world.claimOk ? world.claimOk(l.x, l.y) : true),
             // world.startsWar(unitId, {x, y}) -> the player a move would declare war on, or undefined
             willMoveStartWar: (id, l) => {
@@ -254,7 +283,9 @@ export function installFakeEngine(world, age = "antiquity") {
     g.CityOperationTypes = { BUILD: 1, CONSIDER_TOWN_PROJECT: 2 };
     g.YieldSourceTypes = { BASE: 0, ADJACENCY: 1 };
     const sent = [];
-    const typeOf = (args) => info.Constructibles.lookup(args.ConstructibleType)?.ConstructibleType ?? (args?.UnitType !== undefined ? info.Units.lookup(args.UnitType)?.UnitType : undefined);
+    const typeOf = (args) => info.Constructibles.lookup(args.ConstructibleType)?.ConstructibleType
+        ?? (args?.UnitType !== undefined ? info.Units.lookup(args.UnitType)?.UnitType : undefined)
+        ?? (args?.ProjectType !== undefined ? info.Projects.lookup(args.ProjectType)?.ProjectType : undefined);
     g.Game.CityOperations = {
         // Like the game: the turn-1 Founder is never trained.
         canStart: (id, _op, args) => (typeOf(args) === "UNIT_FOUNDER" ? { Success: false } : world.canBuild?.(typeOf(args), id, args) ?? { Success: true, Plots: [], ExpandUrbanPlots: [] }),
@@ -264,7 +295,7 @@ export function installFakeEngine(world, age = "antiquity") {
     g.YieldTypes = { YIELD_FOOD: 0, YIELD_PRODUCTION: 1, YIELD_GOLD: 2, YIELD_SCIENCE: 3, YIELD_CULTURE: 4, YIELD_HAPPINESS: 5, YIELD_DIPLOMACY: 6 };
     g.GrowthTypes = { EXPAND: 0, PROJECT: 1 };
     g.CityCommandTypes = { PURCHASE: 1, CHANGE_GROWTH_MODE: 2, EXPAND: 3 };
-    g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17 };
+    g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17, MOVE_GREAT_WORK: 40, ASSIGN_RESOURCE: 41, DECLARE_WAR: 42, CANCEL_ALLIANCE: 43 };
     g.PlayerOperationParameters = { Activate: 1, Deactivate: 2 };
     g.CultureSlotTypes = { TRADITION_CULTURE_SLOT: 1, POLICY_CULTURE_SLOT: 2, CRISIS_CULTURE_SLOT: 3 };
     g.AdvisorySubjectTypes = { CHOOSE_TECH: 1, CHOOSE_CULTURE: 2, PRODUCTION: 3 };
@@ -371,7 +402,13 @@ export function installFakeEngine(world, age = "antiquity") {
     // world.diplomacy = { [actionID]: { initialPlayer, actionType, responses: [{ responseType, responseName, cost }] } }
     g.DiplomaticResponseTypes = { DIPLOMACY_RESPONSE_SUPPORT: 0, DIPLOMACY_RESPONSE_ACCEPT: 1, DIPLOMACY_RESPONSE_REJECT: 2 };
     // world.befriend = { [independentId]: { status, ongoing } } (the "befriend" project per independent)
-    g.DiplomacyActionTypes = { DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN: 31, DIPLOMACY_ACTION_OPEN_BORDERS: 32 };
+    g.DiplomacyActionTypes = {
+        DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN: 31, DIPLOMACY_ACTION_OPEN_BORDERS: 32, DIPLOMACY_ACTION_COUNTER_SPY: 33, DIPLOMACY_ACTION_SEND_DELEGATION: 34,
+        DIPLOMACY_ACTION_RESEARCH_COLLABORATION: 35, DIPLOMACY_ACTION_CULTURAL_EXCHANGE: 36, DIPLOMACY_ACTION_MINOR_TRADE: 37,
+        DIPLOMACY_ACTION_FARMERS_MARKET: 38, DIPLOMACY_ACTION_LOCAL_FESTIVALS: 39, DIPLOMACY_ACTION_WONDER_CONSTRUCTION: 40,
+        DIPLOMACY_ACTION_DECLARE_WAR: 44, DIPLOMACY_ACTION_FORM_ALLIANCE: 45,
+    };
+    g.DiplomacyPlayerRelationships = { PLAYER_RELATIONSHIP_HOSTILE: 10, PLAYER_RELATIONSHIP_UNFRIENDLY: 11, PLAYER_RELATIONSHIP_NEUTRAL: 12, PLAYER_RELATIONSHIP_FRIENDLY: 13, PLAYER_RELATIONSHIP_HELPFUL: 14 };
     g.DiplomacyTokenTypes = { DIPLOMACY_TOKEN_GLOBAL: 1 };
     g.IndependentRelationship = { NOT_APPLICABLE: 0, HOSTILE: 1, NEUTRAL: 2, FRIENDLY: 3 };
     // world.indepRelation = { [independentId]: IndependentRelationship } (default HOSTILE)
@@ -380,20 +417,37 @@ export function installFakeEngine(world, age = "antiquity") {
         getIndependentRelationship: (indep) => world.indepRelation?.[indep] ?? g.IndependentRelationship.HOSTILE,
     };
     g.DiplomacyActionTargetTypes = { NO_DIPLOMACY_TARGET: -1 };
-    g.DiplomacyActionGroups = { NO_DIPLOMACY_ACTION_GROUP: -1 };
+    g.DiplomacyActionGroups = { NO_DIPLOMACY_ACTION_GROUP: -1, DIPLOMACY_ACTION_GROUP_ENDEAVOR: 2 };
     g.DiplomacyProjectStatus = { PROJECT_AVAILABLE: 0, PROJECT_NOT_ENOUGH_INFLUENCE: 1 };
     g.Game.Diplomacy = {
         getResponseDataForUI: (id) => (world.diplomacy?.[id] ? { actionID: id, responseList: world.diplomacy[id].responses } : null),
         getDiplomaticEventData: (id) => world.diplomacy?.[id] ?? null,
+        // world.nextCallToArms = an action id (an ally's war calling us)
+        getNextCallToArms: () => world.nextCallToArms ?? -1,
         getPlayerEvents: (id) => [
             ...(world.befriend?.[id]?.ongoing ? [{ initialPlayer: 0, actionType: 31, uniqueID: 900 + id }] : []),
             ...(world.openBorders?.[id]?.ongoing ? [{ initialPlayer: 0, targetPlayer: id, actionType: 32, uniqueID: 800 + id }] : []),
+            // world.events[playerId] = [{ initialPlayer, targetPlayer, actionType }] (actions under way)
+            ...(world.events?.[id] ?? []),
         ],
         // world.befriend[indep] / world.openBorders[leader] = { status, ongoing }: the project offered
         getProjectDataForUI: (_p, target) => [
             ...(world.befriend?.[target] ? [{ actionType: 31, operationType: "DIPLOMACY_ACTION_BEFRIEND", projectStatus: world.befriend[target].status ?? 0 }] : []),
             ...(world.openBorders?.[target] ? [{ actionType: 32, operationType: "DIPLOMACY_ACTION_OPEN_BORDERS", projectStatus: world.openBorders[target].status ?? 0 }] : []),
+            // world.projects[target] = [{ actionType, operationType, projectStatus, targetList1: [{ targetID, costYieldD }] }]
+            ...(world.projects?.[target] ?? []),
         ],
+    };
+    // Peace deals: world.pendingDeals = [player id]; requests are logged as kind "deal".
+    g.DiplomacyDealDirection = { OUTGOING: 0, INCOMING: 1 };
+    g.DiplomacyDealItemTypes = { AGREEMENTS: 1 };
+    g.DiplomacyDealItemAgreementTypes = { MAKE_PEACE: 1 };
+    g.DiplomacyDealProposalActions = { PROPOSED: 0, ACCEPTED: 1, REJECTED: 2, INSPECT: 3, ADJUSTED: 4 };
+    g.Game.DiplomacyDeals = {
+        hasPendingDeal: (_a, b) => (world.pendingDeals ?? []).includes(b),
+        clearWorkingDeal: (id) => sent.push({ kind: "deal", op: "clear", id }),
+        addItemToWorkingDeal: (id, item) => sent.push({ kind: "deal", op: "add", id, item }),
+        sendWorkingDeal: (id, action) => sent.push({ kind: "deal", op: "send", id, action }),
     };
     g.DiplomacyPlayerFirstMeets = { PLAYER_REALATIONSHIP_FIRSTMEET_NEUTRAL: 0, PLAYER_REALATIONSHIP_FIRSTMEET_FRIENDLY: 1, PLAYER_REALATIONSHIP_FIRSTMEET_UNFRIENDLY: 2 };
     g.Game.Notifications = {
@@ -442,6 +496,8 @@ export function installFakeEngine(world, age = "antiquity") {
         canStart: () => ({ Success: true }),
         sendRequest: (pid, op, args) => sent.push({ kind: "player", id: pid, op, args: { ...args } }),
     };
+    // world.greatWorks = { [index]: "GREATWORK_TYPE" }
+    g.Game.Culture = { getGreatWorkType: (i) => (world.greatWorks?.[i] ? hash(world.greatWorks[i]) : -1) };
     g.Game.AgeProgressManager = { getCurrentAgeProgressionPoints: () => world.agePoints ?? 20, getMaxAgeProgressionPoints: () => 100, isFinalAge: false };
     for (const p of players) {
         // Read on every access, like the game (a test may found or convert a settlement).
@@ -456,9 +512,21 @@ export function installFakeEngine(world, age = "antiquity") {
         p.Stats.getNetYield = (y) => (y === g.YieldTypes.YIELD_GOLD ? world.goldIncome ?? 0 : 0);
         // world.techs = ["NODE_TECH_EX_SHIPBUILDING"] (researched nodes)
         p.Techs = { getTreeType: () => "TREE_TECH", getAllAvailableNodeTypes: () => world.research?.tech?.available ?? [], getTurnsForNode: () => 5, isNodeUnlocked: (n) => (world.techs ?? []).includes(n) };
-        p.Culture = { getActiveTree: () => "TREE_CIVIC", getAllAvailableNodeTypes: () => world.research?.culture?.available ?? [], getTurnsForNode: () => 5 };
+        // world.archive = [great work index]; world.researchAges(continent) -> ages left to research there
+        p.Culture = {
+            getActiveTree: () => "TREE_CIVIC", getAllAvailableNodeTypes: () => world.research?.culture?.available ?? [], getTurnsForNode: () => 5,
+            getNumWorksInArchive: () => (world.archive ?? []).length, getArchivedGreatWork: (i) => world.archive[i],
+            getNumAgesAvailableToResearch: (continent) => world.researchAges?.(continent) ?? 0,
+        };
+        // world.wonderArtifacts = [feature index] (natural wonders that still hold an artifact)
+        p.Stats.hasNaturalWonderArtifact = (feature) => (world.wonderArtifacts ?? []).includes(feature);
         if (p.id === 0) {
             p.Units = { getUnits: unitObjects };
+            // world.resources = [{ value, type, offMap }] (the player's resources); world.resourcesLocked
+            p.Resources = {
+                getResources: () => (world.resources ?? []).map((r) => ({ value: r.value, uniqueResource: { resource: info.Resources.lookup(r.type).$hash }, isOffMap: !!r.offMap })),
+                isResourceAssignmentLocked: () => !!world.resourcesLocked,
+            };
             p.Trade = {
                 projectPossibleTradeRoutes: () => world.tradeRoutes ?? [],
                 getTradeCapacityFromPlayer: (owner) => world.tradeCapacity?.(owner) ?? 1,

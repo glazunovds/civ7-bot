@@ -28,6 +28,7 @@ export const REJECT = Object.freeze({
     TERRAIN: "TERRAIN",
     OWNED: "OWNED",
     SPACING: "SPACING",
+    FOREIGN: "FOREIGN", // closer than TUNING.FOREIGN_MIN_DISTANCE to another player's settlement
     CLAIM: "CLAIM",
     ROOM: "ROOM",
     RING1: "RING1",

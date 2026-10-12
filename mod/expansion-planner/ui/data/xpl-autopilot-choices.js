@@ -56,6 +56,10 @@ const waiting = (typeName) => notificationsOf(typeName).length > 0;
 
 // Independents threatening us that the game did not let us befriend in the last pass.
 let blockedIndependents = [];
+// Influence goes to befriending independents this turn (see befriendIndependents).
+let befriendBusy = false;
+// Leaders whose spy was caught against us (revealed), waiting for our counter-spy.
+const caughtSpies = new Set();
 
 /** What a policy card is worth per turn (Policy Yield Previews), or null if unknown. */
 export function cardValue(traditionType, weights) {
@@ -312,9 +316,11 @@ export function answerFirstMeetings() {
  * someone else). Only "reject" left: the proposal stays for the player. Same data and
  * operation as the game's reaction panel (panel-diplomacy-project-reaction.js).
  */
-export function answerDiplomacy() {
+export function answerDiplomacy({ support = false } = {}) {
     const out = [];
     const R = globalThis.DiplomaticResponseTypes;
+    const ENDEAVOR = globalThis.DiplomacyActionGroups?.DIPLOMACY_ACTION_GROUP_ENDEAVOR;
+    const balance = Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0;
     if (PlayerOperationTypes.RESPOND_DIPLOMATIC_ACTION === undefined) return out;
     const done = new Set();
     for (const n of notificationsOf("NOTIFICATION_DIPLOMATIC_RESPONSE_REQUIRED")) {
@@ -329,7 +335,12 @@ export function answerDiplomacy() {
             .filter((r) => R?.DIPLOMACY_RESPONSE_REJECT === undefined || r.responseType !== R.DIPLOMACY_RESPONSE_REJECT)
             .filter((r) => safe(() => Game.PlayerOperations.canStart(pid(), PlayerOperationTypes.RESPOND_DIPLOMATIC_ACTION, { ID: actionID, Type: r.responseType }, false), null)?.Success)
             .sort((a, b) => (Number(a.cost) || 0) - (Number(b.cost) || 0) || Number(a.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT) - Number(b.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT));
-        const pick = options[0];
+        let pick = options[0];
+        // «Дипломатия»: supporting a leader's endeavor improves the relationship more than
+        // accepting it (the game's favor for support), when the Influence allows.
+        if (support && ENDEAVOR !== undefined && event?.actionGroup === ENDEAVOR) {
+            pick = options.find((r) => r.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT && (Number(r.cost) || 0) <= balance) ?? pick;
+        }
         if (!pick) {
             out.push({ key: "DIPLO_LEFT", args: [who, what] });
             continue;
@@ -368,6 +379,9 @@ export function befriendIndependents(threats = []) {
         .map((p) => ({ p, d: distance(p), threat: threatening.has(p.id) }))
         .sort((a, b) => Number(b.threat) - Number(a.threat) || a.d - b.d);
     const blocked = [];
+    // Influence goes to befriending this turn: one started, or one offered waits for Influence.
+    const NOT_NOW = ["NOT_UNLOCKED", "NO_VIABLE_TARGETS", "BLOCKED", "ACTIVE"].map((n) => globalThis.DiplomacyProjectStatus?.[`PROJECT_${n}`]).filter((v) => v !== undefined);
+    let waiting = false;
     for (const { p, threat } of independents) {
         const events = safe(() => Game.Diplomacy.getPlayerEvents(p.id), []) ?? [];
         const ours = events.find((a) => a.initialPlayer === pid() && a.actionType === GIVE);
@@ -383,12 +397,14 @@ export function befriendIndependents(threats = []) {
         if (!ok) {
             // Not offered: not met yet or its settlement unseen (a unit is sent toward it).
             if (threat && !project) blocked.push(p.id);
+            if (project && !NOT_NOW.includes(project.projectStatus)) waiting = true;
             continue;
         }
         Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
         out.push({ key: "BEFRIEND", args: [safe(() => Locale.compose(p.civilizationName ?? p.name), String(p.id))] });
     }
     blockedIndependents = blocked;
+    befriendBusy = waiting || out.length > 0;
     return out;
 }
 
@@ -512,6 +528,54 @@ export function readLeaderMessages() {
     return out;
 }
 
+const MAX_GREAT_WORK_MOVES = 10;
+
+/**
+ * Great works waiting in the archive («Архив»: there was no free slot when they came; codices,
+ * relics, artifacts) go into free slots, as the game's great works screen moves them
+ * (model-great-works.js: PlayerOperations MOVE_GREAT_WORK {Player1, GreatWorkIndex,
+ * DestinationCity: city.id.id, DestinationBuilding: the building's type}; its slots come from
+ * city.Constructibles.getGreatWorkBuildings(), an empty one has no great work). Only displayed
+ * works give their yields and count for triumphs such as «Географическое общество».
+ */
+export function slotGreatWorks() {
+    const out = [];
+    const OP = globalThis.PlayerOperationTypes?.MOVE_GREAT_WORK;
+    const player = safe(() => Players.get(pid()), null);
+    const culture = player?.Culture;
+    const count = Number(safe(() => culture.getNumWorksInArchive(), 0)) || 0;
+    if (OP === undefined || count <= 0) return out;
+    const workOf = (index) => (index === undefined || index === null || index < 0 ? null : safe(() => GameInfo.GreatWorks.lookup(Game.Culture.getGreatWorkType(index)), null));
+    const places = [];
+    for (const city of safe(() => player.Cities.getCities(), []) ?? []) {
+        for (const b of safe(() => city.Constructibles.getGreatWorkBuildings(), []) ?? []) {
+            const building = safe(() => Constructibles.getByComponentID(b.constructibleID), null);
+            if (!building || building.damaged) continue;
+            const free = (b.slots ?? []).filter((s) => !workOf(s.greatWorkIndex)).length;
+            if (free > 0) places.push({ city, type: building.type, free });
+        }
+    }
+    for (let i = 0; i < count && out.length < MAX_GREAT_WORK_MOVES; i++) {
+        const index = safe(() => culture.getArchivedGreatWork(i), -1);
+        const work = workOf(index);
+        if (!work) continue;
+        for (const p of places) {
+            if (p.free <= 0) continue;
+            const args = { Player1: pid(), GreatWorkIndex: index, DestinationCity: p.city.id.id, DestinationBuilding: p.type };
+            if (!safe(() => Game.PlayerOperations.canStart(pid(), OP, args, false), null)?.Success) continue;
+            Game.PlayerOperations.sendRequest(pid(), OP, args);
+            p.free--;
+            out.push({ key: "GREAT_WORK_SLOTTED", args: [
+                safe(() => Locale.compose(work.Name), work.GreatWorkType ?? "?"),
+                safe(() => Locale.compose(p.city.name), "?"),
+                safe(() => Locale.compose(GameInfo.Constructibles.lookup(p.type).Name), "?"),
+            ] });
+            break;
+        }
+    }
+    return out;
+}
+
 const ESPIONAGE = "NOTIFICATION_DIPLOMATIC_ACTION_ESPIONAGE";
 
 /**
@@ -529,6 +593,7 @@ export function readEspionageReports({ retry = false } = {}) {
         const who = event?.initialPlayer ?? note?.Player;
         return safe(() => Locale.compose(Players.get(who).leaderName), "?");
     };
+    noteCaughtSpies();
     for (const id of safe(() => Game.Notifications.getIdsForPlayer(pid()), []) ?? []) {
         const note = safe(() => Game.Notifications.find(id), null);
         if (!note || safe(() => Game.Notifications.getTypeName(note.Type), null) !== ESPIONAGE) continue;
@@ -545,6 +610,205 @@ export function readEspionageReports({ retry = false } = {}) {
         if (id && typeof Game.Notifications.activate === "function") {
             Game.Notifications.activate(id);
             out.push({ key: "ESPIONAGE_OPENED", args: [] });
+        }
+    }
+    return out;
+}
+
+// ---- an ally's call to arms («Союзник ведёт войну»), peace ---------------------------------
+
+const CALL_TO_ARMS = "NOTIFICATION_DIPLOMATIC_ALLY_AT_WAR";
+const PEACE_EVERY = 3; // turns between our peace offers to the same leader
+
+/**
+ * «Союзник ведёт войну» (NOTIFICATION_DIPLOMATIC_ALLY_AT_WAR: an ally at war calls us to arms)
+ * held the turn in game. The autopilot never joins: joining is an ordinary declaration of war
+ * (the call-to-arms screen's accept = DECLARE_WAR), a surprise war with war weariness (seen in
+ * game). First the notice is only read (dismissed); if the game still holds the turn on the
+ * end-of-turn retry, the call is declined as the screen's decline does: CANCEL_ALLIANCE
+ * {Player1, Player2, Type: DIPLOMACY_ACTION_FORM_ALLIANCE} with whichever of the two is our ally
+ * (screen-diplomacy-call-to-arms.js). The war itself comes from `n.Target.id`, else
+ * Game.Diplomacy.getNextCallToArms(us).
+ */
+export function answerCallsToArms({ retry = false } = {}) {
+    const out = [];
+    const A = globalThis.DiplomacyActionTypes ?? {};
+    const me = safe(() => Players.get(pid()).Diplomacy, null);
+    if (!me) return out;
+    const name = (id) => safe(() => Locale.compose(Players.get(id).leaderName), String(id));
+    const warOf = (n) => {
+        const actionID = n?.Target?.id ?? safe(() => Game.Diplomacy.getNextCallToArms(pid()), -1);
+        return actionID === undefined || actionID === null || actionID === -1 ? null : safe(() => Game.Diplomacy.getDiplomaticEventData(actionID), null);
+    };
+    for (const id of safe(() => Game.Notifications.getIdsForPlayer(pid()), []) ?? []) {
+        const n = safe(() => Game.Notifications.find(id), null);
+        if (!n || safe(() => Game.Notifications.getTypeName(n.Type), null) !== CALL_TO_ARMS) continue;
+        const war = warOf(n);
+        try {
+            Game.Notifications.dismiss(id);
+        } catch (_e) {
+            // the game may keep it; the retry below declines then
+        }
+        out.push({ key: "WAR_CALL_SEEN", args: [name(war?.initialPlayer), name(war?.targetPlayer)] });
+    }
+    if (!retry || turnBlocker() !== CALL_TO_ARMS || PlayerOperationTypes.CANCEL_ALLIANCE === undefined) return out;
+    const blocking = safe(() => Game.Notifications.find(Game.Notifications.findEndTurnBlocking(pid(), Game.Notifications.getEndTurnBlockingType(pid()))), null);
+    const war = warOf(blocking);
+    if (!war) return out;
+    for (const p of [war.targetPlayer, war.initialPlayer]) {
+        if (!safe(() => me.hasAllied(p), false)) continue;
+        Game.PlayerOperations.sendRequest(pid(), PlayerOperationTypes.CANCEL_ALLIANCE, { Player1: pid(), Player2: p, Type: A.DIPLOMACY_ACTION_FORM_ALLIANCE });
+    }
+    out.push({ key: "DECLINED_WAR", args: [name(war.initialPlayer), name(war.targetPlayer)] });
+    return out;
+}
+
+// Leader -> the turn we last offered them peace.
+const peaceOffered = new Map();
+
+/**
+ * Peace with every leader at war with us, white peace (nothing given or asked), as the game's
+ * peace screen proposes it (panel-diplomacy-peace-deal.js): only when
+ * Diplomacy.canMakePeaceWith(them).Success and no deal is pending
+ * (Game.DiplomacyDeals.hasPendingDeal); a working deal {direction: OUTGOING, player1: us,
+ * player2: them} with the one item {type: AGREEMENTS, agreementType: MAKE_PEACE}, sent PROPOSED.
+ * At most every PEACE_EVERY turns per leader. Their answer is theirs.
+ */
+export function seekPeace() {
+    const out = [];
+    const D = globalThis.Game?.DiplomacyDeals;
+    const me = safe(() => Players.get(pid()), null);
+    if (!D || !me?.Diplomacy || globalThis.DiplomacyDealItemAgreementTypes?.MAKE_PEACE === undefined) return out;
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (!p?.isMajor || p.id === pid() || !safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+        if (Game.turn - (peaceOffered.get(p.id) ?? -Infinity) < PEACE_EVERY) continue;
+        if (!safe(() => me.Diplomacy.canMakePeaceWith(p.id), null)?.Success) continue;
+        if (safe(() => D.hasPendingDeal(pid(), p.id), false)) continue;
+        const deal = { direction: DiplomacyDealDirection.OUTGOING, player1: pid(), player2: p.id };
+        try {
+            D.clearWorkingDeal(deal);
+            D.addItemToWorkingDeal(deal, { type: DiplomacyDealItemTypes.AGREEMENTS, agreementType: DiplomacyDealItemAgreementTypes.MAKE_PEACE });
+            D.sendWorkingDeal(deal, DiplomacyDealProposalActions.PROPOSED);
+        } catch (_e) {
+            continue;
+        }
+        peaceOffered.set(p.id, Game.turn);
+        out.push({ key: "PEACE_PROPOSED", args: [safe(() => Locale.compose(p.leaderName), String(p.id))] });
+    }
+    return out;
+}
+
+// ---- diplomacy with other leaders («Дипломатия») ---------------------------------------------
+
+const RELATION_RANK = ["HOSTILE", "UNFRIENDLY", "NEUTRAL", "FRIENDLY", "HELPFUL"];
+// Endeavors («Инициативы») in the order tried; the priority's own come first.
+const ENDEAVORS = ["RESEARCH_COLLABORATION", "MINOR_TRADE", "CULTURAL_EXCHANGE", "FARMERS_MARKET", "LOCAL_FESTIVALS", "WONDER_CONSTRUCTION"];
+const ENDEAVOR_FOR_PROFILE = {
+    SCIENCE: ["RESEARCH_COLLABORATION"], CULTURE: ["CULTURAL_EXCHANGE", "WONDER_CONSTRUCTION"], GOLD: ["MINOR_TRADE"],
+    PRODUCTION: ["MINOR_TRADE"], FOOD: ["FARMERS_MARKET"], HAPPINESS: ["LOCAL_FESTIVALS"],
+};
+
+/**
+ * Leaders whose spy action against us is reported (NOTIFICATION_DIPLOMATIC_ACTION_ESPIONAGE →
+ * getDiplomaticEventData: initialPlayer, targetPlayer, revealed). The notice also comes for our
+ * own spies caught, and an unrevealed spy is "an unknown leader" in the game's text: neither counts.
+ */
+function noteCaughtSpies() {
+    for (const n of notificationsOf(ESPIONAGE)) {
+        const e = n.Target ? safe(() => Game.Diplomacy.getDiplomaticEventData(n.Target.id), null) : null;
+        if (!e || e.targetPlayer !== pid() || e.initialPlayer === pid() || e.revealed === false) continue;
+        if (Number.isInteger(e.initialPlayer) && e.initialPlayer >= 0) caughtSpies.add(e.initialPlayer);
+    }
+}
+
+/** Tiles between our settlements and another player's (nearest pair). */
+function distanceToUs(p) {
+    const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    let best = Infinity;
+    for (const c of safe(() => p.Cities.getCities(), []) ?? []) {
+        for (const o of ours) best = Math.min(best, safe(() => GameplayMap.getPlotDistance(o.x, o.y, c.location.x, c.location.y), Infinity));
+    }
+    return best;
+}
+
+/**
+ * Diplomacy with other leaders («Дипломатия» option). One start of each kind per pass, only what
+ * the game offers now (PROJECT_AVAILABLE, canStart) and the Influence pays for, with the diplomacy
+ * panel's quick start {Amount: 1, Player1, Type, Player2, ID} (panel-diplomacy-actions.js):
+ *  - «Контршпионаж» (DIPLOMACY_ACTION_COUNTER_SPY; from the Exploration age) against a leader whose
+ *    spy was caught against us, unless one already runs against them;
+ *  - «Примирение» (SEND_DELEGATION, no unlock needed) with a leader who is Unfriendly or Hostile;
+ *  - an endeavor («Инициатива»: research collaboration, open markets, cultural exchange, farmers
+ *    market, local festival, wonder construction; the priority's own first) with the leader we
+ *    stand worst with (not Hostile: the game allows none), while no Influence goes to befriending
+ *    independents. Endeavors and reconciliation raise the relationship.
+ * Under threat only the counter-spy (Influence goes to befriending). Never with a leader at war
+ * with us; worst relationship first, then nearest.
+ */
+export function tendDiplomacy(settings, { threatened = false } = {}) {
+    const out = [];
+    const A = globalThis.DiplomacyActionTypes ?? {};
+    const AVAILABLE = globalThis.DiplomacyProjectStatus?.PROJECT_AVAILABLE;
+    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
+    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
+    const me = safe(() => Players.get(pid()), null);
+    if (!me?.Diplomacy) return out;
+    noteCaughtSpies();
+    const balance = () => Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+    const leaderName = (id) => safe(() => Locale.compose(Players.get(id).leaderName), String(id));
+    const actionName = (type) => safe(() => Locale.compose(GameInfo.DiplomacyActions.lookup(type).Name), String(type));
+    const start = (target, actionType) => {
+        if (actionType === undefined) return false;
+        const project = (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), target, T, G, -1, T), []) ?? []).find((p) => p.actionType === actionType);
+        if (!project || (AVAILABLE !== undefined && project.projectStatus !== AVAILABLE)) return false;
+        const cost = Number(project.targetList1?.find((t) => t.targetID === target)?.costYieldD) || 0;
+        if (cost > balance()) return false;
+        const args = { Amount: 1, Player1: pid(), Type: project.actionType, Player2: target, ID: target };
+        if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) return false;
+        Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
+        return true;
+    };
+    // 1. Counter-spy against a caught spy's leader.
+    const running = (target) => (safe(() => Game.Diplomacy.getPlayerEvents(pid()), []) ?? [])
+        .some((e) => e.initialPlayer === pid() && e.actionType === A.DIPLOMACY_ACTION_COUNTER_SPY && e.targetPlayer === target);
+    for (const spy of [...caughtSpies]) {
+        if (running(spy)) {
+            caughtSpies.delete(spy);
+            continue;
+        }
+        if (start(spy, A.DIPLOMACY_ACTION_COUNTER_SPY)) {
+            caughtSpies.delete(spy);
+            out.push({ key: "COUNTER_SPY", args: [leaderName(spy)] });
+        }
+    }
+    if (threatened) return out;
+    const REL = globalThis.DiplomacyPlayerRelationships ?? {};
+    const rank = (id) => {
+        const v = safe(() => me.Diplomacy.getRelationshipEnum(id), null);
+        const i = RELATION_RANK.findIndex((n) => REL[`PLAYER_RELATIONSHIP_${n}`] === v);
+        return i < 0 ? 2 : i;
+    };
+    const leaders = (safe(() => Players.getAlive(), []) ?? [])
+        .filter((p) => p?.isMajor && p.id !== pid() && safe(() => me.Diplomacy.hasMet(p.id), false) && !safe(() => me.Diplomacy.isAtWarWith(p.id), false))
+        .map((p) => ({ id: p.id, rank: rank(p.id), level: Number(safe(() => me.Diplomacy.getRelationshipLevel(p.id), 0)) || 0, d: distanceToUs(p) }))
+        .sort((a, b) => a.rank - b.rank || a.level - b.level || a.d - b.d);
+    // 2. Reconciliation with an Unfriendly or Hostile leader.
+    for (const l of leaders) {
+        if (l.rank > 1) break;
+        if (start(l.id, A.DIPLOMACY_ACTION_SEND_DELEGATION)) {
+            out.push({ key: "RECONCILE", args: [leaderName(l.id)] });
+            break;
+        }
+    }
+    // 3. An endeavor, while no Influence goes to befriending independents.
+    if (befriendBusy) return out;
+    const order = [...new Set([...(ENDEAVOR_FOR_PROFILE[settings?.profile] ?? []), ...ENDEAVORS])].map((n) => A[`DIPLOMACY_ACTION_${n}`]);
+    for (const l of leaders) {
+        if (l.rank === 0) continue;
+        for (const type of order) {
+            if (!start(l.id, type)) continue;
+            out.push({ key: "ENDEAVOR", args: [actionName(type), leaderName(l.id)] });
+            return out;
         }
     }
     return out;
@@ -644,7 +908,7 @@ export async function makeChoices(settings, { retry = false } = {}) {
         await sleep(STEP_WAIT_MS);
     }
     out.push(...await foundReligion(settings));
-    out.push(...choosePantheon(), ...chooseGovernment(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy(), ...readLeaderMessages(), ...readEspionageReports({ retry }), ...dismissAdvisorWarnings(), ...promoteUnits());
+    out.push(...choosePantheon(), ...chooseGovernment(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...seekPeace(), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
     if (retry && turnBlocker()) out.push(...acknowledge(), ...considerTownProjects());
     return out;
 }

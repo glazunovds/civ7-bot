@@ -19,6 +19,10 @@ export const TUNING = Object.freeze({
     // Free tile next to another civilization's territory: they will usually claim it first.
     FOREIGN_BORDER_SHARE: 0.5,
 
+    // No city or town planned closer than this to another player's settlement centre
+    // (another civilization's, an independent's or a city-state's): the user's rule.
+    FOREIGN_MIN_DISTANCE: 5,
+
     // Minimum availability-weighted growable tiles in rings 1-3 (out of 36),
     // keyed by the "overlap tolerance" setting.
     ROOM_HARD_MIN: { LOW: 24, MEDIUM: 18, HIGH: 12 },

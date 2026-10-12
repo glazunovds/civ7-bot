@@ -100,6 +100,90 @@ test("a choice still holds the turn: the turn is not ended, the log says why", a
     assert.deepEqual(blocked?.args, ["NOTIFICATION_CHOOSE_BELIEF"]);
 });
 
+test("victory focus: the path we lead sets this pass's priority (research follows its advisor); off, the player's own priority again", async () => {
+    settings.patch({ autopilot: { focus: true, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    GameInfo.LegacyPaths = [
+        { LegacyPathType: "LP_CULTURE", LegacyPathClassType: "LEGACY_PATH_CLASS_CULTURE", EnabledByDefault: true },
+        { LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true },
+    ];
+    GameInfo.AgeProgressionMilestones = [
+        { LegacyPathType: "LP_CULTURE", FinalMilestone: true, RequiredPathPoints: 7 },
+        { LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 10 },
+    ];
+    Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 8 : 1) };
+    const recs = world.treeRecs;
+    world.treeRecs = (subject) => (subject === AdvisorySubjectTypes.CHOOSE_TECH ? [{ recommendedType: 11, whichAdvisors: [AdvisorTypes.CULTURE] }, { recommendedType: 12, whichAdvisors: [AdvisorTypes.SCIENCE] }] : []);
+    const tech = () => sent("player").filter((s) => s.op === PlayerOperationTypes.SET_TECH_TREE_NODE).map((s) => s.args.ProgressionTreeNodeType);
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus?.cls, "SCIENCE");
+        assert.ok(keys().includes("VICTORY_FOCUS"));
+        assert.deepEqual(tech(), [12], "the science advisor's technology");
+        // The player's target: culture, though science leads.
+        settings.patch({ autopilot: { victory: "CULTURE" } });
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus?.cls, "CULTURE");
+        assert.deepEqual(tech(), [11], "the culture advisor's technology");
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus, null);
+        assert.deepEqual(tech(), [11], "the player's own priority (Balance): the advisor's first");
+    } finally {
+        world.treeRecs = recs;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("victory focus on science: the pass puts science projects first", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "SCIENCE", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    GameInfo.LegacyPaths = [{ LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true }];
+    GameInfo.AgeProgressionMilestones = [{ LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 10 }];
+    Players.get(0).LegacyPaths = { getScore: () => 2 };
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.ok(keys().includes("VICTORY_WORK"), JSON.stringify(keys()));
+        assert.ok(fake.sent.some((s) => s.args?.ProjectType === GameInfo.Projects.lookup("PROJECT_CHART_THE_STARS").$hash));
+    } finally {
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("diplomacy option: the pass starts a counter-spy against a caught spy's leader", async () => {
+    settings.patch({ autopilot: { diplomacy: true, focus: false, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    world.notifications = [{ name: "NOTIFICATION_DIPLOMATIC_ACTION_ESPIONAGE", target: { id: 71 } }];
+    world.diplomacy = { 71: { initialPlayer: 1, targetPlayer: 0, revealed: true } };
+    world.projects = { 1: [{ actionType: DiplomacyActionTypes.DIPLOMACY_ACTION_COUNTER_SPY, operationType: "OP_COUNTER_SPY", projectStatus: DiplomacyProjectStatus.PROJECT_AVAILABLE }] };
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.ok(fake.sent.some((s) => s.op === "OP_COUNTER_SPY"), JSON.stringify(keys()));
+        assert.ok(keys().includes("COUNTER_SPY"));
+    } finally {
+        settings.patch({ autopilot: { diplomacy: false } });
+        for (const k of ["notifications", "diplomacy", "projects"]) delete world[k];
+    }
+});
+
+test("repairs come first in the pass: a damaged building is bought", async () => {
+    settings.patch({ autopilot: { purchases: true, production: true, replanEvery: 0, skipUnits: false, endTurn: false } });
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === "BUILDING_LIBRARY" && id.id === 0 && args.X === undefined
+        ? { Success: true, RepairDamaged: true, Plots: [GameplayMap.getIndexFromXY(A.x + 1, A.y)] } : canBuild(type, id, args));
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.ok(keys().includes("REPAIR_BOUGHT"), JSON.stringify(keys()));
+    } finally {
+        world.canBuild = canBuild;
+    }
+});
+
 test("the building plan is recalculated when due", async () => {
     settings.patch({ autopilot: { replanEvery: 1, skipUnits: false, endTurn: false } });
     Game.turn += 1;

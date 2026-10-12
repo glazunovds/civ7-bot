@@ -16,6 +16,7 @@ import './hud/xpl-recalc-watch.js';
 import './hud/xpl-growth-advisor.js';
 import './hud/xpl-autopilot.js';
 import './hud/xpl-autopilot-popups.js';
+import './hud/xpl-triumph-tracker.js';
 import { installDebugHandle } from './panel/xpl-debug.js';
 
 try {

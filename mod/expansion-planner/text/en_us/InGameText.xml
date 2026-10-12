@@ -1297,7 +1297,7 @@
       <Text>Policies, celebrations, events</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_CHOICES_TT">
-      <Text>Makes the choices that hold the turn: empty policy slots (the card worth most by Policy Yield Previews when that mod is installed, else the first offered), the celebration bonus, story events (the option the game's AI prefers), a pantheon, a religion and its beliefs (worth most by Policy Yield Previews first), a government, a city-state bonus, the greeting for a newly met leader (friendly when allowed, else neutral), a leader's proposal (the cheapest answer that is not a rejection; never a rejection, which can mean war), "seen it" screens and advisor warnings. Espionage notices («Espionage revealed») are read.</Text>
+      <Text>Makes the choices that hold the turn: empty policy slots (the card worth most by Policy Yield Previews when that mod is installed, else the first offered), the celebration bonus, story events (the option the game's AI prefers), a pantheon, a religion and its beliefs (worth most by Policy Yield Previews first), a government, a city-state bonus, the greeting for a newly met leader (friendly when allowed, else neutral), a leader's proposal (the cheapest answer that is not a rejection; never a rejection, which can mean war), "seen it" screens and advisor warnings. Espionage notices («Espionage revealed») are read. Great works waiting in the archive are put on display in free slots. An ally's call to arms is never joined (that is a surprise war, with war weariness): it is set aside, and declined (the alliance ends) only if the game still holds the turn for it. Peace (nothing given or asked) is proposed to every leader at war with you, every 3 turns.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_UNITS_TITLE">
       <Text>Units (these options move units):</Text>
@@ -1306,13 +1306,13 @@
       <Text>Scouts explore</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_EXPLORE_TT">
-      <Text>Scouts head for the nearest discovery (cave, ruins, campfire...) within 4 turns first, even while exploring by themselves, then explore (the game's automatic exploring, else the edge of the fog). Cities train scouts first until you have 2.</Text>
+      <Text>Scouts head for the nearest discovery (cave, ruins, campfire...) within 4 turns first, even while exploring by themselves, then explore (the game's automatic exploring, else the edge of the fog). Cities train scouts first until you have 2. In the Modern age explorers dig up artifacts (ruins, natural wonders) and research new dig sites at your museums and universities; up to 2 are trained while there is something to dig or research.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_SETTLERS_LABEL">
       <Text>Settlers found settlements</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_SETTLERS_TT">
-      <Text>Cities train settlers (2 at a time while you have fewer than 3 settlements, then 1, never past the settlement cap; they go to the front of the queue). A settler waiting for orders walks to the best free site of the Settlements tab (searched by itself every 5 turns; the role that keeps cities and towns 1 to 1 first, else the game's suggestion), at most 10 turns away, and founds a settlement there; a town founded on a city site becomes a city when gold allows. Each settler gets its own site; no move may start a war. A Migrant joins the settlement it stands in (Resettle; city or town), else walks to your nearest one, its citizen on the tile the growth hints rate best. In the Exploration age, until Shipbuilding, no land unit is sent across deep ocean (it stops on every ocean tile and takes damage there); coast is fine.</Text>
+      <Text>Cities train settlers (2 at a time while you have fewer than 3 settlements, then 1, never past the settlement cap; they go to the front of the queue). A settler waiting for orders walks to the best free site of the Settlements tab (searched by itself every 5 turns; the role that keeps cities and towns 1 to 1 first, else the game's suggestion), at most 10 turns away, and founds a settlement there; a town founded on a city site becomes a city when gold allows. Each settler gets its own site; no move may start a war. Settlers keep away from hostile military units: no site with one within 3 tiles, no way passing within 2; with one within 3, a settler stays in or runs to your nearest settlement (or steps away), even while walking. No site closer than 5 tiles to another player's settlement. A Migrant joins the settlement it stands in (Resettle; city or town), else walks to your nearest one, its citizen on the tile the growth hints rate best. In the Exploration age, until Shipbuilding, no land unit is sent across deep ocean (it stops on every ocean tile and takes damage there); coast is fine.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_DEFEND_LABEL">
       <Text>Military: shoot or fortify</Text>
@@ -1533,6 +1533,152 @@
     </Row>
     <Row Tag="LOC_XPL_AP_ESPIONAGE_OPENED">
       <Text>espionage report opened (the game still held the turn)</Text>
+    </Row>
+    <!-- Autopilot: great works and artifacts -->
+    <Row Tag="LOC_XPL_AP_GREAT_WORK_SLOTTED">
+      <Text>{1_Name} put on display: {2_City} ({3_Building})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_EXCAVATED">
+      <Text>{1_Unit} digs up an artifact</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESEARCHED_ARTIFACTS">
+      <Text>{1_Unit} researches artifact sites on this continent</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ARTIFACT_MOVE">
+      <Text>{1_Unit} heads for artifacts at {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_EXPLORER">
+      <Text>{1_City}: queued {2_Name} (artifacts: up to {3_Num} explorers)</Text>
+    </Row>
+    <!-- Autopilot: victory focus, resources -->
+    <Row Tag="LOC_XPL_AP_FOCUS_LABEL">
+      <Text>Victory focus</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_TT">
+      <Text>Every turn the autopilot picks the legacy path to steer toward (culture, science or economic; never military): the one this age where you are furthest along and furthest ahead of the best rival you met, with a bonus for your leader's preferred victory and for close triumphs of that kind; it switches only after another path has led for 3 turns, or when the current one is complete. It then follows that path's priority (Culture, Science or Gold: research and production advice, buildings, policies, growth, purchases); culture also builds one more wonder at a time. Close triumphs of that kind are ticked «Track». Its own work comes first: for science, every project that earns Innovation and a Launch Pad (needed to win); for economy, a Factory in every city, the Great Banker opening World Bank offices in other capitals, and in the Exploration age (after Shipbuilding) settlers heading for the Distant Lands (treasure convoys). Treasure convoys always go home and unload. The tab shows the focus, each path against the best rival and the close triumphs.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESOURCES_LABEL">
+      <Text>Assign resources</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESOURCES_TT">
+      <Text>Resources not assigned to any settlement go into free resource slots (the game's resource screen): most valuable by your priority first, cities before towns, only where the game accepts. Assigned resources give their bonuses and count for the economic legacy path and triumphs.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_CULTURE">
+      <Text>Culture</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_SCIENCE">
+      <Text>Science</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_ECONOMIC">
+      <Text>Economy</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_MILITARY">
+      <Text>Military</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_NOW">
+      <Text>Victory focus: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_NONE">
+      <Text>not chosen yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_PATH">
+      <Text>{1_Name}: {2_Num}/{3_Num} (best rival: {4_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_PATH_DONE">
+      <Text>{1_Name}: complete ({2_Num}/{3_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_TRIUMPHS">
+      <Text>Close triumphs: {1_List}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESOURCE_ASSIGNED">
+      <Text>{1_Name} assigned to {2_City}</Text>
+    </Row>
+    <!-- Autopilot: victory focus log -->
+    <Row Tag="LOC_XPL_AP_VICTORY_FOCUS">
+      <Text>victory focus: {1_Name} ({2_Num}/{3_Num})</Text>
+    </Row>
+    <!-- Autopilot: diplomacy -->
+    <Row Tag="LOC_XPL_AP_DIPLOMACY_LABEL">
+      <Text>Diplomacy: counter-spy, initiatives, relations</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DIPLOMACY_TT">
+      <Text>With other leaders, only what the game offers now and your Influence pays for: Counter Spy against a leader whose spy was caught against you (from the Exploration age); Reconciliation with a leader who is Unfriendly or Hostile; one initiative (endeavor) per turn with the leader you stand worst with, the kind that fits your priority first (research collaboration, open markets, cultural exchange, farmers market, local festival, wonder construction), only while no Influence goes to befriending independents; a leader's initiative is supported (not only accepted) when Influence allows. Proposals are never rejected (that would sour the relationship, or mean war). Nothing but the counter-spy while a settlement is threatened; never with a leader at war with you.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_COUNTER_SPY">
+      <Text>counter-spy against {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RECONCILE">
+      <Text>reconciliation with {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ENDEAVOR">
+      <Text>initiative «{1_Name}» with {2_Name}</Text>
+    </Row>
+    <!-- Autopilot: settlers keep away from enemies -->
+    <Row Tag="LOC_XPL_AP_SETTLER_RETREAT">
+      <Text>{1_Unit} retreats to {2_Name}: hostile units near</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLER_AWAY">
+      <Text>{1_Unit} steps away from hostile units to {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLER_WAITS">
+      <Text>{1_Unit} waits in {2_Name}: hostile units near</Text>
+    </Row>
+    <!-- Autopilot: ocean and enemies -->
+    <Row Tag="LOC_XPL_AP_LEFT_OCEAN">
+      <Text>{1_Unit} leaves the deep ocean for {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_UNIT_AWAY">
+      <Text>{1_Unit} steps away from hostile units to {2_X},{3_Y}</Text>
+    </Row>
+    <!-- Autopilot: repairs, call to arms -->
+    <Row Tag="LOC_XPL_AP_REPAIR_BOUGHT">
+      <Text>{1_Name} repaired in {2_City} for {3_Num} gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPAIR_QUEUED">
+      <Text>{2_City}: repair of {1_Name} queued</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPAIR_FIRST">
+      <Text>{1_City}: repairs first in the queue</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DECLINED_WAR">
+      <Text>call to arms from {1_Name} against {2_Name}: declined; the alliance ends</Text>
+    </Row>
+    <!-- Autopilot: detours -->
+    <Row Tag="LOC_XPL_AP_DETOUR">
+      <Text>{1_Unit} goes around the danger toward {2_X},{3_Y} (via {4_X},{5_Y})</Text>
+    </Row>
+    <!-- Autopilot: no wars, peace -->
+    <Row Tag="LOC_XPL_AP_WAR_CALL_SEEN">
+      <Text>call to arms from {1_Name} against {2_Name}: not joined</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PEACE_PROPOSED">
+      <Text>peace proposed to {1_Name}</Text>
+    </Row>
+    <!-- Autopilot: victory target -->
+    <Row Tag="LOC_XPL_AP_VICTORY">
+      <Text>Victory target</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_VICTORY_AUTO">
+      <Text>Auto</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_VICTORY_TT">
+      <Text>With «Victory focus» on: Auto lets the autopilot pick the path it is closest to winning; Culture, Science or Economy makes it follow that one (if its victory is switched on in this game). Victories switched off in this game are never chosen.</Text>
+    </Row>
+    <!-- Autopilot: victory levers -->
+    <Row Tag="LOC_XPL_AP_VICTORY_WORK">
+      <Text>{1_City}: {2_Name} first, for the victory focus</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TREASURE_UNLOADED">
+      <Text>treasure convoy unloaded in {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TREASURE_HOME">
+      <Text>treasure convoy heads home to {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BANK_OPENED">
+      <Text>{1_Unit} opens a World Bank office in {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BANKER_MOVE">
+      <Text>{1_Unit} goes to {2_Name}</Text>
     </Row>
   </EnglishText>
 </Database>

@@ -128,6 +128,7 @@ export function startSiteSearch(settings) {
         origins,
         radius: settings.radius,
         minSpacing: rules.minSpacing,
+        minForeignDistance: TUNING.FOREIGN_MIN_DISTANCE,
         minPickDist: rules.minSpacing + (settings.spread ? 2 : 1),
         topN: settings.topN,
         includeHidden,

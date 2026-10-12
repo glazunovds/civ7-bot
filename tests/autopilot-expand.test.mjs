@@ -37,6 +37,10 @@ const reset = () => {
     fake.sent.length = 0;
     units.resetUnitGoals();
 };
+// A new turn: requests cleared, the units' goals (and losses) kept.
+const reset0 = () => {
+    fake.sent.length = 0;
+};
 
 test("a commander with a promotion takes the first one it can earn (not a commendation)", () => {
     reset();
@@ -105,7 +109,7 @@ test("settlers keep cities and towns 1 to 1: the role we lack first", () => {
     reset();
     // 1 city, 2 towns: the next site should be a city site, then (one walking there) a town site.
     state.set({ results: { ...state.get().results, sites: { picks: [
-        { x: 10, y: 4, rank: 1, role: "TOWN" },
+        { x: 7, y: 11, rank: 1, role: "TOWN" }, // 5+ tiles from every foreign settlement
         { x: 4, y: 4, rank: 2, role: "CITY" },
         { x: 13, y: 11, rank: 3, role: "TOWN" },
     ] } } });
@@ -119,7 +123,7 @@ test("settlers keep cities and towns 1 to 1: the role we lack first", () => {
     world.units[0].activity = UnitActivityTypes.OPERATION;
     units.commandUnits(DEFAULT_SETTINGS, { settlers: true });
     to = fake.sent.find((s) => s.op === UnitOperationTypes.MOVE_TO)?.args;
-    assert.deepEqual([to?.X, to?.Y], [10, 4], "now a TOWN site");
+    assert.deepEqual([to?.X, to?.Y], [7, 11], "now a TOWN site");
     world.cities.pop();
     world.units = [];
 });
@@ -229,6 +233,36 @@ test("a unit walks toward an independent we cannot befriend yet, stopping 2 tile
     const close = fake.sent.find((s) => s.op === UnitOperationTypes.MOVE_TO)?.args;
     assert.equal(GameplayMap.getPlotDistance(close.X, close.Y, hattusa.x, hattusa.y), 2, JSON.stringify(close));
     world.units = [];
+});
+
+test("visits to an independent: one unit at a time; after two died on the way, none for a while", () => {
+    reset();
+    const tiles = world.tiles;
+    world.tiles = (x, y) => ({ ...tiles(x, y), revealed: true });
+    const walking = (u) => ({ ...u, activity: UnitActivityTypes.OPERATION, moved: true });
+    const approaches = (r) => r.entries.filter((e) => e.key === "APPROACH" || e.key === "DETOUR").length;
+    try {
+        world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }, { id: 31, type: "UNIT_WARRIOR", x: 9, y: 9 }];
+        assert.equal(approaches(units.commandUnits(DEFAULT_SETTINGS, { defend: true, approach: [5] })), 1);
+        // 31 is on its way: another soldier is not sent.
+        reset0();
+        world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }, walking({ id: 31, type: "UNIT_WARRIOR", x: 10, y: 8 }), { id: 32, type: "UNIT_WARRIOR", x: 9, y: 9 }];
+        assert.equal(approaches(units.commandUnits(DEFAULT_SETTINGS, { defend: true, approach: [5] })), 0);
+        // 31 died (at 10,8): 32, coming from London, goes (around that spot).
+        reset0();
+        world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }, { id: 32, type: "UNIT_WARRIOR", x: 6, y: 8 }];
+        assert.equal(approaches(units.commandUnits(DEFAULT_SETTINGS, { defend: true, approach: [5] })), 1);
+        reset0();
+        world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }, walking({ id: 32, type: "UNIT_WARRIOR", x: 10, y: 8 })];
+        units.commandUnits(DEFAULT_SETTINGS, { defend: true, approach: [5] });
+        // 32 died too: nobody else for now.
+        reset0();
+        world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }, { id: 33, type: "UNIT_WARRIOR", x: 6, y: 8 }]; // where 32 could go from
+        assert.equal(approaches(units.commandUnits(DEFAULT_SETTINGS, { defend: true, approach: [5] })), 0);
+    } finally {
+        world.tiles = tiles;
+        world.units = [];
+    }
 });
 
 test("under threat the nearest city trains its strongest military unit first, even with a busy queue", () => {

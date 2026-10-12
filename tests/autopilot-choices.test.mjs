@@ -348,3 +348,41 @@ test("«Обнаружен шпионаж» (seen holding the turn) is read; if 
     delete world.blocker;
     delete world.notifications;
 });
+
+test("great works waiting in the archive go into free slots the game accepts; damaged buildings and full slots are skipped", async () => {
+    reset();
+    const LIBRARY = GameInfo.Constructibles.lookup("BUILDING_LIBRARY").$hash;
+    world.cities.push({ owner: 0, x: 2, y: 2, name: "Rome", gwBuildings: [
+        { type: "BUILDING_MONUMENT", slots: [-1], damaged: true },
+        { type: "BUILDING_LIBRARY", slots: [5, -1] },
+    ] });
+    world.greatWorks = { 5: "GREATWORK_SHOWN", 7: "GREATWORK_RELIC", 8: "GREATWORK_CODEX" };
+    world.archive = [7, 8];
+    GameInfo.GreatWorks = { lookup: (h) => ["GREATWORK_SHOWN", "GREATWORK_RELIC", "GREATWORK_CODEX"].map((t) => ({ GreatWorkType: t, Name: t })).find((w) => Database.makeHash(w.GreatWorkType) === h) ?? null };
+    const moves = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.MOVE_GREAT_WORK).map((s) => s.args);
+    const canStart = Game.PlayerOperations.canStart;
+    try {
+        let out = choices.slotGreatWorks();
+        assert.deepEqual(moves(), [{ Player1: 0, GreatWorkIndex: 7, DestinationCity: 0, DestinationBuilding: LIBRARY }], "the library's one free slot; not the damaged monument");
+        assert.equal(out[0].key, "GREAT_WORK_SLOTTED");
+        // The game does not take the relic there: the codex goes instead.
+        reset();
+        Game.PlayerOperations.canStart = (_p, op, args) => ({ Success: !(op === PlayerOperationTypes.MOVE_GREAT_WORK && args.GreatWorkIndex === 7) });
+        out = choices.slotGreatWorks();
+        assert.deepEqual(moves().map((a) => a.GreatWorkIndex), [8]);
+        // Every pass of choices does it.
+        reset();
+        Game.PlayerOperations.canStart = canStart;
+        out = await choices.makeChoices(DEFAULT_SETTINGS);
+        assert.ok(out.some((e) => e.key === "GREAT_WORK_SLOTTED"), JSON.stringify(out.map((e) => e.key)));
+        // Nothing in the archive: nothing to do.
+        reset();
+        world.archive = [];
+        assert.deepEqual(choices.slotGreatWorks(), []);
+    } finally {
+        Game.PlayerOperations.canStart = canStart;
+        world.cities.pop();
+        delete world.greatWorks;
+        delete world.archive;
+    }
+});

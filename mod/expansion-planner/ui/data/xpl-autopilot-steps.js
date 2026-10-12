@@ -18,9 +18,11 @@ import { growthAdvice } from './xpl-growth-job.js';
 import { runWonderPlanner } from './xpl-wonder-job.js';
 import { runTownAdvisor } from './xpl-town-job.js';
 import { FOCUS_POPULATION } from '../core/xpl-town-focus.js';
+import { getProfile } from '../core/xpl-profiles.js';
+import { yieldIndex } from '../core/xpl-yields.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { allowedOperations, guardsFor, isIdle, NO_TARGET, plannedRoleAt, unitKey } from './xpl-autopilot-units.js';
+import { allowedOperations, artifactSites, guardsFor, isIdle, NO_TARGET, plannedRoleAt, unitKey } from './xpl-autopilot-units.js';
 
 export const MAX_GROWTH_PER_CITY = 3;  // citizens placed per city and turn
 export const MAX_PURCHASES = 3;        // buildings bought per turn
@@ -124,12 +126,17 @@ function unitWanted(def, unitOptions) {
     const yes = (v) => v === true || v === 1 || v === "true";
     if (yes(def.FoundCity)) return !!unitOptions.settlers;
     if (yes(def.MakeTradeRoute)) return !!unitOptions.merchants;
+    if (yes(def.ExtractsArtifacts)) return !!unitOptions.explore;
     if (isScout(def)) return !!unitOptions.explore;
     return false;
 }
 
 function advisorOrder(city, unitOptions = {}) {
-    const recs = safe(() => Players.Advisory.get(pid()).getBuildRecommendations({ cityId: city.id, subject: globalThis.AdvisorySubjectTypes?.PRODUCTION, maxReturnedEntries: 0 }), []) ?? [];
+    const all = safe(() => Players.Advisory.get(pid()).getBuildRecommendations({ cityId: city.id, subject: globalThis.AdvisorySubjectTypes?.PRODUCTION, maxReturnedEntries: 0 }), []) ?? [];
+    // The advisor that matches the priority (the victory focus's) first, in the game's order.
+    const want = globalThis.AdvisorTypes?.[ADVISOR_FOR_PROFILE[unitOptions.profile]];
+    const mine = (r) => want !== undefined && (r.whichAdvisors ?? []).includes(want);
+    const recs = [...all.filter(mine), ...all.filter((r) => !mine(r))];
     for (const r of recs) {
         const subject = safe(() => GameInfo.AdvisorySubjects.lookup(r.subject)?.AdvisorySubjectType, null);
         let args = null;
@@ -162,7 +169,240 @@ function advisorOrder(city, unitOptions = {}) {
     return null;
 }
 
+// ---- victory levers -----------------------------------------------------------------
+
+// Projects that earn Innovation (science victory points), most per production first (projects.xml
+// of each age, projects-gameeffects.xml); a project the game does not offer is skipped.
+const SCIENCE_PROJECTS = [
+    "PROJECT_CREWED_SPACE_FLIGHT_PREP",      // 15, repeatable (Launch Pad)
+    "PROJECT_INVENT_CALCULUS",               // 10
+    "PROJECT_CHART_THE_STARS", "PROJECT_SPHERICAL_EARTH", "PROJECT_HELIOCENTRIC_MODEL",
+    "PROJECT_LAUNCH_SATELLITE", "PROJECT_TRANS_OCEANIC_FLIGHT", "PROJECT_BREAK_SOUND_BARRIER",
+    "PROJECT_CREWED_SPACE_FLIGHT_RESEARCH",  // 5 each
+];
+const LAUNCH_PAD = "BUILDING_LAUNCH_PAD"; // the science victory needs one, undamaged
+const FACTORY = "BUILDING_FACTORY";       // factory resources: GDP and the Railroad Tycoon path
+
+const queueTypes = (city) => (safe(() => city.BuildQueue.getQueue(), []) ?? []).map((q) => q.constructibleType ?? q.projectType ?? q.type);
+
+/** Moves the item of this type to the front of the city's queue (CityOperationsParametersValues.MoveTo). */
+function toFront(city, hash) {
+    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
+    const i = queueTypes(city).findIndex((t) => t === hash);
+    if (MoveTo === undefined || i <= 0) return;
+    const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: 0 };
+    if (safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+}
+
+/** Do we have this building (finished, undamaged) anywhere? (the buildings on our cities' tiles) */
+function ownsBuilding(type) {
+    for (const city of ownSettlements()) {
+        for (const idx of safe(() => city.getPurchasedPlots(), []) ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            for (const id of loc ? safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? [] : []) {
+                const c = safe(() => Constructibles.getByComponentID(id), null);
+                if (c && c.complete !== false && !c.damaged && safe(() => GameInfo.Constructibles.lookup(c.type)?.ConstructibleType, null) === type) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * The victory focus's own work, ahead of everything else in a city's queue:
+ *  - science: each project that earns Innovation that a city may start now (in the best
+ *    producing such city, one at a time each, the repeatable Crewed Space Flight Preparation kept
+ *    going) and a Launch Pad (needed to win) when we have none;
+ *  - economy: a Factory in every city that can build one (factory resources: +3 GDP each per
+ *    turn, and the Railroad Tycoon path whose triumph brings the Great Banker).
+ * Queued with the production list's requests (BUILD {ProjectType} / {ConstructibleType, X, Y})
+ * and moved to the front. @returns log entries
+ */
+export function pushVictoryWork(focus) {
+    const out = [];
+    const cities = ownSettlements().filter((c) => !c.isTown)
+        .sort((a, b) => (Number(safe(() => b.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0) - (Number(safe(() => a.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0));
+    const queuedAnywhere = (hash) => cities.some((c) => queueTypes(c).includes(hash));
+    const place = (city, def) => {
+        const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
+        if (!probe?.Success || probe.InQueue || probe.InProgress) return false;
+        const plots = [...(probe.Plots ?? []), ...(probe.ExpandUrbanPlots ?? [])];
+        if (plots.length === 0) return false;
+        const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
+        if (!loc) return false;
+        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash, X: loc.x, Y: loc.y });
+        toFront(city, def.$hash);
+        out.push({ key: "VICTORY_WORK", args: [nameOf(city), safe(() => Locale.compose(def.Name), def.ConstructibleType)] });
+        return true;
+    };
+    if (focus === "SCIENCE") {
+        for (const type of SCIENCE_PROJECTS) {
+            const def = safe(() => GameInfo.Projects.lookup(type), null);
+            if (!def) continue;
+            if (queuedAnywhere(def.$hash)) {
+                for (const c of cities) toFront(c, def.$hash);
+                continue;
+            }
+            for (const c of cities) {
+                const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ProjectType: def.$hash }, false), null);
+                if (!r?.Success || r.InProgress || r.InQueue) continue;
+                Game.CityOperations.sendRequest(c.id, CityOperationTypes.BUILD, { ProjectType: def.$hash });
+                toFront(c, def.$hash);
+                out.push({ key: "VICTORY_WORK", args: [nameOf(c), safe(() => Locale.compose(def.Name), type)] });
+                break;
+            }
+        }
+        const pad = safe(() => GameInfo.Constructibles.lookup(LAUNCH_PAD), null);
+        if (pad && !queuedAnywhere(pad.$hash) && !ownsBuilding(LAUNCH_PAD)) {
+            for (const c of cities) if (place(c, pad)) break;
+        }
+    }
+    if (focus === "ECONOMIC") {
+        const factory = safe(() => GameInfo.Constructibles.lookup(FACTORY), null);
+        if (factory) {
+            for (const c of cities) {
+                if (queueTypes(c).includes(factory.$hash)) toFront(c, factory.$hash);
+                else place(c, factory);
+            }
+        }
+    }
+    return out;
+}
+
+// ---- repairs ------------------------------------------------------------------------
+
+/**
+ * Damaged (pillaged) buildings and improvements of this settlement, as the game's production
+ * list marks them: the BUILD answer's RepairDamaged, the damaged tiles in Plots
+ * (production-chooser-helpers.js). One query for all (canStartQuery) when the game has it,
+ * else per type. @returns [{ def, plots, inQueue }]
+ */
+function damagedOf(city) {
+    const out = [];
+    const add = (def, r) => {
+        if (def && r?.RepairDamaged && def.Repairable !== false && def.Repairable !== "false" && (r.Plots?.length ?? 0) > 0) out.push({ def, plots: r.Plots, inQueue: !!r.InQueue });
+    };
+    const query = globalThis.CityQueryType ? safe(() => Game.CityOperations.canStartQuery(city.id, CityOperationTypes.BUILD, CityQueryType.Constructible), null) : null;
+    if (Array.isArray(query)) {
+        for (const { index, result } of query) add(safe(() => GameInfo.Constructibles.lookup(index), null), result);
+        return out;
+    }
+    for (const def of GameInfo.Constructibles ?? []) {
+        if (def.ConstructibleClass !== "BUILDING" && def.ConstructibleClass !== "IMPROVEMENT") continue;
+        add(def, safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null));
+    }
+    return out;
+}
+
+/**
+ * Repairs come first (the user's priority): every damaged building or improvement is bought
+ * with gold when the gold covers it (before the gold reserve, which only holds back new
+ * buildings), else queued in its city and moved to the front of the queue. Same requests as the
+ * production list's repair: PURCHASE / BUILD {ConstructibleType, X, Y} per damaged tile.
+ * @param options { buy, queue }
+ */
+export function repairBuildings({ buy = true, queue = true } = {}) {
+    const out = [];
+    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
+    for (const city of ownSettlements()) {
+        const damaged = damagedOf(city);
+        for (const d of damaged) {
+            for (const plot of d.plots) {
+                const loc = safe(() => GameplayMap.getLocationFromIndex(plot), null);
+                if (!loc) continue;
+                const args = { ConstructibleType: d.def.$hash, X: loc.x, Y: loc.y };
+                if (buy) {
+                    const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
+                    const cost = Number(r?.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, d.def.ConstructibleType), Infinity));
+                    if (r?.Success && Number.isFinite(cost) && cost <= goldBalance()) {
+                        Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, args);
+                        out.push({ key: "REPAIR_BOUGHT", args: [safe(() => Locale.compose(d.def.Name), d.def.ConstructibleType), nameOf(city), cost] });
+                        continue;
+                    }
+                }
+                if (!queue || city.isTown || d.inQueue) continue;
+                if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+                out.push({ key: "REPAIR_QUEUED", args: [safe(() => Locale.compose(d.def.Name), d.def.ConstructibleType), nameOf(city)] });
+                break; // the rest of this type next pass (one queue entry per type)
+            }
+        }
+        // A repair waiting behind other items goes to the front.
+        if (!queue || city.isTown || MoveTo === undefined) continue;
+        const repairs = new Set(damaged.filter((d) => d.inQueue).map((d) => d.def.$hash));
+        const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+        const i = items.findIndex((q, j) => j > 0 && repairs.has(q.constructibleType ?? q.type));
+        if (i <= 0) continue;
+        const move = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: 0 };
+        if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, move, false), null)?.Success) continue;
+        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, move);
+        out.push({ key: "REPAIR_FIRST", args: [nameOf(city)] });
+    }
+    return out;
+}
+
+// ---- resources ----------------------------------------------------------------------
+
+const MAX_RESOURCE_ASSIGNMENTS = 12;
+// A resource's yields: its TypeTags (as the game's resource screen reads them).
+const RESOURCE_YIELD_TAGS = { FOOD: "YIELD_FOOD", PRODUCTION: "YIELD_PRODUCTION", GOLD: "YIELD_GOLD", SCIENCE: "YIELD_SCIENCE", CULTURE: "YIELD_CULTURE", HAPPINESS: "YIELD_HAPPINESS" };
+
+/**
+ * Resources not assigned to any settlement go into free resource slots: the same request as
+ * the game's resource screen (commerce-screen-model.js assignResource): PlayerOperations
+ * ASSIGN_RESOURCE {Location, City: city.id.id, Flags: isOffMap, ID: off-map id or -1}.
+ * Owned: player.Resources.getResources() → [{ value, uniqueResource: { resource }, isOffMap }];
+ * placed: city.Resources.getAssignedResources(), slots getAssignedResourcesCap(). Empire and
+ * treasure resources are never assigned. Most valuable first (its yields by the priority
+ * profile); cities before towns, most free slots first; only where the game accepts.
+ * Assigned resources count for the economic legacy path and triumphs.
+ */
+export function assignResources(settings) {
+    const out = [];
+    const OP = globalThis.PlayerOperationTypes?.ASSIGN_RESOURCE;
+    const owned = safe(() => Players.get(pid()).Resources, null);
+    if (OP === undefined || !owned || safe(() => owned.isResourceAssignmentLocked(), false)) return out;
+    const assigned = new Set();
+    const places = [];
+    for (const c of ownSettlements()) {
+        const list = safe(() => c.Resources.getAssignedResources(), []) ?? [];
+        for (const r of list) assigned.add(r.value);
+        const free = (Number(safe(() => c.Resources.getAssignedResourcesCap(), 0)) || 0) - list.length;
+        if (free > 0) places.push({ c, free });
+    }
+    if (places.length === 0) return out;
+    places.sort((a, b) => (a.c.isTown ? 1 : 0) - (b.c.isTown ? 1 : 0) || b.free - a.free);
+    const weights = getProfile(settings.profile).y;
+    const yieldsOf = new Map();
+    for (const t of GameInfo.TypeTags ?? []) {
+        const y = RESOURCE_YIELD_TAGS[t.Tag];
+        if (!y) continue;
+        if (!yieldsOf.has(t.Type)) yieldsOf.set(t.Type, []);
+        yieldsOf.get(t.Type).push(y);
+    }
+    const value = (def) => (yieldsOf.get(def.ResourceType) ?? []).reduce((sum, y) => sum + (weights[yieldIndex(y)] ?? 0), 0);
+    const waiting = (safe(() => owned.getResources(), []) ?? [])
+        .filter((r) => !assigned.has(r.value))
+        .map((r) => ({ r, def: safe(() => GameInfo.Resources.lookup(r.uniqueResource?.resource), null) }))
+        .filter(({ def }) => def && def.ResourceClassType !== "RESOURCECLASS_EMPIRE" && def.ResourceClassType !== "RESOURCECLASS_TREASURE")
+        .sort((a, b) => value(b.def) - value(a.def));
+    for (const { r, def } of waiting) {
+        if (out.length >= MAX_RESOURCE_ASSIGNMENTS) break;
+        for (const p of places) {
+            if (p.free <= 0) continue;
+            const args = { Location: safe(() => GameplayMap.getLocationFromIndex(r.value), null), City: p.c.id.id, Flags: !!r.isOffMap, ID: r.isOffMap ? r.value : -1 };
+            if (!safe(() => Game.PlayerOperations.canStart(pid(), OP, args, false), null)?.Success) continue;
+            Game.PlayerOperations.sendRequest(pid(), OP, args);
+            p.free--;
+            out.push({ key: "RESOURCE_ASSIGNED", args: [safe(() => Locale.compose(def.Name), def.ResourceType), nameOf(p.c)] });
+            break;
+        }
+    }
+    return out;
+}
+
 const SCOUTS_WANTED = 2;      // while the autopilot explores, scouts first up to this
+const EXPLORERS_WANTED = 2;   // Modern: explorers while there is something to dig or research
 const SETTLERS_EARLY = 2;     // settlers in flight while we have few settlements...
 const SETTLERS_LATER = 1;     // ...then one at a time ("once in a while")
 const EARLY_SETTLEMENTS = 3;
@@ -170,6 +410,7 @@ const EARLY_SETTLEMENTS = 3;
 // GameInfo tables are not JS arrays: lookup, filter, find, forEach, for...of only (no .some).
 const isScout = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_AUTOEXPLORE");
 const isSettler = (def) => !!def && (def.FoundCity === true || def.FoundCity === "true" || def.FoundCity === 1);
+const isExplorer = (def) => !!def && (def.ExtractsArtifacts === true || def.ExtractsArtifacts === "true" || def.ExtractsArtifacts === 1);
 const queueUnitDef = (q) => (q.unitType !== undefined && q.unitType !== -1 ? safe(() => GameInfo.Units.lookup(q.unitType), null) : null);
 
 /** Units of a kind we have or are training. */
@@ -199,6 +440,12 @@ function unitsWanted(unitOptions) {
     if (unitOptions.explore) {
         const n = SCOUTS_WANTED - unitCount(isScout);
         if (n > 0) out.push({ test: isScout, n, key: "QUEUED_SCOUT", target: SCOUTS_WANTED });
+        // Explorers exist in the Modern age only; the map is scanned only when one is missing.
+        const missing = GameInfo.Units?.find((d) => isExplorer(d)) ? EXPLORERS_WANTED - unitCount(isExplorer) : 0;
+        if (missing > 0) {
+            const sites = artifactSites();
+            if (sites.dig.length + sites.study.length > 0) out.push({ test: isExplorer, n: missing, key: "QUEUED_EXPLORER", target: EXPLORERS_WANTED });
+        }
     }
     if (unitOptions.settlers) {
         const stats = safe(() => Players.get(pid()).Stats, null);

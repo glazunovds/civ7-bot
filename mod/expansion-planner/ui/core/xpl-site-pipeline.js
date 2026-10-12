@@ -8,6 +8,7 @@
  *   origins:      [idx]   centres of the player's own settlements (search origins)
  *   radius:       number  search radius from any origin
  *   minSpacing:   number  CITY_MIN_RANGE (centres closer than minSpacing+1 are illegal)
+ *   minForeignDistance: number  no site closer than this to a FOREIGN centre (0 = no limit)
  *   minPickDist:  number  minimum distance between picks
  *   topN:         number
  *   includeHidden: boolean
@@ -60,12 +61,15 @@ export function* findSites(input) {
         if (f.owner !== -1) { reject(REJECT.OWNED); continue; }
         let nearest = Infinity;
         let nearestOwn = Infinity;
+        let nearestForeign = Infinity;
         for (const c of ctx.centres) {
             const d = ctx.map.distance(idx, c.idx);
             if (d < nearest) nearest = d;
             if (c.kind === "OWN" && d < nearestOwn) nearestOwn = d;
+            if (c.kind === "FOREIGN" && d < nearestForeign) nearestForeign = d;
         }
         if (nearest <= input.minSpacing) { reject(REJECT.SPACING); rejectedPlots.push({ idx, code: REJECT.SPACING }); continue; }
+        if (nearestForeign < (input.minForeignDistance ?? 0)) { reject(REJECT.FOREIGN); rejectedPlots.push({ idx, code: REJECT.FOREIGN }); continue; }
         if (!input.isSettleable(idx)) { reject(REJECT.CLAIM); rejectedPlots.push({ idx, code: REJECT.CLAIM }); continue; }
         candidates.push({ idx, nearestOwnDist: nearestOwn });
     }
