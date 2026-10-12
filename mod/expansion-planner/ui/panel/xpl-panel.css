@@ -1,0 +1,647 @@
+/*
+ * Expansion Planner side panel. Non-modal: the root element covers the screen with
+ * pointer-events disabled so the map keeps receiving mouse input; only the frame
+ * captures clicks. Anchored below the yield banner and sub-system dock (top-left),
+ * above the minimap and unit panel (bottom-left).
+ */
+.xpl-panel {
+    pointer-events: none;
+}
+
+.xpl-frame {
+    position: absolute;
+    top: 8.5rem;
+    left: 0.75rem;
+    width: 44rem;
+    max-width: 46vw;
+    /* A fixed height, not just a maximum: with a content-sized frame the scrollbars' lists
+       (fxs-scrollable sizes itself from its parent) fed back into the frame's height, which
+       jumped up and down and then stopped short of the free space (seen in game). */
+    height: calc(100vh - 21.5rem);
+    max-height: calc(100vh - 21.5rem);
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0.9rem 0.6rem;
+    color: #d5d0c4;
+    background: rgba(8, 13, 20, 0.96);
+    border: 0.0555555556rem solid rgba(196, 176, 120, 0.72);
+}
+
+.xpl-header {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 2.6rem;
+    padding-right: 2.6rem;
+    border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.45);
+}
+
+.xpl-title {
+    flex: 1 1 auto;
+    font-size: 1.35rem;
+    line-height: 1.1;
+    color: #d8c593;
+    text-transform: uppercase;
+}
+
+.xpl-priority {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.xpl-priority__label {
+    margin-right: 0.4rem;
+    font-size: 1.03rem;
+    color: #b9b2a0;
+}
+
+.xpl-priority__dropdown {
+    min-width: 9.5rem;
+}
+
+.xpl-close {
+    position: absolute;
+    right: -0.3rem;
+    top: 0.05rem;
+}
+
+.xpl-tabs {
+    margin-top: 0.4rem;
+}
+
+.xpl-body {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 10rem;
+    margin-top: 0.4rem;
+    overflow: hidden;
+}
+
+/* Each tab is a column: controls on top, the result list takes the free space,
+   buttons and the status line stay visible at the bottom. */
+.xpl-tab {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.xpl-tab.hidden {
+    display: none;
+}
+
+.xpl-placeholder {
+    padding: 1.2rem 0.4rem;
+    font-size: 1.15rem;
+    color: #b9b2a0;
+    text-align: center;
+}
+
+.xpl-footer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.4rem;
+    padding-top: 0.3rem;
+    font-size: 0.92rem;
+    color: #8f8a7c;
+    border-top: 0.0555555556rem solid rgba(196, 176, 120, 0.3);
+}
+
+/* ---- Settlements tab ---------------------------------------------------- */
+.xpl-controls {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding: 0.2rem 0.2rem 0.4rem;
+    border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.25);
+}
+
+.xpl-control-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 2rem;
+}
+
+.xpl-control-label {
+    flex: 0 0 10.5rem;
+    font-size: 1.03rem;
+    color: #b9b2a0;
+}
+
+.xpl-slider {
+    flex: 1 1 auto;
+    width: auto;
+}
+
+.xpl-control-value {
+    flex: 0 0 2.2rem;
+    text-align: right;
+    font-size: 1.09rem;
+    color: #e8dcb8;
+}
+
+.xpl-dropdown {
+    flex: 1 1 auto;
+    min-width: 8rem;
+}
+
+.xpl-check-grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 0.2rem;
+}
+
+.xpl-check {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 50%;
+    min-height: 1.8rem;
+    font-size: 0.98rem;
+}
+
+.xpl-check fxs-checkbox {
+    flex: 0 0 auto;
+    margin-right: 0.3rem;
+}
+
+/* Labels wrap inside their column instead of running into the next one. */
+.xpl-check > span {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-right: 0.3rem;
+}
+
+.xpl-list-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 0.4rem;
+}
+
+.xpl-list-header .xpl-control-label {
+    flex: 0 0 auto;
+    margin-right: 0.4rem;
+}
+
+.xpl-small-button {
+    min-width: 5rem;
+    min-height: 1.9rem;
+    margin-left: 0.4rem;
+    font-size: 0.92rem;
+}
+
+.xpl-site-rows {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 6rem;
+    margin-top: 0.3rem;
+    overflow-y: auto;
+}
+
+.xpl-site-row {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem 0.35rem;
+    margin-bottom: 0.15rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 0.2rem solid rgba(255, 255, 255, 0.15);
+    pointer-events: auto;
+}
+
+.xpl-site-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.xpl-site-row--selected {
+    background: rgba(242, 209, 107, 0.12);
+}
+
+.xpl-tier--excellent { border-left-color: #4caf50; }
+.xpl-tier--good { border-left-color: #28eebe; }
+.xpl-tier--fair { border-left-color: #e8c547; }
+.xpl-tier--poor { border-left-color: #e07b39; }
+
+.xpl-site-line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.xpl-site-check {
+    margin-right: 0.3rem;
+}
+
+.xpl-site-rank {
+    flex: 0 0 2.2rem;
+    font-size: 1.09rem;
+    color: #d8c593;
+}
+
+.xpl-site-score {
+    flex: 0 0 2.4rem;
+    font-size: 1.21rem;
+    color: #ffffff;
+}
+
+.xpl-site-where {
+    flex: 1 1 auto;
+    font-size: 1.03rem;
+}
+
+.xpl-site-tags {
+    flex: 0 0 auto;
+    font-size: 0.92rem;
+    color: #9fd3c7;
+}
+
+.xpl-site-yields {
+    margin-left: 2.4rem;
+    font-size: 0.98rem;
+    color: #cfc8b6;
+}
+
+.xpl-site-reasons {
+    margin: 0.2rem 0 0.1rem 2.4rem;
+    font-size: 0.98rem;
+}
+
+.xpl-reason--pos { color: #9ed89a; }
+.xpl-reason--neg { color: #e9a38a; }
+.xpl-reason--warn { color: #e8d18a; }
+.xpl-reason--ai { color: #a9c7ef; }
+
+.xpl-tab-footer {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    margin-top: 0.4rem;
+}
+
+/* Footer buttons share the width and wrap instead of overflowing (long Russian captions). */
+.xpl-tab-footer .xpl-small-button {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0 0.3rem 0.3rem 0;
+}
+
+.xpl-status-line,
+.xpl-empty {
+    margin-top: 0.3rem;
+    font-size: 0.92rem;
+    color: #8f8a7c;
+}
+
+.xpl-empty {
+    padding: 1rem 0.4rem;
+    font-size: 1.09rem;
+    color: #b9b2a0;
+    text-align: center;
+}
+
+/* ---- Towns tab ---------------------------------------------------------- */
+.xpl-town-rows {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 6rem;
+    margin-top: 0.3rem;
+    overflow-y: auto;
+}
+
+.xpl-town-row {
+    display: flex;
+    flex-direction: column;
+    padding: 0.3rem 0.4rem;
+    margin-bottom: 0.15rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 0.2rem solid rgba(255, 255, 255, 0.15);
+    pointer-events: auto;
+}
+
+.xpl-town-row:hover { background: rgba(255, 255, 255, 0.08); }
+.xpl-town-name { flex: 0 0 9rem; font-size: 1.09rem; color: #e8dcb8; }
+.xpl-town-stats { flex: 1 1 auto; font-size: 0.98rem; color: #cfc8b6; }
+.xpl-town-verdict { flex: 0 0 auto; font-size: 1.03rem; }
+
+.xpl-verdict--convert { border-left-color: #4caf50; }
+.xpl-verdict--convert .xpl-town-verdict { color: #9ed89a; }
+.xpl-verdict--consider { border-left-color: #28eebe; }
+.xpl-verdict--consider .xpl-town-verdict { color: #8fe3d0; }
+.xpl-verdict--wait { border-left-color: #e8c547; }
+.xpl-verdict--wait .xpl-town-verdict { color: #e8d18a; }
+.xpl-verdict--keep { border-left-color: #8f8a7c; }
+.xpl-verdict--keep .xpl-town-verdict { color: #b9b2a0; }
+.xpl-verdict--blocked { border-left-color: #e07b39; }
+.xpl-verdict--blocked .xpl-town-verdict { color: #e9a38a; }
+
+/* ---- Buildings tab ------------------------------------------------------ */
+.xpl-building-list {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 0.3rem;
+    max-height: 11rem;
+    overflow-y: auto;
+}
+
+.xpl-building-group {
+    width: 50%;
+    margin-bottom: 0.3rem;
+}
+
+.xpl-building-group__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding-right: 0.4rem;
+    font-size: 0.98rem;
+    color: #d8c593;
+}
+
+.xpl-building-bar {
+    margin-top: 0.2rem;
+}
+
+.xpl-building-toggle {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.2rem 0.3rem;
+    font-size: 0.98rem;
+    color: #e8dcb8;
+    pointer-events: auto;
+}
+
+.xpl-building-toggle:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.xpl-building-box.hidden {
+    display: none;
+}
+
+.xpl-building-check {
+    width: 100%;
+    min-height: 1.6rem;
+    font-size: 0.92rem;
+}
+
+.xpl-plan-rows {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 6rem;
+    margin-top: 0.3rem;
+    overflow-y: auto;
+}
+
+.xpl-plan-row {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem 0.35rem;
+    margin-bottom: 0.15rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 0.2rem solid #f2d16b;
+    pointer-events: auto;
+}
+
+.xpl-plan-row:hover { background: rgba(255, 255, 255, 0.08); }
+.xpl-plan-row--filler { border-left-color: #8f8a7c; padding-top: 0.1rem; padding-bottom: 0.1rem; }
+.xpl-plan-line { display: flex; flex-direction: row; align-items: center; }
+.xpl-plan-name { flex: 1 1 auto; min-width: 0; font-size: 1.03rem; color: #e8dcb8; }
+.xpl-plan-where { flex: 0 0 auto; margin-left: 0.5rem; font-size: 0.92rem; color: #b9b2a0; }
+.xpl-plan-info { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; margin-top: 0.1rem; }
+.xpl-plan-yields { flex: 1 0 100%; min-width: 0; font-size: 0.92rem; color: #cfc8b6; }
+.xpl-chip {
+    flex: 0 0 auto;
+    margin: 0.05rem 0.3rem 0.05rem 0;
+    padding: 0 0.3rem;
+    font-size: 0.85rem;
+    color: #9fd3c7;
+    background: rgba(159, 211, 199, 0.14);
+    border-radius: 0.3rem;
+}
+.xpl-chip--eta { color: #f2d16b; background: rgba(242, 209, 107, 0.14); }
+.xpl-chip--late { color: #e9a38a; background: rgba(224, 123, 57, 0.14); }
+.xpl-chip--unique { color: #e6b8ff; background: rgba(200, 140, 255, 0.16); }
+.xpl-chip--locked { color: #e9a38a; background: rgba(224, 123, 57, 0.18); }
+.xpl-chip--overbuild { color: #e9a38a; background: rgba(224, 123, 57, 0.12); }
+
+.xpl-plan-group {
+    margin: 0.35rem 0 0.15rem;
+    font-size: 1.03rem;
+    color: #d8c593;
+    border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.3);
+}
+
+/* Wonders tab */
+.xpl-wonder-rows {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 6rem;
+}
+.xpl-wonder-row {
+    padding: 0.3rem 0.4rem;
+    margin-bottom: 0.2rem;
+    border-left: 0.2222222222rem solid #888888;
+    background: rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+.xpl-wonder-row:hover { background: rgba(255, 255, 255, 0.08); }
+.xpl-race--high { border-left-color: #4caf50; }
+.xpl-race--medium { border-left-color: #e8c547; }
+.xpl-race--low { border-left-color: #e07b39; }
+.xpl-race--none { border-left-color: #666666; opacity: 0.75; }
+.xpl-wonder-name {
+    flex: 1 1 auto;
+    color: #f2e6c9;
+}
+.xpl-wonder-where {
+    flex: 0 1 auto;
+    margin: 0 0.5rem;
+    color: #c8c0a8;
+    font-size: 0.98rem;
+}
+.xpl-wonder-race {
+    flex: 0 0 auto;
+    font-size: 0.98rem;
+    color: #d8c593;
+}
+
+/* "The game's best tile now is elsewhere" note under a plan row. */
+.xpl-plan-note {
+    margin-top: 0.1rem;
+    font-size: 0.86rem;
+    color: #e8c547;
+}
+
+/* A recalculation is suggested: the plan is missing or may be outdated. */
+.xpl-suggested {
+    filter: brightness(1.35);
+    box-shadow: 0 0 0.6rem rgba(242, 209, 107, 0.85);
+}
+.xpl-stale-hint {
+    font-size: 0.92rem;
+    color: #e8c547;
+}
+
+/* Site role: future city or kept (feeder) town. */
+.xpl-role {
+    flex: 0 0 auto;
+    margin: 0 0.4rem 0 0.2rem;
+    padding: 0 0.35rem;
+    font-size: 0.86rem;
+    border-radius: 0.3rem;
+}
+.xpl-role--city { color: #f2d16b; background: rgba(242, 209, 107, 0.14); }
+.xpl-role--town { color: #9fd3c7; background: rgba(159, 211, 199, 0.16); }
+
+/* Towns tab: recommended Town Focus. */
+.xpl-town-focus {
+    margin-top: 0.15rem;
+    font-size: 0.92rem;
+    color: #9fd3c7;
+}
+.xpl-reason--focus {
+    color: #cfc8b6;
+}
+
+/* Buildings tab: settlement header with its queue button, upkeep and gold boxes. */
+.xpl-plan-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+.xpl-plan-group__name {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.xpl-row-action {
+    flex: 0 0 auto;
+    min-width: 4rem;
+}
+.xpl-plan-actions {
+    margin-bottom: 0.3rem;
+}
+.xpl-action-box {
+    margin: 0.2rem 0 0.35rem;
+    padding: 0.3rem 0.45rem;
+    border-radius: 0.3rem;
+    font-size: 0.98rem;
+}
+.xpl-action-box--warn { background: rgba(224, 123, 57, 0.12); color: #e8d18a; }
+.xpl-action-box--gold { background: rgba(214, 178, 74, 0.10); color: #e6dcc0; }
+.xpl-action-box__title { color: #e3c56a; margin-bottom: 0.15rem; }
+.xpl-action-box__buttons { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 0.2rem; }
+.xpl-action-line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0.1rem 0;
+}
+.xpl-action-line .xpl-action-box__text {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.xpl-dim { opacity: 0.6; }
+.xpl-chip--costly { color: #e9a38a; background: rgba(224, 123, 57, 0.14); }
+
+/* Empire tab. */
+.xpl-empire-row .xpl-plan-yields { margin-left: 0.2rem; }
+.xpl-empire-row--lonely { border-left: 0.2rem solid rgba(208, 74, 58, 0.8); }
+
+/* ---- Panel size --------------------------------------------------------- */
+/* Large (default): wider, and down to the bottom of the screen (it then covers the
+   minimap while open; the header button switches back to the compact size). */
+.xpl-frame.xpl-frame--large {
+    width: 60rem;
+    max-width: 64vw;
+    height: calc(100vh - 9.5rem);
+    max-height: calc(100vh - 9.5rem);
+}
+.xpl-frame--large .xpl-check-grid .xpl-check { width: 33.3%; }
+.xpl-frame--large .xpl-building-group { width: 33.3%; }
+.xpl-size-toggle {
+    flex: 0 0 auto;
+    min-width: 6.5rem;
+    margin-left: 0.5rem;
+}
+
+/* Buildings options: the checkboxes and the checklist scroll together, so the plan list
+   below always keeps room for the upkeep and gold boxes and the plan itself. */
+.xpl-building-scroll {
+    flex: 0 0 auto;
+    height: 26vh;
+}
+.xpl-building-scroll .xpl-building-list {
+    max-height: none;
+    overflow-y: visible;
+}
+.xpl-plan-scroll {
+    min-height: 14rem;
+}
+
+/* Empire tab list: scrolls like the other tabs' lists (the lens button stays visible below). */
+.xpl-empire-rows {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 6rem;
+    margin-top: 0.3rem;
+    overflow-y: auto;
+}
+
+/* Autopilot tab. */
+.xpl-ap-status { flex: 1 1 0; min-width: 0; font-size: 1.03rem; }
+.xpl-ap-status--on { color: #9ed89a; }
+.xpl-ap-log {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 6rem;
+    margin-top: 0.2rem;
+    overflow-y: auto;
+}
+.xpl-ap-log-row {
+    padding: 0.12rem 0.3rem;
+    font-size: 0.95rem;
+    border-left: 0.2rem solid rgba(158, 216, 154, 0.35);
+    margin-bottom: 0.1rem;
+}
+
+.xpl-ap-lost.hidden { display: none; }
+.xpl-ap-units-title { width: 100%; margin-top: 0.3rem; color: #e5c97b; }
+
+/* Scrollbars: every scrolling list sits in the game's fxs-scrollable (attached-scrollbar), which
+   draws the scrollbar the UI engine does not. The wrapper takes the list's place in the layout
+   (a share of the tab's height); the list inside grows with its rows and no longer scrolls. */
+.xpl-scroll {
+    min-height: 0;
+    margin-top: 0.3rem;
+}
+.xpl-scroll--fill {
+    flex: 1 1 auto;
+    min-height: 6rem;
+}
+.xpl-scroll .xpl-site-rows,
+.xpl-scroll .xpl-plan-rows,
+.xpl-scroll .xpl-town-rows,
+.xpl-scroll .xpl-wonder-rows,
+.xpl-scroll .xpl-ap-log,
+.xpl-scroll .xpl-empire-rows {
+    flex: 0 0 auto;
+    min-height: 0;
+    margin-top: 0;
+    overflow-y: visible;
+}

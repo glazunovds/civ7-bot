@@ -1,0 +1,227 @@
+<div class="xpl-frame pointer-events-auto">
+  <div class="xpl-header">
+    <div class="xpl-title font-title" data-l10n-id="LOC_XPL_TITLE"></div>
+    <div class="xpl-priority">
+      <span class="xpl-priority__label" data-l10n-id="LOC_XPL_PRIORITY"></span>
+      <fxs-dropdown class="xpl-priority__dropdown" has-border="true" has-background="true"></fxs-dropdown>
+    </div>
+    <fxs-button class="xpl-size-toggle xpl-small-button" caption="LOC_XPL_SIZE_COMPACT" data-tooltip-content="LOC_XPL_SIZE_TT"></fxs-button>
+    <fxs-close-button class="xpl-close"></fxs-close-button>
+  </div>
+  <fxs-tab-bar class="xpl-tabs" tab-style="flat"></fxs-tab-bar>
+  <div class="xpl-body">
+    <div class="xpl-tab xpl-tab--settlements" data-tab="settlements">
+      <div class="xpl-controls">
+        <div class="xpl-control-row">
+          <span class="xpl-control-label" data-l10n-id="LOC_XPL_RADIUS"></span>
+          <fxs-slider class="xpl-radius xpl-slider" min="3" max="15" steps="12"></fxs-slider>
+          <span class="xpl-control-value xpl-radius-value"></span>
+        </div>
+        <div class="xpl-control-row">
+          <span class="xpl-control-label" data-l10n-id="LOC_XPL_TOPN"></span>
+          <fxs-slider class="xpl-topn xpl-slider" min="3" max="15" steps="12"></fxs-slider>
+          <span class="xpl-control-value xpl-topn-value"></span>
+        </div>
+        <div class="xpl-control-row" data-tooltip-content="LOC_XPL_ROLES_TT">
+          <span class="xpl-control-label" data-l10n-id="LOC_XPL_ROLES"></span>
+          <fxs-dropdown class="xpl-roles xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+        </div>
+        <div class="xpl-control-row">
+          <span class="xpl-control-label" data-l10n-id="LOC_XPL_OVERLAP"></span>
+          <fxs-dropdown class="xpl-overlap xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+        </div>
+        <div class="xpl-check-grid">
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_INCLUDE_HIDDEN_TT">
+            <fxs-checkbox class="xpl-include-hidden"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_INCLUDE_HIDDEN"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_SPREAD_TT">
+            <fxs-checkbox class="xpl-spread"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_SPREAD"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_USE_AI_TT">
+            <fxs-checkbox class="xpl-use-ai"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_USE_AI"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_HEATMAP_TT">
+            <fxs-checkbox class="xpl-heatmap"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_HEATMAP"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_KEEP_HIGHLIGHTS_TT">
+            <fxs-checkbox class="xpl-keep-highlights"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_KEEP_HIGHLIGHTS"></span>
+          </div>
+        </div>
+      </div>
+      <div class="xpl-list-header">
+        <span class="xpl-control-label" data-l10n-id="LOC_XPL_SORT"></span>
+        <fxs-dropdown class="xpl-sort xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+        <fxs-button class="xpl-recalc xpl-small-button" caption="LOC_XPL_RECALC"></fxs-button>
+      </div>
+      <fxs-scrollable class="xpl-scroll xpl-scroll--fill" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-site-rows"></div></fxs-scrollable>
+      <div class="xpl-tab-footer">
+        <fxs-button class="xpl-select-all xpl-small-button" caption="LOC_XPL_SELECT_ALL"></fxs-button>
+        <fxs-button class="xpl-place-tacks xpl-small-button" caption="LOC_XPL_PLACE_TACKS_NONE"></fxs-button>
+        <fxs-button class="xpl-clear-tacks xpl-small-button" caption="LOC_XPL_CLEAR_TACKS"></fxs-button>
+      </div>
+      <div class="xpl-site-status xpl-status-line"></div>
+    </div>
+    <div class="xpl-tab xpl-tab--buildings hidden" data-tab="buildings">
+      <div class="xpl-controls">
+        <div class="xpl-control-row">
+          <span class="xpl-control-label" data-l10n-id="LOC_XPL_TARGET"></span>
+          <fxs-dropdown class="xpl-target xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+        </div>
+        <div class="xpl-list-header xpl-building-bar">
+          <div class="xpl-building-toggle"></div>
+          <fxs-button class="xpl-plan-recalc xpl-small-button" caption="LOC_XPL_RECALC"></fxs-button>
+        </div>
+        <div class="xpl-building-box">
+        <div class="xpl-control-row" data-tooltip-content="LOC_XPL_SPECIALISTS_TT">
+          <span class="xpl-control-label" data-l10n-id="LOC_XPL_SPECIALISTS"></span>
+          <fxs-dropdown class="xpl-specialists xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+        </div>
+        <fxs-scrollable class="xpl-scroll xpl-building-scroll" attached-scrollbar="true" handle-gamepad-pan="false">
+        <div class="xpl-check-grid">
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_FUTURE_TILES_TT">
+            <fxs-checkbox class="xpl-future-tiles"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_FUTURE_TILES"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_RESPECT_TACKS_TT">
+            <fxs-checkbox class="xpl-respect-tacks"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_RESPECT_TACKS"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_USE_ENGINE_TT">
+            <fxs-checkbox class="xpl-use-engine"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_USE_ENGINE"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_REGION_TT">
+            <fxs-checkbox class="xpl-region"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_REGION"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_TIME_AWARE_TT">
+            <fxs-checkbox class="xpl-time-aware"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_TIME_AWARE"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_TOWNS_AS_CITIES_TT">
+            <fxs-checkbox class="xpl-towns-as-cities"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_TOWNS_AS_CITIES"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_INCREMENTAL_TT">
+            <fxs-checkbox class="xpl-incremental"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_INCREMENTAL"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_GROWTH_HINTS_TT">
+            <fxs-checkbox class="xpl-growth-hints"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_GROWTH_HINTS"></span>
+          </div>
+          <div class="xpl-check" data-tooltip-content="LOC_XPL_AUTO_TACKS_TT">
+            <fxs-checkbox class="xpl-auto-tacks"></fxs-checkbox>
+            <span data-l10n-id="LOC_XPL_AUTO_TACKS"></span>
+          </div>
+        </div>
+        <div class="xpl-building-list"></div>
+        </fxs-scrollable>
+        <div class="xpl-list-header">
+          <fxs-button class="xpl-select-buildings-all xpl-small-button" caption="LOC_XPL_SELECT_ALL"></fxs-button>
+          <fxs-button class="xpl-select-buildings-none xpl-small-button" caption="LOC_XPL_SELECT_NONE"></fxs-button>
+        </div>
+        </div>
+      </div>
+      <div class="xpl-plan-stale xpl-stale-hint"></div>
+      <fxs-scrollable class="xpl-scroll xpl-scroll--fill xpl-plan-scroll" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-plan-rows"></div></fxs-scrollable>
+      <div class="xpl-tab-footer">
+        <fxs-button class="xpl-place-building-tacks xpl-small-button" caption="LOC_XPL_PLACE_BUILDING_TACKS"></fxs-button>
+        <fxs-button class="xpl-clear-building-tacks xpl-small-button" caption="LOC_XPL_CLEAR_TACKS"></fxs-button>
+      </div>
+      <div class="xpl-plan-status xpl-status-line"></div>
+    </div>
+    <div class="xpl-tab xpl-tab--towns hidden" data-tab="towns">
+      <div class="xpl-town-header xpl-status-line"></div>
+      <div class="xpl-check" data-tooltip-content="LOC_XPL_EXPECT_KEEP_TT">
+        <fxs-checkbox class="xpl-expect-keep"></fxs-checkbox>
+        <span data-l10n-id="LOC_XPL_EXPECT_KEEP"></span>
+      </div>
+      <fxs-scrollable class="xpl-scroll xpl-scroll--fill" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-town-rows"></div></fxs-scrollable>
+      <div class="xpl-status-line" data-l10n-id="LOC_XPL_TOWN_FOOTNOTE"></div>
+    </div>
+    <div class="xpl-tab xpl-tab--wonders hidden" data-tab="wonders">
+      <div class="xpl-wonder-header xpl-status-line"></div>
+      <div class="xpl-check" data-tooltip-content="LOC_XPL_OMNISCIENT_TT">
+        <fxs-checkbox class="xpl-omniscient"></fxs-checkbox>
+        <span data-l10n-id="LOC_XPL_OMNISCIENT"></span>
+      </div>
+      <fxs-scrollable class="xpl-scroll xpl-scroll--fill" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-wonder-rows"></div></fxs-scrollable>
+      <div class="xpl-tab-footer">
+        <fxs-button class="xpl-place-wonder-tacks xpl-small-button" caption="LOC_XPL_PLACE_TACKS_NONE"></fxs-button>
+        <fxs-button class="xpl-clear-wonder-tacks xpl-small-button" caption="LOC_XPL_CLEAR_TACKS"></fxs-button>
+      </div>
+      <div class="xpl-wonder-status xpl-status-line"></div>
+    </div>
+    <div class="xpl-tab xpl-tab--autopilot hidden" data-tab="autopilot">
+      <div class="xpl-list-header">
+        <div class="xpl-ap-status xpl-status-line"></div>
+        <fxs-button class="xpl-ap-now xpl-small-button" caption="LOC_XPL_AP_RUN_NOW" data-tooltip-content="LOC_XPL_AP_RUN_NOW_TT"></fxs-button>
+        <fxs-button class="xpl-ap-toggle xpl-small-button" caption="LOC_XPL_AP_TURN_ON" data-tooltip-content="LOC_XPL_AP_TOGGLE_TT"></fxs-button>
+      </div>
+      <div class="xpl-status-line" data-l10n-id="LOC_XPL_AP_INTRO"></div>
+      <div class="xpl-check-grid">
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_RESEARCH_TT"><fxs-checkbox class="xpl-ap-research"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_RESEARCH_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_PRODUCTION_TT"><fxs-checkbox class="xpl-ap-production"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_PRODUCTION_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_WONDERS_TT"><fxs-checkbox class="xpl-ap-wonders"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_WONDERS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_GROWTH_TT"><fxs-checkbox class="xpl-ap-growth"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_GROWTH_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_TOWNS_TT"><fxs-checkbox class="xpl-ap-towns"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_TOWNS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_PURCHASES_TT"><fxs-checkbox class="xpl-ap-purchases"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_PURCHASES_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_CHOICES_TT"><fxs-checkbox class="xpl-ap-choices"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_CHOICES_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_CLOSE_POPUPS_TT"><fxs-checkbox class="xpl-ap-closePopups"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_CLOSE_POPUPS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_BEFRIEND_TT"><fxs-checkbox class="xpl-ap-befriend"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_BEFRIEND_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_TACKS_TT"><fxs-checkbox class="xpl-ap-tacks"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_TACKS_LABEL"></span></div>
+        <div class="xpl-ap-units-title xpl-status-line" data-l10n-id="LOC_XPL_AP_UNITS_TITLE"></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_EXPLORE_TT"><fxs-checkbox class="xpl-ap-explore"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_EXPLORE_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_SETTLERS_TT"><fxs-checkbox class="xpl-ap-settlers"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_SETTLERS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_DEFEND_TT"><fxs-checkbox class="xpl-ap-defend"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_DEFEND_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_ROAM_TT"><fxs-checkbox class="xpl-ap-roam"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_ROAM_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_MERCHANTS_TT"><fxs-checkbox class="xpl-ap-merchants"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_MERCHANTS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_SKIP_UNITS_TT"><fxs-checkbox class="xpl-ap-skipUnits"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_SKIP_UNITS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_END_TURN_TT"><fxs-checkbox class="xpl-ap-endTurn"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_END_TURN_LABEL"></span></div>
+      </div>
+      <div class="xpl-control-row" data-tooltip-content="LOC_XPL_AP_RESERVE_TT">
+        <span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_RESERVE"></span>
+        <fxs-dropdown class="xpl-ap-reserve xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+      </div>
+      <div class="xpl-control-row" data-tooltip-content="LOC_XPL_AP_WONDERS_TT">
+        <span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_MAX_WONDERS"></span>
+        <fxs-dropdown class="xpl-ap-max-wonders xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+      </div>
+      <div class="xpl-control-row" data-tooltip-content="LOC_XPL_AP_REPLAN_TT">
+        <span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_REPLAN"></span>
+        <fxs-dropdown class="xpl-ap-replan xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+      </div>
+      <div class="xpl-control-row" data-tooltip-content="LOC_XPL_AP_AI_TT">
+        <span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_AI"></span>
+        <fxs-dropdown class="xpl-ap-ai-turns xpl-dropdown" has-border="true" has-background="true"></fxs-dropdown>
+        <fxs-button class="xpl-ap-ai-start xpl-small-button" caption="LOC_XPL_AP_AI_START"></fxs-button>
+      </div>
+      <div class="xpl-ap-ai-note xpl-status-line"></div>
+      <div class="xpl-ap-lost xpl-action-box xpl-action-box--warn hidden">
+        <div class="xpl-action-box__text" data-l10n-id="LOC_XPL_AP_CONTROL_LOST"></div>
+        <div class="xpl-action-box__buttons">
+          <fxs-button class="xpl-ap-take-back xpl-small-button" caption="LOC_XPL_AP_TAKE_BACK"></fxs-button>
+        </div>
+      </div>
+      <div class="xpl-plan-group" data-l10n-id="LOC_XPL_AP_LOG_TITLE"></div>
+      <fxs-scrollable class="xpl-scroll xpl-scroll--fill" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-ap-log"></div></fxs-scrollable>
+    </div>
+    <div class="xpl-tab xpl-tab--empire hidden" data-tab="empire">
+      <div class="xpl-empire-header xpl-status-line"></div>
+      <fxs-scrollable class="xpl-scroll xpl-scroll--fill" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-empire-rows"></div></fxs-scrollable>
+      <div class="xpl-tab-footer">
+        <fxs-button class="xpl-food-lens-toggle xpl-small-button" caption="LOC_XPL_FOOD_LENS_ON" data-tooltip-content="LOC_XPL_FOOD_LENS_TT"></fxs-button>
+      </div>
+    </div>
+  </div>
+  <div class="xpl-footer">
+    <div class="xpl-status"></div>
+    <div class="xpl-version"></div>
+  </div>
+</div>

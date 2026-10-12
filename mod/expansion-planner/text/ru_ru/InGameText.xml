@@ -1,0 +1,1538 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <LocalizedText>
+    <!-- Hotkey / dock -->
+    <Replace Tag="LOC_XPL_OPEN" Language="ru_RU">
+      <Text>Планировщик экспансии</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OPEN_DESC" Language="ru_RU">
+      <Text>Открыть или закрыть панель планировщика экспансии.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DOCK_TT" Language="ru_RU">
+      <Text>Планировщик экспансии (F8)[N]Места для поселений, повышение городков до городов и бонусы соседства зданий.</Text>
+    </Replace>
+    <!-- Panel chrome -->
+    <Replace Tag="LOC_XPL_TITLE" Language="ru_RU">
+      <Text>Планировщик экспансии</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAB_SETTLEMENTS" Language="ru_RU">
+      <Text>Поселения</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAB_BUILDINGS" Language="ru_RU">
+      <Text>Здания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAB_TOWNS" Language="ru_RU">
+      <Text>Городки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PRIORITY" Language="ru_RU">
+      <Text>Приоритет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_BALANCE" Language="ru_RU">
+      <Text>Баланс</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_PRODUCTION" Language="ru_RU">
+      <Text>Производство</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_SCIENCE" Language="ru_RU">
+      <Text>Наука</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_GOLD" Language="ru_RU">
+      <Text>Золото</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_CULTURE" Language="ru_RU">
+      <Text>Культура</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_FOOD" Language="ru_RU">
+      <Text>Пища</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PROFILE_HAPPINESS" Language="ru_RU">
+      <Text>Довольство</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STATUS_DMT_ON" Language="ru_RU">
+      <Text>Detailed Map Tacks: активен</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STATUS_DMT_OFF" Language="ru_RU">
+      <Text>Detailed Map Tacks: не активен (булавки отключены)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_VERSION" Language="ru_RU">
+      <Text>v{1_Version}</Text>
+    </Replace>
+    <!-- Settlements tab (M1) -->
+    <Replace Tag="LOC_XPL_RADIUS" Language="ru_RU">
+      <Text>Радиус поиска</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOPN" Language="ru_RU">
+      <Text>Сколько мест показать</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OVERLAP" Language="ru_RU">
+      <Text>Допустимое перекрытие</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OVERLAP_LOW" Language="ru_RU">
+      <Text>Низкое (просторно)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OVERLAP_MEDIUM" Language="ru_RU">
+      <Text>Среднее</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OVERLAP_HIGH" Language="ru_RU">
+      <Text>Высокое (плотно)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_INCLUDE_HIDDEN" Language="ru_RU">
+      <Text>Учитывать неразведанные клетки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_INCLUDE_HIDDEN_TT" Language="ru_RU">
+      <Text>Использует рельеф и ресурсы, которые вы ещё не открыли. По умолчанию выключено ради честной игры.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPREAD" Language="ru_RU">
+      <Text>Разносить места</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPREAD_TT" Language="ru_RU">
+      <Text>Держать предложенные места хотя бы на клетку дальше друг от друга, чем требует минимум.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_USE_AI" Language="ru_RU">
+      <Text>Подсказки ИИ игры</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_USE_AI_TT" Language="ru_RU">
+      <Text>Небольшой бонус местам, которые рекомендует и ИИ игры, с его пояснениями.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_HEATMAP" Language="ru_RU">
+      <Text>Тепловая карта</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_HEATMAP_TT" Language="ru_RU">
+      <Text>Подсветить на карте все подходящие места по их оценке, а не только лучшие.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_KEEP_HIGHLIGHTS" Language="ru_RU">
+      <Text>Не убирать подсветку</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_KEEP_HIGHLIGHTS_TT" Language="ru_RU">
+      <Text>Оставлять подсветку на карте после закрытия панели.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SORT" Language="ru_RU">
+      <Text>Сортировка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SORT_SCORE" Language="ru_RU">
+      <Text>Оценка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SORT_PROD" Language="ru_RU">
+      <Text>Производство</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SORT_FOOD" Language="ru_RU">
+      <Text>Пища</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SORT_ROOM" Language="ru_RU">
+      <Text>Место для роста</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SORT_DIST" Language="ru_RU">
+      <Text>Расстояние</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RECALC" Language="ru_RU">
+      <Text>Пересчитать</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SELECT_ALL" Language="ru_RU">
+      <Text>Выбрать все</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_TACKS" Language="ru_RU">
+      <Text>Поставить булавки ({1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_TACKS_NONE" Language="ru_RU">
+      <Text>Поставить булавки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_COMPUTING" Language="ru_RU">
+      <Text>Расчёт... {1_Pct}%</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SITE_STATUS" Language="ru_RU">
+      <Text>Проверено клеток: {1_Scanned}, подходящих мест: {2_Valid}, показано: {3_Shown}, {4_Ms} мс</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ERROR" Language="ru_RU">
+      <Text>Что-то пошло не так. Подробности в UI.log (строки [XPL]).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPTY_NO_SETTLEMENTS" Language="ru_RU">
+      <Text>У вас ещё нет поселений. Сначала основайте столицу.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPTY_NO_SITES" Language="ru_RU">
+      <Text>Подходящих мест не найдено. Увеличьте радиус, допустимое перекрытие или разведайте больше карты.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TIER_EXCELLENT" Language="ru_RU">
+      <Text>Отличное место</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TIER_GOOD" Language="ru_RU">
+      <Text>Хорошее место</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TIER_FAIR" Language="ru_RU">
+      <Text>Неплохое место</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TIER_POOR" Language="ru_RU">
+      <Text>Слабое место</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WHERE" Language="ru_RU">
+      <Text>{1_Dist} на {2_Dir} от {3_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_E" Language="ru_RU">
+      <Text>В</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_NE" Language="ru_RU">
+      <Text>СВ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_SE" Language="ru_RU">
+      <Text>ЮВ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_SW" Language="ru_RU">
+      <Text>ЮЗ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_W" Language="ru_RU">
+      <Text>З</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_NW" Language="ru_RU">
+      <Text>СЗ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DIR_X" Language="ru_RU">
+      <Text>-</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAG_FRESH_WATER" Language="ru_RU">
+      <Text>Пресная вода</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAG_COAST" Language="ru_RU">
+      <Text>Побережье</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAG_AI" Language="ru_RU">
+      <Text>ИИ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAG_INDEPENDENT" Language="ru_RU">
+      <Text>Независимые</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SITE_PROD_ROOM" Language="ru_RU">
+      <Text>| Произв. {1_Prod} | Место {2_Room}%</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_LAND" Language="ru_RU">
+      <Text>{1_Food} [icon:YIELD_FOOD] и {2_Prod} [icon:YIELD_PRODUCTION] в досягаемости (с учётом колец)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_FRESH_WATER" Language="ru_RU">
+      <Text>Пресная вода (+5 довольства)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_COASTAL" Language="ru_RU">
+      <Text>Побережье: гавани и водные здания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_LOW_FOOD" Language="ru_RU">
+      <Text>Мало пищи рядом ({1_Food} из {2_Need})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_NEAR_INDEPENDENT_HOSTILE" Language="ru_RU">
+      <Text>{1_Dist} кл. от независимого народа: он станет враждебным</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_NEAR_INDEPENDENT" Language="ru_RU">
+      <Text>{1_Dist} кл. от независимого народа: отношения ухудшатся</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_PROD_TILES" Language="ru_RU">
+      <Text>Клеток производства: {1_Count} (леса, холмы, шахты)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_RESOURCES" Language="ru_RU">
+      <Text>Ресурсов в досягаемости: {1_Count}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_NEW_RESOURCES" Language="ru_RU">
+      <Text>Новых для вас ресурсов: {1_Count}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_ADJ_FAMILY" Language="ru_RU">
+      <Text>Соседство ({1_Family}): лучшие клетки +{2_List}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_OVERLAP" Language="ru_RU">
+      <Text>Общих с соседями клеток: {1_Count}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_UNEXPLORED" Language="ru_RU">
+      <Text>Неразведанных клеток: {1_Count} (оценка)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_AI_PICK" Language="ru_RU">
+      <Text>Это место советует и ИИ игры</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_AI_FACTORS" Language="ru_RU">
+      <Text>ИИ: {1_List}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_SCIENCE" Language="ru_RU">
+      <Text>наука</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_PRODUCTION" Language="ru_RU">
+      <Text>производство</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_GOLD" Language="ru_RU">
+      <Text>золото</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_FOOD" Language="ru_RU">
+      <Text>пища</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_CULTURE" Language="ru_RU">
+      <Text>культура</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_HAPPINESS" Language="ru_RU">
+      <Text>довольство</Text>
+    </Replace>
+    <!-- Map tacks (M2) -->
+    <Replace Tag="LOC_XPL_CLEAR_TACKS" Language="ru_RU">
+      <Text>Убрать мои булавки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_CLEAR_TACKS_TT" Language="ru_RU">
+      <Text>Убрать булавки поселений, поставленные этим модом. Ваши собственные булавки не трогаются.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_TACKS_TT" Language="ru_RU">
+      <Text>Поставить булавку центра города (Detailed Map Tacks) на каждое отмеченное место.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DMT_MISSING_TT" Language="ru_RU">
+      <Text>Нужен включённый мод Detailed Map Tacks.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DMT_NOT_READY_TT" Language="ru_RU">
+      <Text>Ожидание загрузки Detailed Map Tacks.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_MP_TACKS_TT" Language="ru_RU">
+      <Text>Сетевая игра: синхронизация булавок между игроками ещё не проверена.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_MP_TACKS_NOTE" Language="ru_RU">
+      <Text>(сетевая игра: синхронизация булавок не проверена)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACKS_PLACED" Language="ru_RU">
+      <Text>Поставлено булавок: {1_Placed}, пропущено: {2_Skipped}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACKS_CLEARED" Language="ru_RU">
+      <Text>Убрано булавок: {1_Removed}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TAG_TACKED" Language="ru_RU">
+      <Text>С булавкой</Text>
+    </Replace>
+    <!-- Towns tab (M3) -->
+    <Replace Tag="LOC_XPL_TOWN_HEADER" Language="ru_RU">
+      <Text>Города {1_Cities}/{2_Limit} | Поселения {3_Settlements}/{4_Cap} | Эпоха {5_Pct}% (~{6_Turns} ходов)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_STATS" Language="ru_RU">
+      <Text>Нас. {1_Pop} | [icon:YIELD_PRODUCTION] {2_Now} -&gt; {3_Pot} | [icon:YIELD_GOLD] {4_Cost}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_ECON" Language="ru_RU">
+      <Text>Выгода около {1_Gain} в пересчёте на золото за ход; окупится за {2_Turns} ходов (производство ценнее золота в {3_Ratio} раза)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_CONVERT" Language="ru_RU">
+      <Text>Повысить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_CONSIDER" Language="ru_RU">
+      <Text>Можно</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_WAIT" Language="ru_RU">
+      <Text>Подождать</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_KEEP" Language="ru_RU">
+      <Text>Оставить городком</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_BLOCKED" Language="ru_RU">
+      <Text>Недоступно</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_CITY_LIMIT" Language="ru_RU">
+      <Text>Достигнут лимит городов ({1_Cities}/{2_Limit})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_ENGINE" Language="ru_RU">
+      <Text>{1_Reason}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_CANNOT" Language="ru_RU">
+      <Text>Сейчас игра не позволяет повысить этот городок</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_PROD_POT_LOW" Language="ru_RU">
+      <Text>Низкий потенциал производства ({1_Pot}, нужно {2_Need}+): лучше оставить городком</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_FEEDER" Language="ru_RU">
+      <Text>Хороший избыток пищи: выберите специализацию на земледелии или рыболовстве и кормите города</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_LATE_AGE" Language="ru_RU">
+      <Text>Конец эпохи ({1_Pct}%): при смене эпохи он снова станет городком</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_GROW_FIRST" Language="ru_RU">
+      <Text>Сначала дайте вырасти: сейчас {1_Now} производства, нужно {2_Need}+</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_COST_DROPS" Language="ru_RU">
+      <Text>Стоимость повышения падает по мере роста городка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_PAYBACK" Language="ru_RU">
+      <Text>Окупится примерно за {1_Turns} ходов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_PROD_GAIN" Language="ru_RU">
+      <Text>{1_Prod} производства пойдёт на здания, а не в золото</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_PAYBACK_SLOW" Language="ru_RU">
+      <Text>Медленная окупаемость ({1_Turns} ходов)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_LAST_SLOT" Language="ru_RU">
+      <Text>Займёт последний слот города</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_RATIO" Language="ru_RU">
+      <Text>Городов станет больше, чем городков (игра советует примерно 1:1)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_FOCUS_LOSS" Language="ru_RU">
+      <Text>Потеряет специализацию городка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_REVERTS" Language="ru_RU">
+      <Text>В конце эпохи снова станет городком</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_R_TAX" Language="ru_RU">
+      <Text>Каждый новый город делает здания дороже на 10% (около {1_Prod} производства за ход)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EXPECT_KEEP" Language="ru_RU">
+      <Text>Рассчитываю сохранить города в этой эпохе</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EXPECT_KEEP_TT" Language="ru_RU">
+      <Text>Отметьте, если идёте к золотому веку, сохраняющему города при смене эпохи (например, Шёлковый путь): тогда окупаемость считается на более долгий срок.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPTY_NO_TOWNS" Language="ru_RU">
+      <Text>У вас пока нет городков.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_FOOTNOTE" Language="ru_RU">
+      <Text>Это оценки. Стоимость и причины недоступности берутся из самой игры.</Text>
+    </Replace>
+    <!-- Buildings tab (M4) -->
+    <Replace Tag="LOC_XPL_TARGET" Language="ru_RU">
+      <Text>Поселение</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TARGET_CITY" Language="ru_RU">
+      <Text>{1_Name} (город)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TARGET_TOWN" Language="ru_RU">
+      <Text>{1_Name} (городок)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TARGET_PLANNED" Language="ru_RU">
+      <Text>Планируемое место ({1_X}, {2_Y})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPECIALISTS" Language="ru_RU">
+      <Text>Специалистов на городскую клетку</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPECIALISTS_TT" Language="ru_RU">
+      <Text>Каждый специалист на клетке повторяет её бонусы соседства. Чем больше значение, тем выгоднее ставить здания на лучшие клетки. В городках специалистов нет.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPECIALISTS_0" Language="ru_RU">
+      <Text>Нет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPECIALISTS_0_5" Language="ru_RU">
+      <Text>Примерно на половине клеток</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SPECIALISTS_1" Language="ru_RU">
+      <Text>По одному на клетку</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FUTURE_TILES" Language="ru_RU">
+      <Text>Будущие клетки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FUTURE_TILES_TT" Language="ru_RU">
+      <Text>Использовать и незанятые клетки в радиусе 3 от центра, куда поселение сможет расшириться.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RESPECT_TACKS" Language="ru_RU">
+      <Text>Учитывать мои булавки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RESPECT_TACKS_TT" Language="ru_RU">
+      <Text>Считать ваши булавки зданий и чудес уже построенными.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_USE_ENGINE" Language="ru_RU">
+      <Text>Правила размещения из игры</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_USE_ENGINE_TT" Language="ru_RU">
+      <Text>Для существующих поселений спрашивать у игры, где можно ставить каждое здание, и показывать точное изменение доходов.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SELECT_NONE" Language="ru_RU">
+      <Text>Ничего</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_BUILDING_TACKS" Language="ru_RU">
+      <Text>Поставить булавки зданий</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_BUILDING_TACKS_TT" Language="ru_RU">
+      <Text>Поставить булавку (Detailed Map Tacks) для каждого здания из плана.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_STATUS" Language="ru_RU">
+      <Text>Запланировано зданий: {1_Placed}, складов: {2_Fillers}, {3_Ms} мс</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_BASE" Language="ru_RU">
+      <Text>База</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_ADJ" Language="ru_RU">
+      <Text>Соседство</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_ENGINE" Language="ru_RU">
+      <Text>| Игра:</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WHERE_CENTRE" Language="ru_RU">
+      <Text>Центр города</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WHERE_FROM_CENTRE" Language="ru_RU">
+      <Text>{1_Dist} на {2_Dir} от центра</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_QUARTER" Language="ru_RU">
+      <Text>Квартал</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_FUTURE" Language="ru_RU">
+      <Text>Будущая клетка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_OVERBUILD" Language="ru_RU">
+      <Text>Заменяет старое здание</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_FILLER" Language="ru_RU">
+      <Text>Склад (любой свободный слот)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_WAREHOUSE" Language="ru_RU">
+      <Text>Склады (в оставшиеся слоты)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPTY_NO_PLAN" Language="ru_RU">
+      <Text>Нечего размещать: выбранные здания построены, недоступны или им нет подходящей клетки.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_UNPLACED_NO_VALID_TILE" Language="ru_RU">
+      <Text>{1_Name}: нет подходящей клетки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_UNPLACED_NO_GAIN" Language="ru_RU">
+      <Text>{1_Name}: ни одна клетка не даёт выгоды</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_UNPLACED_LOCKED" Language="ru_RU">
+      <Text>{1_Name}: ещё не открыто</Text>
+    </Replace>
+    <!-- Fixes after first in-game test -->
+    <Replace Tag="LOC_XPL_CLAIM_FALLBACK" Language="ru_RU">
+      <Text>используются собственные правила основания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_LOCKED" Language="ru_RU">
+      <Text>Не открыто</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPTY_UNEXPLORED_SITE" Language="ru_RU">
+      <Text>Это планируемое место почти не разведано. Разведайте окрестности или отметьте «Учитывать неразведанные клетки» на вкладке «Поселения», чтобы планировать по скрытому рельефу.</Text>
+    </Replace>
+    <!-- Region / timing / uniques -->
+    <Replace Tag="LOC_XPL_REGION" Language="ru_RU">
+      <Text>Вместе с соседями</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_REGION_TT" Language="ru_RU">
+      <Text>Планировать это поселение вместе с соседними поселениями и планируемыми местами (до 5). Пограничные клетки делятся между ними, а бонусы через границу (чудо или кварталы рядом со зданиями соседа) учитываются.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TIME_AWARE" Language="ru_RU">
+      <Text>Порядок и сроки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TIME_AWARE_TT" Language="ru_RU">
+      <Text>Оценивать, когда будет построено каждое здание (производство, стоимость, очередь, открытие), и учитывать его доход только за оставшиеся ходы эпохи. Клетка, которая окупается позже (рядом с будущим чудом или кварталом), выбирается, только если успеет окупиться.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FAMILY_UNIQUE" Language="ru_RU">
+      <Text>Уникальные здания вашей цивилизации</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_UNIQUE" Language="ru_RU">
+      <Text>Уникальное</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_UNIQUE_QUARTER" Language="ru_RU">
+      <Text>Уникальный квартал</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_ETA" Language="ru_RU">
+      <Text>≈ через {1_Turns} х.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_HORIZON" Language="ru_RU">
+      <Text>до конца эпохи ~{1_Turns} ходов</Text>
+    </Replace>
+    <!-- Wonders -->
+    <Replace Tag="LOC_XPL_TAB_WONDERS" Language="ru_RU">
+      <Text>Чудеса</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OMNISCIENT" Language="ru_RU">
+      <Text>Смотреть очереди соперников</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OMNISCIENT_TT" Language="ru_RU">
+      <Text>Использовать скрытую игрой информацию: какие чудеса строят города соперников и когда закончат (как Wonder Alert). Выключено: только то, что вам известно, - построенные где угодно чудеса, замеченные на карте стройплощадки соперников и время до конца эпохи.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_OMNISCIENT_ON" Language="ru_RU">
+      <Text>очереди соперников видны</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_HEADER" Language="ru_RU">
+      <Text>Эпоха пройдена на {1_Pct}% (осталось ~{2_Turns} ходов)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_STATUS" Language="ru_RU">
+      <Text>Можно начать {1_Num} из {2_Num} чудес ({3_Ms} мс)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPTY_NO_WONDERS" Language="ru_RU">
+      <Text>В этой эпохе нет чудес.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_BOOST" Language="ru_RU">
+      <Text>Клетка: {1_Yields} для зданий: {2_Num} построенных + {3_Num} с булавками</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_NO_BOOST" Language="ru_RU">
+      <Text>Рядом с клеткой пока нет зданий</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_OURS" Language="ru_RU">
+      <Text>Построено вами</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_BUILT" Language="ru_RU">
+      <Text>Построено другой цивилизацией</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_LOCKED" Language="ru_RU">
+      <Text>Пока недоступно</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_TURNS" Language="ru_RU">
+      <Text>ходов: {1_Turns}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_IN_PROGRESS" Language="ru_RU">
+      <Text>Строится:</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RACE_HIGH" Language="ru_RU">
+      <Text>Скорее успеете</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RACE_MEDIUM" Language="ru_RU">
+      <Text>Под вопросом</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RACE_LOW" Language="ru_RU">
+      <Text>Скорее не успеете</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RACE_NONE" Language="ru_RU">
+      <Text>Занято</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_BUILT" Language="ru_RU">
+      <Text>Уже построено в другом месте.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_CANNOT" Language="ru_RU">
+      <Text>Ни один ваш город не может начать его сейчас.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_AGE_ENDS" Language="ru_RU">
+      <Text>Нужно {1_Turns} ходов, а эпоха закончится примерно через {2_Turns}.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_RIVAL_QUEUE" Language="ru_RU">
+      <Text>Строят соперники: {1_Num}; самый быстрый закончит через {2_Turns} ходов.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_RIVAL_SEEN" Language="ru_RU">
+      <Text>Замечено стройплощадок соперников: {1_Num}.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_NO_RIVAL" Language="ru_RU">
+      <Text>Соперники его не строят.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_R_UNKNOWN" Language="ru_RU">
+      <Text>Стройплощадок соперников не видно, но кто-то может строить его вне поля зрения.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_NO_PLOT" Language="ru_RU">
+      <Text>Свободных подходящих клеток нет: остальные предложены для чудес выше в списке.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_OPEN" Language="ru_RU">
+      <Text>Свободных соседних клеток под будущие здания: {1_Num}.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_LOSS" Language="ru_RU">
+      <Text>Собственный доход клетки под чудом теряется.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_WONDER_ALT" Language="ru_RU">
+      <Text>Также {1_City}: ходов: {2_Turns}, лучшая клетка {3_Yields}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_WONDER_TACKS" Language="ru_RU">
+      <Text>Поставить булавки чудес ({1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLACE_WONDER_TACKS_TT" Language="ru_RU">
+      <Text>Поставить булавку чуда (Detailed Map Tacks) на предложенную клетку каждого отмеченного чуда. Вкладка «Здания» затем учитывает их.</Text>
+    </Replace>
+    <!-- Buildings options box -->
+    <Replace Tag="LOC_XPL_OPTIONS_SUMMARY" Language="ru_RU">
+      <Text>Настройки и здания: {1_N} из {2_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OPTIONS_REGION" Language="ru_RU">
+      <Text>с соседями</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_OPTIONS_TIMING" Language="ru_RU">
+      <Text>с очерёдностью</Text>
+    </Replace>
+    <!-- Production menu tack buttons -->
+    <Replace Tag="LOC_XPL_TACK_BUILD_TT" Language="ru_RU">
+      <Text>Строить на месте булавки ({1_X}, {2_Y}), без выбора клетки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACK_BUY_TT" Language="ru_RU">
+      <Text>Купить за {1_Gold} золота на месте булавки ({2_X}, {3_Y})</Text>
+    </Replace>
+    <!-- Game's best tile now -->
+    <Replace Tag="LOC_XPL_BEST_NOW" Language="ru_RU">
+      <Text>Лучшая клетка по игре сейчас: {1_Where} {2_Yields}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BEST_NOW_HERE" Language="ru_RU">
+      <Text>здесь {1_Yields}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BEST_NOW_TAKEN" Language="ru_RU">
+      <Text>там по плану: {1_Names}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BEST_NOW_LATER" Language="ru_RU">
+      <Text>план ценит эту клетку выше (приоритет, будущие бонусы)</Text>
+    </Replace>
+    <!-- Foreign territory in site scoring -->
+    <Replace Tag="LOC_XPL_R_FOREIGN_OWNED" Language="ru_RU">
+      <Text>Клеток уже принадлежит другой цивилизации: {1_Count} (красные при наведении)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_R_FOREIGN_BORDER" Language="ru_RU">
+      <Text>Свободных клеток у их границы: {1_Count}, считаются наполовину</Text>
+    </Replace>
+    <!-- After the age -->
+    <Replace Tag="LOC_XPL_BADGE_AFTER_AGE" Language="ru_RU">
+      <Text>После конца эпохи: купить?</Text>
+    </Replace>
+    <!-- Auto-refreshed tacks -->
+    <Replace Tag="LOC_XPL_AUTO_TACKS" Language="ru_RU">
+      <Text>Обновлять булавки сами</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AUTO_TACKS_TT" Language="ru_RU">
+      <Text>После того как вы один раз поставили булавки зданий, каждый пересчёт сам заменяет их (не нужно снова нажимать «Поставить булавки зданий»). Заменяются только булавки, поставленные планировщиком, — не ваши и не те, чьё здание уже стоит в очереди города.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACKS_AUTO" Language="ru_RU">
+      <Text>булавки обновлены: {1_N}</Text>
+    </Replace>
+    <!-- All settlements -->
+    <Replace Tag="LOC_XPL_TARGET_ALL" Language="ru_RU">
+      <Text>Все мои поселения</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TARGET_ALL_N" Language="ru_RU">
+      <Text>Все мои поселения ({1_N})</Text>
+    </Replace>
+    <!-- All buildings / generic tacks -->
+    <Replace Tag="LOC_XPL_FAMILY_OTHER" Language="ru_RU">
+      <Text>Прочие здания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACK_GENERIC" Language="ru_RU">
+      <Text>на булавке «{1_Kind}»</Text>
+    </Replace>
+    <!-- Manual recalculation -->
+    <Replace Tag="LOC_XPL_PLAN_STALE" Language="ru_RU">
+      <Text>План мог устареть ({1_Reasons}) — нажмите «Пересчитать»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_PRESS_RECALC" Language="ru_RU">
+      <Text>Нажмите «Пересчитать», чтобы составить план.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_OPTIONS" Language="ru_RU">
+      <Text>изменены настройки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_BUILT" Language="ru_RU">
+      <Text>построено или снесено здание</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_TILES" Language="ru_RU">
+      <Text>у поселения новые клетки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_CITY" Language="ru_RU">
+      <Text>новое поселение</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_UNLOCKED" Language="ru_RU">
+      <Text>открыты новые здания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_UNIQUES" Language="ru_RU">
+      <Text>доступны новые уникальные здания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SITES_STALE" Language="ru_RU">
+      <Text>пересчитать? ({1_Reasons})</Text>
+    </Replace>
+    <!-- Suggested recalculation -->
+    <Replace Tag="LOC_XPL_STALE_TURNS" Language="ru_RU">
+      <Text>с плана прошло 10+ ходов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STALE_TACKS" Language="ru_RU">
+      <Text>изменились ваши булавки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SITES_STALE_CITIES" Language="ru_RU">
+      <Text>рядом основано или потеряно поселение</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SITES_STALE_BORDERS" Language="ru_RU">
+      <Text>границы сдвинулись к местам</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SITES_STALE_TURNS" Language="ru_RU">
+      <Text>с поиска прошло 10+ ходов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DOCK_ADVICE" Language="ru_RU">
+      <Text>Стоит пересчитать: {1_Reasons}</Text>
+    </Replace>
+    <!-- Tacks that cannot be used yet -->
+    <Replace Tag="LOC_XPL_TACK_BLOCKED_NOT_OWNED" Language="ru_RU">
+      <Text>Булавка в ({1_X}, {2_Y}) на клетке, которой у города пока нет: выберите её при росте города. Нажмите, чтобы показать.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACK_BLOCKED_NOT_YET" Language="ru_RU">
+      <Text>Булавку в ({1_X}, {2_Y}) пока нельзя использовать: обычно рядом ещё нет городской клетки — сначала постройте здания плана ближе к центру. Нажмите, чтобы показать.</Text>
+    </Replace>
+    <!-- Town sites -->
+    <Replace Tag="LOC_XPL_ROLES" Language="ru_RU">
+      <Text>Ищем места для</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLES_TT" Language="ru_RU">
+      <Text>Каждое новое поселение начинается как городок. Будущему городу нужны простор и производство, чтобы вырасти большим; городок, который вы оставите городком, растёт до 7 жителей, затем отправляет всю еду связанным городам (по дороге или если оба на побережье одного континента), а производство превращает в золото. «Города и городки» оценивает каждое место для обеих ролей и выбирает лучшую.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLES_BOTH" Language="ru_RU">
+      <Text>Города и городки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLES_CITY" Language="ru_RU">
+      <Text>Только будущие города</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLES_TOWN" Language="ru_RU">
+      <Text>Только городки-кормильцы</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLE_CITY" Language="ru_RU">
+      <Text>Город</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLE_TOWN" Language="ru_RU">
+      <Text>Городок</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLE_CITY_TT" Language="ru_RU">
+      <Text>Лучше как будущий город: основать городок и повысить его, когда будет производство.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLE_TOWN_TT" Language="ru_RU">
+      <Text>Лучше оставить городком: быстро растёт, затем кормит ваш город и специализируется.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ROLE_SCORES" Language="ru_RU">
+      <Text>Как город: {1_City} | как городок: {2_Town}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWN_MARK" Language="ru_RU">
+      <Text>т</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_FOOD" Language="ru_RU">
+      <Text>Еды в кольцах 1-2: {1_Food} — быстро вырастет до 7 жителей</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_FEEDS_ROAD" Language="ru_RU">
+      <Text>Кормит {1_City} по дороге ({2_Dist} кл.): ~{3_Food} еды</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_FEEDS_SEA" Language="ru_RU">
+      <Text>Кормит {1_City} по морю: ~{2_Food} еды</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_OTHER_CONTINENT" Language="ru_RU">
+      <Text>На этом континенте нет вашего города, которого можно кормить (ближайший: {1_City})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_NO_CITY" Language="ru_RU">
+      <Text>Пока нет города, которого можно кормить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_SPEC_FARM" Language="ru_RU">
+      <Text>Фермерский/рыбацкий городок: {1_N} клеток</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_SPEC_MINE" Language="ru_RU">
+      <Text>Шахтёрский городок: {1_N} клеток (производство станет золотом)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_RT_SPEC_RESORT" Language="ru_RU">
+      <Text>Курортный городок: {1_N} привлекательных клеток</Text>
+    </Replace>
+    <!-- Town plans -->
+    <Replace Tag="LOC_XPL_PLAN_AS_TOWN" Language="ru_RU">
+      <Text>городок: только алтарь и склады</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWNS_AS_CITIES" Language="ru_RU">
+      <Text>Городки как будущие города</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWNS_AS_CITIES_TT" Language="ru_RU">
+      <Text>Городки могут покупать только алтарь и склады (амбар, пильная яма, кирпичный завод, рыбацкая пристань, гавань), поэтому для городков и мест с пометкой «Городок» планируются только они. Отметьте, чтобы планировать каждый городок как будущий город (например, если скоро повысите его).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACK_VALID_NOW" Language="ru_RU">
+      <Text>Сейчас игра разрешает его на других клетках ({1_N}): нажмите «Пересчитать» в планировщике или выберите клетку, нажав на строку.</Text>
+    </Replace>
+    <!-- Town Focus advice -->
+    <Replace Tag="LOC_XPL_FOCUS_BEST" Language="ru_RU">
+      <Text>Специализация: {1_Name} — {2_Gain}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_KEEP" Language="ru_RU">
+      <Text>Специализация: {1_Name} (уже выбрана, и это лучший выбор)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_CURRENT" Language="ru_RU">
+      <Text>текущая</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_LATER" Language="ru_RU">
+      <Text>пока недоступна</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GROW_FIRST" Language="ru_RU">
+      <Text>Специализация открывается при 7 жителях (сейчас {1_N}): до этого оставьте «Растущий городок».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_NOT_CONNECTED" Language="ru_RU">
+      <Text>Не связан ни с одним городом: после специализации его еда никому не достанется. Сначала свяжите его (дорога торговца или оба поселения на побережье одного континента).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_FARM" Language="ru_RU">
+      <Text>Фермерский городок</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_MINE" Language="ru_RU">
+      <Text>Шахтерский городок</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_RESORT" Language="ru_RU">
+      <Text>Городок-курорт</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_URBAN" Language="ru_RU">
+      <Text>Городской центр</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_HUB" Language="ru_RU">
+      <Text>Городок-центр</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_RELIGIOUS" Language="ru_RU">
+      <Text>Религиозное место</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_TRADE" Language="ru_RU">
+      <Text>Торговый пост</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_FARM" Language="ru_RU">
+      <Text>+{1_N}[icon:YIELD_FOOD] вашим городам (ферм, пастбищ, плантаций, рыбацких судов: {1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_MINE" Language="ru_RU">
+      <Text>+{1_Gold}[icon:YIELD_GOLD] (вырубок, лагерей, глиняных ям, рудников, каменоломен: {2_N}; производство городка становится золотом)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_RESORT" Language="ru_RU">
+      <Text>+{1_N}[icon:YIELD_HAPPINESS] +{1_N}[icon:YIELD_GOLD] (привлекательных клеток: {1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_URBAN" Language="ru_RU">
+      <Text>+{1_N}[icon:YIELD_SCIENCE] +{1_N}[icon:YIELD_CULTURE] (кварталов: {1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_HUB" Language="ru_RU">
+      <Text>+{1_N}[icon:YIELD_DIPLOMACY] (связанных поселений: {1_N}; один на континент)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_RELIGIOUS" Language="ru_RU">
+      <Text>+{1_N}[icon:YIELD_HAPPINESS] (зданий: {2_N}) и ячейки реликвий в храмах</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_TRADE" Language="ru_RU">
+      <Text>+{1_N}[icon:YIELD_HAPPINESS] (клеток с ресурсами: {1_N}), +5 к дальности торговли</Text>
+    </Replace>
+    <!-- Fast (incremental) recalculation -->
+    <Replace Tag="LOC_XPL_INCREMENTAL" Language="ru_RU">
+      <Text>Быстрый пересчёт (только изменившиеся поселения)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_INCREMENTAL_TT" Language="ru_RU">
+      <Text>При пересчёте того же плана с теми же настройками заново планируются только поселения, где изменились клетки, здания, булавки, очередь строительства или числа игры; остальные сохраняют раскладку. Полный пересчёт всё равно происходит при смене настроек или если плану 10 ходов. Снимите отметку, чтобы всегда пересчитывать всё.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_INCREMENTAL" Language="ru_RU">
+      <Text>пересчитано поселений: {1_N} из {2_M}</Text>
+    </Replace>
+    <!-- Automation: queue, upkeep, gold purchases -->
+    <Replace Tag="LOC_XPL_QUEUE_NEXT" Language="ru_RU">
+      <Text>В очередь: {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_QUEUE_NEXT_TT" Language="ru_RU">
+      <Text>Добавляет следующие {1_N} запланированных здания города (в порядке плана) в очередь производства, каждое на свою клетку. Пропускает уже стоящие в очереди и клетки, которые игра пока не принимает.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_QUEUED" Language="ru_RU">
+      <Text>{2_City}: в очередь поставлено {1_N} ({3_List})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_QUEUE_NONE" Language="ru_RU">
+      <Text>{1_City}: сейчас нечего ставить в очередь (уже в очереди или клетки пока недоступны)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_PLAN_UPKEEP" Language="ru_RU">
+      <Text>Содержание</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BADGE_COSTLY" Language="ru_RU">
+      <Text>содержание дороже</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_COSTLY_HEADER" Language="ru_RU">
+      <Text>По вашим приоритетам эти здания приносят меньше, чем стоит их содержание: {1_List}. Оставляйте их только ради того, что не видно в числах (кварталы, специалисты, уникальный квартал).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_UNTICK" Language="ru_RU">
+      <Text>Снять отметку: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GOLD_HEADER" Language="ru_RU">
+      <Text>Купить за золото (в казне {1_Gold}[icon:YIELD_GOLD]): сначала самое выгодное</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GOLD_PICK" Language="ru_RU">
+      <Text>{1_Name}, {2_Where}: {3_Cost}[icon:YIELD_GOLD], на {4_Turns} ход. раньше (польза {5_Value})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GOLD_PICK_TOWN" Language="ru_RU">
+      <Text>{1_Name}, {2_Where} (городок, только покупка): {3_Cost}[icon:YIELD_GOLD], доход на оставшиеся {4_Turns} ход. (польза {5_Value})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GOLD_NONE" Language="ru_RU">
+      <Text>Сейчас ничего из этого плана нельзя купить на его клетке.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BUY" Language="ru_RU">
+      <Text>Купить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_BOUGHT" Language="ru_RU">
+      <Text>Куплено: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_ACTION_REFUSED" Language="ru_RU">
+      <Text>Игра сейчас этого не разрешает: {1_Name}</Text>
+    </Replace>
+    <!-- Automation: town Focus -->
+    <Replace Tag="LOC_XPL_FOCUS_APPLY" Language="ru_RU">
+      <Text>Выбрать</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_APPLIED" Language="ru_RU">
+      <Text>{1_Town}: выбрана специализация «{2_Focus}»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWNS_ADVICE_FOCUS_READY" Language="ru_RU">
+      <Text>городок достиг 7 жителей: выберите специализацию (вкладка «Городки»)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TOWNS_ADVICE_NOT_CONNECTED" Language="ru_RU">
+      <Text>специализированный городок не связан ни с одним городом: его еда никому не идёт</Text>
+    </Replace>
+    <!-- Growth advisor -->
+    <Replace Tag="LOC_XPL_GROWTH_HINTS" Language="ru_RU">
+      <Text>Подсказки при росте города</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_HINTS_TT" Language="ru_RU">
+      <Text>Когда город растёт и игра спрашивает, куда поселить нового жителя, отмечать лучшую новую клетку по вашим приоритетам (зелёным), клетки, нужные плану зданий, и клетку для специалиста с наибольшей пользой (синим). Лучший из двух вариантов подписан «лучший выбор». Числа — польза за ход по вашим приоритетам; у специалиста — за вычетом еды и довольства на его содержание (красные числа игры); они весят меньше, если у города их с запасом, и больше, если их не хватает. Клетка, где план ставит здание («здесь будет здание»), считается только до хода постройки. Выбор остаётся за вами.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_BEST" Language="ru_RU">
+      <Text>★ лучшая</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_BEST_PLAN" Language="ru_RU">
+      <Text>★ лучшая: нужна плану</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_PLAN_NEEDS" Language="ru_RU">
+      <Text>нужна плану</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_URBAN_SOON" Language="ru_RU">
+      <Text>здесь будет здание</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_SPECIALIST" Language="ru_RU">
+      <Text>★ специалист</Text>
+    </Replace>
+    <!-- Empire tab and food network -->
+    <Replace Tag="LOC_XPL_TAB_EMPIRE" Language="ru_RU">
+      <Text>Империя</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_HEADER" Language="ru_RU">
+      <Text>Городов: {1_Cities}, городков: {2_Towns}; городки отправляют городам +{3_Food} еды; без связи: {4_Lonely}; ещё растут: {5_Growing}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_CITIES" Language="ru_RU">
+      <Text>Города ({1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_TOWNS" Language="ru_RU">
+      <Text>Городки ({1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_POP" Language="ru_RU">
+      <Text>нас. {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_GROWS_IN" Language="ru_RU">
+      <Text>рост через {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_STRONGEST" Language="ru_RU">
+      <Text>Сильнее всего: {1_Icon} {2_Name} (заметно выше среднего города)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_RECEIVES" Language="ru_RU">
+      <Text>Получает +{1_N}[icon:YIELD_FOOD] от: {2_Towns}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_PLAN" Language="ru_RU">
+      <Text>План зданий: осталось {1_N}, следующее {2_Name} (ход {3_Eta})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_PLAN_N" Language="ru_RU">
+      <Text>План зданий: осталось {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_FOCUS" Language="ru_RU">
+      <Text>Специализация: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_GROWING" Language="ru_RU">
+      <Text>Растущий городок (жителей {1_Pop} из {2_Need} для специализации)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_RECOMMENDED" Language="ru_RU">
+      <Text>Рекомендуется: {1_Name}, {2_Gain}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_SENDS" Language="ru_RU">
+      <Text>Отправляет +{1_N}[icon:YIELD_FOOD] каждому: {2_Cities}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_LONELY" Language="ru_RU">
+      <Text>Есть специализация, но нет связанного города: еда пропадает. Свяжите его (дорога или оба на побережье одного континента).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_EMPIRE_NO_CITY_YET" Language="ru_RU">
+      <Text>Пока не связан с городом: свяжите его до выбора специализации.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOOD_LENS" Language="ru_RU">
+      <Text>Сеть еды</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOOD_LENS_ON" Language="ru_RU">
+      <Text>Показать сеть еды на карте</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOOD_LENS_OFF" Language="ru_RU">
+      <Text>Скрыть сеть еды</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOOD_LENS_TT" Language="ru_RU">
+      <Text>Вид карты: городки окрашены по специализации (фермерские зелёным, шахтёрские оранжевым, прочие фиолетовым, растущие голубым, без связи красным), города золотым. Линии идут от городка к городам, которые он кормит; подписи показывают, сколько еды получает город и сколько городок шлёт каждому. Есть и в меню линз мини-карты.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOOD_LABEL_LONELY" Language="ru_RU">
+      <Text>нет связи</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOOD_LABEL_GROWING" Language="ru_RU">
+      <Text>растёт</Text>
+    </Replace>
+    <!-- Tack placement progress -->
+    <Replace Tag="LOC_XPL_TACKS_WORKING" Language="ru_RU">
+      <Text>Ставлю булавки… {1_Done}/{2_Total}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACKS_PLACED_DIFF" Language="ru_RU">
+      <Text>Булавки: новых {1_New}, без изменений {2_Kept}, убрано {3_Removed}, пропущено {4_Skipped}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_TACKS_AUTO_DIFF" Language="ru_RU">
+      <Text>Булавки обновлены: новых {1_New}, без изменений {2_Kept}, убрано {3_Removed}</Text>
+    </Replace>
+    <!-- Panel size -->
+    <Replace Tag="LOC_XPL_SIZE_COMPACT" Language="ru_RU">
+      <Text>Меньше</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SIZE_LARGE" Language="ru_RU">
+      <Text>Больше</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_SIZE_TT" Language="ru_RU">
+      <Text>Переключить большую панель (шире, до низа экрана) и компактную (не закрывает мини-карту и панель юнита).</Text>
+    </Replace>
+    <!-- Empire tab: growing town ready -->
+    <Replace Tag="LOC_XPL_EMPIRE_GROWING_READY" Language="ru_RU">
+      <Text>Растущий городок, жителей {1_Pop}: уже можно выбрать специализацию</Text>
+    </Replace>
+    <!-- Growth advisor: one overall winner -->
+    <Replace Tag="LOC_XPL_GROWTH_TOP_TILE" Language="ru_RU">
+      <Text>лучший выбор: клетка +{1_V}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_BEST_TILE" Language="ru_RU">
+      <Text>лучшая клетка +{1_V}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_TOP_SPECIALIST" Language="ru_RU">
+      <Text>лучший выбор: специалист +{1_V}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_SPECIALIST_N" Language="ru_RU">
+      <Text>специалист +{1_V}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_GROWTH_PLAN_TAG" Language="ru_RU">
+      <Text>(нужна плану)</Text>
+    </Replace>
+    <!-- Growth advisor: build turn -->
+    <Replace Tag="LOC_XPL_GROWTH_URBAN_SOON_ETA" Language="ru_RU">
+      <Text>здесь будет здание (ход {1_N})</Text>
+    </Replace>
+    <!-- Autopilot -->
+    <Replace Tag="LOC_XPL_TAB_AUTOPILOT" Language="ru_RU">
+      <Text>Автопилот</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DOCK_AUTOPILOT" Language="ru_RU">
+      <Text>Автопилот включён</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STATUS_ON" Language="ru_RU">
+      <Text>Автопилот включён: действует в начале каждого вашего хода</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STATUS_WORKING" Language="ru_RU">
+      <Text>Автопилот включён и работает…</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STATUS_OFF" Language="ru_RU">
+      <Text>Автопилот выключен</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TURN_ON" Language="ru_RU">
+      <Text>Включить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TURN_OFF" Language="ru_RU">
+      <Text>Выключить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOGGLE_TT" Language="ru_RU">
+      <Text>Пока включён, в начале каждого вашего хода автопилот принимает отмеченные ниже решения командами самой игры (работает и по сети). Юнитов двигает только с пунктами для юнитов ниже. Выключается при новой загрузке игры.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RUN_NOW" Language="ru_RU">
+      <Text>Сделать сейчас</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RUN_NOW_TT" Language="ru_RU">
+      <Text>Выполнить отмеченные решения один раз прямо сейчас (ход не завершается).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_INTRO" Language="ru_RU">
+      <Text>Для того, чтобы отойти (например, в сетевой игре с таймером): исследования, политики и другие выборы, производство, рост, городки и покупки решаются за вас; юниты двигаются, только если отмечены их пункты.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESEARCH_LABEL" Language="ru_RU">
+      <Text>Исследования и цивики</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESEARCH_TT" Language="ru_RU">
+      <Text>Если ничего не изучается, выбрать рекомендацию советника игры (сначала совпадающую с вашим приоритетом), как её показывают окна технологий и цивиков.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PRODUCTION_LABEL" Language="ru_RU">
+      <Text>Производство</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PRODUCTION_TT" Language="ru_RU">
+      <Text>Город с пустой очередью получает два следующих здания из плана на их клетках; если из плана строить нечего — главный выбор советника (здание на лучшей по оценке игры клетке, проект или военный юнит).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROWTH_LABEL" Language="ru_RU">
+      <Text>Размещать новых жителей</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROWTH_TT" Language="ru_RU">
+      <Text>Выросший город размещает нового жителя туда, где подсказки роста пишут «лучший выбор»: новая клетка или специалист.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOWNS_LABEL" Language="ru_RU">
+      <Text>Специализация городков</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOWNS_TT" Language="ru_RU">
+      <Text>Растущий городок с 7+ жителями, связанный с городом, получает рекомендованную специализацию; до этого новые жители занимают клетки под неё (фермы для фермерского, шахты для горнодобывающего). Уже выбранная специализация не меняется. Пока городков больше, чем городов, лучший городок становится городом, когда золота сверх запаса хватает.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PURCHASES_LABEL" Language="ru_RU">
+      <Text>Покупать за золото</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PURCHASES_TT" Language="ru_RU">
+      <Text>Покупать до 3 зданий из плана за ход, сначала самые выгодные, затем улучшать до 3 военных юнитов, которых игра позволяет улучшить (сначала у поселений под угрозой), всегда сохраняя запас ниже.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SKIP_UNITS_LABEL" Language="ru_RU">
+      <Text>Бездействующие юниты пропускают ход</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SKIP_UNITS_TT" Language="ru_RU">
+      <Text>Юниты, ждущие приказа, пропускают ход (их не двигают), чтобы ход мог завершиться.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_END_TURN_LABEL" Language="ru_RU">
+      <Text>Завершать ход</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_END_TURN_TT" Language="ru_RU">
+      <Text>Завершать ход, когда всё сделано, чтобы никто не ждал таймер. Не завершает, пока игра ждёт выбора, который автопилот не делает: тогда журнал называет его.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESERVE" Language="ru_RU">
+      <Text>Запас золота</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESERVE_TT" Language="ru_RU">
+      <Text>Покупки оставляют в казне столько ходов вашего дохода золота.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESERVE_N" Language="ru_RU">
+      <Text>доход за {1_N} ход.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPLAN" Language="ru_RU">
+      <Text>Пересчитывать здания</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPLAN_TT" Language="ru_RU">
+      <Text>Пересчитывать план зданий для всех поселений с такой частотой (и сразу после постройки здания, новой клетки или новых открытых зданий). Быстро: пересчитываются только изменившиеся поселения. Булавки зданий тоже обновляются, если вы их ставили.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPLAN_N" Language="ru_RU">
+      <Text>каждые {1_N} ход.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPLAN_NEVER" Language="ru_RU">
+      <Text>никогда</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI" Language="ru_RU">
+      <Text>ИИ играет (одиночная игра)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_TT" Language="ru_RU">
+      <Text>Экспериментально: передаёт всю вашу цивилизацию, включая юнитов, ИИ самой игры на столько ходов, потом возвращает. Только в одиночной игре.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_TURNS_N" Language="ru_RU">
+      <Text>{1_N} ход.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_START" Language="ru_RU">
+      <Text>Пусть играет ИИ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_STOP" Language="ru_RU">
+      <Text>Остановить ИИ</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_NOTE" Language="ru_RU">
+      <Text>ИИ двигает и юнитов, может начать или закончить войну. Останавливается после выбранного числа ходов, за ход до конца эпохи (следующую цивилизацию выбираете вы), при чьей-то победе или вашем поражении.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_MP" Language="ru_RU">
+      <Text>Недоступно в сетевой игре: используйте автопилот выше.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_TITLE" Language="ru_RU">
+      <Text>Что сделал автопилот</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_EMPTY" Language="ru_RU">
+      <Text>Пока ничего.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TURN_N" Language="ru_RU">
+      <Text>Ход {1_N}:</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ON" Language="ru_RU">
+      <Text>автопилот включён</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_OFF" Language="ru_RU">
+      <Text>автопилот выключен</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TECH" Language="ru_RU">
+      <Text>исследование: {1_Name}{2_Mark}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CIVIC" Language="ru_RU">
+      <Text>цивик: {1_Name}{2_Mark}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_PLAN" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_List} (план зданий)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_ADVISOR" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (советник)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUE_NOTHING" Language="ru_RU">
+      <Text>{1_City}: очередь пуста, подходящего нет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROWTH_TILE" Language="ru_RU">
+      <Text>{1_City}: новый житель на новой клетке (+{2_V})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROWTH_SPECIALIST" Language="ru_RU">
+      <Text>{1_City}: новый специалист (+{2_V})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS" Language="ru_RU">
+      <Text>{1_Town}: специализация «{2_Focus}»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BOUGHT" Language="ru_RU">
+      <Text>куплено: {1_Name} ({2_Where}) за {3_Gold}[icon:YIELD_GOLD]</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPLANNED" Language="ru_RU">
+      <Text>план зданий пересчитан (зданий {1_N}, пересчитано поселений {2_M})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TACKS" Language="ru_RU">
+      <Text>булавки зданий обновлены (новых {1_New}, убрано {2_Removed})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_UNITS_SKIPPED" Language="ru_RU">
+      <Text>юнитов пропускают ход: {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TURN_ENDED" Language="ru_RU">
+      <Text>ход завершён</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_STARTED" Language="ru_RU">
+      <Text>ИИ играет {1_N} ход.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_ENDED" Language="ru_RU">
+      <Text>ИИ вернул управление</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ERROR" Language="ru_RU">
+      <Text>ошибка: {1_Text}</Text>
+    </Replace>
+    <!-- AI run safety -->
+    <Replace Tag="LOC_XPL_AP_AI_STOPPED" Language="ru_RU">
+      <Text>ИИ остановлен: {1_Reason}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_STOP_PLAYER" Language="ru_RU">
+      <Text>вы остановили</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_STOP_AGE_END" Language="ru_RU">
+      <Text>эпоха заканчивается на следующем ходу: следующую цивилизацию выберите сами</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_STOP_VICTORY" Language="ru_RU">
+      <Text>кто-то победил</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_STOP_DEFEAT" Language="ru_RU">
+      <Text>вы потерпели поражение</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_REFUSED_AGE_END" Language="ru_RU">
+      <Text>ИИ не запущен: эпоха заканчивается на следующем ходу</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_RETURNING" Language="ru_RU">
+      <Text>возврат управления: ИИ сыграет один ход и вернёт цивилизацию</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CONTROL_LOST" Language="ru_RU">
+      <Text>Игра сама управляет вашей цивилизацией: во время прошлого запуска ИИ сменилась эпоха, и игра сохранила ваше место как место ИИ. «Вернуть управление» просит игру вернуть его через один ход.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TAKE_BACK" Language="ru_RU">
+      <Text>Вернуть управление</Text>
+    </Replace>
+    <!-- Autopilot: wonders -->
+    <Replace Tag="LOC_XPL_AP_WONDERS_LABEL" Language="ru_RU">
+      <Text>Строить чудеса</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WONDERS_TT" Language="ru_RU">
+      <Text>Когда очередь города пуста, начинать чудо, которое вкладка «Чудеса» считает лучшим для него: гонку, которую вы скорее выиграете, с окончанием до конца эпохи, с наибольшей пользой на ход производства (его доход, бонус соседним зданиям и ценность для культурного пути наследия и туризма). Одновременно строится не больше указанного числа чудес, каждое на лучшей клетке.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MAX_WONDERS" Language="ru_RU">
+      <Text>Чудес одновременно</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MAX_WONDERS_N" Language="ru_RU">
+      <Text>{1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_WONDER" Language="ru_RU">
+      <Text>{1_City}: начато чудо {2_Name} ({3_Race})</Text>
+    </Replace>
+    <!-- Gold box: bought -->
+    <Replace Tag="LOC_XPL_BOUGHT_SHORT" Language="ru_RU">
+      <Text>Куплено</Text>
+    </Replace>
+    <!-- Autopilot choices and units -->
+    <Replace Tag="LOC_XPL_AP_CHOICES_LABEL" Language="ru_RU">
+      <Text>Политики, празднества, события</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CHOICES_TT" Language="ru_RU">
+      <Text>Делает выборы, которые держат ход: пустые ячейки политик (карта с наибольшей пользой по Policy Yield Previews, если этот мод установлен, иначе первая предложенная), бонус празднества, сюжетные события (вариант, который предпочитает ИИ игры), пантеон, религию и её верования (сначала полезнейшие по Policy Yield Previews), правительство, бонус города-государства, приветствие нового знакомого лидера (дружелюбное, если можно, иначе нейтральное), предложение лидера (самый дешёвый ответ, кроме отказа; отказ никогда: он может означать войну), экраны «просмотрено» и предупреждения советника. Уведомления «Обнаружен шпионаж» прочитываются.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_UNITS_TITLE" Language="ru_RU">
+      <Text>Юниты (эти пункты двигают юнитов):</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_EXPLORE_LABEL" Language="ru_RU">
+      <Text>Разведчики исследуют</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_EXPLORE_TT" Language="ru_RU">
+      <Text>Разведчики сначала идут к ближайшему открытию (грот, руины, костёр…) в пределах 4 ходов, даже во время автоматической разведки, затем исследуют (автоматическая разведка игры, иначе край тумана). Города сначала строят разведчиков, пока их не станет 2.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLERS_LABEL" Language="ru_RU">
+      <Text>Поселенцы основывают поселения</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLERS_TT" Language="ru_RU">
+      <Text>Города строят поселенцев (по 2, пока поселений меньше 3, затем по 1, не выше лимита поселений; ставятся в начало очереди). Поселенец без приказа идёт к лучшему свободному месту со вкладки «Поселения» (поиск сам каждые 5 ходов; сначала та роль, что держит города и городки 1 к 1, иначе место, которое советует игра), не дальше 10 ходов, и основывает там поселение; городок на месте города становится городом, когда хватает золота. У каждого поселенца своё место; ни один ход не начнёт войну. Мигрант переселяется в поселение, где стоит («Переселить»; город или городок), иначе идёт в ближайшее ваше; новый житель — на клетку, которую лучше всего оценивают подсказки роста. В эпоху исследований до «Судостроения» ни один сухопутный юнит не идёт через глубокий океан (он останавливается на каждой клетке океана и получает урон); прибрежные воды можно.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DEFEND_LABEL" Language="ru_RU">
+      <Text>Армия: стрелять или укрепиться</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DEFEND_TT" Language="ru_RU">
+      <Text>Военный юнит без приказа стреляет по самому раненому врагу в зоне досягаемости (стрелки; никогда так, чтобы начать войну), иначе лечится, если ранен, иначе укрепляется (или встаёт в дозор) на месте. При 2+ враждебных юнитах у поселения ближайший город сначала строит сильнейший военный юнит (только пока у этого поселения ваших солдат меньше, чем враждебных юнитов, и у вас меньше 4 на поселение), солдаты издалека идут туда, а один юнит идёт к независимому, с которым пока нельзя подружиться (останавливается в 2 клетках). Военные юниты по совету игры строятся, только пока их меньше 2 на поселение. Если юнит стоит на одной клетке с другим военным юнитом (новый юнит из города), один из них отходит на ближайшую свободную клетку, сначала на своей земле; если вокруг одни ваши солдаты, сосед уступает место.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MERCHANTS_LABEL" Language="ru_RU">
+      <Text>Торговцы: лучший торговый путь</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MERCHANTS_TT" Language="ru_RU">
+      <Text>Торговец без приказа открывает лучший торговый путь, который разрешает игра, в порядке экрана торговли (сначала больше ввозимых ресурсов, затем доход по вашему приоритету). Если путь нельзя открыть на месте, торговец сначала идёт в тот город. Один торговец на город, в пределах торгового лимита каждой цивилизации.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_POLICY" Language="ru_RU">
+      <Text>политика: {1_Name} (польза {2_Value})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CELEBRATION" Language="ru_RU">
+      <Text>празднество: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STORY" Language="ru_RU">
+      <Text>событие «{1_Name}»: {2_Choice}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PANTHEON" Language="ru_RU">
+      <Text>пантеон: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GOVERNMENT" Language="ru_RU">
+      <Text>правительство: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CITY_STATE_BONUS" Language="ru_RU">
+      <Text>бонус города-государства: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ACKNOWLEDGED" Language="ru_RU">
+      <Text>отмечено просмотренным: {1_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED" Language="ru_RU">
+      <Text>ход не завершён: игра ещё ждёт {1_What}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_EXPLORE" Language="ru_RU">
+      <Text>{1_Unit}: разведка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLE_MOVE" Language="ru_RU">
+      <Text>{1_Unit} идёт основать поселение в {2_X},{3_Y} (ходов: {4_Turns})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLE_FOUND" Language="ru_RU">
+      <Text>{1_Unit} основывает поселение в {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RANGED" Language="ru_RU">
+      <Text>{1_Unit} стреляет по {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HEAL" Language="ru_RU">
+      <Text>{1_Unit} лечится</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FORTIFY" Language="ru_RU">
+      <Text>{1_Unit} укрепляется</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRADE_ROUTE" Language="ru_RU">
+      <Text>торговый путь в {1_City} (ресурсов: {2_Num}, польза {3_Value})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRADE_MOVE" Language="ru_RU">
+      <Text>торговец идёт в {1_City}</Text>
+    </Replace>
+    <!-- Autopilot production fallback -->
+    <Replace Tag="LOC_XPL_AP_QUEUED_FALLBACK" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (самое дешёвое здание: советы советника нельзя было построить)</Text>
+    </Replace>
+    <!-- Autopilot unit fallback -->
+    <Replace Tag="LOC_XPL_AP_ALERT" Language="ru_RU">
+      <Text>{1_Unit} в дозоре (проснётся, если рядом враг)</Text>
+    </Replace>
+    <!-- Autopilot: units sharing a tile -->
+    <Replace Tag="LOC_XPL_AP_STEP_ASIDE" Language="ru_RU">
+      <Text>{1_Unit} отходит на {2_X},{3_Y}: два юнита не могут стоять на одной клетке</Text>
+    </Replace>
+    <!-- Autopilot: first meetings, scouts first -->
+    <Replace Tag="LOC_XPL_AP_FIRST_MEET" Language="ru_RU">
+      <Text>знакомство: {1_Leader}, {2_Greeting}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GREETING_FRIENDLY" Language="ru_RU">
+      <Text>дружелюбное приветствие</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GREETING_NEUTRAL" Language="ru_RU">
+      <Text>нейтральное приветствие</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_SCOUT" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (разведка: сначала {3_Num} разведчика)</Text>
+    </Replace>
+    <!-- Autopilot: information windows -->
+    <Replace Tag="LOC_XPL_AP_CLOSE_POPUPS_LABEL" Language="ru_RU">
+      <Text>Закрывать окна-сообщения</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CLOSE_POPUPS_TT" Language="ru_RU">
+      <Text>Пока автопилот включён, окна, которые только сообщают, закрываются сразу: изучена технология или цивик, новые открытия, этапы наследия, предупреждения об эпохе и советников, ролики чудес, подсказки обучения, выбор советника на 4-м ходу, ход победы, отчёт о раскрытом шпионаже соперника; и сюжетные события, раз автопилот сам на них отвечает («Политики, празднества, события»). Никогда не закрывает дипломатию, подтверждения и конец игры.</Text>
+    </Replace>
+    <!-- Autopilot: diplomatic proposals -->
+    <Replace Tag="LOC_XPL_AP_DIPLO_RESPONSE" Language="ru_RU">
+      <Text>дипломатия: {1_Leader}, {2_Action}: {3_Response}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DIPLO_LEFT" Language="ru_RU">
+      <Text>дипломатия: {1_Leader}, {2_Action}: оставлено вам (можно только отклонить)</Text>
+    </Replace>
+    <!-- Autopilot: advisor warnings -->
+    <Replace Tag="LOC_XPL_AP_ADVISOR_SEEN" Language="ru_RU">
+      <Text>предупреждений советника просмотрено: {1_Num}</Text>
+    </Replace>
+    <!-- Autopilot: leader messages -->
+    <Replace Tag="LOC_XPL_AP_LEADER_MESSAGE" Language="ru_RU">
+      <Text>сообщение от {1_Leader} прочитано</Text>
+    </Replace>
+    <!-- Autopilot: settlers, towns, independents, roaming, promotions, tacks -->
+    <Replace Tag="LOC_XPL_AP_BEFRIEND_LABEL" Language="ru_RU">
+      <Text>Дружить с независимыми</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BEFRIEND_TT" Language="ru_RU">
+      <Text>Тратит влияние, чтобы начать дружбу со всеми независимыми, с кем игра разрешает (сначала те, кто угрожает поселению, затем ближайшие), чтобы их отряды не трогали ваших; при угрозе (2+ враждебных юнита у поселения) вкладывает больше влияния. Также предлагает цивилизациям открыть границы, когда ваши разведчики доходят до их земель.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TACKS_LABEL" Language="ru_RU">
+      <Text>Булавки плана на карте</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TACKS_TT" Language="ru_RU">
+      <Text>После каждого пересчёта здания плана ставятся булавками на карту (Detailed Map Tacks); с поселенцами также места, куда они идут, и следующие лучшие. Заменяются только булавки поселений, поставленные автопилотом.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROAM_LABEL" Language="ru_RU">
+      <Text>Армия разведывает (по одному в городе остаются)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROAM_TT" Language="ru_RU">
+      <Text>Военные юниты, кроме одного гарнизона в каждом городе, уходят на разведку: автоматическая разведка игры, если она доступна, иначе случайная клетка на краю тумана не дальше 3 ходов, никогда на чужую землю и не в войну. Укреплённых будит; раненые сначала лечатся.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SITES_FOUND" Language="ru_RU">
+      <Text>места поселений пересчитаны: {1_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLE_TACKS" Language="ru_RU">
+      <Text>булавки поселений: поставлено {1_Num}, убрано {2_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BEFRIEND" Language="ru_RU">
+      <Text>дружба с {1_Name} начата</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PROMOTED" Language="ru_RU">
+      <Text>{1_Unit}: повышение {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROAM" Language="ru_RU">
+      <Text>{1_Unit} идёт на разведку к {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_SETTLER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (поселенцев одновременно: {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FRONT_LOADED" Language="ru_RU">
+      <Text>{1_City}: {2_Name} перенесён в начало очереди</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOWN_CONVERTED" Language="ru_RU">
+      <Text>{1_Town} становится городом ({2_Gold} золота): города и городки 1 к 1</Text>
+    </Replace>
+    <!-- Autopilot: threats, open borders, town projects -->
+    <Replace Tag="LOC_XPL_AP_THREAT" Language="ru_RU">
+      <Text>угроза: у {1_Name} враждебных юнитов: {2_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BEFRIEND_SUPPORT" Language="ru_RU">
+      <Text>больше влияния на дружбу с {1_Name} (угрожает нам)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_DEFENDER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} для защиты {3_Name} (враждебных юнитов: {4_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_APPROACH" Language="ru_RU">
+      <Text>{1_Unit} идёт к {2_Name}, чтобы можно было подружиться</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_OPEN_BORDERS" Language="ru_RU">
+      <Text>предложено открыть границы: {1_Leader}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOWN_KEEPS_GROWING" Language="ru_RU">
+      <Text>{1_Town} продолжает расти (подходящей специализации пока нет)</Text>
+    </Replace>
+    <!-- Autopilot: discoveries -->
+    <Replace Tag="LOC_XPL_AP_DISCOVERY" Language="ru_RU">
+      <Text>{1_Unit} идёт к открытию в {2_X},{3_Y}</Text>
+    </Replace>
+    <!-- Autopilot: orders not taken -->
+    <Replace Tag="LOC_XPL_AP_ORDERS_NOT_TAKEN" Language="ru_RU">
+      <Text>приказов, которые игра не выполнила: {1_Num}; эти юниты пропускают ход</Text>
+    </Replace>
+    <!-- Autopilot: age over -->
+    <Replace Tag="LOC_XPL_AP_AGE_OVER" Language="ru_RU">
+      <Text>эпоха закончилась: следующую цивилизацию выберите сами (автопилот выключен)</Text>
+    </Replace>
+    <!-- Autopilot: age start -->
+    <Replace Tag="LOC_XPL_AP_AGE_START" Language="ru_RU">
+      <Text>новая эпоха: выберите её устремления сами, затем снова включите автопилот (он выключен)</Text>
+    </Replace>
+    <!-- Autopilot: religion -->
+    <Replace Tag="LOC_XPL_AP_RELIGION_FOUNDED" Language="ru_RU">
+      <Text>основана религия: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BELIEF" Language="ru_RU">
+      <Text>верование: {1_Name}</Text>
+    </Replace>
+    <!-- Autopilot: join army -->
+    <Replace Tag="LOC_XPL_AP_JOINED_ARMY" Language="ru_RU">
+      <Text>{1_Unit} вступает в армию командира на своей клетке</Text>
+    </Replace>
+    <!-- Autopilot: unit upgrades -->
+    <Replace Tag="LOC_XPL_AP_UPGRADED" Language="ru_RU">
+      <Text>{1_Unit} улучшен до: {2_Unit}</Text>
+    </Replace>
+    <!-- Autopilot: defenders, room, migrants -->
+    <Replace Tag="LOC_XPL_AP_REINFORCE" Language="ru_RU">
+      <Text>{1_Unit} идёт защищать: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MADE_ROOM" Language="ru_RU">
+      <Text>{1_Unit} уступает место: {2_Unit}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MIGRANT_MOVE" Language="ru_RU">
+      <Text>{1_Unit} идёт в {2_Name}, чтобы переселиться</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESETTLED" Language="ru_RU">
+      <Text>{1_Unit} переселился в: {2_Name}</Text>
+    </Replace>
+    <!-- Autopilot: espionage notice -->
+    <Replace Tag="LOC_XPL_AP_ESPIONAGE_SEEN" Language="ru_RU">
+      <Text>обнаружен шпионаж ({1_Name}): прочитано</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ESPIONAGE_OPENED" Language="ru_RU">
+      <Text>открыт отчёт о шпионаже (игра всё ещё держала ход)</Text>
+    </Replace>
+  </LocalizedText>
+</Database>

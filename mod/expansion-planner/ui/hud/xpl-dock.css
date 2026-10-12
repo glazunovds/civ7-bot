@@ -1,0 +1,33 @@
+/* Dock button icon (the button chrome comes from the base sub-system dock styles). */
+.ssb__button-icon.xpl-planner {
+    background-image: url("fs://game/expansion-planner/ui/icons/xpl-dock.png");
+    background-size: 62%;
+    background-position: 50% 50%;
+    background-repeat: no-repeat;
+}
+
+/* A recalculation is suggested (reasons in the tooltip). */
+.xpl-dock-badge {
+    position: absolute;
+    top: 0.2222222222rem;
+    right: 0.2222222222rem;
+    width: 0.6666666667rem;
+    height: 0.6666666667rem;
+    border-radius: 0.3333333333rem;
+    background-color: #f2d16b;
+    box-shadow: 0 0 0.3333333333rem rgba(242, 209, 107, 0.9);
+    pointer-events: none;
+}
+
+/* The autopilot is on. */
+.xpl-dock-auto {
+    position: absolute;
+    bottom: 0.2222222222rem;
+    left: 0.2222222222rem;
+    width: 0.6666666667rem;
+    height: 0.6666666667rem;
+    border-radius: 0.3333333333rem;
+    background-color: #6ccf4a;
+    box-shadow: 0 0 0.3333333333rem rgba(108, 207, 74, 0.9);
+    pointer-events: none;
+}

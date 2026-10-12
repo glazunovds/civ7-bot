@@ -1,0 +1,101 @@
+// Growth advisor: when a city grows, rank the tiles the game offers (with the building
+// plan's needs) and the specialist tiles (from the game's before/after numbers).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { installFakeEngine } from "./fakes/fake-engine.mjs";
+
+const C = { x: 8, y: 8 };
+const RICH = { x: 10, y: 8 };     // food 4, nothing planned
+const NEEDED = { x: 10, y: 9 };   // food 2, the plan's Library goes here, not owned yet
+const URBAN = { x: 9, y: 8 };     // food 3, owned, the plan's Market goes here
+let urbanScience = 6;             // what one more specialist adds on URBAN (the game's NextYields - CurrentYields)
+const world = {
+    width: 20, height: 16, wrapX: false,
+    tiles: (x, y) => {
+        if (x === RICH.x && y === RICH.y) return { terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 4 } };
+        if (x === URBAN.x && y === URBAN.y) return { terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 3 } };
+        return { terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2 } };
+    },
+    structures: (x, y) => (x === C.x && y === C.y ? { district: "DISTRICT_CITY_CENTER", constructibles: ["BUILDING_PALACE"] } : { district: null, constructibles: [] }),
+    players: [{ id: 0 }],
+    cities: [{ owner: 0, x: C.x, y: C.y, name: "Athens", pop: 5, prod: 8 }],
+    expand: () => ({
+        Success: true,
+        Plots: [RICH, NEEDED, URBAN].map((l) => GameplayMap.getIndexFromXY(l.x, l.y)),
+        ConstructibleTypes: ["IMPROVEMENT_FARM", "IMPROVEMENT_FARM", "IMPROVEMENT_FARM"].map((t) => GameInfo.Constructibles.lookup(t)?.$hash),
+    }),
+    workers: () => {
+        const sci = GameInfo.Yields.lookup("YIELD_SCIENCE").$index;
+        const food = GameInfo.Yields.lookup("YIELD_FOOD").$index;
+        const arr = (pairs) => {
+            const a = Array.from(GameInfo.Yields, () => 0);
+            for (const [i, v] of pairs) a[i] = v;
+            return a;
+        };
+        return [
+            { PlotIndex: GameplayMap.getIndexFromXY(C.x, C.y), IsBlocked: false, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, 2]]), CurrentMaintenance: arr([]), NextMaintenance: arr([[food, 2]]) },
+            { PlotIndex: GameplayMap.getIndexFromXY(URBAN.x, URBAN.y), IsBlocked: false, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, urbanScience]]), CurrentMaintenance: arr([]), NextMaintenance: arr([[food, 2]]) },
+            { PlotIndex: GameplayMap.getIndexFromXY(7, 8), IsBlocked: true, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, 20]]), CurrentMaintenance: arr([]), NextMaintenance: arr([]) },
+        ];
+    },
+};
+const fake = installFakeEngine(world);
+const { growthAdvice } = await import("../mod/expansion-planner/ui/data/xpl-growth-job.js");
+const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+const athens = () => Players.get(0).Cities.getCities()[0];
+
+test("without a plan the richest tile wins", () => {
+    const a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+    assert.deepEqual([a.best.x, a.best.y], [RICH.x, RICH.y]);
+    assert.equal(a.best.improvement, "IMPROVEMENT_FARM");
+});
+
+test("a tile the plan needs wins; a tile the plan urbanises is marked and loses a little", () => {
+    state.set({ results: { ...state.get().results, plans: { placements: [{ ...NEEDED, type: "BUILDING_LIBRARY", name: "Library", value: 6 }, { ...URBAN, type: "BUILDING_MARKET", name: "Market" }], fillers: [] } } });
+    const a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+    assert.deepEqual([a.best.x, a.best.y], [NEEDED.x, NEEDED.y]);
+    assert.deepEqual(a.best.planned, ["Library"]);
+    const urban = a.expand.find((e) => e.x === URBAN.x && e.y === URBAN.y);
+    assert.equal(urban.owned, true); // the fake city owns its ring-1 tiles
+    assert.deepEqual(urban.planned, ["Market"]);
+    assert.ok(urban.score < a.expand.find((e) => e.x === RICH.x).score);
+});
+
+test("specialists: the game's gain minus the added upkeep; blocked tiles skipped", () => {
+    const a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+    assert.equal(a.specialists.length, 2);
+    assert.deepEqual([a.bestSpecialist.x, a.bestSpecialist.y], [URBAN.x, URBAN.y]);
+    assert.ok(a.bestSpecialist.gain > a.specialists[1].gain);
+    assert.equal(a.bestSpecialist.upkeep[0], 2); // food
+    void fake;
+});
+
+test("one overall winner on one scale: a specialist's gain after its upkeep against the best tile", () => {
+    let a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+    assert.equal(a.choice, "TILE", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+    urbanScience = 14; // a tile where a specialist would add a lot
+    a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+    assert.equal(a.choice, "SPECIALIST", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+    urbanScience = 6;
+});
+
+test("a tile where the plan builds counts only until that building's turn", () => {
+    const plans = (eta) => ({ timeAware: true, horizon: 100, placements: [{ ...URBAN, type: "BUILDING_MARKET", name: "Market", eta }], fillers: [] });
+    state.set({ results: { ...state.get().results, plans: plans(50) } });
+    const late = growthAdvice(athens().id, DEFAULT_SETTINGS).expand.find((e) => e.x === URBAN.x && e.y === URBAN.y);
+    assert.equal(late.buildTurn, 50);
+    state.set({ results: { ...state.get().results, plans: plans(10) } });
+    const soon = growthAdvice(athens().id, DEFAULT_SETTINGS).expand.find((e) => e.x === URBAN.x && e.y === URBAN.y);
+    assert.equal(soon.buildTurn, 10);
+    assert.ok(soon.score < late.score, `soon ${soon.score} late ${late.score}`);
+    assert.ok(Math.abs(late.score / soon.score - 5) < 0.6, "half the age left vs a tenth");
+});
+
+test("a specialist's food upkeep weighs less in a city with plenty of food", () => {
+    const lean = growthAdvice(athens().id, DEFAULT_SETTINGS).bestSpecialist.gain;
+    world.cities[0].food = 150;
+    const rich = growthAdvice(athens().id, DEFAULT_SETTINGS).bestSpecialist.gain;
+    world.cities[0].food = undefined;
+    assert.ok(rich > lean + 1, `lean ${lean} rich ${rich}`);
+});

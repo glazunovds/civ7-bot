@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <LocalizedText>
+    <Row Tag="LOC_MOD_XPL_NAME" Language="en_US">
+      <Text>Expansion Planner</Text>
+    </Row>
+    <Row Tag="LOC_MOD_XPL_DESCRIPTION" Language="en_US">
+      <Text>Finds the best spots for new towns that can grow into cities, advises when to convert towns to cities, and plans building layouts for the best adjacency bonuses. Optionally marks the results with Detailed Map Tacks. Open it from the top-left HUD button or with F8.</Text>
+    </Row>
+    <Row Tag="LOC_MOD_XPL_NAME" Language="ru_RU">
+      <Text>Планировщик экспансии</Text>
+    </Row>
+    <Row Tag="LOC_MOD_XPL_DESCRIPTION" Language="ru_RU">
+      <Text>Находит лучшие места для новых поселений, которые смогут вырасти в города, подсказывает, когда повышать городок до города, и планирует размещение зданий ради лучших бонусов соседства. Может отмечать результаты булавками Detailed Map Tacks. Открывается кнопкой в левом верхнем углу или клавишей F8.</Text>
+    </Row>
+  </LocalizedText>
+</Database>

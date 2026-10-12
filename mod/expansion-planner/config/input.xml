@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <InputActions>
+    <Row ActionId="open-expansion-planner" DeviceType="Keyboard" Name="LOC_XPL_OPEN" Description="LOC_XPL_OPEN_DESC" />
+  </InputActions>
+  <InputActionDefaultGestures>
+    <Row ActionId="open-expansion-planner" Index="0" GestureType="KBMouse" GestureData="KEY_F8" />
+  </InputActionDefaultGestures>
+</Database>

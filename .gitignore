@@ -1,0 +1,12 @@
+# OS / editor
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Node (tests use only node:test, but keep installs out of the repo)
+node_modules/
+
+# Local scratch output from tools
+*.log
+tools/out/

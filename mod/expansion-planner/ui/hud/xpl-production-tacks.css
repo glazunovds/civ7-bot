@@ -1,0 +1,80 @@
+/* "Build / buy at my tack" pills in the city production menu, sized like Compact Production's gold pill. */
+.xpl-tack-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 0.2222222222rem;
+}
+
+/* Base-game rows (no Compact Production): top-right corner of the row. */
+.xpl-tack-actions--floating {
+    position: absolute;
+    top: 0.2777777778rem;
+    right: 0.4444444444rem;
+}
+
+.xpl-tack-pill {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    height: 1.3888888889rem;
+    margin-left: 0.2222222222rem;
+    padding: 0 0.3333333333rem;
+    border: 0.0555555556rem solid rgba(159, 211, 199, 0.75);
+    border-radius: 0.8888888889rem;
+    background: linear-gradient(to bottom, rgba(31, 63, 58, 0.95), rgba(20, 27, 25, 0.95));
+    pointer-events: auto;
+}
+
+.xpl-tack-pill:hover,
+.xpl-tack-pill:focus {
+    border-color: #c9f1e7;
+    background: linear-gradient(to bottom, rgba(45, 92, 84, 0.98), rgba(26, 36, 33, 0.98));
+}
+
+.xpl-tack-pill--buy {
+    border-color: rgba(249, 209, 93, 0.75);
+    background: linear-gradient(to bottom, rgba(75, 63, 31, 0.95), rgba(27, 25, 21, 0.95));
+}
+
+.xpl-tack-pill--buy:hover,
+.xpl-tack-pill--buy:focus {
+    border-color: #f8e6a0;
+    background: linear-gradient(to bottom, rgba(105, 84, 38, 0.98), rgba(39, 33, 24, 0.98));
+}
+
+.xpl-tack-pill__pin {
+    flex-shrink: 0;
+    width: 1.1111111111rem;
+    height: 1.1111111111rem;
+    background-image: url("fs://game/expansion-planner/ui/icons/xpl-dock.png");
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.xpl-tack-pill__icon {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.1111111111rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* A tack for this city that cannot be used yet (tooltip says why; click shows it). */
+.xpl-tack-pill--blocked {
+    opacity: 0.55;
+    border-color: rgba(185, 178, 160, 0.6);
+    background: linear-gradient(to bottom, rgba(45, 45, 45, 0.9), rgba(25, 25, 25, 0.9));
+}
+.xpl-tack-pill--blocked:hover,
+.xpl-tack-pill--blocked:focus {
+    opacity: 0.9;
+}
+.xpl-tack-pill__icon.hidden {
+    display: none;
+}

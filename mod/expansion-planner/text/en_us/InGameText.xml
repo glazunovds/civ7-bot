@@ -1,0 +1,1538 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <EnglishText>
+    <!-- Hotkey / dock -->
+    <Row Tag="LOC_XPL_OPEN">
+      <Text>Expansion Planner</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OPEN_DESC">
+      <Text>Open or close the Expansion Planner panel.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DOCK_TT">
+      <Text>Expansion Planner (F8)[N]Settlement sites, town conversion and building adjacency.</Text>
+    </Row>
+    <!-- Panel chrome -->
+    <Row Tag="LOC_XPL_TITLE">
+      <Text>Expansion Planner</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAB_SETTLEMENTS">
+      <Text>Settlements</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAB_BUILDINGS">
+      <Text>Buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAB_TOWNS">
+      <Text>Towns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PRIORITY">
+      <Text>Priority</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_BALANCE">
+      <Text>Balance</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_PRODUCTION">
+      <Text>Production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_SCIENCE">
+      <Text>Science</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_GOLD">
+      <Text>Gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_CULTURE">
+      <Text>Culture</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_FOOD">
+      <Text>Food</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PROFILE_HAPPINESS">
+      <Text>Happiness</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STATUS_DMT_ON">
+      <Text>Detailed Map Tacks: active</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STATUS_DMT_OFF">
+      <Text>Detailed Map Tacks: not active (tack placement disabled)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_VERSION">
+      <Text>v{1_Version}</Text>
+    </Row>
+    <!-- Settlements tab (M1) -->
+    <Row Tag="LOC_XPL_RADIUS">
+      <Text>Search radius</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOPN">
+      <Text>Sites to show</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OVERLAP">
+      <Text>Overlap tolerance</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OVERLAP_LOW">
+      <Text>Low (spacious)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OVERLAP_MEDIUM">
+      <Text>Medium</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OVERLAP_HIGH">
+      <Text>High (dense)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_INCLUDE_HIDDEN">
+      <Text>Include unexplored tiles</Text>
+    </Row>
+    <Row Tag="LOC_XPL_INCLUDE_HIDDEN_TT">
+      <Text>Uses terrain and resources you have not discovered yet. Off by default for fair play.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPREAD">
+      <Text>Spread sites out</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPREAD_TT">
+      <Text>Keep suggested sites at least one tile further apart than the legal minimum.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_USE_AI">
+      <Text>Use game AI hints</Text>
+    </Row>
+    <Row Tag="LOC_XPL_USE_AI_TT">
+      <Text>Gives a small bonus to sites the game's own settler AI also recommends, and shows its reasons.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_HEATMAP">
+      <Text>Heat map</Text>
+    </Row>
+    <Row Tag="LOC_XPL_HEATMAP_TT">
+      <Text>Tint every valid site on the map by its tier, not just the top picks.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_KEEP_HIGHLIGHTS">
+      <Text>Keep highlights</Text>
+    </Row>
+    <Row Tag="LOC_XPL_KEEP_HIGHLIGHTS_TT">
+      <Text>Leave the map highlights visible after closing the panel.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SORT">
+      <Text>Sort</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SORT_SCORE">
+      <Text>Score</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SORT_PROD">
+      <Text>Production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SORT_FOOD">
+      <Text>Food</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SORT_ROOM">
+      <Text>Room to grow</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SORT_DIST">
+      <Text>Distance</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RECALC">
+      <Text>Recalculate</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SELECT_ALL">
+      <Text>Select all</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_TACKS">
+      <Text>Place tacks ({1_N})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_TACKS_NONE">
+      <Text>Place tacks</Text>
+    </Row>
+    <Row Tag="LOC_XPL_COMPUTING">
+      <Text>Computing... {1_Pct}%</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SITE_STATUS">
+      <Text>{1_Scanned} plots scanned, {2_Valid} valid sites, {3_Shown} shown, {4_Ms} ms</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ERROR">
+      <Text>Something went wrong. Details are in UI.log ([XPL] lines).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPTY_NO_SETTLEMENTS">
+      <Text>You have no settlements yet. Found your capital first.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPTY_NO_SITES">
+      <Text>No valid sites found. Try a larger radius, a higher overlap tolerance, or explore more of the map.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TIER_EXCELLENT">
+      <Text>Excellent site</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TIER_GOOD">
+      <Text>Good site</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TIER_FAIR">
+      <Text>Fair site</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TIER_POOR">
+      <Text>Weak site</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WHERE">
+      <Text>{1_Dist} {2_Dir} of {3_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_E">
+      <Text>E</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_NE">
+      <Text>NE</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_SE">
+      <Text>SE</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_SW">
+      <Text>SW</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_W">
+      <Text>W</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_NW">
+      <Text>NW</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DIR_X">
+      <Text>-</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAG_FRESH_WATER">
+      <Text>Fresh water</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAG_COAST">
+      <Text>Coast</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAG_AI">
+      <Text>AI</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAG_INDEPENDENT">
+      <Text>Independent</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SITE_PROD_ROOM">
+      <Text>| Prod {1_Prod} | Room {2_Room}%</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_LAND">
+      <Text>{1_Food} [icon:YIELD_FOOD] and {2_Prod} [icon:YIELD_PRODUCTION] within reach (ring-weighted)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_FRESH_WATER">
+      <Text>Fresh water (+5 Happiness)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_COASTAL">
+      <Text>Coastal: harbours and water buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_LOW_FOOD">
+      <Text>Low food nearby ({1_Food} of {2_Need})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_NEAR_INDEPENDENT_HOSTILE">
+      <Text>{1_Dist} tiles from independent people: they become hostile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_NEAR_INDEPENDENT">
+      <Text>{1_Dist} tiles from independent people: relationship drops</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_PROD_TILES">
+      <Text>{1_Count} production tiles (forest, hills, mines)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_RESOURCES">
+      <Text>{1_Count} resources within reach</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_NEW_RESOURCES">
+      <Text>{1_Count} resource types you don't have yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_ADJ_FAMILY">
+      <Text>{1_Family} adjacency: best tiles +{2_List}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_OVERLAP">
+      <Text>{1_Count} tiles shared with neighbours</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_UNEXPLORED">
+      <Text>{1_Count} unexplored tiles (estimated)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_AI_PICK">
+      <Text>Also suggested by the game's AI</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_AI_FACTORS">
+      <Text>AI: {1_List}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_SCIENCE">
+      <Text>Science</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_PRODUCTION">
+      <Text>Production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_GOLD">
+      <Text>Gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_FOOD">
+      <Text>Food</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_CULTURE">
+      <Text>Culture</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_HAPPINESS">
+      <Text>Happiness</Text>
+    </Row>
+    <!-- Map tacks (M2) -->
+    <Row Tag="LOC_XPL_CLEAR_TACKS">
+      <Text>Clear my tacks</Text>
+    </Row>
+    <Row Tag="LOC_XPL_CLEAR_TACKS_TT">
+      <Text>Remove the settlement tacks this mod placed. Your own tacks are never touched.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_TACKS_TT">
+      <Text>Place a city-centre map tack (Detailed Map Tacks) on each ticked site.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DMT_MISSING_TT">
+      <Text>Requires the Detailed Map Tacks mod to be enabled.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DMT_NOT_READY_TT">
+      <Text>Waiting for Detailed Map Tacks to finish loading.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_MP_TACKS_TT">
+      <Text>Multiplayer: whether tacks sync between players has not been verified yet.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_MP_TACKS_NOTE">
+      <Text>(multiplayer: tack sync unverified)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACKS_PLACED">
+      <Text>{1_Placed} tacks placed, {2_Skipped} skipped</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACKS_CLEARED">
+      <Text>{1_Removed} tacks removed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TAG_TACKED">
+      <Text>Tacked</Text>
+    </Row>
+    <!-- Towns tab (M3) -->
+    <Row Tag="LOC_XPL_TOWN_HEADER">
+      <Text>Cities {1_Cities}/{2_Limit} | Settlements {3_Settlements}/{4_Cap} | Age {5_Pct}% (~{6_Turns} turns left)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_STATS">
+      <Text>Pop {1_Pop} | [icon:YIELD_PRODUCTION] {2_Now} -&gt; {3_Pot} | [icon:YIELD_GOLD] {4_Cost}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_ECON">
+      <Text>Gain about {1_Gain} gold-equivalent per turn; pays back in {2_Turns} turns (production is worth {3_Ratio}x gold)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_CONVERT">
+      <Text>Convert</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_CONSIDER">
+      <Text>Consider</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_WAIT">
+      <Text>Wait</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_KEEP">
+      <Text>Keep as town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_BLOCKED">
+      <Text>Blocked</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_CITY_LIMIT">
+      <Text>City limit reached ({1_Cities}/{2_Limit})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_ENGINE">
+      <Text>{1_Reason}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_CANNOT">
+      <Text>The game does not allow converting this town right now</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_PROD_POT_LOW">
+      <Text>Low production potential ({1_Pot}, want {2_Need}+): better as a town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_FEEDER">
+      <Text>Good food surplus: pick a Farming or Fishing focus and feed your cities</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_LATE_AGE">
+      <Text>Late in the age ({1_Pct}%): it would revert to a town at the age transition</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_GROW_FIRST">
+      <Text>Grow it first: {1_Now} production now, want {2_Need}+</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_COST_DROPS">
+      <Text>The conversion cost falls as the town grows</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_PAYBACK">
+      <Text>Pays back in about {1_Turns} turns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_PROD_GAIN">
+      <Text>{1_Prod} production goes into buildings instead of gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_PAYBACK_SLOW">
+      <Text>Slow payback ({1_Turns} turns)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_LAST_SLOT">
+      <Text>Uses your last city slot</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_RATIO">
+      <Text>You would have more cities than towns (the game suggests about 1:1)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_FOCUS_LOSS">
+      <Text>Loses its town focus</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_REVERTS">
+      <Text>Reverts to a town at the end of this age</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_R_TAX">
+      <Text>Every extra city makes buildings 10% dearer (about {1_Prod} production per turn)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EXPECT_KEEP">
+      <Text>I expect to keep my cities this age</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EXPECT_KEEP_TT">
+      <Text>Tick this if you are going for a golden age that keeps cities at the transition (for example Silk Roads); conversions then pay back over a longer horizon.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPTY_NO_TOWNS">
+      <Text>You have no towns yet.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_FOOTNOTE">
+      <Text>Estimates. The cost and the Blocked reasons come from the game itself.</Text>
+    </Row>
+    <!-- Buildings tab (M4) -->
+    <Row Tag="LOC_XPL_TARGET">
+      <Text>Settlement</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TARGET_CITY">
+      <Text>{1_Name} (city)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TARGET_TOWN">
+      <Text>{1_Name} (town)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TARGET_PLANNED">
+      <Text>Planned site ({1_X}, {2_Y})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPECIALISTS">
+      <Text>Specialists per urban tile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPECIALISTS_TT">
+      <Text>Each specialist on a tile repeats that tile's adjacency bonuses. Higher values favour stacking buildings on your best tiles. Towns have no specialists.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPECIALISTS_0">
+      <Text>None</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPECIALISTS_0_5">
+      <Text>About half the tiles</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SPECIALISTS_1">
+      <Text>One per tile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FUTURE_TILES">
+      <Text>Future tiles</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FUTURE_TILES_TT">
+      <Text>Also use unclaimed tiles within 3 of the centre that the settlement can grow into.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RESPECT_TACKS">
+      <Text>Respect my map tacks</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RESPECT_TACKS_TT">
+      <Text>Treat your own building and wonder tacks as if they were built.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_USE_ENGINE">
+      <Text>Use the game's placement rules</Text>
+    </Row>
+    <Row Tag="LOC_XPL_USE_ENGINE_TT">
+      <Text>For existing settlements, ask the game which tiles each building may use now and show its exact yield change.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SELECT_NONE">
+      <Text>None</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_BUILDING_TACKS">
+      <Text>Place building tacks</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_BUILDING_TACKS_TT">
+      <Text>Place a map tack (Detailed Map Tacks) for every building in this plan.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_STATUS">
+      <Text>{1_Placed} buildings planned, {2_Fillers} warehouses, {3_Ms} ms</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_BASE">
+      <Text>Base</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_ADJ">
+      <Text>Adjacency</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_ENGINE">
+      <Text>| Game:</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WHERE_CENTRE">
+      <Text>City centre</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WHERE_FROM_CENTRE">
+      <Text>{1_Dist} {2_Dir} of centre</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_QUARTER">
+      <Text>Quarter</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_FUTURE">
+      <Text>Future tile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_OVERBUILD">
+      <Text>Replaces old building</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_FILLER">
+      <Text>Warehouse (any free slot)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_WAREHOUSE">
+      <Text>Warehouses (fill leftover slots)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPTY_NO_PLAN">
+      <Text>Nothing to place: the selected buildings are built, locked, or have no valid tile.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_UNPLACED_NO_VALID_TILE">
+      <Text>{1_Name}: no valid tile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_UNPLACED_NO_GAIN">
+      <Text>{1_Name}: no tile adds value</Text>
+    </Row>
+    <Row Tag="LOC_XPL_UNPLACED_LOCKED">
+      <Text>{1_Name}: not unlocked yet</Text>
+    </Row>
+    <!-- Fixes after first in-game test -->
+    <Row Tag="LOC_XPL_CLAIM_FALLBACK">
+      <Text>using the mod's own settle rules</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_LOCKED">
+      <Text>Not unlocked yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPTY_UNEXPLORED_SITE">
+      <Text>This planned site is mostly unexplored. Explore around it, or tick "Include unexplored tiles" on the Settlements tab to plan with hidden terrain.</Text>
+    </Row>
+    <!-- Region / timing / uniques -->
+    <Row Tag="LOC_XPL_REGION">
+      <Text>With neighbouring settlements</Text>
+    </Row>
+    <Row Tag="LOC_XPL_REGION_TT">
+      <Text>Plan this settlement together with your settlements and planned sites nearby (up to 5). Shared border tiles are split between them, and bonuses that cross the border (a wonder or quarters next to another settlement's buildings) are counted.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TIME_AWARE">
+      <Text>Build order and timing</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TIME_AWARE_TT">
+      <Text>Estimate when each building gets built (production, cost, build order, unlocks) and count its yields only for the turns left in this age. A tile that only pays off later (next to a future wonder or quarter) is chosen only if it pays off in time.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FAMILY_UNIQUE">
+      <Text>Your civilization's unique buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_UNIQUE">
+      <Text>Unique</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_UNIQUE_QUARTER">
+      <Text>Unique quarter</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_ETA">
+      <Text>~turn +{1_Turns}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_HORIZON">
+      <Text>~{1_Turns} turns left in the age</Text>
+    </Row>
+    <!-- Wonders -->
+    <Row Tag="LOC_XPL_TAB_WONDERS">
+      <Text>Wonders</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OMNISCIENT">
+      <Text>Read rivals' build queues</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OMNISCIENT_TT">
+      <Text>Uses information the game normally hides: which wonders rival cities are building and how soon they finish (as Wonder Alert does). Off: only what you can know - wonders completed anywhere, rival wonder sites seen on your map, and the time left in the age.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_OMNISCIENT_ON">
+      <Text>rivals' queues shown</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_HEADER">
+      <Text>Age {1_Pct}% done (~{2_Turns} turns left)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_STATUS">
+      <Text>{1_Num} of {2_Num} wonders can be started now ({3_Ms} ms)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPTY_NO_WONDERS">
+      <Text>No wonders in this age.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_BOOST">
+      <Text>Tile: {1_Yields} to {2_Num} built + {3_Num} tacked buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_NO_BOOST">
+      <Text>No buildings next to the tile yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_OURS">
+      <Text>Built by you</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_BUILT">
+      <Text>Built by another civilization</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_LOCKED">
+      <Text>Not available yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_TURNS">
+      <Text>turns: {1_Turns}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_IN_PROGRESS">
+      <Text>Building in</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RACE_HIGH">
+      <Text>Likely yours</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RACE_MEDIUM">
+      <Text>Contested</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RACE_LOW">
+      <Text>Likely lost</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RACE_NONE">
+      <Text>Taken</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_BUILT">
+      <Text>Already built elsewhere.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_CANNOT">
+      <Text>None of your cities can start it now.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_AGE_ENDS">
+      <Text>Needs {1_Turns} turns, but the age ends in ~{2_Turns}.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_RIVAL_QUEUE">
+      <Text>Rival cities building it: {1_Num}; the fastest finishes in {2_Turns} turns.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_RIVAL_SEEN">
+      <Text>Rival construction sites seen on your map: {1_Num}.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_NO_RIVAL">
+      <Text>No rival is building it.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_UNKNOWN">
+      <Text>No rival site seen, but a rival may be building it out of sight.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_NO_PLOT">
+      <Text>No free valid tile left: the others are suggested for wonders higher in the list.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_OPEN">
+      <Text>Free neighbouring tiles for future buildings: {1_Num}.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_LOSS">
+      <Text>The tile's own yields are lost under the wonder.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_ALT">
+      <Text>Also {1_City}: turns: {2_Turns}, best tile {3_Yields}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_WONDER_TACKS">
+      <Text>Place wonder tacks ({1_N})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLACE_WONDER_TACKS_TT">
+      <Text>Place a wonder map tack (Detailed Map Tacks) on the suggested tile of each ticked wonder. The Buildings tab then plans around them.</Text>
+    </Row>
+    <!-- Buildings options box -->
+    <Row Tag="LOC_XPL_OPTIONS_SUMMARY">
+      <Text>Options and buildings: {1_N} of {2_N}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OPTIONS_REGION">
+      <Text>with neighbours</Text>
+    </Row>
+    <Row Tag="LOC_XPL_OPTIONS_TIMING">
+      <Text>build order</Text>
+    </Row>
+    <!-- Production menu tack buttons -->
+    <Row Tag="LOC_XPL_TACK_BUILD_TT">
+      <Text>Build on your map tack ({1_X}, {2_Y}), no tile picking</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACK_BUY_TT">
+      <Text>Buy for {1_Gold} gold on your map tack ({2_X}, {3_Y})</Text>
+    </Row>
+    <!-- Game's best tile now -->
+    <Row Tag="LOC_XPL_BEST_NOW">
+      <Text>Game's best tile now: {1_Where} {2_Yields}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BEST_NOW_HERE">
+      <Text>here {1_Yields}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BEST_NOW_TAKEN">
+      <Text>the plan puts {1_Names} there</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BEST_NOW_LATER">
+      <Text>the plan values this tile more (priority, bonuses still to come)</Text>
+    </Row>
+    <!-- Foreign territory in site scoring -->
+    <Row Tag="LOC_XPL_R_FOREIGN_OWNED">
+      <Text>{1_Count} tiles already belong to another civilization (red on hover)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_FOREIGN_BORDER">
+      <Text>{1_Count} free tiles touch their border and count half</Text>
+    </Row>
+    <!-- After the age -->
+    <Row Tag="LOC_XPL_BADGE_AFTER_AGE">
+      <Text>After the age ends: buy it?</Text>
+    </Row>
+    <!-- Auto-refreshed tacks -->
+    <Row Tag="LOC_XPL_AUTO_TACKS">
+      <Text>Keep my building tacks up to date</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AUTO_TACKS_TT">
+      <Text>After you place building tacks once, each recalculation replaces them by itself (no need to press «Place building tacks» again). Only tacks this planner placed are replaced, never your own, and never one whose building is already in the city's queue.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACKS_AUTO">
+      <Text>tacks updated: {1_N}</Text>
+    </Row>
+    <!-- All settlements -->
+    <Row Tag="LOC_XPL_TARGET_ALL">
+      <Text>All my settlements</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TARGET_ALL_N">
+      <Text>All my settlements ({1_N})</Text>
+    </Row>
+    <!-- All buildings / generic tacks -->
+    <Row Tag="LOC_XPL_FAMILY_OTHER">
+      <Text>Other buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACK_GENERIC">
+      <Text>on your tack: {1_Kind}</Text>
+    </Row>
+    <!-- Manual recalculation -->
+    <Row Tag="LOC_XPL_PLAN_STALE">
+      <Text>The plan may be outdated ({1_Reasons}): press «Recalculate»</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_PRESS_RECALC">
+      <Text>Press «Recalculate» to plan this settlement.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_OPTIONS">
+      <Text>options changed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_BUILT">
+      <Text>a building was finished or removed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_TILES">
+      <Text>the settlement got new tiles</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_CITY">
+      <Text>a new settlement</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_UNLOCKED">
+      <Text>new buildings unlocked</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_UNIQUES">
+      <Text>new unique buildings available</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SITES_STALE">
+      <Text>recalculate? ({1_Reasons})</Text>
+    </Row>
+    <!-- Suggested recalculation -->
+    <Row Tag="LOC_XPL_STALE_TURNS">
+      <Text>10+ turns since the plan</Text>
+    </Row>
+    <Row Tag="LOC_XPL_STALE_TACKS">
+      <Text>your tacks changed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SITES_STALE_CITIES">
+      <Text>a settlement was founded or lost nearby</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SITES_STALE_BORDERS">
+      <Text>borders moved onto a site</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SITES_STALE_TURNS">
+      <Text>10+ turns since the search</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DOCK_ADVICE">
+      <Text>Recalculating would make sense: {1_Reasons}</Text>
+    </Row>
+    <!-- Tacks that cannot be used yet -->
+    <Row Tag="LOC_XPL_TACK_BLOCKED_NOT_OWNED">
+      <Text>Your tack at ({1_X}, {2_Y}) is on a tile this city does not own yet: pick that tile when the city grows. Click to show it.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACK_BLOCKED_NOT_YET">
+      <Text>Your tack at ({1_X}, {2_Y}) cannot be used yet, usually because no urban tile touches it: build the plan's buildings closer to the centre first. Click to show it.</Text>
+    </Row>
+    <!-- Town sites -->
+    <Row Tag="LOC_XPL_ROLES">
+      <Text>Look for</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLES_TT">
+      <Text>Every new settlement starts as a town. A future city needs room and production to grow big; a town you keep grows to population 7, then sends all its food to connected cities (by road, or both on the coast of the same continent) and turns its production into gold. «Both» scores every site for both jobs and keeps the better one.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLES_BOTH">
+      <Text>Cities and towns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLES_CITY">
+      <Text>Future cities only</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLES_TOWN">
+      <Text>Feeder towns only</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLE_CITY">
+      <Text>City</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLE_TOWN">
+      <Text>Town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLE_CITY_TT">
+      <Text>Best as a future city: settle a town here and convert it when it has the production.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLE_TOWN_TT">
+      <Text>Best kept as a town: grows fast, then feeds your city and specializes.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ROLE_SCORES">
+      <Text>As a city: {1_City} | as a town: {2_Town}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWN_MARK">
+      <Text>t</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_FOOD">
+      <Text>{1_Food} food in rings 1-2: grows fast to population 7</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_FEEDS_ROAD">
+      <Text>Feeds {1_City} by road ({2_Dist} tiles): ~{3_Food} food</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_FEEDS_SEA">
+      <Text>Feeds {1_City} by sea: ~{2_Food} food</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_OTHER_CONTINENT">
+      <Text>No city of yours on this continent to feed (nearest: {1_City})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_NO_CITY">
+      <Text>No city to feed yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_SPEC_FARM">
+      <Text>Farming/Fishing Town focus: {1_N} tiles</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_SPEC_MINE">
+      <Text>Mining Town focus: {1_N} tiles (production becomes gold)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_RT_SPEC_RESORT">
+      <Text>Resort Town focus: {1_N} appealing tiles</Text>
+    </Row>
+    <!-- Town plans -->
+    <Row Tag="LOC_XPL_PLAN_AS_TOWN">
+      <Text>town: Altar and warehouses only</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWNS_AS_CITIES">
+      <Text>Plan towns as future cities</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWNS_AS_CITIES_TT">
+      <Text>Towns can only buy the Altar and the warehouses (Granary, Saw Pit, Brickyard, Fishing Quay, Harbor), so towns and planned sites marked «Town» get only those. Tick this to plan every town as if it were already a city (e.g. towns you will convert soon).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACK_VALID_NOW">
+      <Text>Right now the game accepts it on {1_N} other tile(s): press «Recalculate» in the planner, or click the row to pick a tile.</Text>
+    </Row>
+    <!-- Town Focus advice -->
+    <Row Tag="LOC_XPL_FOCUS_BEST">
+      <Text>Focus: {1_Name} — {2_Gain}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_KEEP">
+      <Text>Focus: {1_Name} (already chosen, still the best)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_CURRENT">
+      <Text>current</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_LATER">
+      <Text>not available yet</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GROW_FIRST">
+      <Text>The Focus unlocks at population 7 (now {1_N}): keep «Growing Town» until then.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_NOT_CONNECTED">
+      <Text>Not connected to any city: after specializing its food would feed nobody. Connect it first (a road built by a merchant, or both settlements on the coast of the same continent).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_FARM">
+      <Text>Farming Town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_MINE">
+      <Text>Mining Town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_RESORT">
+      <Text>Resort Town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_URBAN">
+      <Text>Urban Center</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_HUB">
+      <Text>Hub Town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_RELIGIOUS">
+      <Text>Religious Site</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_TRADE">
+      <Text>Trade Outpost</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_FARM">
+      <Text>+{1_N}[icon:YIELD_FOOD] for your cities ({1_N} farms, pastures, plantations, fishing boats)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_MINE">
+      <Text>+{1_Gold}[icon:YIELD_GOLD] ({2_N} woodcutters, camps, clay pits, mines, quarries: a town's production becomes gold)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_RESORT">
+      <Text>+{1_N}[icon:YIELD_HAPPINESS] +{1_N}[icon:YIELD_GOLD] ({1_N} appealing tiles)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_URBAN">
+      <Text>+{1_N}[icon:YIELD_SCIENCE] +{1_N}[icon:YIELD_CULTURE] ({1_N} quarters)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_HUB">
+      <Text>+{1_N}[icon:YIELD_DIPLOMACY] ({1_N} connected settlements; one Hub Town per continent)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_RELIGIOUS">
+      <Text>+{1_N}[icon:YIELD_HAPPINESS] ({2_N} buildings) and relic slots in temples</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_TRADE">
+      <Text>+{1_N}[icon:YIELD_HAPPINESS] ({1_N} resource tiles), +5 trade range</Text>
+    </Row>
+    <!-- Fast (incremental) recalculation -->
+    <Row Tag="LOC_XPL_INCREMENTAL">
+      <Text>Fast recalculation (only changed settlements)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_INCREMENTAL_TT">
+      <Text>Recalculating the same plan with the same options re-plans only the settlements whose tiles, buildings, tacks, build queue or game numbers changed; the others keep their layout. A full recalculation happens anyway when an option changes or the plan is 10 turns old. Untick to always recalculate everything.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_INCREMENTAL">
+      <Text>recalculated {1_N} of {2_M} settlements</Text>
+    </Row>
+    <!-- Automation: queue, upkeep, gold purchases -->
+    <Row Tag="LOC_XPL_QUEUE_NEXT">
+      <Text>Queue {1_N}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_QUEUE_NEXT_TT">
+      <Text>Adds this city's next {1_N} planned buildings (in the plan's order) to its production queue, each on its planned tile. Skips buildings already queued and tiles the game does not accept yet.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_QUEUED">
+      <Text>{2_City}: queued {1_N} ({3_List})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_QUEUE_NONE">
+      <Text>{1_City}: nothing to queue now (already queued, or the tiles are not usable yet)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_PLAN_UPKEEP">
+      <Text>Upkeep</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BADGE_COSTLY">
+      <Text>upkeep &gt; yield</Text>
+    </Row>
+    <Row Tag="LOC_XPL_COSTLY_HEADER">
+      <Text>By your priorities these planned buildings give less than their upkeep costs: {1_List}. Keep them only for what the numbers miss (quarters, specialists, a unique quarter).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_UNTICK">
+      <Text>Untick {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GOLD_HEADER">
+      <Text>Buy with gold ({1_Gold}[icon:YIELD_GOLD] in the treasury): best value per gold first</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GOLD_PICK">
+      <Text>{1_Name}, {2_Where}: {3_Cost}[icon:YIELD_GOLD], ready {4_Turns} turns sooner (value {5_Value})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GOLD_PICK_TOWN">
+      <Text>{1_Name}, {2_Where} (town, buys only): {3_Cost}[icon:YIELD_GOLD], yields for the {4_Turns} turns left (value {5_Value})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GOLD_NONE">
+      <Text>Nothing in this plan can be bought on its tile right now.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BUY">
+      <Text>Buy</Text>
+    </Row>
+    <Row Tag="LOC_XPL_BOUGHT">
+      <Text>Bought: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_ACTION_REFUSED">
+      <Text>The game does not allow this right now: {1_Name}</Text>
+    </Row>
+    <!-- Automation: town Focus -->
+    <Row Tag="LOC_XPL_FOCUS_APPLY">
+      <Text>Choose</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_APPLIED">
+      <Text>{1_Town}: Focus set to {2_Focus}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWNS_ADVICE_FOCUS_READY">
+      <Text>a town reached population 7: choose its Focus (Towns tab)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TOWNS_ADVICE_NOT_CONNECTED">
+      <Text>a specialized town is not connected to any city: its food feeds nobody</Text>
+    </Row>
+    <!-- Growth advisor -->
+    <Row Tag="LOC_XPL_GROWTH_HINTS">
+      <Text>Hints when a city grows</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_HINTS_TT">
+      <Text>When a city grows and the game asks where the new citizen goes, mark the best new tile by your priorities (green), the tiles the building plan needs, and the specialist tile that gains most (blue). The one that wins overall says «best choice». Numbers are value per turn by your priority; a specialist's is after the food and happiness it costs (the game's red numbers), which count for less when the city has plenty to spare and for more when it would run short. A tile where the building plan puts a building («a building comes here») counts only until that turn. The choice stays yours.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_BEST">
+      <Text>★ best</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_BEST_PLAN">
+      <Text>★ best: plan needs it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_PLAN_NEEDS">
+      <Text>plan needs it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_URBAN_SOON">
+      <Text>plan builds here</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_SPECIALIST">
+      <Text>★ specialist</Text>
+    </Row>
+    <!-- Empire tab and food network -->
+    <Row Tag="LOC_XPL_TAB_EMPIRE">
+      <Text>Empire</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_HEADER">
+      <Text>{1_Cities} cities, {2_Towns} towns; towns send +{3_Food} food to cities; {4_Lonely} towns feed nobody; {5_Growing} still Growing</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_CITIES">
+      <Text>Cities ({1_N})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_TOWNS">
+      <Text>Towns ({1_N})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_POP">
+      <Text>pop. {1_N}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_GROWS_IN">
+      <Text>grows in {1_N}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_STRONGEST">
+      <Text>Strongest in {1_Icon} {2_Name} (well above your average city)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_RECEIVES">
+      <Text>Receives +{1_N}[icon:YIELD_FOOD] from: {2_Towns}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_PLAN">
+      <Text>Building plan: {1_N} left, next {2_Name} (turn {3_Eta})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_PLAN_N">
+      <Text>Building plan: {1_N} left</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_FOCUS">
+      <Text>Focus: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_GROWING">
+      <Text>Growing Town ({1_Pop} of {2_Need} population for a Focus)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_RECOMMENDED">
+      <Text>Recommended: {1_Name}, {2_Gain}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_SENDS">
+      <Text>Sends +{1_N}[icon:YIELD_FOOD] to each of: {2_Cities}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_LONELY">
+      <Text>Has a Focus but no connected city: its food goes nowhere. Connect it (a road, or both on the coast of one continent).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_EMPIRE_NO_CITY_YET">
+      <Text>Not connected to a city yet: connect it before choosing a Focus.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOOD_LENS">
+      <Text>Food network</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOOD_LENS_ON">
+      <Text>Show food network on the map</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOOD_LENS_OFF">
+      <Text>Hide food network</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOOD_LENS_TT">
+      <Text>Map view: towns tinted by Focus (farming green, mining orange, other Focuses violet, still Growing pale blue, feeding nobody red), cities gold. Lines run from each town to the cities it feeds; labels show the food each city receives and each town sends to every city. Also in the mini-map's lens menu.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOOD_LABEL_LONELY">
+      <Text>no link</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOOD_LABEL_GROWING">
+      <Text>growing</Text>
+    </Row>
+    <!-- Tack placement progress -->
+    <Row Tag="LOC_XPL_TACKS_WORKING">
+      <Text>Placing tacks… {1_Done}/{2_Total}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACKS_PLACED_DIFF">
+      <Text>Tacks: {1_New} new, {2_Kept} unchanged, {3_Removed} removed, {4_Skipped} skipped</Text>
+    </Row>
+    <Row Tag="LOC_XPL_TACKS_AUTO_DIFF">
+      <Text>Tacks updated: {1_New} new, {2_Kept} unchanged, {3_Removed} removed</Text>
+    </Row>
+    <!-- Panel size -->
+    <Row Tag="LOC_XPL_SIZE_COMPACT">
+      <Text>Smaller</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SIZE_LARGE">
+      <Text>Larger</Text>
+    </Row>
+    <Row Tag="LOC_XPL_SIZE_TT">
+      <Text>Switch between the large panel (wider, down to the bottom of the screen) and the compact one (leaves the minimap and unit panel free).</Text>
+    </Row>
+    <!-- Empire tab: growing town ready -->
+    <Row Tag="LOC_XPL_EMPIRE_GROWING_READY">
+      <Text>Growing Town, population {1_Pop}: it can choose a Focus now</Text>
+    </Row>
+    <!-- Growth advisor: one overall winner -->
+    <Row Tag="LOC_XPL_GROWTH_TOP_TILE">
+      <Text>best choice: tile +{1_V}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_BEST_TILE">
+      <Text>best tile +{1_V}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_TOP_SPECIALIST">
+      <Text>best choice: specialist +{1_V}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_SPECIALIST_N">
+      <Text>specialist +{1_V}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_GROWTH_PLAN_TAG">
+      <Text>(plan needs it)</Text>
+    </Row>
+    <!-- Growth advisor: build turn -->
+    <Row Tag="LOC_XPL_GROWTH_URBAN_SOON_ETA">
+      <Text>a building comes here (turn {1_N})</Text>
+    </Row>
+    <!-- Autopilot -->
+    <Row Tag="LOC_XPL_TAB_AUTOPILOT">
+      <Text>Autopilot</Text>
+    </Row>
+    <Row Tag="LOC_XPL_DOCK_AUTOPILOT">
+      <Text>Autopilot is ON</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STATUS_ON">
+      <Text>Autopilot is ON: it acts at the start of each of your turns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STATUS_WORKING">
+      <Text>Autopilot is ON and working…</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STATUS_OFF">
+      <Text>Autopilot is off</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TURN_ON">
+      <Text>Turn on</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TURN_OFF">
+      <Text>Turn off</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TOGGLE_TT">
+      <Text>While on, at the start of each of your turns the autopilot makes the decisions ticked below with the game's own commands (it works online too). It moves units only with the unit options below. It switches off when the game is loaded again.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RUN_NOW">
+      <Text>Do it now</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RUN_NOW_TT">
+      <Text>Run the ticked decisions once right now (does not end the turn).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_INTRO">
+      <Text>For stepping away (for example online with a turn timer): research, policies and other choices, production, growth, towns and purchases are decided for you; units move only if you tick their options.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESEARCH_LABEL">
+      <Text>Research and civics</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESEARCH_TT">
+      <Text>When nothing is being researched, pick the game advisor's recommendation (the one matching your priority first), as the tech and civics choosers show it.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PRODUCTION_LABEL">
+      <Text>Production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PRODUCTION_TT">
+      <Text>A city whose queue is empty gets its next two planned buildings on their planned tiles; if the plan has nothing buildable there, the advisor's top choice (a building on the tile the game rates best, a project, or a military unit).</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GROWTH_LABEL">
+      <Text>Place new citizens</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GROWTH_TT">
+      <Text>A grown city places its new citizen where the growth hints say «best choice»: a new tile or a specialist.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TOWNS_LABEL">
+      <Text>Town Focus</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TOWNS_TT">
+      <Text>A Growing town at population 7+ that is connected to a city takes the recommended Focus; before that, its new citizens favour tiles that suit it (farms for a farming town, mines for a mining town). A Focus already chosen is never changed. While towns outnumber cities, the best town becomes a city when the gold above the reserve pays for it.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PURCHASES_LABEL">
+      <Text>Buy with gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PURCHASES_TT">
+      <Text>Buy up to 3 planned buildings per turn, best value per gold first, then upgrade up to 3 military units the game allows to upgrade (those near a threatened settlement first), always keeping the reserve below.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SKIP_UNITS_LABEL">
+      <Text>Idle units skip the turn</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SKIP_UNITS_TT">
+      <Text>Units waiting for orders skip this turn (they are not moved), so the turn can end.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_END_TURN_LABEL">
+      <Text>End the turn</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_END_TURN_TT">
+      <Text>End the turn when done, so nobody waits for the timer. Not while the game still waits for a choice the autopilot does not make: the log then names it.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESERVE">
+      <Text>Gold reserve</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESERVE_TT">
+      <Text>Purchases keep this many turns of your gold income in the treasury.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESERVE_N">
+      <Text>{1_N} turns of income</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPLAN">
+      <Text>Recalculate buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPLAN_TT">
+      <Text>Recalculate the building plan for all settlements this often (and at once after a building is finished, a tile is gained or new buildings unlock). Fast: only changed settlements are re-planned. Your building tacks are updated too if you placed them.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPLAN_N">
+      <Text>every {1_N} turns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPLAN_NEVER">
+      <Text>never</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI">
+      <Text>AI plays (single player)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_TT">
+      <Text>Experimental: hands your whole civilization, units included, to the game's own AI for that many turns, then gives it back. Only in single-player games.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_TURNS_N">
+      <Text>{1_N} turns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_START">
+      <Text>Let the AI play</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_STOP">
+      <Text>Stop the AI</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_NOTE">
+      <Text>The AI also moves units and may start or end wars. It stops after the chosen turns, one turn before the age ends (you choose the next civilization), when someone wins, or if you are defeated.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_MP">
+      <Text>Not available in multiplayer: use the autopilot above.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LOG_TITLE">
+      <Text>What the autopilot did</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LOG_EMPTY">
+      <Text>Nothing yet.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TURN_N">
+      <Text>Turn {1_N}:</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ON">
+      <Text>autopilot switched on</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_OFF">
+      <Text>autopilot switched off</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TECH">
+      <Text>research: {1_Name}{2_Mark}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CIVIC">
+      <Text>civic: {1_Name}{2_Mark}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_PLAN">
+      <Text>{1_City}: queued {2_List} (building plan)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_ADVISOR">
+      <Text>{1_City}: queued {2_Name} (advisor)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUE_NOTHING">
+      <Text>{1_City}: production queue empty, nothing suitable to queue</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GROWTH_TILE">
+      <Text>{1_City}: new citizen on a new tile (+{2_V})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GROWTH_SPECIALIST">
+      <Text>{1_City}: new specialist (+{2_V})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS">
+      <Text>{1_Town}: Focus «{2_Focus}»</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BOUGHT">
+      <Text>bought {1_Name} in {2_Where} for {3_Gold}[icon:YIELD_GOLD]</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REPLANNED">
+      <Text>building plan recalculated ({1_N} buildings, {2_M} settlements re-planned)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TACKS">
+      <Text>building tacks updated ({1_New} new, {2_Removed} removed)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_UNITS_SKIPPED">
+      <Text>{1_N} idle units skip the turn</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TURN_ENDED">
+      <Text>turn ended</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_STARTED">
+      <Text>the AI plays for {1_N} turns</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_ENDED">
+      <Text>the AI handed control back</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ERROR">
+      <Text>error: {1_Text}</Text>
+    </Row>
+    <!-- AI run safety -->
+    <Row Tag="LOC_XPL_AP_AI_STOPPED">
+      <Text>the AI stopped: {1_Reason}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_STOP_PLAYER">
+      <Text>you stopped it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_STOP_AGE_END">
+      <Text>the age ends next turn: choose your next civilization yourself</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_STOP_VICTORY">
+      <Text>someone has won</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_STOP_DEFEAT">
+      <Text>you were defeated</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_REFUSED_AGE_END">
+      <Text>the AI was not started: the age ends next turn</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AI_RETURNING">
+      <Text>taking back control: the AI plays one turn and hands the civ back</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CONTROL_LOST">
+      <Text>The game is playing your civilization by itself: an age changed during an earlier AI run, and the game saved your place as an AI player. «Take back control» asks the game to return it after one turn.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TAKE_BACK">
+      <Text>Take back control</Text>
+    </Row>
+    <!-- Autopilot: wonders -->
+    <Row Tag="LOC_XPL_AP_WONDERS_LABEL">
+      <Text>Build wonders</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WONDERS_TT">
+      <Text>When a city's queue is empty, start the wonder the Wonders tab rates best for it: a race you are likely to win that finishes before the age ends, best value per turn of production (its yields, the boost to neighbouring buildings, and its worth for the culture legacy path and Tourism). At most this many wonders in production at once, each on its best tile.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MAX_WONDERS">
+      <Text>Wonders at once</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MAX_WONDERS_N">
+      <Text>{1_N}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_WONDER">
+      <Text>{1_City}: started the wonder {2_Name} ({3_Race})</Text>
+    </Row>
+    <!-- Gold box: bought -->
+    <Row Tag="LOC_XPL_BOUGHT_SHORT">
+      <Text>Bought</Text>
+    </Row>
+    <!-- Autopilot choices and units -->
+    <Row Tag="LOC_XPL_AP_CHOICES_LABEL">
+      <Text>Policies, celebrations, events</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CHOICES_TT">
+      <Text>Makes the choices that hold the turn: empty policy slots (the card worth most by Policy Yield Previews when that mod is installed, else the first offered), the celebration bonus, story events (the option the game's AI prefers), a pantheon, a religion and its beliefs (worth most by Policy Yield Previews first), a government, a city-state bonus, the greeting for a newly met leader (friendly when allowed, else neutral), a leader's proposal (the cheapest answer that is not a rejection; never a rejection, which can mean war), "seen it" screens and advisor warnings. Espionage notices («Espionage revealed») are read.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_UNITS_TITLE">
+      <Text>Units (these options move units):</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_EXPLORE_LABEL">
+      <Text>Scouts explore</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_EXPLORE_TT">
+      <Text>Scouts head for the nearest discovery (cave, ruins, campfire...) within 4 turns first, even while exploring by themselves, then explore (the game's automatic exploring, else the edge of the fog). Cities train scouts first until you have 2.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLERS_LABEL">
+      <Text>Settlers found settlements</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLERS_TT">
+      <Text>Cities train settlers (2 at a time while you have fewer than 3 settlements, then 1, never past the settlement cap; they go to the front of the queue). A settler waiting for orders walks to the best free site of the Settlements tab (searched by itself every 5 turns; the role that keeps cities and towns 1 to 1 first, else the game's suggestion), at most 10 turns away, and founds a settlement there; a town founded on a city site becomes a city when gold allows. Each settler gets its own site; no move may start a war. A Migrant joins the settlement it stands in (Resettle; city or town), else walks to your nearest one, its citizen on the tile the growth hints rate best. In the Exploration age, until Shipbuilding, no land unit is sent across deep ocean (it stops on every ocean tile and takes damage there); coast is fine.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DEFEND_LABEL">
+      <Text>Military: shoot or fortify</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DEFEND_TT">
+      <Text>A military unit waiting for orders shoots at the most damaged enemy in range (ranged units; never a shot that would start a war), else heals when hurt, else fortifies (or stands guard) where it stands. With 2+ hostile units near a settlement, the nearest city trains its strongest military unit first (only while that settlement has fewer of your soldiers around it than hostile units, and you have fewer than 4 per settlement), soldiers away from it walk there, and a unit walks toward an independent we cannot befriend yet (stopping 2 tiles away). The advisor's military units are only trained below 2 per settlement. When a unit shares a tile with another military unit (a new unit from the city), one of them steps to the nearest free tile, your own land first; boxed in by your own soldiers, a neighbour steps out to make room.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MERCHANTS_LABEL">
+      <Text>Merchants: best trade route</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MERCHANTS_TT">
+      <Text>A merchant waiting for orders starts the best trade route the game allows, in the trade screen's order (most imported resources first, then the yields it brings by your priority). If the route cannot start where it stands, the merchant walks to that city first. One merchant per city, within each civilization's trade limit.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_POLICY">
+      <Text>policy: {1_Name} (value {2_Value})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CELEBRATION">
+      <Text>celebration: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STORY">
+      <Text>event "{1_Name}": {2_Choice}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PANTHEON">
+      <Text>pantheon: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOVERNMENT">
+      <Text>government: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CITY_STATE_BONUS">
+      <Text>city-state bonus: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ACKNOWLEDGED">
+      <Text>{1_Num} screen(s) marked as seen</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BLOCKED">
+      <Text>the turn was not ended: the game still waits for {1_What}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_EXPLORE">
+      <Text>{1_Unit} explores</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLE_MOVE">
+      <Text>{1_Unit} goes to found a settlement at {2_X},{3_Y} ({4_Turns} turns)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLE_FOUND">
+      <Text>{1_Unit} founds a settlement at {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RANGED">
+      <Text>{1_Unit} shoots at {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_HEAL">
+      <Text>{1_Unit} heals</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FORTIFY">
+      <Text>{1_Unit} fortifies</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TRADE_ROUTE">
+      <Text>trade route to {1_City} ({2_Num} resources, value {3_Value})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TRADE_MOVE">
+      <Text>a merchant walks to {1_City}</Text>
+    </Row>
+    <!-- Autopilot production fallback -->
+    <Row Tag="LOC_XPL_AP_QUEUED_FALLBACK">
+      <Text>{1_City}: queued {2_Name} (the cheapest building: the advisor's picks could not be built)</Text>
+    </Row>
+    <!-- Autopilot unit fallback -->
+    <Row Tag="LOC_XPL_AP_ALERT">
+      <Text>{1_Unit} stands guard (wakes when an enemy is near)</Text>
+    </Row>
+    <!-- Autopilot: units sharing a tile -->
+    <Row Tag="LOC_XPL_AP_STEP_ASIDE">
+      <Text>{1_Unit} steps to {2_X},{3_Y}: two units may not stay on one tile</Text>
+    </Row>
+    <!-- Autopilot: first meetings, scouts first -->
+    <Row Tag="LOC_XPL_AP_FIRST_MEET">
+      <Text>met {1_Leader}: {2_Greeting}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GREETING_FRIENDLY">
+      <Text>friendly greeting</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GREETING_NEUTRAL">
+      <Text>neutral greeting</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_SCOUT">
+      <Text>{1_City}: queued {2_Name} (exploring: {3_Num} scouts first)</Text>
+    </Row>
+    <!-- Autopilot: information windows -->
+    <Row Tag="LOC_XPL_AP_CLOSE_POPUPS_LABEL">
+      <Text>Close information windows</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CLOSE_POPUPS_TT">
+      <Text>While the autopilot is on, windows that only inform are closed as they appear: technology or civic learned, new unlocks, legacy milestones, age warnings, advisor warnings, wonder videos, tutorial messages, the turn-4 advisor choice, victory progress, the report of a rival's spy action; and story events once the autopilot answers them («Policies, celebrations, events»). Never diplomacy, confirmations or the end of the game.</Text>
+    </Row>
+    <!-- Autopilot: diplomatic proposals -->
+    <Row Tag="LOC_XPL_AP_DIPLO_RESPONSE">
+      <Text>diplomacy: {1_Leader}, {2_Action}: {3_Response}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DIPLO_LEFT">
+      <Text>diplomacy: {1_Leader}, {2_Action}: left for you (only rejecting is possible)</Text>
+    </Row>
+    <!-- Autopilot: advisor warnings -->
+    <Row Tag="LOC_XPL_AP_ADVISOR_SEEN">
+      <Text>{1_Num} advisor warning(s) marked as seen</Text>
+    </Row>
+    <!-- Autopilot: leader messages -->
+    <Row Tag="LOC_XPL_AP_LEADER_MESSAGE">
+      <Text>message from {1_Leader} read</Text>
+    </Row>
+    <!-- Autopilot: settlers, towns, independents, roaming, promotions, tacks -->
+    <Row Tag="LOC_XPL_AP_BEFRIEND_LABEL">
+      <Text>Befriend independents</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BEFRIEND_TT">
+      <Text>Spends Influence to start befriending every independent power the game allows (those threatening a settlement first, then the nearest), so its units leave yours alone; under threat (2+ hostile units near a settlement) more Influence goes into it. Also asks civilizations for open borders when your explorers reach their land.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TACKS_LABEL">
+      <Text>Map tacks for the plan</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TACKS_TT">
+      <Text>After each recalculation the plan's buildings are shown as map tacks (Detailed Map Tacks); with settlers on, also the sites they walk to and the next best ones. Only the autopilot's own settle tacks are replaced.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ROAM_LABEL">
+      <Text>Military explores (one garrison per city stays)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ROAM_TT">
+      <Text>Military units other than one garrison per city go exploring: the game's automatic exploring if it allows, else a random tile at the edge of the fog up to 3 turns away, never into someone's land or a war. Fortified ones are woken for it; hurt ones heal first.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SITES_FOUND">
+      <Text>settlement sites recalculated: {1_Num}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLE_TACKS">
+      <Text>settle tacks: {1_Num} placed, {2_Num} removed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BEFRIEND">
+      <Text>befriending {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PROMOTED">
+      <Text>{1_Unit} promoted: {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ROAM">
+      <Text>{1_Unit} explores towards {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_SETTLER">
+      <Text>{1_City}: queued {2_Name} (settlers: {3_Num} at a time)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FRONT_LOADED">
+      <Text>{1_City}: {2_Name} moved to the front of the queue</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TOWN_CONVERTED">
+      <Text>{1_Town} becomes a city ({2_Gold} gold): cities and towns 1 to 1</Text>
+    </Row>
+    <!-- Autopilot: threats, open borders, town projects -->
+    <Row Tag="LOC_XPL_AP_THREAT">
+      <Text>threat: {2_Num} hostile units near {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BEFRIEND_SUPPORT">
+      <Text>more Influence into befriending {1_Name} (it threatens us)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_DEFENDER">
+      <Text>{1_City}: queued {2_Name} to defend {3_Name} ({4_Num} hostile units)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_APPROACH">
+      <Text>{1_Unit} heads toward {2_Name} so we can befriend it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_OPEN_BORDERS">
+      <Text>open borders proposed to {1_Leader}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TOWN_KEEPS_GROWING">
+      <Text>{1_Town} keeps growing (no Focus worth taking yet)</Text>
+    </Row>
+    <!-- Autopilot: discoveries -->
+    <Row Tag="LOC_XPL_AP_DISCOVERY">
+      <Text>{1_Unit} heads for a discovery at {2_X},{3_Y}</Text>
+    </Row>
+    <!-- Autopilot: orders not taken -->
+    <Row Tag="LOC_XPL_AP_ORDERS_NOT_TAKEN">
+      <Text>{1_Num} unit order(s) not carried out by the game: those units skip this turn</Text>
+    </Row>
+    <!-- Autopilot: age over -->
+    <Row Tag="LOC_XPL_AP_AGE_OVER">
+      <Text>the age is over: choose your next civilization yourself (the autopilot switched off)</Text>
+    </Row>
+    <!-- Autopilot: age start -->
+    <Row Tag="LOC_XPL_AP_AGE_START">
+      <Text>a new age: choose its dedications yourself, then switch the autopilot on again (it switched off)</Text>
+    </Row>
+    <!-- Autopilot: religion -->
+    <Row Tag="LOC_XPL_AP_RELIGION_FOUNDED">
+      <Text>religion founded: {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BELIEF">
+      <Text>belief: {1_Name}</Text>
+    </Row>
+    <!-- Autopilot: join army -->
+    <Row Tag="LOC_XPL_AP_JOINED_ARMY">
+      <Text>{1_Unit} joins the commander's army on its tile</Text>
+    </Row>
+    <!-- Autopilot: unit upgrades -->
+    <Row Tag="LOC_XPL_AP_UPGRADED">
+      <Text>{1_Unit} upgraded to {2_Unit}</Text>
+    </Row>
+    <!-- Autopilot: defenders, room, migrants -->
+    <Row Tag="LOC_XPL_AP_REINFORCE">
+      <Text>{1_Unit} goes to defend {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MADE_ROOM">
+      <Text>{1_Unit} steps out to make room for {2_Unit}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MIGRANT_MOVE">
+      <Text>{1_Unit} walks to {2_Name} to join it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESETTLED">
+      <Text>{1_Unit} joined {2_Name}</Text>
+    </Row>
+    <!-- Autopilot: espionage notice -->
+    <Row Tag="LOC_XPL_AP_ESPIONAGE_SEEN">
+      <Text>espionage revealed ({1_Name}): read</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ESPIONAGE_OPENED">
+      <Text>espionage report opened (the game still held the turn)</Text>
+    </Row>
+  </EnglishText>
+</Database>

@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "checkJs": false,
+    "allowJs": true,
+    "baseUrl": "."
+  },
+  "include": ["mod/**/*.js", "tests/**/*.mjs", "tools/**/*.mjs", "tools/types/*.d.ts"]
+}
