@@ -12,6 +12,7 @@ const KEYS = {
     Buildings: "ConstructibleType", Adjacency_YieldChanges: "ID", Districts: "DistrictType",
     Wonders: "ConstructibleType", UniqueQuarters: "UniqueQuarterType", GlobalParameters: "Name",
     Civilizations: "CivilizationType", Projects: "ProjectType", Units: "UnitType",
+    ProgressionTreeNodes: "ProgressionTreeNodeType", GreatWorks: "GreatWorkType", Victories: "VictoryType", Attributes: "AttributeType",
 };
 
 export function hash(s) {
@@ -203,8 +204,15 @@ export function installFakeEngine(world, age = "antiquity") {
             },
             // world.workers(city) -> [{ PlotIndex, IsBlocked, NumWorkers, MaxWorkers, CurrentYields, NextYields, CurrentMaintenance, NextMaintenance }]
             Workers: { GetAllPlacementInfo: () => world.workers?.(c) ?? [], getCityWorkerCap: () => c.workerCap ?? 1 },
-            // world.cities[i].resources = [resource value] (assigned here), resourceCap = slots
-            Resources: { getAssignedResources: () => (c.resources ?? []).map((v) => ({ value: v })), getAssignedResourcesCap: () => c.resourceCap ?? 0 },
+            // world.cities[i].resources = [resource value] (assigned here), resourceCap = slots;
+            // factory = true (has a Factory: in the Modern age the game's isTreasureConstructiblePrereqMet),
+            // factoryResource = "RESOURCE_COTTON" (the factory-resource type it holds)
+            Resources: {
+                getAssignedResources: () => (c.resources ?? []).map((v) => ({ value: v })),
+                getAssignedResourcesCap: () => c.resourceCap ?? 0,
+                getFactoryResource: () => (c.factoryResource ? info.Resources.lookup(c.factoryResource).$hash : -1),
+                isTreasureConstructiblePrereqMet: () => !!c.factory,
+            },
             // world.cities[i].connected = [index of another city of the same owner]
             getConnectedCities: () => (c.connected ?? []).map((j) => ({ owner, id: j })),
         }));
@@ -295,7 +303,7 @@ export function installFakeEngine(world, age = "antiquity") {
     g.YieldTypes = { YIELD_FOOD: 0, YIELD_PRODUCTION: 1, YIELD_GOLD: 2, YIELD_SCIENCE: 3, YIELD_CULTURE: 4, YIELD_HAPPINESS: 5, YIELD_DIPLOMACY: 6 };
     g.GrowthTypes = { EXPAND: 0, PROJECT: 1 };
     g.CityCommandTypes = { PURCHASE: 1, CHANGE_GROWTH_MODE: 2, EXPAND: 3 };
-    g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17, MOVE_GREAT_WORK: 40, ASSIGN_RESOURCE: 41, DECLARE_WAR: 42, CANCEL_ALLIANCE: 43 };
+    g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17, MOVE_GREAT_WORK: 40, ASSIGN_RESOURCE: 41, DECLARE_WAR: 42, CANCEL_ALLIANCE: 43, BUY_ATTRIBUTE_TREE_NODE: 44 };
     g.PlayerOperationParameters = { Activate: 1, Deactivate: 2 };
     g.CultureSlotTypes = { TRADITION_CULTURE_SLOT: 1, POLICY_CULTURE_SLOT: 2, CRISIS_CULTURE_SLOT: 3 };
     g.AdvisorySubjectTypes = { CHOOSE_TECH: 1, CHOOSE_CULTURE: 2, PRODUCTION: 3 };
@@ -306,7 +314,12 @@ export function installFakeEngine(world, age = "antiquity") {
             const r = type === "TREE_TECH" ? world.research?.tech : world.research?.culture;
             return r?.active != null ? { activeNodeIndex: 0, nodes: [{ nodeType: r.active }] } : { activeNodeIndex: -1, nodes: [] };
         },
-        getNode: (_pid, nodeType) => ({ nodeType }),
+        // Like the game: the node's hash for a type or hash; depthUnlocked from world.research.depth[type]
+        // (1 = researched, 2 = mastered).
+        getNode: (_pid, n) => {
+            const def = g.GameInfo.ProgressionTreeNodes?.lookup(n);
+            return { nodeType: def ? def.$hash : n, depthUnlocked: world.research?.depth?.[def?.ProgressionTreeNodeType ?? n] ?? 0 };
+        },
     };
     // world.readyUnits = [unitId] (units waiting for orders; a skipped one leaves the list)
     g.UI = g.UI ?? {};

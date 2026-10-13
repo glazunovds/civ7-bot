@@ -72,6 +72,7 @@
           <Item>ui/core/xpl-town-scorer.js</Item>
           <Item>ui/core/xpl-tuning.js</Item>
           <Item>ui/core/xpl-victory-focus.js</Item>
+          <Item>ui/core/xpl-victory-levers.js</Item>
           <Item>ui/core/xpl-wonder-race.js</Item>
           <Item>ui/core/xpl-yields.js</Item>
           <Item>ui/data/xpl-autopilot-choices.js</Item>

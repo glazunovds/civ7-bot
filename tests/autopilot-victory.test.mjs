@@ -129,20 +129,53 @@ test("production advice: the advisor that matches the priority first", () => {
     delete world.buildRecs;
 });
 
-test("switched-off victories: the classes the game's victory manager says no to", () => {
+test("production advice: never the advisor's wonder (wonders only through the race-checked wonder step)", () => {
+    GameInfo.AdvisorySubjects = { lookup: (h) => (h === 8 ? { AdvisorySubjectType: "ADVISORY_SUBJECT_PRODUCE_CONSTRUCTIBLES" } : null) };
+    world.buildRecs = () => [
+        { subject: 8, recommendedType: GameInfo.Constructibles.lookup("WONDER_PYRAMIDS").$hash, whichAdvisors: [] },
+        { subject: 8, recommendedType: GameInfo.Constructibles.lookup("BUILDING_GRANARY").$hash, whichAdvisors: [] },
+    ];
+    const canBuild = world.canBuild;
+    world.canBuild = (type) => ({ Success: true, Plots: [GameplayMap.getIndexFromXY(3, 2)], ExpandUrbanPlots: [] });
+    const built = () => fake.sent.filter((s) => s.kind === "operation" && s.id.id === 0 && s.args.ConstructibleType !== undefined).map((s) => GameInfo.Constructibles.lookup(s.args.ConstructibleType).ConstructibleType);
+    try {
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { profile: "BALANCE" });
+        assert.deepEqual(built(), ["BUILDING_GRANARY"]);
+    } finally {
+        world.canBuild = canBuild;
+        delete world.buildRecs;
+    }
+});
+
+test("switched-off victories: the classes the game's victory manager says no to (the game's Victories rows: VictoryClassType)", () => {
     const vm = Game.VictoryManager;
     try {
-        GameInfo.Victories = [
-            { VictoryType: "VICTORY_CULTURE_MODERN", LegacyPathClassType: "LEGACY_PATH_CLASS_CULTURE" },
-            { VictoryType: "VICTORY_ECONOMIC_MODERN", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC" },
-        ];
         Game.VictoryManager = { isCountdownVictoryEnabled: (t) => t !== "VICTORY_CULTURE_MODERN" };
         assert.deepEqual([...victory.disabledVictories()], ["CULTURE"]);
         Game.VictoryManager = {};
         assert.deepEqual([...victory.disabledVictories()], [], "unknown: nothing is off");
     } finally {
         Game.VictoryManager = vm;
-        delete GameInfo.Victories;
+    }
+});
+
+test("only this age's legacy paths (GameInfo.LegacyPaths holds every age's; seen in game: no focus after an age change)", () => {
+    const rows = GameInfo.LegacyPaths;
+    const milestones = GameInfo.AgeProgressionMilestones;
+    try {
+        GameInfo.LegacyPaths = [
+            { LegacyPathType: "LP_EX_ECONOMIC", Age: "AGE_EXPLORATION", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC", EnabledByDefault: true },
+            { LegacyPathType: "LP_AQ_ECONOMIC", Age: "AGE_ANTIQUITY", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC", EnabledByDefault: true },
+        ];
+        GameInfo.AgeProgressionMilestones = [
+            { LegacyPathType: "LP_EX_ECONOMIC", FinalMilestone: true, RequiredPathPoints: 30 },
+            { LegacyPathType: "LP_AQ_ECONOMIC", FinalMilestone: true, RequiredPathPoints: 20 },
+        ];
+        assert.deepEqual(victory.legacyStandings().map((s) => s.path), ["LP_AQ_ECONOMIC"], "this game is in Antiquity");
+    } finally {
+        GameInfo.LegacyPaths = rows;
+        GameInfo.AgeProgressionMilestones = milestones;
     }
 });
 
@@ -155,4 +188,18 @@ test("legacy paths switched off in the game setup are left out (the player's ena
         delete me.LegacyPaths.getEnabledLegacyPaths;
     }
     assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["CULTURE", "SCIENCE"], "unknown: all of them");
+    // The list names another age's paths (as after an age change): matched by class.
+    me.LegacyPaths.getEnabledLegacyPaths = () => [{ legacyPath: Database.makeHash("LEGACY_PATH_ANTIQUITY_SCIENCE"), legacyPathClass: Database.makeHash("LEGACY_PATH_CLASS_SCIENCE") }];
+    try {
+        assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["SCIENCE"]);
+    } finally {
+        delete me.LegacyPaths.getEnabledLegacyPaths;
+    }
+    // A list that matches none of this age's paths is not believed: all of them.
+    me.LegacyPaths.getEnabledLegacyPaths = () => [{ legacyPath: Database.makeHash("LEGACY_PATH_SOMETHING_ELSE") }];
+    try {
+        assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["CULTURE", "SCIENCE"]);
+    } finally {
+        delete me.LegacyPaths.getEnabledLegacyPaths;
+    }
 });

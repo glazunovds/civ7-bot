@@ -43,7 +43,7 @@ Game.UnitOperations.sendRequest = (id, op, args) => {
     setTimeout(() => {
         world.units = world.units.filter((u) => u.id !== id.id);
         world.cities.push({ owner: 0, ...SITE, name: "Rome", pop: 1, prod: 3 });
-        world.research.tech.available = [11];
+        world.research.tech.available = [9011];
         engine.trigger("CityInitialized", { cityID: { owner: 0, id: 0 } });
     }, 600); // longer than a step pause: the pass must wait for the city
 };
@@ -90,7 +90,7 @@ test("a choice that appears late in the pass gets one more try before the turn w
     const build = Game.CityOperations.sendRequest;
     Game.CityOperations.sendRequest = (id, op, args) => {
         build(id, op, args);
-        world.research.culture.available = [21];
+        world.research.culture.available = [9021];
     };
     world.cities[0].queue = undefined;
     await pass();
@@ -174,6 +174,71 @@ test("turn 4: two warriors on the capital (the game refuses fortify): one steps 
     assert.equal(ops.filter(([, op]) => op === UnitOperationTypes.MOVE_TO).length, 1, JSON.stringify(ops));
     assert.equal(ops.filter(([, op]) => op === "UNITOPERATION_SKIP_TURN").length, 1, JSON.stringify(ops));
     assert.equal(fake.sent.filter((s) => s.kind === "endTurn").length, 1, String(keys()));
+});
+
+test("production: the advisor's scout, settler or merchant only below what the autopilot keeps (seen in game: 32 scouts)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    GameInfo.AdvisorySubjects = { lookup: (h) => (h === 8 ? { AdvisorySubjectType: "ADVISORY_SUBJECT_PRODUCE_UNITS" } : null) };
+    const near = GameplayMap.getIndexFromXY(SITE.x + 1, SITE.y);
+    world.canBuild = (type) => (type === undefined || type.startsWith("UNIT_") || type === "BUILDING_GRANARY" ? { Success: true, Plots: [near], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    const unit = () => fake.sent.filter((s) => s.kind === "operation").map((s) => s.args.UnitType).find((t) => t !== undefined);
+    const before = world.units;
+    try {
+        // Two scouts already: the advisor's third is not built.
+        world.units = [{ id: 20, type: "UNIT_SCOUT", x: 3, y: 3 }, { id: 21, type: "UNIT_SCOUT", x: 4, y: 3 }];
+        world.buildRecs = () => [{ subject: 8, recommendedType: "UNIT_SCOUT", whichAdvisors: [] }];
+        fake.sent.length = 0;
+        let out = steps.fillProduction(new Map(), { explore: true });
+        assert.equal(unit(), undefined, JSON.stringify(out));
+        // At the settlement cap: no settler from the advisor (ours stop there too).
+        world.units = [];
+        world.settlementCap = Players.get(0).Stats.numSettlements;
+        world.buildRecs = () => [{ subject: 8, recommendedType: "UNIT_SETTLER", whichAdvisors: [] }];
+        fake.sent.length = 0;
+        out = steps.fillProduction(new Map(), { settlers: true });
+        assert.equal(unit(), undefined, JSON.stringify(out));
+        delete world.settlementCap;
+        // No trade route open: no merchant from the advisor.
+        world.buildRecs = () => [{ subject: 8, recommendedType: "UNIT_MERCHANT", whichAdvisors: [] }];
+        fake.sent.length = 0;
+        out = steps.fillProduction(new Map(), { merchants: true });
+        assert.equal(unit(), undefined, JSON.stringify(out));
+    } finally {
+        world.units = before;
+        delete world.buildRecs;
+        delete world.canBuild;
+        delete world.settlementCap;
+    }
+});
+
+test("production: nothing else to build: a project, else the strongest soldier, else any unit but a settler (an empty queue holds the turn)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    let allowed = new Set(["PROJECT_CITY_SCIENCE_PROJECT", "UNIT_WARRIOR", "UNIT_SCOUT", "UNIT_SETTLER"]);
+    world.canBuild = (type) => (type === undefined ? { Success: true } : allowed.has(type) ? { Success: true, Plots: [], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    const queued = () => fake.sent.filter((s) => s.kind === "operation").map((s) => s.args).map((a) => a.ProjectType !== undefined ? GameInfo.Projects.lookup(a.ProjectType).ProjectType : a.UnitType !== undefined ? GameInfo.Units.lookup(a.UnitType).UnitType : "?");
+    const before = world.units;
+    try {
+        world.units = [];
+        fake.sent.length = 0;
+        let out = steps.fillProduction(new Map(), {});
+        assert.deepEqual(queued(), ["PROJECT_CITY_SCIENCE_PROJECT"], JSON.stringify(out));
+        assert.equal(out[0].key, "QUEUED_FALLBACK");
+        allowed = new Set(["UNIT_WARRIOR", "UNIT_SCOUT", "UNIT_SETTLER"]);
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), {});
+        assert.deepEqual(queued(), ["UNIT_WARRIOR"]);
+        allowed = new Set(["UNIT_SETTLER", "UNIT_SCOUT"]);
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), {});
+        assert.deepEqual(queued(), ["UNIT_SCOUT"]);
+        allowed = new Set(["UNIT_SETTLER"]);
+        fake.sent.length = 0;
+        out = steps.fillProduction(new Map(), {});
+        assert.deepEqual(queued(), [], "never a settler (the settlement cap)");
+    } finally {
+        world.units = before;
+        delete world.canBuild;
+    }
 });
 
 test("exploring: cities train scouts first until there are two (counting those in training)", async () => {

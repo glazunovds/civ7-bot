@@ -21,14 +21,15 @@ TABLES = {
     "Constructible_ValidDistricts", "Constructible_ValidTerrains", "TerrainBiomeFeature_YieldChanges",
     "Constructible_ValidFeatures", "Constructible_RequiredFeatureClasses", "CivilizationTraits", "Civilizations",
     "LeaderTraits", "UniqueQuarterModifiers", "Projects", "Project_Units", "Constructible_Maintenances",
-    "Units",
+    "Units", "ProgressionTreeNodes", "ProgressionTreeNodeUnlocks", "GreatWorks", "Victories", "ProgressionTreePrereqs", "Attributes",
 }
 KEYS = {  # primary key column per table, for Update/Delete matching and lookup()
     "Ages": "AgeType", "Terrains": "TerrainType", "Biomes": "BiomeType", "Features": "FeatureType",
     "Resources": "ResourceType", "Yields": "YieldType", "Constructibles": "ConstructibleType",
     "Buildings": "ConstructibleType", "Adjacency_YieldChanges": "ID", "Districts": "DistrictType",
     "Wonders": "ConstructibleType", "UniqueQuarters": "UniqueQuarterType", "GlobalParameters": "Name",
-    "Projects": "ProjectType", "Units": "UnitType",
+    "Projects": "ProjectType", "Units": "UnitType", "ProgressionTreeNodes": "ProgressionTreeNodeType",
+    "GreatWorks": "GreatWorkType", "Victories": "VictoryType", "Attributes": "AttributeType",
 }
 
 
@@ -41,7 +42,7 @@ def row_dict(el):
 
 
 def load(paths):
-    tables = {t: [] for t in TABLES}
+    tables = {t: [] for t in sorted(TABLES)}  # sorted: the same file every run
     for path in paths:
         try:
             root = ET.parse(path).getroot()

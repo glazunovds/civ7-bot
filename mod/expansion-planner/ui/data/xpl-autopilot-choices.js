@@ -136,6 +136,110 @@ export function fillOnePolicySlot(settings, sent = new Set()) {
     return [];
 }
 
+const SWAP_MIN_GAIN = 2;      // a swap must win at least this (weighted yield per turn)...
+const SWAP_MIN_SHARE = 0.25;  // ...and this share of the card it takes out
+
+/**
+ * When the game lets the player swap cards (Culture.canSwapCultureSlot, as the policies screen
+ * asks; after a new civic or government) and no slot is free: the active card worth least
+ * (Policy Yield Previews) is taken out when an unslotted card that may take its slot is worth
+ * clearly more (SWAP_MIN_GAIN and SWAP_MIN_SHARE); the freed slot is then filled by
+ * fillOnePolicySlot. Same request as the screen: CHANGE_TRADITION {TraditionType: $index, Action:
+ * Deactivate}. Cards of unknown value stay; crisis slots are left alone. `sent` (cards requested
+ * this pass) gets the card taken out, so it is not put back in the same pass.
+ * Seen in game: «Демагогия» (+0) stayed active while «Порт наций» (+64 gold) waited.
+ */
+export function swapOnePolicy(settings, sent = new Set()) {
+    const culture = safe(() => Players.get(pid()).Culture, null);
+    const T = globalThis.CultureSlotTypes;
+    const Deactivate = globalThis.PlayerOperationParameters?.Deactivate;
+    if (!culture || !T || Deactivate === undefined) return [];
+    if (!safe(() => culture.canSwapCultureSlot(T.POLICY_CULTURE_SLOT), false)) return [];
+    const kinds = [T.TRADITION_CULTURE_SLOT, T.POLICY_CULTURE_SLOT].filter((t) => t !== undefined);
+    if (kinds.some((k) => freeSlots(culture, k) > 0)) return []; // empty slots are filled first
+    const weights = getProfile(settings.profile).y;
+    let best = null;
+    for (const slotType of kinds) {
+        // A tradition slot also takes a policy card (fillOnePolicySlot); a policy slot only policies.
+        const cards = slotType === T.TRADITION_CULTURE_SLOT ? [...offered(culture, slotType, weights), ...offered(culture, T.POLICY_CULTURE_SLOT, weights)] : offered(culture, slotType, weights);
+        const top = cards.filter((c) => c.value !== null && !sent.has(c.def.$hash)).sort((a, b) => b.value - a.value)[0];
+        if (!top) continue;
+        for (const h of safe(() => culture.getActiveTraditions(slotType), []) ?? []) {
+            if (sent.has(h)) continue; // just put in
+            const def = safe(() => GameInfo.Traditions.lookup(h), null);
+            const value = def ? cardValue(def.TraditionType, weights) : null;
+            if (value === null) continue;
+            const gain = top.value - value;
+            if (gain < Math.max(SWAP_MIN_GAIN, SWAP_MIN_SHARE * Math.abs(value))) continue;
+            if (!best || gain > best.gain) best = { out: def, outValue: value, into: top, gain };
+        }
+    }
+    if (!best) return [];
+    const args = { TraditionType: best.out.$index, Action: Deactivate };
+    if (!safe(() => Game.PlayerOperations.canStart(pid(), PlayerOperationTypes.CHANGE_TRADITION, args, false), null)?.Success) return [];
+    Game.PlayerOperations.sendRequest(pid(), PlayerOperationTypes.CHANGE_TRADITION, args);
+    sent.add(best.out.$hash);
+    const fmt = (v) => (Math.round(v * 10) / 10).toFixed(1);
+    return [{ key: "POLICY_SWAP", args: [Locale.compose(best.out.Name), fmt(best.outValue), Locale.compose(best.into.def.Name), fmt(best.into.value)] }];
+}
+
+// The attribute tree of each victory focus (ties between equal nodes go there).
+const ATTRIBUTE_OF_PROFILE = { CULTURE: "ATTRIBUTE_CULTURAL", SCIENCE: "ATTRIBUTE_SCIENTIFIC", GOLD: "ATTRIBUTE_ECONOMIC", GOLD_SCIENCE: "ATTRIBUTE_ECONOMIC" };
+
+/**
+ * Leader attribute nodes we may buy now («Характеристика лидера»; seen in game: 5 points never
+ * spent): every attribute tree's nodes as the game's tree screen reads them
+ * (Game.ProgressionTrees.getTree(player, Attributes.ProgressionTreeType).nodes, else
+ * GameInfo.ProgressionTreeNodes of that tree), the game's own check deciding which one a point
+ * (its tree's or a universal one) may buy (PlayerOperations canStart BUY_ATTRIBUTE_TREE_NODE),
+ * each valued by what its first research unlocks: modifiers (Policy Yield Previews
+ * previewModifierByIds) and policy cards (previewPolicyYields), weighed by the priority; null
+ * when unknown. @returns [{ nodeType, def, attribute, value }]
+ */
+function attributeOptions(weights) {
+    const BUY = globalThis.PlayerOperationTypes?.BUY_ATTRIBUTE_TREE_NODE;
+    if (BUY === undefined) return [];
+    const out = [];
+    for (const attr of GameInfo.Attributes ?? []) {
+        if (!attr.ProgressionTreeType) continue;
+        const fromTree = (safe(() => Game.ProgressionTrees.getTree(pid(), attr.ProgressionTreeType)?.nodes, []) ?? []).map((n) => n.nodeType);
+        const nodes = fromTree.length > 0 ? fromTree : (GameInfo.ProgressionTreeNodes?.filter((d) => d.ProgressionTree === attr.ProgressionTreeType) ?? []).map((d) => d.$hash);
+        for (const nodeType of nodes) {
+            const def = safe(() => GameInfo.ProgressionTreeNodes.lookup(nodeType), null);
+            if (!def || def.ProgressionTree !== attr.ProgressionTreeType) continue;
+            if (!safe(() => Game.PlayerOperations.canStart(pid(), BUY, { ProgressionTreeNodeType: nodeType }, false), null)?.Success) continue;
+            const unlocks = GameInfo.ProgressionTreeNodeUnlocks?.filter((r) => r.ProgressionTreeNodeType === def.ProgressionTreeNodeType && (Number(r.UnlockDepth) || 1) === 1) ?? [];
+            const mods = unlocks.filter((r) => r.TargetKind === "KIND_MODIFIER").map((r) => r.TargetType);
+            const cards = unlocks.filter((r) => r.TargetKind === "KIND_TRADITION").map((r) => r.TargetType);
+            const parts = [mods.length > 0 ? modifiersValue(mods, weights) : null, ...cards.map((c) => cardValue(c, weights))].filter((v) => v !== null);
+            out.push({ nodeType, def, attribute: attr, value: parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null });
+        }
+    }
+    return out;
+}
+
+/**
+ * Spends one leader attribute point on the node worth most now (attributeOptions); ties (and nodes
+ * of unknown value) go to the victory focus's tree, then the game's order. Same request as the
+ * attribute screen (model-attribute-trees.js buyAttributeTreeNode). `bought` keeps a node the game
+ * has not confirmed yet from being requested twice. @returns log entries
+ */
+export function buyOneAttribute(settings, bought = new Set()) {
+    const BUY = globalThis.PlayerOperationTypes?.BUY_ATTRIBUTE_TREE_NODE;
+    if (BUY === undefined || !safe(() => Players.get(pid()).Identity, null)) return [];
+    const weights = getProfile(settings.profile).y;
+    const preferred = ATTRIBUTE_OF_PROFILE[settings.profile] ?? null;
+    const options = attributeOptions(weights).filter((o) => !bought.has(o.nodeType));
+    const rank = (o) => (o.value ?? -Infinity);
+    options.sort((a, b) => rank(b) - rank(a) || (b.attribute.AttributeType === preferred ? 1 : 0) - (a.attribute.AttributeType === preferred ? 1 : 0));
+    const pick = options[0];
+    if (!pick) return [];
+    Game.PlayerOperations.sendRequest(pid(), BUY, { ProgressionTreeNodeType: pick.nodeType });
+    bought.add(pick.nodeType);
+    const value = pick.value === null ? "?" : (Math.round(pick.value * 10) / 10).toFixed(1);
+    return [{ key: "ATTRIBUTE_BOUGHT", args: [safe(() => Locale.compose(pick.attribute.Name), pick.attribute.AttributeType), pick.def.ProgressionTreeNodeType, value] }];
+}
+
 /** When a celebration starts and its bonus must be chosen: the option worth most. */
 export function chooseCelebration(settings) {
     if (!waiting("NOTIFICATION_CHOOSE_GOLDEN_AGE")) return [];
@@ -850,6 +954,8 @@ export function turnBlocker() {
 // ---- one pass over every choice -----------------------------------------------------------
 
 const MAX_POLICY_CHANGES = 8;   // slots filled per pass (a new age opens several at once)
+const MAX_POLICY_SWAPS = 3;     // weak cards swapped out per pass
+const MAX_ATTRIBUTE_BUYS = 10;  // leader attribute points spent per pass (each after AttributeNodeCompleted)
 const MAX_STORIES = 3;
 const MAX_BELIEFS = 4;          // beliefs added per pass (founder + follower + ...)
 const POLICY_WAIT_MS = 1000;    // the game slots one card at a time: wait for TraditionChanged
@@ -898,6 +1004,22 @@ export async function makeChoices(settings, { retry = false } = {}) {
     if (celebration.length > 0) {
         out.push(...celebration);
         await nextEvent("TraditionSlotsAdded", POLICY_WAIT_MS);
+        await fillPolicies();
+    }
+    // Leader attribute points, one node at a time (the game confirms each with AttributeNodeCompleted).
+    const boughtNodes = new Set();
+    for (let i = 0; i < MAX_ATTRIBUTE_BUYS; i++) {
+        const r = buyOneAttribute(settings, boughtNodes);
+        if (r.length === 0) break;
+        out.push(...r);
+        if (!(await nextEvent("AttributeNodeCompleted", POLICY_WAIT_MS))) break;
+    }
+    // Then weak cards make way for better ones, while the game allows swaps.
+    for (let i = 0; i < MAX_POLICY_SWAPS; i++) {
+        const r = swapOnePolicy(settings, sent);
+        if (r.length === 0) break;
+        out.push(...r);
+        if (!(await nextEvent("TraditionChanged", POLICY_WAIT_MS))) break;
         await fillPolicies();
     }
     const answered = new Set();

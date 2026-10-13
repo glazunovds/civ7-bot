@@ -22,7 +22,7 @@ import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
 import { befriendIndependents, considerTownProjects, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
 import { commandUnits, leadersNearExplorers, releaseStuckOrders, settlerGoals, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
-import { chooseFocus, closeTriumphs, PROFILE_FOR_FOCUS, scoreFocus, TRIUMPH_CATEGORY, wondersAtOnce } from '../core/xpl-victory-focus.js';
+import { chooseFocus, closeTriumphs, FOCUS_CLASSES, profileForFocus, scoreFocus, TRIUMPH_CATEGORY, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { disabledVictories, leaderLeaning, legacyStandings, triumphs } from '../data/xpl-victory.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
@@ -37,6 +37,7 @@ const SETTLE_TACKS = 3;      // settle tacks: where settlers walk, then the next
 const SETTLE_TACK_TYPE = "BUILDING_CITY_HALL"; // as the Settlements tab places them
 const PLAN_TACKS_PER_SETTLEMENT = 3; // the "map tacks" option: each settlement's next buildings
 const TRACK_TRIUMPHS = 3;    // close triumphs of the focus's kind ticked «Отслеживать»
+let focusDiagnosedTurn = -1; // the turn "no path" was last written to UI.log
 const SHOW_TRIUMPHS = 6;     // close triumphs listed in the tab
 // Advice reasons (hud/xpl-recalc-watch.js) after which the plan is recalculated at once.
 const REPLAN_REASONS = ["BUILT", "TILES", "CITY", "UNLOCKED", "UNIQUES", "TACKS"];
@@ -161,7 +162,11 @@ function compose(key, ...args) {
  */
 function updateFocus(target = "AUTO") {
     const all = triumphs();
-    const scores = scoreFocus(legacyStandings(), leaderLeaning(), all, { disabled: disabledVictories() });
+    const standings = legacyStandings();
+    let disabled = disabledVictories();
+    // Every path ruled out cannot be right (the user won a culture victory with "nothing" on): ignore it.
+    if (FOCUS_CLASSES.every((c) => disabled.has(c))) disabled = new Set();
+    const scores = scoreFocus(standings, leaderLeaning(), all, { disabled });
     const pick = chooseFocus(scores, ap().focus ?? {}, { target });
     const close = closeTriumphs(all);
     const kind = TRIUMPH_CATEGORY[pick.cls];
@@ -173,6 +178,11 @@ function updateFocus(target = "AUTO") {
             track: close.filter((t) => t.category === kind).slice(0, TRACK_TRIUMPHS).map((t) => t.type),
         },
     });
+    // No path (seen in game: no focus at all after an age change): say why, once a turn.
+    if (!pick.cls && focusDiagnosedTurn !== Game.turn) {
+        focusDiagnosedTurn = Game.turn;
+        log.warn(`victory focus: no path this turn (target ${target}); paths ${JSON.stringify(standings.map((s) => [s.path, s.cls, s.ours, s.goal]))}; disabled ${JSON.stringify([...disabled])}; scored ${scores.length}`);
+    }
     if (!pick.changed || !pick.cls) return [];
     const s = scores.find((x) => x.cls === pick.cls);
     return [{ key: "VICTORY_FOCUS", args: [compose(`LOC_XPL_FOCUS_${pick.cls}`), s?.ours ?? 0, s?.goal ?? 0] }];
@@ -212,7 +222,20 @@ export async function runTurn(force = false) {
                 focus = ap().focus?.cls ?? null;
             });
         } else if (ap().focus) setAp({ focus: null });
-        if (focus && PROFILE_FOR_FOCUS[focus]) s = { ...s, profile: PROFILE_FOR_FOCUS[focus] };
+        if (focus) {
+            // Economy keeps science up while its path's techs are missing (core profileForFocus).
+            let techsLeft = 0;
+            try {
+                if (focus === "ECONOMIC") techsLeft = steps.pathTechsLeft(focus);
+            } catch (error) {
+                log.debug("autopilot: path techs unknown", error);
+            }
+            const profile = profileForFocus(focus, { techsLeft });
+            if (profile) {
+                s = { ...s, profile };
+                if (ap().focus) setAp({ focus: { ...ap().focus, profile } });
+            }
+        }
         const maxWonders = wondersAtOnce(o.maxWonders ?? 1, focus);
         // Units first: a settler that founds now gives a new city (on turn 1 the capital,
         // before which nothing can be researched or built) handled by the steps below.
@@ -234,7 +257,7 @@ export async function runTurn(force = false) {
             if (r.ordered.size > 0) await wait(STEP_PAUSE_MS);
         };
         const research = async () => {
-            record([steps.chooseResearch("tech", s), steps.chooseResearch("culture", s)]);
+            record([steps.chooseResearch("tech", s, focus), steps.chooseResearch("culture", s, focus)]);
             await wait(STEP_PAUSE_MS);
         };
         // Hostile units around our settlements: befriend (or speed up befriending) their
@@ -255,11 +278,13 @@ export async function runTurn(force = false) {
         // Damaged buildings first: bought with gold when it covers them, else at the front of the queue.
         if (o.purchases !== false || o.production !== false) {
             await guarded("repairs", () => record(steps.repairBuildings({ buy: o.purchases !== false, queue: o.production !== false })));
+            // Walls where raiders threaten a settlement.
+            if (threats.length > 0) await guarded("walls", () => record(steps.fortifyThreatened(threats, { buy: o.purchases !== false, queue: o.production !== false })));
         }
-        const unitOptions = { explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, threats: o.defend || o.roam ? threats : [], profile: s.profile };
+        const unitOptions = { explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, threats: o.defend || o.roam ? threats : [], profile: s.profile, victory: focus };
         const produce = async () => {
             record(await replanIfDue(s));
-            // The victory focus's own work first (science projects and a Launch Pad; factories).
+            // The victory focus's own work first (science projects and a Launch Pad; the path's buildings of this age).
             if (focus) record(steps.pushVictoryWork(focus));
             const wonders = o.wonders !== false ? steps.chooseWonders(s, maxWonders) : new Map();
             record(steps.fillProduction(wonders, unitOptions));
@@ -269,7 +294,7 @@ export async function runTurn(force = false) {
         if (o.production !== false) await guarded("production", produce);
         const growth = async () => {
             for (let i = 0; i < steps.MAX_GROWTH_PER_CITY; i++) {
-                const placed = steps.placeGrowth(s);
+                const placed = steps.placeGrowth(s, { victory: focus });
                 record(placed);
                 if (placed.length === 0) break;
                 await wait(STEP_PAUSE_MS);
@@ -284,13 +309,16 @@ export async function runTurn(force = false) {
         if (o.resources !== false) await guarded("resources", () => record(steps.assignResources(s)));
         if (o.purchases !== false) {
             await guarded("purchases", async () => {
-                record(steps.buyBuildings(s, Number(o.reserveTurns ?? 2)));
+                // Towns buy the victory path's buildings first (Rail Station, Port, Factory); the
+                // plan's purchases then skip those and count their gold.
+                const purchases = { bought: new Set(), spent: 0 };
+                if (focus) record(steps.buyVictoryWork(focus, Number(o.reserveTurns ?? 2), purchases));
+                record(steps.buyBuildings(s, Number(o.reserveTurns ?? 2), purchases));
                 await wait(STEP_PAUSE_MS);
             });
             // Then unit upgrades with the gold above the same reserve.
             await guarded("upgrades", () => {
-                const income = Number(Players.get(local())?.Stats?.getNetYield?.(YieldTypes.YIELD_GOLD) ?? 0) || 0;
-                record(upgradeUnits(Math.max(0, income) * Number(o.reserveTurns ?? 2), threats));
+                record(upgradeUnits(steps.goldReserve(Number(o.reserveTurns ?? 2)), threats));
             });
         }
         const skip = () => record(steps.skipIdleUnits(ordered));

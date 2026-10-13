@@ -2,7 +2,7 @@
 // which triumphs are close.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chooseFocus, closeTriumphs, scoreFocus, SWITCH_STREAK, wondersAtOnce } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
+import { chooseFocus, closeTriumphs, profileForFocus, scoreFocus, SWITCH_STREAK, wondersAtOnce } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
 
 const STANDINGS = [
     { cls: "CULTURE", ours: 4, rival: 2, goal: 7 },
@@ -21,6 +21,14 @@ test("scores: along this age's path and ahead of the best rival; never military;
     assert.equal(best(lead), "SCIENCE", "a little behind on the path but far ahead of every rival");
     const eco = s.find((x) => x.cls === "ECONOMIC");
     assert.ok(eco.done && eco.score < 0, "economic is complete this age");
+});
+
+test("each class's path with a goal this age is scored, not another age's path of that class (no goal here)", () => {
+    const scores = scoreFocus([
+        { cls: "ECONOMIC", path: "AQ", ours: 0, rival: 0, goal: 0 },
+        { cls: "ECONOMIC", path: "EX", ours: 6, rival: 0, goal: 30 },
+    ]);
+    assert.deepEqual(scores.map((s) => [s.cls, s.goal, s.ours]), [["ECONOMIC", 30, 6]]);
 });
 
 test("the leader's preferred victory and close triumphs of a kind add a little", () => {
@@ -60,6 +68,14 @@ test("choosing: the best path at once the first time; another one must lead by a
     f = chooseFocus(done, { cls: "SCIENCE" });
     assert.deepEqual([f.cls, f.changed], ["CULTURE", true]);
     assert.equal(chooseFocus([], { cls: "CULTURE" }).cls, "CULTURE", "nothing known: keep");
+});
+
+test("the focus's priority: economy keeps science up while its path's techs are missing", () => {
+    assert.equal(profileForFocus("ECONOMIC", { techsLeft: 2 }), "GOLD_SCIENCE");
+    assert.equal(profileForFocus("ECONOMIC", { techsLeft: 0 }), "GOLD");
+    assert.equal(profileForFocus("SCIENCE", { techsLeft: 3 }), "SCIENCE");
+    assert.equal(profileForFocus("CULTURE"), "CULTURE");
+    assert.equal(profileForFocus(null), null);
 });
 
 test("culture builds one more wonder at a time", () => {

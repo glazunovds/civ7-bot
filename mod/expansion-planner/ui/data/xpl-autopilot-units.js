@@ -519,9 +519,32 @@ function settlerAtRisk(u, ctx) {
 }
 
 /**
- * A settler founds on its site; with hostile units near it, it gets away from them first
- * (runFromDanger); it keeps its site while the site and the way there stay safe, else it takes
- * the best safe one it reaches (pickSite).
+ * Settlements and the settlement cap (player.Stats, as the game's top bar reads them), or null.
+ * Each settlement over the cap costs happiness everywhere.
+ */
+function settlementCount() {
+    const stats = safe(() => Players.get(pid()).Stats, null);
+    const n = Number(stats?.numSettlements);
+    const cap = Number(stats?.settlementCap);
+    return Number.isFinite(n) && Number.isFinite(cap) && cap > 0 ? { n, cap } : null;
+}
+
+/**
+ * At the cap a settler on its site does not found (seen in game: a settler trained below the cap
+ * founded the 6th settlement of 5 after a story event had added one): it waits there, skipping
+ * its turn, until the cap rises (civics, the next age). @returns a log entry, or null to found
+ */
+function waitAtCap(u, def, goal) {
+    const c = settlementCount();
+    if (!c || c.n < c.cap) return null;
+    operate(u, "UNITOPERATION_SKIP_TURN");
+    return { key: "SETTLER_AT_CAP", args: [nameOf(def), goal.x, goal.y, c.n, c.cap] };
+}
+
+/**
+ * A settler founds on its site (not at the settlement cap: waitAtCap); with hostile units near
+ * it, it gets away from them first (runFromDanger); it keeps its site while the site and the way
+ * there stay safe, else it takes the best safe one it reaches (pickSite).
  */
 function settle(u, def, taken, ctx) {
     if (!truthy(def.FoundCity)) return null;
@@ -529,6 +552,8 @@ function settle(u, def, taken, ctx) {
     let goal = goals.get(k);
     // On its site: found at once (a settlement is safer than a settler).
     if (goal && same(u.location, goal) && siteStillFree(goal) && !tooCloseToForeign(goal, ctx)) {
+        const wait = waitAtCap(u, def, goal);
+        if (wait) return wait;
         goals.delete(k);
         if (!operate(u, "UNITOPERATION_FOUND_CITY")) return null;
         if (goal.role) foundedRoles.set(`${goal.x},${goal.y}`, goal.role);
@@ -549,6 +574,11 @@ function settle(u, def, taken, ctx) {
     }
     taken.add(`${goal.x},${goal.y}`);
     if (same(u.location, goal)) {
+        const wait = waitAtCap(u, def, goal);
+        if (wait) {
+            goals.set(k, goal);
+            return wait;
+        }
         goals.delete(k);
         if (!operate(u, "UNITOPERATION_FOUND_CITY")) return null;
         if (goal.role) foundedRoles.set(`${goal.x},${goal.y}`, goal.role);
@@ -608,10 +638,26 @@ function roomForSoldier(loc) {
 }
 
 /**
- * Only moving is allowed: two military units share a tile (a unit the city just trained
+ * May this unit end up here? Nobody else's unit (a capture or an attack) and none of ours of its
+ * kind: one military unit per tile, one of each other formation (GameInfo.Units.FormationClass:
+ * a settler and a scout are both FORMATION_CLASS_CIVILIAN).
+ */
+function roomFor(def, loc) {
+    if (isSoldier(def)) return roomForSoldier(loc);
+    for (const id of safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []) {
+        const other = safe(() => Units.get(id), null);
+        if (!other || other.owner !== pid()) return false;
+        if (def?.FormationClass && safe(() => GameInfo.Units.lookup(other.type).FormationClass, null) === def.FormationClass) return false;
+    }
+    return true;
+}
+
+/**
+ * Only moving is allowed: two units of one kind share a tile (a unit the city just trained
  * appears under the one standing there; seen in game: allowed = EXECUTE_SCRIPT, MOVE_TO,
- * WAIT_FOR). One of them steps to the nearest free tile it reaches this turn, our own land
- * first; the others on that tile wait until the move is done (the end-of-turn retry).
+ * WAIT_FOR; also a settler and a scout, both civilian formation, in a war that left neither an
+ * order). One of them steps to the nearest free tile it reaches this turn, our own land first;
+ * the others on that tile wait until the move is done (the end-of-turn retry).
  */
 function stepAside(u, def, ctx) {
     if (safe(() => Game.UnitOperations.canStart(u.id, "UNITOPERATION_SKIP_TURN", NO_TARGET, false), null)?.Success) return null;
@@ -624,7 +670,7 @@ function stepAside(u, def, ctx) {
         for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, r), []) ?? []) {
             const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             if (!loc || same(loc, here) || ctx.stepTo.has(`${loc.x},${loc.y}`)) continue;
-            if (!roomForSoldier(loc)) {
+            if (!roomFor(def, loc)) {
                 why.occupied++;
                 continue;
             }
@@ -648,7 +694,7 @@ function stepAside(u, def, ctx) {
             return joined;
         }
         // Boxed in by our own soldiers: a neighbour steps out; this one moves in on the retry.
-        if (!best && makeRoom(u, def, ctx)) {
+        if (!best && isSoldier(def) && makeRoom(u, def, ctx)) {
             ctx.unstacked.add(tile);
             return null;
         }
@@ -1249,6 +1295,18 @@ function tradeRoutes(settings) {
         .sort((a, b) => b.imports - a.imports || b.value - a.value);
 }
 
+/** How many trade routes we could open now (the game's possible routes within each partner's capacity). */
+export function openTradeRoutes(settings) {
+    const sent = new Map();
+    let n = 0;
+    for (const r of tradeRoutes(settings)) {
+        if (capacityLeft(r.city.owner, sent) <= 0) continue;
+        sent.set(r.city.owner, (sent.get(r.city.owner) ?? 0) + 1);
+        n++;
+    }
+    return n;
+}
+
 /** Routes to this owner we may still open (trade capacity), counting the ones sent this turn. */
 function capacityLeft(owner, sentTo) {
     const trade = safe(() => Players.get(pid()).Trade, null);
@@ -1485,6 +1543,9 @@ export function commandUnits(settings, options) {
                 e = explore(u, def, ctx);
             }
             else if (options.defend) e = defend(u, def, ctx);
+            // No order and only moving allowed (two of a kind on one tile): one steps aside, or
+            // the turn stays held (NOTIFICATION_COMMAND_UNITS).
+            if (!e) e = stepAside(u, def, ctx);
         } catch (error) {
             log.debug(`autopilot unit ${def.UnitType} failed`, error);
         }

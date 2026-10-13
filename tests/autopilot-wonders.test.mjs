@@ -48,7 +48,7 @@ test("the fastest city starts the best wonder on its best tile; only one at a ti
     assert.equal(orders[0].id.id, 0);
     assert.deepEqual([orders[0].args.X, orders[0].args.Y], [pick.x, pick.y]);
     assert.ok(out.some((e) => e.key === "QUEUED_WONDER"));
-    assert.ok(out.some((e) => e.key === "QUEUED_ADVISOR" || e.key === "QUEUE_NOTHING" || e.key === "QUEUED_PLAN"), "Sparta still gets normal production");
+    assert.ok(out.some((e) => ["QUEUED_ADVISOR", "QUEUED_PLAN", "QUEUED_FALLBACK"].includes(e.key)), "Sparta still gets normal production");
 });
 
 test("two at once when allowed, never two in one city", () => {

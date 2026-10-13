@@ -161,6 +161,13 @@ test("while towns outnumber cities, the best town becomes a city when gold above
     reset();
     world.gold = 300 + 2 * 10 - 1; // the 300 conversion would cut into 2 turns of income
     assert.deepEqual(steps.convertTowns(DEFAULT_SETTINGS, 2), []);
+    // A late, big income: the reserve is at most 1000 gold, not 2 × 5000.
+    const income = world.goldIncome;
+    world.goldIncome = 5000;
+    world.gold = 1300;
+    reset();
+    assert.equal(steps.convertTowns(DEFAULT_SETTINGS, 2)[0]?.key, "TOWN_CONVERTED");
+    world.goldIncome = income;
     world.gold = 1000;
     reset();
     world.cities.push({ owner: 0, x: 2, y: 2, name: "Bath", pop: 1 });
@@ -197,6 +204,60 @@ test("threat: 2+ hostile military units near a settlement; befriended independen
     assert.deepEqual(threats, [], "a befriended independent is no threat");
     delete world.indepRelation;
     delete world.enemies;
+});
+
+test("under threat: walls on the settlement's centre, bought when the gold covers them, else queued first (a town only buys)", () => {
+    const WALLS = GameInfo.Constructibles.lookup("BUILDING_ANCIENT_WALLS").$hash;
+    const centre = GameplayMap.getIndexFromXY(LONDON.x, LONDON.y);
+    const beside = GameplayMap.getIndexFromXY(LONDON.x + 1, LONDON.y);
+    let cost = 120;
+    world.canBuy = (type) => (type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [beside, centre], Cost: cost } : { Success: false });
+    world.canBuild = (type) => (type === undefined ? { Success: true } : type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [beside, centre], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    const london = [{ settlement: { name: "London", x: LONDON.x, y: LONDON.y }, count: 3 }];
+    const york = [{ settlement: { name: "York", x: YORK.x, y: YORK.y }, count: 3 }];
+    const sent = (kind) => fake.sent.filter((s) => s.kind === kind && s.args.ConstructibleType === WALLS).map((s) => [s.id.id, s.args.X, s.args.Y]);
+    try {
+        reset();
+        let out = steps.fortifyThreatened(london);
+        assert.deepEqual(sent("command"), [[0, LONDON.x, LONDON.y]], "bought, on the centre");
+        assert.equal(out[0].key, "WALLS_BOUGHT");
+        cost = 5000; // more than the gold
+        reset();
+        out = steps.fortifyThreatened(london);
+        assert.deepEqual([sent("command"), sent("operation")], [[], [[0, LONDON.x, LONDON.y]]], "queued instead");
+        assert.equal(out[0].key, "WALLS_QUEUED");
+        reset();
+        assert.deepEqual(steps.fortifyThreatened(york), [], "a town cannot build them");
+        // Already queued behind the Monument: moved first, not queued again.
+        world.cities[0].queued = ["BUILDING_ANCIENT_WALLS"];
+        reset();
+        steps.fortifyThreatened(london);
+        const move = fake.sent.find((s) => s.args.InsertMode === CityOperationsParametersValues.MoveTo);
+        assert.deepEqual([sent("operation"), move?.args.QueueSourceLocation, move?.args.QueueDestinationLocation], [[], 1, 0]);
+    } finally {
+        delete world.cities[0].queued;
+        delete world.canBuy;
+        delete world.canBuild;
+    }
+});
+
+test("the pass: raiders near London: walls bought there", async () => {
+    const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
+    const { settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+    const WALLS = GameInfo.Constructibles.lookup("BUILDING_ANCIENT_WALLS").$hash;
+    const centre = GameplayMap.getIndexFromXY(LONDON.x, LONDON.y);
+    world.canBuy = (type) => (type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [centre], Cost: 120 } : { Success: false });
+    world.enemies = [{ x: LONDON.x + 2, y: LONDON.y, owner: 5 }, { x: LONDON.x, y: LONDON.y - 2, owner: 5 }];
+    settings.patch({ autopilot: { replanEvery: 0, skipUnits: false, endTurn: false, research: false, choices: false, befriend: false, growth: false, towns: false } });
+    try {
+        reset();
+        await autopilot.runTurn(true);
+        assert.ok(fake.sent.some((s) => s.kind === "command" && s.args.ConstructibleType === WALLS), JSON.stringify((state.get().autopilot.log ?? []).map((e) => e.key)));
+    } finally {
+        delete world.canBuy;
+        delete world.enemies;
+        settings.patch({ autopilot: { research: true, choices: true, befriend: true, growth: true, towns: true } });
+    }
 });
 
 test("under threat: befriending that independent first, more Influence if already under way; not offered: listed for a visit", () => {

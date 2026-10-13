@@ -18,6 +18,7 @@ const CARDS = [
     { TraditionType: "TRADITION_CIV", Name: "Civ tradition", slot: 1, yields: { YIELD_CULTURE: 3 } },
     { TraditionType: "CRISIS_BAD", Name: "Bad crisis", slot: 3, yields: { YIELD_FOOD: -10 } },
     { TraditionType: "CRISIS_MILD", Name: "Mild crisis", slot: 3, yields: { YIELD_GOLD: -2 } },
+    { TraditionType: "TRADITION_WEAK", Name: "Weak card", slot: 2, yields: { YIELD_GOLD: 0 } },
 ];
 const rows = CARDS.map((c, i) => ({ ...c, $index: i, $hash: 100 + i }));
 GameInfo.Traditions = { lookup: (h) => rows.find((r) => r.$hash === h || r.TraditionType === h) ?? null };
@@ -129,6 +130,106 @@ test("a slow game (no confirmation): one card per pass, never the same card twic
     assert.equal(new Set(second).size, second.length, JSON.stringify(second));
     Game.PlayerOperations.sendRequest = before;
     slots[2] = 0;
+});
+
+test("swaps: when the game allows it, the weakest active card makes way for one clearly better", async () => {
+    installPreviews();
+    reset();
+    const H = (t) => rows.find((r) => r.TraditionType === t).$hash;
+    slots[2] = 2;
+    active.add(H("TRADITION_WEAK"));
+    active.add(H("TRADITION_GOLD"));
+    let canSwap = false;
+    culture.canSwapCultureSlot = () => canSwap;
+    // The game applies the change (Deactivate takes the card out) and confirms it a moment later.
+    const before = Game.PlayerOperations.sendRequest;
+    Game.PlayerOperations.sendRequest = (pid, op, args) => {
+        const r = sendRequest(pid, op, args);
+        if (op === PlayerOperationTypes.CHANGE_TRADITION) {
+            const h = rows[args.TraditionType].$hash;
+            if (args.Action === PlayerOperationParameters.Deactivate) active.delete(h);
+            else active.add(h);
+            setTimeout(() => engine.trigger("TraditionChanged", { player: pid }), 10);
+        }
+        return r;
+    };
+    const science = { ...DEFAULT_SETTINGS, profile: "SCIENCE" };
+    try {
+        assert.deepEqual(choices.swapOnePolicy(science), [], "not while the game does not allow swaps");
+        canSwap = true;
+        const out = await choices.makeChoices(science);
+        const swap = out.find((e) => e.key === "POLICY_SWAP");
+        assert.deepEqual([swap?.args[0], swap?.args[2]], ["Weak card", "Science card"], JSON.stringify(out));
+        assert.deepEqual([...active].sort(), [H("TRADITION_GOLD"), H("TRADITION_SCIENCE")].sort());
+        assert.deepEqual(choices.swapOnePolicy(science), [], "nothing clearly better left");
+        // A small gain is not worth a swap: the weak card at 7 science (14) against 8 (16).
+        active.clear();
+        slots[2] = 1;
+        active.add(H("TRADITION_WEAK"));
+        const previews = globalThis.LfYieldsPreview;
+        globalThis.LfYieldsPreview = { previewPolicyYields: ({ TraditionType }) => ({ isValid: true, yields: TraditionType === "TRADITION_WEAK" ? { YIELD_SCIENCE: 7 } : rows.find((r) => r.TraditionType === TraditionType).yields }) };
+        assert.deepEqual(choices.swapOnePolicy(science), []);
+        // A card of unknown value is never taken out.
+        globalThis.LfYieldsPreview = { previewPolicyYields: ({ TraditionType }) => (TraditionType === "TRADITION_WEAK" ? { isValid: false } : previews.previewPolicyYields({ TraditionType })) };
+        assert.deepEqual(choices.swapOnePolicy(science), []);
+        globalThis.LfYieldsPreview = previews;
+    } finally {
+        Game.PlayerOperations.sendRequest = before;
+        delete culture.canSwapCultureSlot;
+        slots[2] = 0;
+        active.clear();
+    }
+});
+
+test("leader attributes: the node worth most by the priority (unknown values: the focus's tree); every point spent, one after the game confirms", async () => {
+    installPreviews();
+    reset();
+    const BUY = PlayerOperationTypes.BUY_ATTRIBUTE_TREE_NODE;
+    const me = Players.get(0);
+    me.Identity = { getAvailableAttributePoints: () => 1, getWildcardPoints: () => 0 };
+    const open = new Set(["NODE_ATTRIBUTE_ECONOMIC_01", "NODE_ATTRIBUTE_CULTURAL_01", "NODE_ATTRIBUTE_SCIENTIFIC_01"]);
+    const typeOf = (n) => GameInfo.ProgressionTreeNodes.lookup(n)?.ProgressionTreeNodeType;
+    const canStart = Game.PlayerOperations.canStart;
+    Game.PlayerOperations.canStart = (p, op, args) => (op === BUY ? { Success: open.has(typeOf(args.ProgressionTreeNodeType)) } : canStart(p, op, args));
+    const previews = globalThis.LfYieldsPreview;
+    globalThis.LfYieldsPreview = {
+        ...previews,
+        previewModifierByIds: (ids) => ({ isValid: true, yields: ids.some((i) => i.includes("SCIENTIFIC")) ? { YIELD_SCIENCE: 10 } : ids.some((i) => i.includes("ECONOMIC")) ? { YIELD_GOLD: 4 } : { YIELD_CULTURE: 2 } }),
+    };
+    const boughtTypes = () => fake.sent.filter((s) => s.op === BUY).map((s) => typeOf(s.args.ProgressionTreeNodeType));
+    const before = Game.PlayerOperations.sendRequest;
+    try {
+        // Culture priority, yet 10 science is worth more than 2 culture: the value decides.
+        let out = choices.buyOneAttribute({ ...DEFAULT_SETTINGS, profile: "CULTURE" });
+        assert.deepEqual(boughtTypes(), ["NODE_ATTRIBUTE_SCIENTIFIC_01"]);
+        assert.equal(out[0].key, "ATTRIBUTE_BOUGHT");
+        reset();
+        choices.buyOneAttribute({ ...DEFAULT_SETTINGS, profile: "GOLD" });
+        assert.deepEqual(boughtTypes(), ["NODE_ATTRIBUTE_ECONOMIC_01"]);
+        // Without the values (no Policy Yield Previews): the focus's tree (not the game's first, Culture).
+        delete globalThis.LfYieldsPreview;
+        reset();
+        choices.buyOneAttribute({ ...DEFAULT_SETTINGS, profile: "GOLD" });
+        assert.deepEqual(boughtTypes(), ["NODE_ATTRIBUTE_ECONOMIC_01"]);
+        // A pass spends every point the game allows, one after each confirmation.
+        Game.PlayerOperations.sendRequest = (pid, op, args) => {
+            const r = before(pid, op, args);
+            if (op === BUY) {
+                open.delete(typeOf(args.ProgressionTreeNodeType));
+                setTimeout(() => engine.trigger("AttributeNodeCompleted", { player: pid }), 10);
+            }
+            return r;
+        };
+        reset();
+        out = await choices.makeChoices({ ...DEFAULT_SETTINGS, profile: "CULTURE" });
+        assert.equal(boughtTypes().length, 3, JSON.stringify(out));
+        assert.equal(open.size, 0);
+    } finally {
+        Game.PlayerOperations.sendRequest = before;
+        Game.PlayerOperations.canStart = canStart;
+        globalThis.LfYieldsPreview = previews;
+        delete me.Identity;
+    }
 });
 
 test("celebration: the bonus worth most by the chosen priority", () => {

@@ -65,6 +65,28 @@ test("a settler on its site founds; a site taken meanwhile is dropped", () => {
     assert.deepEqual([moveOf(2).X, moveOf(2).Y], [9, 10]);
 });
 
+test("at the settlement cap a settler on its site waits (skips its turn), keeps its site, and founds once the cap rises", () => {
+    const n = Players.get(0).Stats.numSettlements;
+    try {
+        world.settlementCap = n; // at the cap
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5 }]);
+        let r = run({ settlers: true });
+        assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_SKIP_TURN"]);
+        assert.equal(r.entries[0].key, "SETTLER_AT_CAP");
+        assert.deepEqual(units.settlerGoals().map((g) => [g.x, g.y]), [[12, 5]], "the site stays its own");
+        // Next turn, still at the cap: it waits again on its own site.
+        fake.sent.length = 0;
+        run({ settlers: true });
+        assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_SKIP_TURN"]);
+        world.settlementCap = n + 1;
+        fake.sent.length = 0;
+        r = run({ settlers: true });
+        assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
+    } finally {
+        delete world.settlementCap;
+    }
+});
+
 test("a settler keeps its site while walking; a new settler does not take it", () => {
     fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
     run({ settlers: true });
@@ -137,6 +159,36 @@ test("defence: two military units on one tile (a new one from the city): one ste
     run({ defend: true });
     assert.deepEqual(orderOf(4).map((s) => s.op), ["UNITOPERATION_FORTIFY"]);
     world.tiles = tiles;
+});
+
+test("a settler and a scout on one tile (both civilian formation) with no order: one steps aside so the turn can end", () => {
+    const SPOT = { x: 8, y: 8 };
+    const stacked = (id) => {
+        const u = world.units.find((w) => w.id === id.id);
+        return world.units.some((w) => w !== u && w.x === u.x && w.y === u.y);
+    };
+    // Settler and scout have nothing to do (no site: every claim refused; exploring off).
+    fresh([{ id: 6, type: "UNIT_SETTLER", ...SPOT }, { id: 7, type: "UNIT_SCOUT", ...SPOT }], {
+        unitCanStart: (id, op) => (op !== UnitOperationTypes.MOVE_TO && stacked(id) ? { Success: false } : undefined),
+        claimOk: () => false,
+    });
+    const r = run({ settlers: true });
+    const movers = [6, 7].filter((id) => moveOf(id));
+    assert.equal(movers.length, 1, JSON.stringify(orders()));
+    const to = moveOf(movers[0]);
+    assert.equal(GameplayMap.getPlotDistance(to.X, to.Y, SPOT.x, SPOT.y), 1);
+    assert.ok(r.entries.some((e) => e.key === "STEP_ASIDE"));
+    // Our merchants (civilian too) on every neighbour but one: only that one is free.
+    const around = Array.from(GameplayMap.getPlotIndicesInRadius(SPOT.x, SPOT.y, 1), (i) => GameplayMap.getLocationFromIndex(i)).filter((l) => !(l.x === SPOT.x && l.y === SPOT.y));
+    const free = around[around.length - 1];
+    const merchants = around.slice(0, -1).map((l, i) => ({ id: 20 + i, type: "UNIT_MERCHANT", x: l.x, y: l.y, activity: UnitActivityTypes.SLEEP }));
+    fresh([{ id: 6, type: "UNIT_SETTLER", ...SPOT }, { id: 7, type: "UNIT_SCOUT", ...SPOT }, ...merchants], {
+        unitCanStart: (id, op) => (op !== UnitOperationTypes.MOVE_TO && stacked(id) ? { Success: false } : undefined),
+        claimOk: () => false,
+    });
+    run({ settlers: true });
+    const moved = [6, 7].map(moveOf).find(Boolean);
+    assert.deepEqual([moved?.X, moved?.Y], [free.x, free.y], "not onto another civilian");
 });
 
 test("explore: scouts explore by themselves, nothing else moves", () => {

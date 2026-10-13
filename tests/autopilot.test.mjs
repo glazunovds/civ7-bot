@@ -29,8 +29,8 @@ const world = {
     canBuild: (_type, id, args) => ({ Success: !(id.id === 1 && args.X !== undefined), Plots: [], ExpandUrbanPlots: [] }),
     canBuy: (type, _id, args) => ({ Success: args.X !== undefined, Cost: 300 }),
     expand: () => ({ Success: true, Plots: [GameplayMap.getIndexFromXY(A.x + 3, A.y)], ConstructibleTypes: [] }),
-    research: { tech: { available: [11, 12] }, culture: { available: [21], active: 21 } },
-    treeRecs: (subject) => (subject === AdvisorySubjectTypes.CHOOSE_TECH ? [{ recommendedType: 12, whichAdvisors: [AdvisorTypes.SCIENCE] }] : []),
+    research: { tech: { available: [9011, 9012] }, culture: { available: [9021], active: 9021 } },
+    treeRecs: (subject) => (subject === AdvisorySubjectTypes.CHOOSE_TECH ? [{ recommendedType: 9012, whichAdvisors: [AdvisorTypes.SCIENCE] }] : []),
     buildRecs: () => [{ subject: 7, recommendedType: "PROJECT_CITY_SCIENCE_PROJECT", whichAdvisors: [AdvisorTypes.SCIENCE] }],
     readyUnits: [{ owner: 0, id: 1 }, { owner: 0, id: 2 }],
 };
@@ -59,7 +59,7 @@ test("off: a turn start does nothing", async () => {
 test("one pass: research, production (plan, then advisor), growth, town Focus, purchases", async () => {
     await autopilot.runTurn(true);
     const players = sent("player");
-    assert.ok(players.some((s) => s.op === PlayerOperationTypes.SET_TECH_TREE_NODE && s.args.ProgressionTreeNodeType === 12), "the advisor's technology");
+    assert.ok(players.some((s) => s.op === PlayerOperationTypes.SET_TECH_TREE_NODE && s.args.ProgressionTreeNodeType === 9012), "the advisor's technology");
     assert.ok(!players.some((s) => s.op === PlayerOperationTypes.SET_CULTURE_TREE_NODE), "a civic is already being studied");
     const builds = sent("operation");
     assert.ok(builds.some((s) => s.id.id === 0 && s.args.X !== undefined), "Athens queues planned buildings on their tiles");
@@ -112,25 +112,25 @@ test("victory focus: the path we lead sets this pass's priority (research follow
     ];
     Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 8 : 1) };
     const recs = world.treeRecs;
-    world.treeRecs = (subject) => (subject === AdvisorySubjectTypes.CHOOSE_TECH ? [{ recommendedType: 11, whichAdvisors: [AdvisorTypes.CULTURE] }, { recommendedType: 12, whichAdvisors: [AdvisorTypes.SCIENCE] }] : []);
+    world.treeRecs = (subject) => (subject === AdvisorySubjectTypes.CHOOSE_TECH ? [{ recommendedType: 9011, whichAdvisors: [AdvisorTypes.CULTURE] }, { recommendedType: 9012, whichAdvisors: [AdvisorTypes.SCIENCE] }] : []);
     const tech = () => sent("player").filter((s) => s.op === PlayerOperationTypes.SET_TECH_TREE_NODE).map((s) => s.args.ProgressionTreeNodeType);
     try {
         fake.sent.length = 0;
         await autopilot.runTurn(true);
         assert.equal(state.get().autopilot.focus?.cls, "SCIENCE");
         assert.ok(keys().includes("VICTORY_FOCUS"));
-        assert.deepEqual(tech(), [12], "the science advisor's technology");
+        assert.deepEqual(tech(), [9012], "the science advisor's technology");
         // The player's target: culture, though science leads.
         settings.patch({ autopilot: { victory: "CULTURE" } });
         fake.sent.length = 0;
         await autopilot.runTurn(true);
         assert.equal(state.get().autopilot.focus?.cls, "CULTURE");
-        assert.deepEqual(tech(), [11], "the culture advisor's technology");
+        assert.deepEqual(tech(), [9011], "the culture advisor's technology");
         settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
         fake.sent.length = 0;
         await autopilot.runTurn(true);
         assert.equal(state.get().autopilot.focus, null);
-        assert.deepEqual(tech(), [11], "the player's own priority (Balance): the advisor's first");
+        assert.deepEqual(tech(), [9011], "the player's own priority (Balance): the advisor's first");
     } finally {
         world.treeRecs = recs;
         settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
@@ -151,6 +151,86 @@ test("victory focus on science: the pass puts science projects first", async () 
     } finally {
         settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
         delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("victory focus on economy: research, growth and merchants follow the path", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "ECONOMIC", merchants: true, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    GameInfo.LegacyPaths = [{ LegacyPathType: "LP_ECONOMIC", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC", EnabledByDefault: true }];
+    GameInfo.AgeProgressionMilestones = [{ LegacyPathType: "LP_ECONOMIC", FinalMilestone: true, RequiredPathPoints: 20 }];
+    Players.get(0).LegacyPaths = { getScore: () => 2 };
+    const currency = GameInfo.ProgressionTreeNodes.lookup("NODE_TECH_AQ_CURRENCY").$hash;
+    const PLAIN = { x: A.x + 3, y: A.y }, SALT = { x: A.x + 3, y: A.y + 1 };
+    const { tiles, expand, research } = world;
+    world.research = { ...research, tech: { available: [9011, 9012, currency] } };
+    world.tiles = (x, y) => (x === SALT.x && y === SALT.y ? { ...tiles(x, y), resource: "RESOURCE_SALT", yields: { YIELD_FOOD: 1, YIELD_PRODUCTION: 1 } } : tiles(x, y));
+    world.expand = () => ({ Success: true, Plots: [PLAIN, SALT].map((p) => GameplayMap.getIndexFromXY(p.x, p.y)), ConstructibleTypes: [] });
+    world.cities[0].readyToGrow = true;
+    world.tradeRoutes = [{ targetCityId: { owner: 0, id: 1 }, status: [TradeRouteStatus.SUCCESS], importPayloads: [{}], exportYields: [] }];
+    const merchant = GameInfo.Units.lookup("UNIT_MERCHANT").$hash;
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus?.cls, "ECONOMIC");
+        assert.deepEqual(sent("player").filter((s) => s.op === PlayerOperationTypes.SET_TECH_TREE_NODE).map((s) => s.args.ProgressionTreeNodeType), [currency], "Currency: the Market");
+        const grew = sent("command").find((s) => s.op === CityCommandTypes.EXPAND);
+        assert.deepEqual([grew?.args.X, grew?.args.Y], [SALT.x, SALT.y], "the resource tile");
+        assert.ok(fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === merchant), JSON.stringify(keys()));
+        assert.equal(state.get().autopilot.focus.profile, "GOLD_SCIENCE", "Currency (the Market) still to research: science kept up");
+    } finally {
+        Object.assign(world, { tiles, expand, research });
+        delete world.tradeRoutes;
+        world.cities[0].readyToGrow = false;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO", merchants: false } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("victory focus: a game saying every victory is off is not believed (the focus stays)", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "ECONOMIC", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    GameInfo.LegacyPaths = [{ LegacyPathType: "LP_ECONOMIC", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC", EnabledByDefault: true }];
+    GameInfo.AgeProgressionMilestones = [{ LegacyPathType: "LP_ECONOMIC", FinalMilestone: true, RequiredPathPoints: 20 }];
+    Players.get(0).LegacyPaths = { getScore: () => 2 };
+    const vm = Game.VictoryManager;
+    Game.VictoryManager = { isCountdownVictoryEnabled: () => false };
+    try {
+        // A fresh start (as after a load): no focus yet.
+        settings.patch({ autopilot: { focus: false } });
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus, null);
+        settings.patch({ autopilot: { focus: true } });
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus?.cls, "ECONOMIC");
+    } finally {
+        Game.VictoryManager = vm;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("purchases: the plan's purchases skip what the victory step bought this pass and count its gold (seen in game: one Port bought twice)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    const bought = () => fake.sent.filter((s) => s.kind === "command" && s.op === CityCommandTypes.PURCHASE).map((s) => `${s.id.id}|${GameInfo.Constructibles.lookup(s.args.ConstructibleType).ConstructibleType}`);
+    const gold = world.gold;
+    try {
+        world.gold = 5000;
+        fake.sent.length = 0;
+        steps.buyBuildings(settings.get(), 0);
+        const all = bought();
+        assert.ok(all.length > 0, "the plan buys something");
+        // The first of them was bought by the victory step already: not again.
+        const [cityId, type] = all[0].split("|");
+        const city = Players.get(0).Cities.getCities()[Number(cityId)];
+        const purchases = { bought: new Set([`c:${city.location.x}-${city.location.y}|${type}`]), spent: 0 };
+        fake.sent.length = 0;
+        steps.buyBuildings(settings.get(), 0, purchases);
+        assert.ok(!bought().includes(all[0]), JSON.stringify(bought()));
+        // Its gold is spent already: nothing left for the plan.
+        fake.sent.length = 0;
+        steps.buyBuildings(settings.get(), 0, { bought: new Set(), spent: 5000 });
+        assert.deepEqual(bought(), []);
+    } finally {
+        world.gold = gold;
     }
 });
 

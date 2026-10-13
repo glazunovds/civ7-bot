@@ -20,6 +20,15 @@ export const PROFILE_FOR_FOCUS = Object.freeze({ CULTURE: "CULTURE", SCIENCE: "S
 // The triumph category (TypeTags) of each focus.
 export const TRIUMPH_CATEGORY = Object.freeze({ CULTURE: "CULTURAL", SCIENCE: "SCIENTIFIC", ECONOMIC: "ECONOMIC" });
 
+/**
+ * The priority profile of a focus this pass: economy keeps science up (GOLD_SCIENCE) while techs
+ * that unlock its path's work are still to research (`techsLeft`), else its own (PROFILE_FOR_FOCUS).
+ */
+export function profileForFocus(focus, { techsLeft = 0 } = {}) {
+    if (focus === "ECONOMIC" && techsLeft > 0) return "GOLD_SCIENCE";
+    return PROFILE_FOR_FOCUS[focus] ?? null;
+}
+
 /** Wonders in production at once: one more while the focus is culture (wonders are its path in Antiquity). */
 export function wondersAtOnce(base, focus) {
     return (Number(base) || 1) + (focus === "CULTURE" ? 1 : 0);
@@ -58,8 +67,9 @@ export function scoreFocus(standings, leaning = null, triumphs = [], { disabled 
     const out = [];
     for (const cls of FOCUS_CLASSES) {
         if (disabled.has(cls)) continue;
-        const s = (standings ?? []).find((x) => x.cls === cls);
-        if (!s || !(s.goal > 0)) continue;
+        // The class's path with a goal this age (other ages' paths have none here).
+        const s = (standings ?? []).find((x) => x.cls === cls && x.goal > 0);
+        if (!s) continue;
         const ours = Number(s.ours) || 0;
         const rival = Number(s.rival) || 0;
         const progress = Math.min(1, ours / s.goal);

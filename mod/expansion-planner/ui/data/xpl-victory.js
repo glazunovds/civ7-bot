@@ -34,11 +34,25 @@ export function legacyStandings() {
     const rivals = (safe(() => Players.getAlive(), []) ?? []).filter((p) => p?.isMajor && p.id !== pid() && safe(() => me.Diplomacy.hasMet(p.id), false));
     // A path switched off in the game setup keeps its row (EnabledByDefault): the player's
     // enabled paths are the truth (panel-age-rankings.js getEnabledLegacyPaths).
-    const enabled = new Set((safe(() => me.LegacyPaths.getEnabledLegacyPaths(), null) ?? []).map((e) => e.legacyPath));
-    const out = [];
+    // Matched by path or by class (the tutorial panel matches classes): after an age change the list
+    // may still name the paths of the age the game was set up in (in game no path of the new age
+    // was found and the focus stayed off in Exploration and Modern).
+    const list = safe(() => me.LegacyPaths.getEnabledLegacyPaths(), null) ?? [];
+    const enabled = new Set(list.map((e) => e.legacyPath));
+    const classes = new Set(list.map((e) => e.legacyPathClass).filter((c) => c !== undefined && c !== null));
+    // GameInfo.LegacyPaths holds every age's paths (seen in game: in Exploration the Antiquity ones
+    // came first, with no goal there, and no path was chosen): this age's only (their Age column).
+    const age = safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, null);
+    const paths = [];
     for (const path of GameInfo.LegacyPaths ?? []) {
         if (!truthy(path.EnabledByDefault)) continue;
-        if (enabled.size > 0 && !enabled.has(Database.makeHash(path.LegacyPathType))) continue;
+        if (age && path.Age && path.Age !== age) continue;
+        paths.push(path);
+    }
+    // A filter that would leave nothing is not believed (the list is then unknown, not empty).
+    const kept = paths.filter((path) => enabled.has(Database.makeHash(path.LegacyPathType)) || classes.has(Database.makeHash(path.LegacyPathClassType)));
+    const out = [];
+    for (const path of kept.length > 0 ? kept : paths) {
         const cls = String(path.LegacyPathClassType ?? "").replace("LEGACY_PATH_CLASS_", "");
         let goal = 0;
         for (const m of GameInfo.AgeProgressionMilestones ?? []) {
@@ -52,7 +66,8 @@ export function legacyStandings() {
 
 /**
  * Classes ("CULTURE", "SCIENCE", "ECONOMIC", "MILITARY") whose victory is switched off in this
- * game: GameInfo.Victories rows (LegacyPathClassType) for which Game.VictoryManager says no.
+ * game: GameInfo.Victories rows (VictoryClassType VICTORY_CLASS_<class>; the table has no
+ * LegacyPathClassType) for which Game.VictoryManager says no, as the victories screen asks.
  * Unknown (no such call or table): nothing is off.
  */
 export function disabledVictories() {
@@ -60,7 +75,7 @@ export function disabledVictories() {
     const VM = safe(() => Game.VictoryManager, null);
     if (typeof VM?.isCountdownVictoryEnabled !== "function") return out;
     for (const v of GameInfo.Victories ?? []) {
-        const cls = String(v.LegacyPathClassType ?? "").replace("LEGACY_PATH_CLASS_", "");
+        const cls = String(v.VictoryClassType ?? "").replace("VICTORY_CLASS_", "");
         if (!cls || !v.VictoryType) continue;
         const on = safe(() => VM.isCountdownVictoryEnabled(v.VictoryType), null);
         if (on === false) out.add(cls);

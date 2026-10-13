@@ -20,9 +20,10 @@ import { runTownAdvisor } from './xpl-town-job.js';
 import { FOCUS_POPULATION } from '../core/xpl-town-focus.js';
 import { getProfile } from '../core/xpl-profiles.js';
 import { yieldIndex } from '../core/xpl-yields.js';
+import { LAUNCH_PAD, leverBuildings, MERCHANTS_AT_ONCE, pickVictoryResearch, researchToward, SCIENCE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { allowedOperations, artifactSites, guardsFor, isIdle, NO_TARGET, plannedRoleAt, unitKey } from './xpl-autopilot-units.js';
+import { allowedOperations, artifactSites, guardsFor, isIdle, NO_TARGET, openTradeRoutes, plannedRoleAt, unitKey } from './xpl-autopilot-units.js';
 
 export const MAX_GROWTH_PER_CITY = 3;  // citizens placed per city and turn
 export const MAX_PURCHASES = 3;        // buildings bought per turn
@@ -51,6 +52,18 @@ export function ownSettlements() {
     return safe(() => Players.get(pid()).Cities.getCities(), []) ?? [];
 }
 
+const currentAge = () => safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, null);
+
+// The gold kept back: `reserveTurns` turns of income, at most this (seen in game: 3 turns of a
+// late 1,100 income kept 3,300-5,300 gold idle for the whole Modern age).
+export const RESERVE_CAP_GOLD = 1000;
+
+/** Gold purchases leave in the treasury: reserveTurns × income, capped at RESERVE_CAP_GOLD. */
+export function goldReserve(reserveTurns) {
+    const income = Number(safe(() => Players.get(pid()).Stats.getNetYield(YieldTypes.YIELD_GOLD), 0)) || 0;
+    return Math.min(RESERVE_CAP_GOLD, Math.max(0, income) * Math.max(0, Number(reserveTurns) || 0));
+}
+
 // ---- research and civics ----------------------------------------------------------
 
 const ADVISOR_FOR_PROFILE = { SCIENCE: "SCIENCE", CULTURE: "CULTURE", GOLD: "ECONOMIC", PRODUCTION: "ECONOMIC", FOOD: "ECONOMIC", HAPPINESS: "CULTURE" };
@@ -66,10 +79,89 @@ function pickRecommendation(recs, profileKey) {
 }
 
 /**
+ * What each available node's next research unlocks (GameInfo.ProgressionTreeNodeUnlocks rows at
+ * depth depthUnlocked + 1, as the game's tech chooser reads them; rows that need a trait left
+ * out). @returns [{ node, nodeType, name, targets, turns }]
+ */
+function researchCandidates(holder, available) {
+    const out = [];
+    for (const node of available) {
+        const def = safe(() => GameInfo.ProgressionTreeNodes.lookup(node), null);
+        if (!def) continue;
+        const data = safe(() => Game.ProgressionTrees.getNode(pid(), node), null);
+        const next = (Number(data?.depthUnlocked) || 0) + 1;
+        const rows = Array.isArray(data?.unlockIndices)
+            ? data.unlockIndices.map((i) => GameInfo.ProgressionTreeNodeUnlocks?.[i]).filter(Boolean)
+            : (safe(() => GameInfo.ProgressionTreeNodeUnlocks.filter((r) => r.ProgressionTreeNodeType === def.ProgressionTreeNodeType), []) ?? []);
+        const targets = rows.filter((r) => (Number(r.UnlockDepth) || 1) === next && !r.RequiredTraitType).map((r) => r.TargetType);
+        out.push({ node, nodeType: def.ProgressionTreeNodeType, name: def.Name, targets, turns: Number(safe(() => holder.getTurnsForNode(node), 99)) });
+    }
+    return out;
+}
+
+/**
+ * The path's research not done yet and the way there from what is available now
+ * (core/xpl-victory-levers.js researchToward): goals are nodes nobody researched (depth 0) whose
+ * first research unlocks something of the path; prerequisites from GameInfo.ProgressionTreePrereqs.
+ * @returns { via, goal } or null
+ */
+function researchTowardPath(focus, candidates) {
+    const prereqs = new Map();
+    for (const r of GameInfo.ProgressionTreePrereqs ?? []) {
+        if (!prereqs.has(r.Node)) prereqs.set(r.Node, []);
+        prereqs.get(r.Node).push(r.PrereqNode);
+    }
+    if (prereqs.size === 0) return null;
+    const firstUnlocks = new Map();
+    for (const r of GameInfo.ProgressionTreeNodeUnlocks ?? []) {
+        if ((Number(r.UnlockDepth) || 1) !== 1 || r.RequiredTraitType) continue;
+        if (!firstUnlocks.has(r.ProgressionTreeNodeType)) firstUnlocks.set(r.ProgressionTreeNodeType, []);
+        firstUnlocks.get(r.ProgressionTreeNodeType).push(r.TargetType);
+    }
+    const depth = new Map();
+    const researched = (type) => {
+        if (!depth.has(type)) depth.set(type, Number(safe(() => Game.ProgressionTrees.getNode(pid(), type)?.depthUnlocked, 0)) || 0);
+        return depth.get(type) > 0;
+    };
+    const goals = [];
+    for (const def of GameInfo.ProgressionTreeNodes ?? []) {
+        const type = def.ProgressionTreeNodeType;
+        if (!prereqs.has(type) || !wantedResearch(focus, { nodeType: type, targets: firstUnlocks.get(type) ?? [] })) continue;
+        if (!researched(type)) goals.push(type);
+    }
+    return researchToward(goals, candidates, (t) => prereqs.get(t), researched);
+}
+
+/**
+ * How many technologies that unlock the path's work are still to research (nodes of a tech tree,
+ * depth 0, whose first research is wanted): the economy focus keeps science up until they are in.
+ */
+export function pathTechsLeft(focus) {
+    if (!focus) return 0;
+    const firstUnlocks = new Map();
+    for (const r of GameInfo.ProgressionTreeNodeUnlocks ?? []) {
+        if ((Number(r.UnlockDepth) || 1) !== 1 || r.RequiredTraitType) continue;
+        if (!firstUnlocks.has(r.ProgressionTreeNodeType)) firstUnlocks.set(r.ProgressionTreeNodeType, []);
+        firstUnlocks.get(r.ProgressionTreeNodeType).push(r.TargetType);
+    }
+    let n = 0;
+    for (const def of GameInfo.ProgressionTreeNodes ?? []) {
+        const type = def.ProgressionTreeNodeType;
+        if (!String(def.ProgressionTree ?? "").includes("TECH")) continue;
+        if (!wantedResearch(focus, { nodeType: type, targets: firstUnlocks.get(type) ?? [] })) continue;
+        if ((Number(safe(() => Game.ProgressionTrees.getNode(pid(), type)?.depthUnlocked, 0)) || 0) === 0) n++;
+    }
+    return n;
+}
+
+/**
  * Chooses the next technology ("tech") or civic ("culture") when none is being researched.
+ * With a victory focus, research that unlocks that path's work comes first (codex masteries,
+ * specialist cap, Rail Station, Factory...; core/xpl-victory-levers.js), the quickest of them;
+ * when none is available, the way toward the nearest one (researchTowardPath).
  * @returns log entry or null
  */
-export function chooseResearch(kind, settings) {
+export function chooseResearch(kind, settings, focus = null) {
     const player = Players.get(pid());
     const holder = kind === "tech" ? player?.Techs : player?.Culture;
     if (!holder) return null;
@@ -80,6 +172,18 @@ export function chooseResearch(kind, settings) {
     if (active !== undefined && active !== null) return null; // already researching something
     const available = new Set(safe(() => holder.getAllAvailableNodeTypes(), []) ?? []);
     if (available.size === 0) return null;
+    const op = kind === "tech" ? PlayerOperationTypes.SET_TECH_TREE_NODE : PlayerOperationTypes.SET_CULTURE_TREE_NODE;
+    const candidates = focus ? researchCandidates(holder, available) : [];
+    const victory = focus ? pickVictoryResearch(focus, candidates) : null;
+    const toward = focus && !victory ? safe(() => researchTowardPath(focus, candidates), null) : null;
+    const step = victory ?? toward?.via;
+    if (step && safe(() => Game.PlayerOperations.canStart(pid(), op, { ProgressionTreeNodeType: step.node }, false), null)?.Success) {
+        Game.PlayerOperations.sendRequest(pid(), op, { ProgressionTreeNodeType: step.node });
+        const name = (t, fallback) => safe(() => Locale.compose(t), fallback);
+        const goal = toward ? safe(() => GameInfo.ProgressionTreeNodes.lookup(toward.goal)?.Name, null) : null;
+        const label = toward ? `${name(step.name, step.nodeType)} → ${goal ? name(goal, toward.goal) : toward.goal}` : name(step.name, step.nodeType);
+        return { key: kind === "tech" ? "VICTORY_TECH" : "VICTORY_CIVIC", args: [label] };
+    }
     const subject = kind === "tech" ? globalThis.AdvisorySubjectTypes?.CHOOSE_TECH : globalThis.AdvisorySubjectTypes?.CHOOSE_CULTURE;
     const recs = safe(() => Players.Advisory.get(pid()).getTreeRecommendations({ playerId: pid(), subject, maxReturnedEntries: 0 }), []) ?? [];
     const toNode = (r) => {
@@ -91,7 +195,6 @@ export function chooseResearch(kind, settings) {
     const pick = pickRecommendation(usable, settings.profile);
     // No advice: the quickest available one.
     const nodeType = pick ? toNode(pick) : [...available].sort((a, b) => (safe(() => holder.getTurnsForNode(a), 99) - safe(() => holder.getTurnsForNode(b), 99)))[0];
-    const op = kind === "tech" ? PlayerOperationTypes.SET_TECH_TREE_NODE : PlayerOperationTypes.SET_CULTURE_TREE_NODE;
     const args = { ProgressionTreeNodeType: nodeType };
     const ok = safe(() => Game.PlayerOperations.canStart(pid(), op, args, false), null);
     if (!ok?.Success) return null;
@@ -117,17 +220,18 @@ function bestPlotFor(city, typeHash, plots) {
 
 /** The advisor's top recommendation the city can start now, as BUILD args. */
 /**
- * A unit is worth building when something will use it: military units stand guard; scouts,
- * settlers and merchants only when the autopilot moves them (`unitOptions`) or the player
- * is there to do it.
+ * A unit the advisor recommends is worth building when the autopilot will use it and we do not
+ * have enough of that kind yet (seen in game: the advisor's scout in two cities' empty queues
+ * turn after turn, 32 scouts): military units below 2 per settlement; scouts and explorers below
+ * what trainWantedUnits keeps (2 each); merchants while a trade route is open for one (at most
+ * MERCHANTS_AT_ONCE); settlers never (trainWantedUnits keeps them under the settlement cap).
  */
 function unitWanted(def, unitOptions) {
     if (def.CoreClass === "CORE_CLASS_MILITARY") return soldierRoom(PEACE_SOLDIERS_PER_SETTLEMENT);
-    const yes = (v) => v === true || v === 1 || v === "true";
-    if (yes(def.FoundCity)) return !!unitOptions.settlers;
-    if (yes(def.MakeTradeRoute)) return !!unitOptions.merchants;
-    if (yes(def.ExtractsArtifacts)) return !!unitOptions.explore;
-    if (isScout(def)) return !!unitOptions.explore;
+    if (isSettler(def)) return false;
+    if (isMerchant(def)) return !!unitOptions.merchants && unitCount(isMerchant) < Math.min(MERCHANTS_AT_ONCE, openTradeRoutes({ profile: unitOptions.profile }));
+    if (isExplorer(def)) return !!unitOptions.explore && unitCount(isExplorer) < EXPLORERS_WANTED;
+    if (isScout(def)) return !!unitOptions.explore && unitCount(isScout) < SCOUTS_WANTED;
     return false;
 }
 
@@ -143,7 +247,10 @@ function advisorOrder(city, unitOptions = {}) {
         let name = null;
         if (subject === "ADVISORY_SUBJECT_PRODUCE_CONSTRUCTIBLES") {
             const def = GameInfo.Constructibles.lookup(r.recommendedType);
-            if (!def) continue;
+            // Wonders only through chooseWonders (race, wonders at once, one city each): the
+            // advisor's were queued unchecked (seen in game: Erdene Zuu queued while a rival was 10
+            // short of it; the same temple in two cities at once).
+            if (!def || def.ConstructibleClass === "WONDER") continue;
             const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             const plot = plots.length > 0 ? bestPlotFor(city, def.$hash, plots) : null;
@@ -171,26 +278,39 @@ function advisorOrder(city, unitOptions = {}) {
 
 // ---- victory levers -----------------------------------------------------------------
 
-// Projects that earn Innovation (science victory points), most per production first (projects.xml
-// of each age, projects-gameeffects.xml); a project the game does not offer is skipped.
-const SCIENCE_PROJECTS = [
-    "PROJECT_CREWED_SPACE_FLIGHT_PREP",      // 15, repeatable (Launch Pad)
-    "PROJECT_INVENT_CALCULUS",               // 10
-    "PROJECT_CHART_THE_STARS", "PROJECT_SPHERICAL_EARTH", "PROJECT_HELIOCENTRIC_MODEL",
-    "PROJECT_LAUNCH_SATELLITE", "PROJECT_TRANS_OCEANIC_FLIGHT", "PROJECT_BREAK_SOUND_BARRIER",
-    "PROJECT_CREWED_SPACE_FLIGHT_RESEARCH",  // 5 each
-];
-const LAUNCH_PAD = "BUILDING_LAUNCH_PAD"; // the science victory needs one, undamaged
-const FACTORY = "BUILDING_FACTORY";       // factory resources: GDP and the Railroad Tycoon path
-
 const queueTypes = (city) => (safe(() => city.BuildQueue.getQueue(), []) ?? []).map((q) => q.constructibleType ?? q.projectType ?? q.type);
 
-/** Moves the item of this type to the front of the city's queue (CityOperationsParametersValues.MoveTo). */
+/**
+ * The first queue position an item may be moved to: behind the item in production when that one
+ * has progress. The game gives a preempted item's progress to whatever takes its place, drops
+ * what exceeds that item's cost, and the preempted item starts over (seen in game,
+ * CityBuildQueue.csv: the Pyramids at 136 of 137 turned into a 49-cost Market; units moved ahead
+ * did not take a wonder's progress, but the rule covers every move). The game's city banner reads
+ * progress the same way.
+ */
+function frontSlot(city) {
+    const q = city.BuildQueue;
+    return (Number(safe(() => q.getPercentComplete(q.currentProductionTypeHash), 0)) || 0) > 0 ? 1 : 0;
+}
+
+/** Turns before this city's queue could start something new without losing progress (frontSlot). */
+const turnsUntilFree = (city) => (frontSlot(city) ? Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0 : 0);
+
+/**
+ * Moves the item of this type to the front of the city's queue (CityOperationsParametersValues.MoveTo):
+ * behind the item in production when it has progress (frontSlot) and behind the repairs already
+ * there (repairs come first, repairBuildings).
+ */
 function toFront(city, hash) {
     const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
-    const i = queueTypes(city).findIndex((t) => t === hash);
+    const types = queueTypes(city);
+    const i = types.findIndex((t) => t === hash);
     if (MoveTo === undefined || i <= 0) return;
-    const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: 0 };
+    const repairs = new Set(damagedOf(city).map((d) => d.def.$hash));
+    let to = frontSlot(city);
+    while (to < i && repairs.has(types[to])) to++;
+    if (to >= i) return;
+    const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: to };
     if (safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
 }
 
@@ -209,21 +329,23 @@ function ownsBuilding(type) {
 }
 
 /**
- * The victory focus's own work, ahead of everything else in a city's queue:
+ * The victory focus's own work, ahead of everything else in a city's queue (behind repairs):
  *  - science: each project that earns Innovation that a city may start now (in the best
  *    producing such city, one at a time each, the repeatable Crewed Space Flight Preparation kept
  *    going) and a Launch Pad (needed to win) when we have none;
- *  - economy: a Factory in every city that can build one (factory resources: +3 GDP each per
- *    turn, and the Railroad Tycoon path whose triumph brings the Great Banker).
+ *  - the path's buildings of this age in every city that can build them (leverBuildings:
+ *    Library and Academy for codices, University; Market and Lighthouse for resource slots,
+ *    Rail Station, Port and Factory for the rail network and factory resources); the first of
+ *    them in a city's queue goes to the front.
  * Queued with the production list's requests (BUILD {ProjectType} / {ConstructibleType, X, Y})
  * and moved to the front. @returns log entries
  */
 export function pushVictoryWork(focus) {
     const out = [];
-    const cities = ownSettlements().filter((c) => !c.isTown)
-        .sort((a, b) => (Number(safe(() => b.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0) - (Number(safe(() => a.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0));
+    const production = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+    const cities = ownSettlements().filter((c) => !c.isTown).sort((a, b) => production(b) - production(a));
     const queuedAnywhere = (hash) => cities.some((c) => queueTypes(c).includes(hash));
-    const place = (city, def) => {
+    const place = (city, def, { front = true } = {}) => {
         const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
         if (!probe?.Success || probe.InQueue || probe.InProgress) return false;
         const plots = [...(probe.Plots ?? []), ...(probe.ExpandUrbanPlots ?? [])];
@@ -231,7 +353,7 @@ export function pushVictoryWork(focus) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
         if (!loc) return false;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash, X: loc.x, Y: loc.y });
-        toFront(city, def.$hash);
+        if (front) toFront(city, def.$hash);
         out.push({ key: "VICTORY_WORK", args: [nameOf(city), safe(() => Locale.compose(def.Name), def.ConstructibleType)] });
         return true;
     };
@@ -257,13 +379,53 @@ export function pushVictoryWork(focus) {
             for (const c of cities) if (place(c, pad)) break;
         }
     }
-    if (focus === "ECONOMIC") {
-        const factory = safe(() => GameInfo.Constructibles.lookup(FACTORY), null);
-        if (factory) {
-            for (const c of cities) {
-                if (queueTypes(c).includes(factory.$hash)) toFront(c, factory.$hash);
-                else place(c, factory);
-            }
+    const levers = leverBuildings(focus, currentAge()).map((t) => safe(() => GameInfo.Constructibles.lookup(t), null)).filter(Boolean);
+    for (const c of cities) {
+        for (const def of levers) if (!queueTypes(c).includes(def.$hash)) place(c, def, { front: false });
+        const first = levers.find((def) => queueTypes(c).includes(def.$hash));
+        if (first) toFront(c, first.$hash);
+    }
+    return out;
+}
+
+/**
+ * Settlements buy the path's buildings with the gold above the reserve: towns first (they cannot
+ * build; only Buildings.Town types: Rail Station, Port, Factory in the Modern age), then cities
+ * (seen in game: thousands of gold idle while cities built them turn by turn), in the path's order
+ * (a settlement waits for gold rather than skip ahead), at most MAX_PURCHASES a pass; never the
+ * item a city is producing with progress (frontSlot). Same request as the production list's
+ * purchase: CityCommands PURCHASE {ConstructibleType, X, Y}. `purchases` ({ bought: Set of
+ * "sid|type", spent }) tells buyBuildings what this pass bought already (seen in game: the same
+ * Port bought here and again from the plan on another tile, its gold counted twice).
+ * @returns log entries
+ */
+export function buyVictoryWork(focus, reserveTurns, purchases = { bought: new Set(), spent: 0 }) {
+    const out = [];
+    const levers = leverBuildings(focus, currentAge()).map((t) => safe(() => GameInfo.Constructibles.lookup(t), null)).filter(Boolean);
+    if (levers.length === 0) return out;
+    let budget = goldBalance() - goldReserve(reserveTurns);
+    const all = ownSettlements();
+    for (const town of [...all.filter((c) => c.isTown), ...all.filter((c) => !c.isTown)]) {
+        if (out.length >= MAX_PURCHASES) break;
+        const producing = !town.isTown && frontSlot(town) ? safe(() => town.BuildQueue.currentProductionTypeHash, null) : null;
+        for (const def of levers) {
+            if (def.$hash === producing) continue;
+            const probe = safe(() => Game.CityCommands.canStart(town.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
+            const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
+            if (!probe?.Success || plots.length === 0) continue;
+            const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(town, def.$hash, plots) ?? plots[0]), null);
+            if (!loc) continue;
+            const args = { ConstructibleType: def.$hash, X: loc.x, Y: loc.y };
+            const r = safe(() => Game.CityCommands.canStart(town.id, CityCommandTypes.PURCHASE, args, false), null);
+            const cost = Number(r?.Cost ?? safe(() => town.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
+            if (!r?.Success || !Number.isFinite(cost)) continue;
+            if (cost > budget) break;
+            Game.CityCommands.sendRequest(town.id, CityCommandTypes.PURCHASE, args);
+            budget -= cost;
+            purchases.bought.add(`${sidOf(town)}|${def.ConstructibleType}`);
+            purchases.spent += cost;
+            out.push({ key: "VICTORY_BOUGHT", args: [safe(() => Locale.compose(def.Name), def.ConstructibleType), nameOf(town), Math.round(cost)] });
+            break;
         }
     }
     return out;
@@ -327,13 +489,14 @@ export function repairBuildings({ buy = true, queue = true } = {}) {
                 break; // the rest of this type next pass (one queue entry per type)
             }
         }
-        // A repair waiting behind other items goes to the front.
+        // A repair waiting behind other items goes to the front (behind an item with progress: frontSlot).
         if (!queue || city.isTown || MoveTo === undefined) continue;
         const repairs = new Set(damaged.filter((d) => d.inQueue).map((d) => d.def.$hash));
         const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
-        const i = items.findIndex((q, j) => j > 0 && repairs.has(q.constructibleType ?? q.type));
-        if (i <= 0) continue;
-        const move = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: 0 };
+        const to = frontSlot(city);
+        const i = items.findIndex((q, j) => j > to && repairs.has(q.constructibleType ?? q.type));
+        if (i <= to) continue;
+        const move = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: to };
         if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, move, false), null)?.Success) continue;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, move);
         out.push({ key: "REPAIR_FIRST", args: [nameOf(city)] });
@@ -344,6 +507,21 @@ export function repairBuildings({ buy = true, queue = true } = {}) {
 // ---- resources ----------------------------------------------------------------------
 
 const MAX_RESOURCE_ASSIGNMENTS = 12;
+const isFactoryResource = (def) => def?.ResourceClassType === "RESOURCECLASS_FACTORY";
+
+/**
+ * Where a factory resource goes first: a settlement already holding that type
+ * (Resources.getFactoryResource()), then one with a Factory (in the Modern age the game's
+ * isTreasureConstructiblePrereqMet, as the resource screen reads it) and no type yet, then the rest.
+ */
+function factoryPlaces(places, def) {
+    const rank = (p) => {
+        const held = safe(() => GameInfo.Resources.lookup(p.c.Resources.getFactoryResource())?.ResourceType, null);
+        if (held === def.ResourceType) return 2;
+        return !held && safe(() => p.c.Resources.isTreasureConstructiblePrereqMet(), false) ? 1 : 0;
+    };
+    return [...places].sort((a, b) => rank(b) - rank(a));
+}
 // A resource's yields: its TypeTags (as the game's resource screen reads them).
 const RESOURCE_YIELD_TAGS = { FOOD: "YIELD_FOOD", PRODUCTION: "YIELD_PRODUCTION", GOLD: "YIELD_GOLD", SCIENCE: "YIELD_SCIENCE", CULTURE: "YIELD_CULTURE", HAPPINESS: "YIELD_HAPPINESS" };
 
@@ -353,9 +531,11 @@ const RESOURCE_YIELD_TAGS = { FOOD: "YIELD_FOOD", PRODUCTION: "YIELD_PRODUCTION"
  * ASSIGN_RESOURCE {Location, City: city.id.id, Flags: isOffMap, ID: off-map id or -1}.
  * Owned: player.Resources.getResources() → [{ value, uniqueResource: { resource }, isOffMap }];
  * placed: city.Resources.getAssignedResources(), slots getAssignedResourcesCap(). Empire and
- * treasure resources are never assigned. Most valuable first (its yields by the priority
- * profile); cities before towns, most free slots first; only where the game accepts.
- * Assigned resources count for the economic legacy path and triumphs.
+ * treasure resources are never assigned. Factory resources first (3 GDP each and the Railroad
+ * Tycoon path; one factory-resource type per settlement with a Factory): into a settlement that
+ * already holds that type, then one with a Factory and none yet. Then the most valuable (its
+ * yields by the priority profile); cities before towns, most free slots first; only where the
+ * game accepts. Assigned resources count for the economic legacy path and triumphs.
  */
 export function assignResources(settings) {
     const out = [];
@@ -385,10 +565,10 @@ export function assignResources(settings) {
         .filter((r) => !assigned.has(r.value))
         .map((r) => ({ r, def: safe(() => GameInfo.Resources.lookup(r.uniqueResource?.resource), null) }))
         .filter(({ def }) => def && def.ResourceClassType !== "RESOURCECLASS_EMPIRE" && def.ResourceClassType !== "RESOURCECLASS_TREASURE")
-        .sort((a, b) => value(b.def) - value(a.def));
+        .sort((a, b) => (isFactoryResource(b.def) ? 1 : 0) - (isFactoryResource(a.def) ? 1 : 0) || value(b.def) - value(a.def));
     for (const { r, def } of waiting) {
         if (out.length >= MAX_RESOURCE_ASSIGNMENTS) break;
-        for (const p of places) {
+        for (const p of isFactoryResource(def) ? factoryPlaces(places, def) : places) {
             if (p.free <= 0) continue;
             const args = { Location: safe(() => GameplayMap.getLocationFromIndex(r.value), null), City: p.c.id.id, Flags: !!r.isOffMap, ID: r.isOffMap ? r.value : -1 };
             if (!safe(() => Game.PlayerOperations.canStart(pid(), OP, args, false), null)?.Success) continue;
@@ -411,6 +591,7 @@ const EARLY_SETTLEMENTS = 3;
 const isScout = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_AUTOEXPLORE");
 const isSettler = (def) => !!def && (def.FoundCity === true || def.FoundCity === "true" || def.FoundCity === 1);
 const isExplorer = (def) => !!def && (def.ExtractsArtifacts === true || def.ExtractsArtifacts === "true" || def.ExtractsArtifacts === 1);
+const isMerchant = (def) => !!def && (def.MakeTradeRoute === true || def.MakeTradeRoute === "true" || def.MakeTradeRoute === 1);
 const queueUnitDef = (q) => (q.unitType !== undefined && q.unitType !== -1 ? safe(() => GameInfo.Units.lookup(q.unitType), null) : null);
 
 /** Units of a kind we have or are training. */
@@ -446,6 +627,13 @@ function unitsWanted(unitOptions) {
             const sites = artifactSites();
             if (sites.dig.length + sites.study.length > 0) out.push({ test: isExplorer, n: missing, key: "QUEUED_EXPLORER", target: EXPLORERS_WANTED });
         }
+    }
+    // Economy focus: merchants while trade routes are open (imported resources count for the
+    // Antiquity path and GDP), up to MERCHANTS_AT_ONCE at a time.
+    if (unitOptions.merchants && unitOptions.victory === "ECONOMIC") {
+        const want = Math.min(MERCHANTS_AT_ONCE, openTradeRoutes({ profile: unitOptions.profile }));
+        const n = want - unitCount(isMerchant);
+        if (n > 0) out.push({ test: isMerchant, n, key: "QUEUED_MERCHANT", target: want });
     }
     if (unitOptions.settlers) {
         const stats = safe(() => Players.get(pid()).Stats, null);
@@ -527,7 +715,9 @@ function trainWantedUnits(unitOptions) {
     const used = new Set();
     // Defenders first: a settlement under threat cannot wait for scouts or settlers.
     const entries = trainDefenders(unitOptions.threats ?? [], used);
-    const cities = ownSettlements().filter((c) => !c.isTown).sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+    // The city free soonest first (it would not move the unit ahead of an item with progress), then the biggest.
+    const cities = ownSettlements().filter((c) => !c.isTown)
+        .sort((a, b) => turnsUntilFree(a) - turnsUntilFree(b) || (b.population ?? 0) - (a.population ?? 0));
     for (const w of unitsWanted(unitOptions)) {
         let n = w.n;
         for (const city of cities) {
@@ -545,7 +735,10 @@ function trainWantedUnits(unitOptions) {
     return { entries, used };
 }
 
-/** A scout or settler waiting behind other items moves to the front of its city's queue. */
+/**
+ * A scout or settler (or a defender under threat) waiting behind other items moves to the front of
+ * its city's queue, behind the item in production when that one has progress (frontSlot).
+ */
 export function frontLoadUnits(unitOptions = {}) {
     const out = [];
     const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
@@ -555,9 +748,10 @@ export function frontLoadUnits(unitOptions = {}) {
     for (const city of ownSettlements()) {
         if (city.isTown) continue;
         const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
-        const i = queue.findIndex((q, j) => j > 0 && wanted(queueUnitDef(q)));
-        if (i <= 0) continue;
-        const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: 0 };
+        const to = frontSlot(city);
+        const i = queue.findIndex((q, j) => j > to && wanted(queueUnitDef(q)));
+        if (i <= to) continue;
+        const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: to };
         if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
         out.push({ key: "FRONT_LOADED", args: [nameOf(city), Locale.compose(queueUnitDef(queue[i])?.Name ?? "?")] });
@@ -584,6 +778,83 @@ function cheapestBuilding(city) {
         best = { args, name: def.Name, cost };
     }
     return best;
+}
+
+/**
+ * Nothing else to build (seen in game: late in the age every building done, the advisor offering
+ * only soldiers over our limits, the turn held by NOTIFICATION_CHOOSE_CITY_PRODUCTION): the
+ * cheapest project the city may start, else its strongest soldier, else any unit but a settler;
+ * an empty queue must never hold the turn. @returns { args, name } or null
+ */
+function lastResort(city) {
+    let best = null;
+    for (const def of GameInfo.Projects ?? []) {
+        const args = { ProjectType: def.$hash };
+        if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+        const cost = Number(safe(() => city.Production.getProjectProductionCost(def.ProjectType), def.Cost ?? 999)) || 999;
+        if (!best || cost < best.cost) best = { args, name: def.Name, cost };
+    }
+    if (best) return best;
+    const soldier = bestMilitaryOrder(city);
+    if (soldier) return soldier;
+    for (const def of GameInfo.Units ?? []) {
+        const args = { UnitType: def.$hash };
+        // Never a settler: that bypasses the settlement cap (waitAtCap, trainWantedUnits).
+        if (def.CanTrain === false || def.CanTrain === "false" || isSettler(def)) continue;
+        if (safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return { args, name: def.Name };
+    }
+    return null;
+}
+
+/**
+ * Walls for a threatened settlement (seen in game: an independent's raiders pillaged around the
+ * capital turn after turn; nothing but soldiers stood in their way): the age's fortification
+ * (GameInfo.TypeTags FORTIFICATION: Ancient Walls, Medieval Walls, Defensive Fortifications) on
+ * the settlement's centre, bought with gold when the game allows (no reserve: like repairs, it
+ * cannot wait), else queued first in a city (behind an item with progress). One a settlement a
+ * pass. @param threats from threatenedSettlements @returns log entries
+ */
+export function fortifyThreatened(threats, { buy = true, queue = true } = {}) {
+    const out = [];
+    const walls = (GameInfo.TypeTags?.filter((t) => t.Tag === "FORTIFICATION") ?? [])
+        .map((t) => safe(() => GameInfo.Constructibles.lookup(t.Type), null))
+        .filter((d) => d && d.ConstructibleClass === "BUILDING");
+    if (walls.length === 0) return out;
+    for (const t of threats ?? []) {
+        const city = ownSettlements().find((c) => c.location.x === t.settlement.x && c.location.y === t.settlement.y);
+        if (!city) continue;
+        const centre = safe(() => GameplayMap.getIndexFromXY(city.location.x, city.location.y), -1);
+        for (const def of walls) {
+            if (queueTypes(city).includes(def.$hash)) {
+                if (queue && !city.isTown) toFront(city, def.$hash);
+                break;
+            }
+            const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
+            const buyProbe = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
+            const plots = [...(probe?.Plots ?? []), ...(buyProbe?.Plots ?? [])];
+            if (plots.length === 0) continue;
+            const loc = safe(() => GameplayMap.getLocationFromIndex(plots.includes(centre) ? centre : plots[0]), null);
+            if (!loc) continue;
+            const args = { ConstructibleType: def.$hash, X: loc.x, Y: loc.y };
+            const name = safe(() => Locale.compose(def.Name), def.ConstructibleType);
+            if (buy) {
+                const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
+                const cost = Number(r?.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
+                if (r?.Success && Number.isFinite(cost) && cost <= goldBalance()) {
+                    Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, args);
+                    out.push({ key: "WALLS_BOUGHT", args: [name, nameOf(city), Math.round(cost)] });
+                    break;
+                }
+            }
+            if (!queue || city.isTown || !probe?.Success) continue;
+            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+            Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+            toFront(city, def.$hash);
+            out.push({ key: "WALLS_QUEUED", args: [name, nameOf(city)] });
+            break;
+        }
+    }
+    return out;
 }
 
 /**
@@ -658,7 +929,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
             }
         }
         const order = advisorOrder(city, unitOptions);
-        const fallback = order ? null : cheapestBuilding(city);
+        const fallback = order ? null : cheapestBuilding(city) ?? lastResort(city);
         if (order) {
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             out.push({ key: "QUEUED_ADVISOR", args: [nameOf(city), Locale.compose(order.name)] });
@@ -680,7 +951,8 @@ export function readyToGrow() {
     return ownSettlements().filter((c) => safe(() => c.Growth.isReadyToPlacePopulation, false)).map((c) => `${nameOf(c)}${c.isTown ? " (town)" : ""}`);
 }
 
-export function placeGrowth(settings) {
+/** @param options { victory: the victory focus (economy: resource tiles; science: 40-yield tiles) } */
+export function placeGrowth(settings, { victory = null } = {}) {
     const out = [];
     let townFocus = null; // town key -> the Focus it will take at population 7 (Towns tab)
     for (const city of ownSettlements()) {
@@ -690,7 +962,7 @@ export function placeGrowth(settings) {
             townFocus ??= new Map((safe(() => runTownAdvisor(settings), null)?.rows ?? []).map((r) => [`${r.town.x},${r.town.y}`, r.focus?.best?.key ?? null]));
             focusKind = townFocus.get(`${city.location.x},${city.location.y}`) ?? null;
         }
-        const a = growthAdvice(city.id, settings, { focusKind });
+        const a = growthAdvice(city.id, settings, { focusKind, victory });
         // A new citizen holds the turn (NOTIFICATION_NEW_POPULATION) until placed: the advised
         // choice first, then every offered tile in order, then a specialist (towns have none).
         const specialist = () => {
@@ -749,8 +1021,7 @@ export function convertTowns(settings, reserveTurns) {
     const rank = { CONVERT: 0, CONSIDER: 1, WAIT: 2, KEEP: 3 };
     const order = (r) => (plannedRoleAt(r.town.x, r.town.y) === "CITY" ? -1 : rank[r.advice?.verdict] ?? 4);
     const candidates = rows.filter((r) => r.town.canConvert && r.town.cost > 0 && r.advice?.verdict !== "BLOCKED").sort((a, b) => order(a) - order(b) || a.town.cost - b.town.cost);
-    const income = Number(safe(() => Players.get(pid()).Stats.getNetYield(YieldTypes.YIELD_GOLD), 0)) || 0;
-    const spare = goldBalance() - Math.max(0, reserveTurns) * Math.max(0, income);
+    const spare = goldBalance() - goldReserve(reserveTurns);
     const pick = candidates.find((r) => r.town.cost <= spare);
     if (!pick) return [];
     const args = { Directive: OrderTypes.ORDER_TOWN_UPGRADE };
@@ -761,18 +1032,22 @@ export function convertTowns(settings, reserveTurns) {
 
 // ---- purchases -------------------------------------------------------------------------
 
-/** Buys the best-value planned buildings, keeping `reserveTurns` turns of gold income. */
-export function buyBuildings(settings, reserveTurns) {
+/**
+ * Buys the best-value planned buildings, keeping `reserveTurns` turns of gold income; not what this
+ * pass bought already (`purchases` from buyVictoryWork: those buildings and their gold, which the
+ * game's balance may not show yet).
+ */
+export function buyBuildings(settings, reserveTurns, purchases = { bought: new Set(), spent: 0 }) {
     const out = [];
     const plans = state.get().results.plans;
     if (!plans) return out;
-    const income = Number(safe(() => Players.get(pid()).Stats.getNetYield(YieldTypes.YIELD_GOLD), 0)) || 0;
-    let budget = goldBalance() - Math.max(0, income) * reserveTurns;
+    let budget = goldBalance() - purchases.spent - goldReserve(reserveTurns);
     const advice = purchaseAdvice(plans, settings, 12);
     for (const pick of advice.picks) {
         if (out.length >= MAX_PURCHASES) break;
-        if (pick.cost > budget) continue;
+        if (pick.cost > budget || purchases.bought.has(`${pick.sid}|${pick.type}`)) continue;
         if (buyPlanned(pick)) {
+            purchases.bought.add(`${pick.sid}|${pick.type}`);
             budget -= pick.cost;
             out.push({ key: "BOUGHT", args: [pick.name, pick.settlementName, Math.round(pick.cost)] });
         }

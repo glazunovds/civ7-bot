@@ -13,6 +13,9 @@ const RAW = {
     PRODUCTION: { y: [0.8, 2.0, 0.5, 0.5, 0.5, 0.6, 0.3], w: { tiles: 0.8, adj: 0.4, prod: 1.4 } },
     SCIENCE:    { y: [0.9, 1.0, 0.5, 2.0, 0.6, 0.7, 0.4], w: { tiles: 0.8, adj: 1.0, prod: 0.5 } },
     GOLD:       { y: [0.9, 1.0, 2.0, 0.5, 0.5, 0.7, 0.5], w: { tiles: 0.8, adj: 1.0, prod: 0.5 } },
+    // The economy focus while its path's techs are missing (not offered in the priority list):
+    // seen in game, under GOLD only 3 techs came in the whole Modern age (no Factory, no railroads).
+    GOLD_SCIENCE: { y: [0.9, 1.0, 1.6, 1.4, 0.5, 0.7, 0.5], w: { tiles: 0.8, adj: 1.0, prod: 0.5 } },
     CULTURE:    { y: [0.9, 1.0, 0.5, 0.6, 2.0, 0.8, 0.6], w: { tiles: 0.8, adj: 1.0, prod: 0.5 } },
     FOOD:       { y: [2.0, 1.0, 0.6, 0.5, 0.5, 0.8, 0.4], w: { tiles: 1.4, adj: 0.3, prod: 0.25 } },
     HAPPINESS:  { y: [0.9, 1.0, 0.6, 0.5, 0.6, 2.0, 0.4], w: { tiles: 0.8, adj: 1.0, prod: 0.5 } },
