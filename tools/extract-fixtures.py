@@ -21,7 +21,8 @@ TABLES = {
     "Constructible_ValidDistricts", "Constructible_ValidTerrains", "TerrainBiomeFeature_YieldChanges",
     "Constructible_ValidFeatures", "Constructible_RequiredFeatureClasses", "CivilizationTraits", "Civilizations",
     "LeaderTraits", "UniqueQuarterModifiers", "Projects", "Project_Units", "Constructible_Maintenances",
-    "Units", "ProgressionTreeNodes", "ProgressionTreeNodeUnlocks", "GreatWorks", "Victories", "ProgressionTreePrereqs", "Attributes",
+    "Units", "ProgressionTreeNodes", "ProgressionTreeNodeUnlocks", "GreatWorks", "Victories", "ProgressionTreePrereqs", "Attributes", "VictoryTypes",
+    "Unit_Stats", "ConstructibleModifiers",
 }
 KEYS = {  # primary key column per table, for Update/Delete matching and lookup()
     "Ages": "AgeType", "Terrains": "TerrainType", "Biomes": "BiomeType", "Features": "FeatureType",
@@ -30,6 +31,7 @@ KEYS = {  # primary key column per table, for Update/Delete matching and lookup(
     "Wonders": "ConstructibleType", "UniqueQuarters": "UniqueQuarterType", "GlobalParameters": "Name",
     "Projects": "ProjectType", "Units": "UnitType", "ProgressionTreeNodes": "ProgressionTreeNodeType",
     "GreatWorks": "GreatWorkType", "Victories": "VictoryType", "Attributes": "AttributeType",
+    "VictoryTypes": "VictoryType", "Unit_Stats": "UnitType",
 }
 
 

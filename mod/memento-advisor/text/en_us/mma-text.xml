@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <EnglishText>
+    <Row Tag="LOC_MMA_FOR_PAIR">
+      <Text>Suggested mementos for {1_Leader} + {2_Civ}:</Text>
+    </Row>
+    <Row Tag="LOC_MMA_FOR_LEADER">
+      <Text>Suggested mementos for {1_Leader}:</Text>
+    </Row>
+    <Row Tag="LOC_MMA_FOR_ANY">
+      <Text>Suggested mementos:</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_AUTO">
+      <Text>Auto ({1_Victory})</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_BALANCED">
+      <Text>Balanced</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_CULTURE">
+      <Text>Culture</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_SCIENCE">
+      <Text>Science</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_ECONOMIC">
+      <Text>Economic</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_MILITARY">
+      <Text>Military</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_AUTO_TT">
+      <Text>The victory that suits this leader and civilization (the leader's preferred victory for the civilization's age, else their attributes). The numbers on the cards are the best mementos for it, 1 first; mementos you have not unlocked are skipped.</Text>
+    </Row>
+    <Row Tag="LOC_MMA_MODE_TT">
+      <Text>Rank the mementos for this goal instead (Balanced: the average of the four victories). The choice is remembered.</Text>
+    </Row>
+    <Row Tag="LOC_MMA_BADGE_TT">
+      <Text>#{1_Rank} for {2_Mode}: {3_Reason}</Text>
+    </Row>
+  </EnglishText>
+</Database>

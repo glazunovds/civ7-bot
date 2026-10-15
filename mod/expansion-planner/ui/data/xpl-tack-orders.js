@@ -100,12 +100,7 @@ const NEAR_CITY = 4; // a tack this close to the city centre is treated as meant
 
 function sameCity(a, b) {
     if (!a || !b) return false;
-    try {
-        if (globalThis.ComponentID?.isMatch) return ComponentID.isMatch(a, b);
-    } catch (_e) {
-        // fall through to the field comparison
-    }
-    return a.owner === b.owner && a.id === b.id;
+    return a.owner == b.owner && a.id == b.id;
 }
 
 /**

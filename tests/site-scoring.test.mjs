@@ -5,6 +5,8 @@ import { scoreSite, availability, REJECT } from "../mod/expansion-planner/ui/cor
 import { findSites, runToEnd } from "../mod/expansion-planner/ui/core/xpl-site-pipeline.js";
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { normaliseRule } from "../mod/expansion-planner/ui/core/xpl-adjacency-rules.js";
+import { scoreSiteRoles } from "../mod/expansion-planner/ui/core/xpl-site-roles.js";
+import { TUNING } from "../mod/expansion-planner/ui/core/xpl-tuning.js";
 
 test("open grassland site scores and is not rejected", () => {
     const w = new FakeWorld(30, 20);
@@ -165,4 +167,48 @@ test("pipeline: no site closer than 5 tiles to another player's settlement centr
     // Without the rule, sites 4 tiles from Carthage would be candidates.
     const loose = runToEnd(findSites({ ...input, ctx: w.ctx({ centres }) }));
     assert.ok(loose.scored.some((s) => w.grid.distance(s.idx, foreign) < 5), "the rule is what keeps them away");
+});
+
+test("pipeline: no site within 6 tiles of an independent's village, friendly or not (founding there makes it hostile; probe P2)", () => {
+    const w = new FakeWorld(40, 24);
+    const own = w.at(14, 12);
+    const village = w.at(22, 12);
+    for (const { idx } of w.grid.radius(own, 1)) w.table[idx].owner = 0;
+    const centres = [{ idx: own, kind: "OWN", name: "Rome" }];
+    const input = { origins: [own], radius: 10, minSpacing: 3, minPickDist: 4, topN: 12, includeHidden: false, isSettleable: () => true };
+    const near = (res) => res.scored.map((s) => w.grid.distance(s.idx, village));
+    // A neutral (or hostile) village: nothing scored within 6.
+    const neutral = runToEnd(findSites({ ...input, ctx: w.ctx({ centres, villages: [{ idx: village, friendly: false }] }) }));
+    assert.ok(neutral.picks.length > 0);
+    assert.ok(near(neutral).every((d) => d > 6), `closest scored site ${Math.min(...near(neutral))}`);
+    assert.ok(neutral.stats.rejected.INDEPENDENT > 0);
+    // A friendly one too (seen in game 6: two camps at peace, our own city-states of the previous age,
+    // declared a surprise war when we founded 4 and 5 tiles away, and took the town).
+    const friendly = runToEnd(findSites({ ...input, ctx: w.ctx({ centres, villages: [{ idx: village, friendly: true }] }) }));
+    assert.ok(near(friendly).every((d) => d > 6), `closest scored site ${Math.min(...near(friendly))}`);
+    // Without villages, sites that close would be scored: the rule is what keeps them away.
+    const loose = runToEnd(findSites({ ...input, ctx: w.ctx({ centres }) }));
+    assert.ok(near(loose).some((d) => d <= 3));
+});
+
+test("natural wonders the site would own add culture victory points (research/26 §4.5): ring 1 in full, farther ones less, once per wonder, none owned already", () => {
+    const w = new FakeWorld(30, 20);
+    w.patch(16, 10, { isNaturalWonder: true, feature: "FEATURE_GRAND_MESA" });
+    w.patch(17, 10, { isNaturalWonder: true, feature: "FEATURE_GRAND_MESA" }); // the same wonder, two tiles
+    const site = w.at(15, 10);
+    const off = scoreSiteRoles(site, w.ctx());
+    const on = scoreSiteRoles(site, w.ctx({ naturalWonders: true }));
+    assert.ok(Math.abs(on.value - off.value - TUNING.NATURAL_WONDER) < 0.002, `${on.value} - ${off.value}`);
+    assert.equal(on.naturalWonders, 1, "one wonder of two tiles");
+    assert.ok(on.reasons.some((r) => r.key === "LOC_XPL_R_NATURAL_WONDER"));
+    assert.equal(off.naturalWonders, undefined, "the culture victory off: not counted");
+    // Three tiles away: a quarter (growth may never reach it).
+    const far = new FakeWorld(30, 20);
+    far.patch(18, 10, { isNaturalWonder: true, feature: "FEATURE_X" });
+    const d = scoreSiteRoles(far.at(15, 10), far.ctx({ naturalWonders: true })).value - scoreSiteRoles(far.at(15, 10), far.ctx()).value;
+    assert.ok(Math.abs(d - TUNING.NATURAL_WONDER * 0.25) < 0.002, String(d));
+    // Owned already (here by us, another settlement's): nothing more to gain.
+    w.patch(16, 10, { owner: 0 });
+    w.patch(17, 10, { owner: 0 });
+    assert.equal(scoreSiteRoles(site, w.ctx({ naturalWonders: true })).naturalWonders, undefined);
 });

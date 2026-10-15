@@ -1119,13 +1119,13 @@
       <Text>Town Focus</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_TOWNS_TT">
-      <Text>A Growing town at population 7+ that is connected to a city takes the recommended Focus; before that, its new citizens favour tiles that suit it (farms for a farming town, mines for a mining town). A Focus already chosen is never changed. While towns outnumber cities, the best town becomes a city when the gold above the reserve pays for it.</Text>
+      <Text>A Growing town at population 7+ that is connected to a city takes the recommended Focus; before that, its new citizens favour tiles that suit it (farms for a farming town, mines for a mining town). A Focus already chosen is never changed. While towns outnumber cities, the best town becomes a city (a town founded on a city site first; with the science or economic focus the one with the most production); after that, only a town the Towns tab rates «convert» on its yields. The gold is saved for it: other purchases wait until it is converted.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_PURCHASES_LABEL">
       <Text>Buy with gold</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_PURCHASES_TT">
-      <Text>Buy up to 3 planned buildings per turn, best value per gold first, then upgrade up to 3 military units the game allows to upgrade (those near a threatened settlement first), always keeping the reserve below.</Text>
+      <Text>Buy up to 3 planned buildings per turn, best value per gold first, then upgrade up to 3 military units the game allows to upgrade (those near a threatened settlement first), always keeping the reserve below. Towns' buildings (warehouses) take at most half the spare gold, and none while gold is saved for a goal.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_SKIP_UNITS_LABEL">
       <Text>Idle units skip the turn</Text>
@@ -1143,7 +1143,7 @@
       <Text>Gold reserve</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_RESERVE_TT">
-      <Text>Purchases keep this many turns of your gold income in the treasury, at most 1000 gold (late in the game a few turns of income would leave thousands idle).</Text>
+      <Text>Purchases keep this many turns of your gold income in the treasury, at most 1000 gold (late in the game a few turns of income would leave thousands idle). With a negative income: 10 turns of the deficit. The gold for a savings goal (a town conversion; with the victory focus, the path's next building) is held too: smaller purchases wait until it is bought. Repairs, walls and defenders under threat use all the gold. With «Strategy by phase» (and the victory focus) the phase sets the reserve for each turn instead (its tooltip in the strategy line); this setting stays as you chose it.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_RESERVE_N">
       <Text>{1_N} turns of income</Text>
@@ -1219,6 +1219,9 @@
     </Row>
     <Row Tag="LOC_XPL_AP_FOCUS">
       <Text>{1_Town}: Focus «{2_Focus}»</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_FORT">
+      <Text>{1_Town}: Focus «{2_Focus}» (an independent at war with us is near; only such a town can buy walls)</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_BOUGHT">
       <Text>bought {1_Name} in {2_Where} for {3_Gold}[icon:YIELD_GOLD]</Text>
@@ -1312,13 +1315,13 @@
       <Text>Settlers found settlements</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_SETTLERS_TT">
-      <Text>Cities train settlers (2 at a time while you have fewer than 3 settlements, then 1, never past the settlement cap; they go to the front of the queue). A settler waiting for orders walks to the best free site of the Settlements tab (searched by itself every 5 turns; the role that keeps cities and towns 1 to 1 first, else the game's suggestion), at most 10 turns away, and founds a settlement there; a town founded on a city site becomes a city when gold allows. Each settler gets its own site; no move may start a war. Settlers keep away from hostile military units: no site with one within 3 tiles, no way passing within 2; with one within 3, a settler stays in or runs to your nearest settlement (or steps away), even while walking. No site closer than 5 tiles to another player's settlement. A Migrant joins the settlement it stands in (Resettle; city or town), else walks to your nearest one, its citizen on the tile the growth hints rate best. In the Exploration age, until Shipbuilding, no land unit is sent across deep ocean (it stops on every ocean tile and takes damage there); coast is fine.</Text>
+      <Text>Cities train settlers (2 at a time while you have fewer than 3 settlements, then 1, never past the settlement cap; they go to the front of the queue). A settler waiting for orders walks to the best free site of the Settlements tab (searched by itself every 5 turns; the role that keeps cities and towns 1 to 1 first, else the game's suggestion), at most 10 turns away, and founds a settlement there; a town founded on a city site becomes a city when gold allows. Each settler gets its own site; no move may start a war. Settlers keep away from hostile military units: no site with one within 3 tiles, no way passing within 2; with one within 3, a settler stays in or runs to your nearest settlement (or steps away), even while walking; in a settlement it leaves for a safe site when its whole way there stays more than 3 tiles from them, else for another of your settlements with no enemies near. No site closer than 5 tiles to another player's settlement, nor within 3 tiles of an independent's village, nor within 6 of any village, friendly or not (founding there makes it hostile). A settler that has walked 12 turns, or changed its site 3 times, takes the nearest safe site. No settler is trained while no site is known. In the Antiquity age, below the settlement cap, no new wonder or science project starts: settlers first. A Migrant joins the settlement it stands in (Resettle; city or town), else walks to your nearest one, its citizen on the tile the growth hints rate best. In the Exploration age, until Shipbuilding, no land unit is sent across deep ocean (it stops on every ocean tile and takes damage there); coast is fine.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_DEFEND_LABEL">
       <Text>Military: shoot or fortify</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_DEFEND_TT">
-      <Text>A military unit waiting for orders shoots at the most damaged enemy in range (ranged units; never a shot that would start a war), else heals when hurt, else fortifies (or stands guard) where it stands. With 2+ hostile units near a settlement, the nearest city trains its strongest military unit first (only while that settlement has fewer of your soldiers around it than hostile units, and you have fewer than 4 per settlement), soldiers away from it walk there, and a unit walks toward an independent we cannot befriend yet (stopping 2 tiles away). The advisor's military units are only trained below 2 per settlement. When a unit shares a tile with another military unit (a new unit from the city), one of them steps to the nearest free tile, your own land first; boxed in by your own soldiers, a neighbour steps out to make room.</Text>
+      <Text>A military unit waiting for orders disperses an independent's village it stands on; else shoots (ranged units) at an enemy soldier next to your settlements first, then at other soldiers, the most damaged first (never at an empty tile, never a shot that would start a war); else heals when hurt; else walks onto an empty village at war with you within 4 tiles to disperse it (not a garrison; not while someone befriends it); else fortifies (or stands guard) where it stands. A melee unit (a fortified one too) attacks a hostile unit next to it near your settlements when the game's own combat preview says it clearly wins: the enemy dies or takes twice the damage it deals, and your unit keeps at least half its health; never an attack on a settlement, never one that starts a war. A settlement is threatened with 2+ hostile units within 4 tiles, or one within 2, or one within 4 while its centre is damaged (only independents at war with you count, and not a village's own units standing by it unless they are next to the settlement or attacking it): while it has fewer of your soldiers around it than hostile units, it buys its strongest melee unit at once with all the gold (towns too), the nearest city trains one first, soldiers away from it walk there, and a unit walks toward an independent we cannot befriend yet (stopping 2 tiles away). A settlement within 6 tiles of a village at war with you, with no soldier on or next to it, buys one with the gold above the reserve. One melee unit as strong as the best you can train is always kept: every settlement centre defends at the strongest melee unit you trained, minus 10. A threatened or exposed town still growing at population 7 takes the Fort Town Focus, the only way a town can buy walls, and then buys them. All defenders stay below 4 per settlement; the advisor's military units are only trained below 2 per settlement. While your gold income is below zero, no unit is added except defenders of a threatened settlement, and units are upgraded only there. When a unit shares a tile with another military unit (a new unit from the city), one of them steps to the nearest free tile, your own land first; boxed in by your own soldiers, a neighbour steps out to make room.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_MERCHANTS_LABEL">
       <Text>Merchants: best trade route</Text>
@@ -1426,7 +1429,7 @@
       <Text>Befriend independents</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_BEFRIEND_TT">
-      <Text>Spends Influence to start befriending every independent power the game allows (those threatening a settlement first, then the nearest), so its units leave yours alone; under threat (2+ hostile units near a settlement) more Influence goes into it. Also asks civilizations for open borders when your explorers reach their land.</Text>
+      <Text>Spends Influence to befriend independent powers, one a turn (the Influence pays for one): those threatening a settlement first, then those at war with you, then the nearest to your settlements (by their village); one you cannot afford yet keeps the Influence for itself. Once befriending reaches 30, its war with you ends. Under threat, more Influence goes into an ongoing befriending. Also asks civilizations for open borders when your explorers reach their land.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_TACKS_LABEL">
       <Text>Map tacks for the plan</Text>
@@ -1462,7 +1465,103 @@
       <Text>{1_City}: {2_Name} moved to the front of the queue</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_TOWN_CONVERTED">
-      <Text>{1_Town} becomes a city ({2_Gold} gold): cities and towns 1 to 1</Text>
+      <Text>{1_Town} becomes a city ({2_Gold} gold)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SAVING">
+      <Text>Saving for {1_Goal}: {2_Cost}[icon:YIELD_GOLD] ({3_Gold}[icon:YIELD_GOLD] above the reserve so far); other purchases wait</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_CONVERT">
+      <Text>converting {1_Town} to a city</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_LEVER">
+      <Text>{1_Building} in {2_Settlement}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOLD_LINE">
+      <Text>Gold: {1_Gold}[icon:YIELD_GOLD], reserve {2_Reserve}; saving for {3_Goal}: {4_Cost}[icon:YIELD_GOLD]</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOLD_NO_GOAL">
+      <Text>Gold: {1_Gold}[icon:YIELD_GOLD], reserve {2_Reserve}; nothing to save for</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOLD_SPENT">
+      <Text>spent this turn: {1_Gold}[icon:YIELD_GOLD]</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_PADS">
+      <Text>Launch Pads ({1_N})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_NOW">
+      <Text>Strategy: {1_Phase} → {2_Focus}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PHASE">
+      <Text>Strategy now: {1_Phase} → {2_Focus}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PHASE_GROWTH">
+      <Text>Growth</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PHASE_BUILD">
+      <Text>Build-up</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PHASE_COMMIT">
+      <Text>Final push</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_RESERVE">
+      <Text>Gold reserve: {1_N} turn(s) of income (instead of «Gold reserve»)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_WONDERS">
+      <Text>Wonders at once: {1_N}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_WONDERS_INNOVATION">
+      <Text>Wonders at once: {1_N}, only those that grant Innovation (Great Library, Nalanda, Oxford…)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_GROWTH">
+      <Text>Growth first: food and production weigh most (plan, citizens, purchases); towns lean to farming</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_NO_EXPLORERS">
+      <Text>No explorers trained (artifacts are culture's)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_NO_SETTLERS">
+      <Text>No settlers trained (one already on its way still founds)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_UPGRADES_THREAT">
+      <Text>Units upgraded only near a threatened settlement</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_PEACE_ARMY">
+      <Text>In peace: none of the advisor's soldiers, no Barracks or other military buildings</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_CITIES_ONLY">
+      <Text>Plan purchases in cities only</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_PADS">
+      <Text>Launch Pads in {1_N} cities: gold banked for them before Rocketry, all bought when it comes</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_BLOCK_CULTURE">
+      <Text>A rival is near a culture win: one more wonder at a time, any kind (each one we build is denied to it), explorers allowed, resort towns, no Future Tech</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_BLOCK_ECONOMIC">
+      <Text>A rival is near an economic win: gold is saved for gold buildings (GDP), no Future Tech</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_BLOCK_MILITARY">
+      <Text>A rival is near a military win: settlers trained even in the final push (settlements count), no Future Tech</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH">
+      <Text>{1_Leader} leads ({2_Victory}): {3_Points} of {4_Goal} (×{5_Multiple} the second); we need {6_Need}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_DANGER">
+      <Text>{1_Leader} is near a win ({2_Victory}): {3_Points} of {4_Goal} (×{5_Multiple} the second); we need {6_Need} to hold it back</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RIVAL_NEAR_WIN">
+      <Text>{1_Leader} is near a win ({2_Victory}): {3_Points} of {4_Goal}; we need {5_Need}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RIVAL_COUNTDOWN">
+      <Text>{1_Leader}'s countdown to a win ({2_Victory}) has started: {3_Turns} turn(s)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_GDP">
+      <Text>{1_Building} in {2_Settlement} (GDP)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_CODEX">
+      <Text>{1_Building} in {2_Settlement} (slots for {3_N} codices waiting)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_BOUGHT">
+      <Text>{1_Building} bought in {2_Settlement} ({3_Gold}[icon:YIELD_GOLD]): the goal saved for</Text>
     </Row>
     <!-- Autopilot: threats, open borders, town projects -->
     <Row Tag="LOC_XPL_AP_THREAT">
@@ -1473,6 +1572,21 @@
     </Row>
     <Row Tag="LOC_XPL_AP_QUEUED_DEFENDER">
       <Text>{1_City}: queued {2_Name} to defend {3_Name} ({4_Num} hostile units)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_MELEE">
+      <Text>{1_City}: queued {2_Name} (with it, settlement centres defend at {3_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DEFENDER_BOUGHT">
+      <Text>{1_Name} bought in {2_City} for {3_Num}[icon:YIELD_GOLD] ({4_Num} hostile units near)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GARRISON_BOUGHT">
+      <Text>{1_Name} bought in {2_City} for {3_Num}[icon:YIELD_GOLD] (an independent at war with us is near, and no soldier was there)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DISPERSE_MOVE">
+      <Text>{1_Name} goes to disperse {2_Name}'s empty village at {3_X},{4_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DISPERSED">
+      <Text>{1_Name} disperses {2_Name}'s village (it was at war with us)</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_APPROACH">
       <Text>{1_Unit} heads toward {2_Name} so we can befriend it</Text>
@@ -1495,9 +1609,15 @@
     <Row Tag="LOC_XPL_AP_AGE_OVER">
       <Text>the age is over: choose your next civilization yourself (the autopilot switched off)</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_AGE_OVER_SCIENCE">
+      <Text>the age is over: choose your next civilization yourself (the autopilot switched off). For science: the legacy that keeps your cities as cities, and the science mementos (Memento Advisor)</Text>
+    </Row>
     <!-- Autopilot: age start -->
     <Row Tag="LOC_XPL_AP_AGE_START">
       <Text>a new age: choose its dedications yourself, then switch the autopilot on again (it switched off)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AGE_START_SCIENCE">
+      <Text>a new age: choose its dedications yourself, then switch the autopilot on again (it switched off). For science: the free Academics technology and +25% production toward projects</Text>
     </Row>
     <!-- Autopilot: religion -->
     <Row Tag="LOC_XPL_AP_RELIGION_FOUNDED">
@@ -1555,7 +1675,13 @@
       <Text>Victory focus</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_FOCUS_TT">
-      <Text>Every turn the autopilot picks the legacy path to steer toward (culture, science or economic; never military): the one this age where you are furthest along and furthest ahead of the best rival you met, with a bonus for your leader's preferred victory and for close triumphs of that kind; it switches only after another path has led for 3 turns, or when the current one is complete. It then follows that path's priority (Culture, Science or Gold: research and production advice, buildings, policies, growth, purchases); culture also builds one more wonder at a time. Close triumphs of that kind are ticked «Track». Its own work comes first, by age. Research that unlocks the path's work goes first (codex masteries and Literacy; Education and Urban Planning; Currency and Code of Laws; Industrialization and Mass Production). Science: a Library and an Academy in every city for codices (Antiquity); a University in every city and new specialists stacked on the urban tile closest to 40 total yield (Exploration); every project that earns Innovation and a Launch Pad, needed to win (Modern). Economy: growth onto tiles with a resource and, with «Merchants», merchants while trade routes are open (every age); a Market and a Lighthouse in every city for resource slots (Antiquity); settlers heading for the Distant Lands after Shipbuilding, for treasure convoys (Exploration); a Rail Station, Port, Factory and Stock Exchange in every city, factory resources into the Factories, and the Great Banker opening World Bank offices in other capitals (Modern); towns, then cities, buy these buildings with gold above the reserve, and while the path's techs are still to research the economy keeps science up. Treasure convoys always go home and unload. The tab shows the focus, each path against the best rival and the close triumphs.</Text>
+      <Text>Every turn the autopilot picks the legacy path to steer toward (culture, science or economic; never military): the one this age where you are furthest along and furthest ahead of the best rival you met, with a bonus for your leader's preferred victory and for close triumphs of that kind; it switches only after another path has led for 3 turns, or when the current one is complete (in the final age a completed path is kept: its victory goes on). It then follows that path's priority (Culture, Science or Gold: research and production advice, buildings, policies, growth, purchases); culture also builds one more wonder at a time. Close triumphs of that kind are ticked «Track». Its own work comes first, by age. Research that unlocks the path's work goes first (codex masteries and Literacy; Education and Urban Planning; Currency and Code of Laws; Industrialization and Mass Production). Science: a Library and an Academy in every city for codices (Antiquity); a University in every city and new specialists stacked on the urban tile closest to 40 total yield (Exploration); Launch Pads in your 3 most productive cities (one is needed to win; each runs the repeatable Crewed Space Flight Preparation, 15 Innovation), an Airfield and a Radio Station for the path's projects, a Schoolhouse and a Laboratory in every city, and every project that earns Innovation; once nothing of the path is left to research, the techs and civics that grant Innovation (Modern); cities buy these buildings with gold above the reserve too. Economy: growth onto tiles with a resource and, with «Merchants», merchants while trade routes are open (every age); a Market and a Lighthouse in every city for resource slots (Antiquity); settlers heading for the Distant Lands after Shipbuilding, for treasure convoys (Exploration); a Rail Station, Port, Factory and Stock Exchange in every city, factory resources into the Factories, and the Great Banker opening World Bank offices in other capitals (Modern); towns, then cities, buy these buildings with gold above the reserve, and while the path's techs are still to research the economy keeps science up. Treasure convoys always go home and unload. The tab shows the focus, each path against the best rival, each victory's points against its goal (Innovation, GDP…) and its countdown, the victories switched off in this game, and the close triumphs.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_LABEL">
+      <Text>Strategy by phase</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT">
+      <Text>With «Victory focus»: the autopilot plays in phases. Growth (the first quarter of Antiquity, and while settlements are well below the cap; the start of Exploration while towns outnumber cities): food and production weigh most, so towns and cities grow and later build the focus's buildings faster; towns lean to farming. Build-up: the focus's buildings and savings for conversions and the path's buildings; for science and economy no explorers, none of the advisor's soldiers and no Barracks in peace, upgrades only near a threat. Final push (the last age): no new settlers; science banks gold for 3 to 5 Launch Pads before Rocketry and buys them all when it comes. The phase sets the gold reserve and the wonders at once for the turn (your settings stay as they are); the tab shows the phase, its tooltip what it changes. Off: your own settings every turn.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_RESOURCES_LABEL">
       <Text>Assign resources</Text>
@@ -1589,6 +1715,9 @@
     </Row>
     <Row Tag="LOC_XPL_AP_FOCUS_TRIUMPHS">
       <Text>Close triumphs: {1_List}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_INNOVATION_TARGET">
+      <Text>Innovation: {1_N} (by the end of this age about {2_N} keeps a science win in reach)</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_RESOURCE_ASSIGNED">
       <Text>{1_Name} assigned to {2_City}</Text>
@@ -1643,6 +1772,9 @@
     <Row Tag="LOC_XPL_AP_DECLINED_WAR">
       <Text>call to arms from {1_Name} against {2_Name}: declined; the alliance ends</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_JOINED_WAR">
+      <Text>call to arms from {1_Name} against {2_Name}: joined with a formal war (their land is far away, on another continent)</Text>
+    </Row>
     <!-- Autopilot: detours -->
     <Row Tag="LOC_XPL_AP_DETOUR">
       <Text>{1_Unit} goes around the danger toward {2_X},{3_Y} (via {4_X},{5_Y})</Text>
@@ -1662,7 +1794,7 @@
       <Text>Auto</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_VICTORY_TT">
-      <Text>With «Victory focus» on: Auto lets the autopilot pick the path it is closest to winning; Culture, Science or Economy makes it follow that one (if its victory is switched on in this game). Victories switched off in this game are never chosen.</Text>
+      <Text>With «Victory focus» on: Auto lets the autopilot pick the path it is closest to winning; Culture, Science or Economy makes it follow that one (if its victory is switched on in this game). Victories switched off in this game are never chosen and not offered here.</Text>
     </Row>
     <!-- Autopilot: victory levers -->
     <Row Tag="LOC_XPL_AP_VICTORY_WORK">
@@ -1711,6 +1843,196 @@
     <!-- Autopilot: leader attributes -->
     <Row Tag="LOC_XPL_AP_ATTRIBUTE_BOUGHT">
       <Text>leader attribute: {1_Tree}, {2_Node} ({3_Value})</Text>
+    </Row>
+    <!-- Autopilot: science levers, raiders, victory races -->
+    <Row Tag="LOC_XPL_AP_SETTLER_LEAVES">
+      <Text>{1_Unit} leaves {2_City} for {3_X},{4_Y} ({5_Turns} turns), keeping away from hostile units</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLER_GIVES_UP">
+      <Text>{1_Unit} has looked for a site for {2_Turns} turn(s): the nearest safe one will do, {3_X},{4_Y} ({5_Turns} turn(s) away)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCK">
+      <Text>{1_Unit} attacks {2_Enemy} at {3_X},{4_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_VICTORY_COUNTDOWN">
+      <Text>{1_Name} victory: the countdown has started, {2_Num} turns left</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_RACE">
+      <Text>{1_Name} victory: {2_Num}/{3_Num} (best rival: {4_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_RACE_COUNTDOWN">
+      <Text>{1_Name} victory: {2_Num}/{3_Num}, countdown: {4_Num} turns left</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_OFF">
+      <Text>Victories switched off in this game: {1_List}</Text>
+    </Row>
+    <!-- Autopilot: policies worth less than nothing, units ashore -->
+    <Row Tag="LOC_XPL_AP_POLICY_DROPPED">
+      <Text>{1_Name} taken out ({2_Num}): worth less than an empty slot</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_POLICY_FORCED">
+      <Text>{1_Name} slotted ({2_Num}, the best left): the game does not end the turn with an empty slot</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEFT_WATER">
+      <Text>{1_Unit} goes ashore at {2_X},{3_Y} (on water it cannot fight)</Text>
+    </Row>
+    <!-- Autopilot: off when the game is won or lost -->
+    <Row Tag="LOC_XPL_AP_GAME_OVER_OFF">
+      <Text>Autopilot switched off: {1_Reason}</Text>
+    </Row>
+    <!-- Autopilot: game 7 fixes (research/22) -->
+    <Row Tag="LOC_XPL_AP_SETTLER_GOES">
+      <Text>{1_Unit} has waited in {2_City} for {3_Turns} turn(s): it goes for a near site, {4_X},{5_Y}, by a way never next to hostile units</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLER_BOUGHT">
+      <Text>settler bought in {1_City} for {2_Num}[icon:YIELD_GOLD] (far below the settlement limit)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_SETTLER">
+      <Text>a settler in {1_City}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SITES_RELAXED">
+      <Text>few settlement sites left: searched again with looser rules, {1_Num} found</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TECH_FOR_SETTLERS">
+      <Text>research for the settlers (their sites lie across rough seas): {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_CALM">
+      <Text>{1_Town}: Focus «{2_Focus}» (the town is in unrest or below 0 Happiness)</Text>
+    </Row>
+    <!-- Autopilot: game 8 fixes (research/23) -->
+    <Row Tag="LOC_XPL_AP_WAR_RISK">
+      <Text>war risk: {1_Name} (Unfriendly and close to us, or spying on us): a soldier for every settlement</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_GUARD">
+      <Text>{1_City}: queued {2_Name} (a soldier for every settlement: {3_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PEACE_ACCEPTED">
+      <Text>peace with {1_Name} accepted (the offer asked little or nothing of us)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DEAL_REJECTED">
+      <Text>{1_Name}'s deal rejected: it asks {2_Num} settlement(s), {3_Num}[icon:YIELD_GOLD], {4_Num}[icon:YIELD_DIPLOMACY]</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WAIT_DIPLOMACY">
+      <Text>a diplomacy screen is open: the turn ends once it is closed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_END_TURN_REFUSED">
+      <Text>the game refused to end the turn {1_Num} times: left to the player</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WITHDRAW">
+      <Text>{1_Unit} is hurt: steps back to {2_X},{3_Y}, away from hostile units, to heal</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TECH_FOR_WALLS">
+      <Text>research for walls (a war or a lasting threat): {1_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_URBAN">
+      <Text>{1_Town}: Focus «{2_Focus}» instead of farming (buildings of the victory path to buy there)</Text>
+    </Row>
+    <!-- Autopilot: game 9 fixes (research/24) -->
+    <Row Tag="LOC_XPL_AP_OWN_CHANCE">
+      <Text>our own win is within reach ({1_Victory}): {2_Points} of the {3_Goal} that would start our countdown; pushing for it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_OWN">
+      <Text>Our win is within reach ({1_Victory}): {2_Points} of {3_Goal}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TECH_FOR_MELEE">
+      <Text>research for a stronger melee unit (a war or a war risk): {2_Name} for {1_Unit} (strength {3_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TO_WATER">
+      <Text>{1_Unit} is in danger: onto the water at {2_X},{3_Y}, out of the land soldiers' reach</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATER_WAIT">
+      <Text>{1_Unit} stays on the water while land soldiers wait ashore</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_CONVERT_KEEP">
+      <Text>converting {1_Town} to a city (+{2_Num}[icon:YIELD_GOLD] kept for two defenders)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DISBANDED">
+      <Text>{1_Unit} disbanded: units cost {2_Num}[icon:YIELD_GOLD] a turn against an income of {3_Num}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLE_FOUND_HERE">
+      <Text>{1_Unit} made no progress toward {4_X},{5_Y}: founds a settlement here, at {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_R_SLOW">
+      <Text>Takes {1_Num} turns: too long, someone unseen may finish it first.</Text>
+    </Row>
+    <!-- Autopilot: wide detours (game 10) -->
+    <Row Tag="LOC_XPL_AP_SETTLER_DETOUR">
+      <Text>{1_Unit} goes around the danger by {2_X},{3_Y} toward its site at {4_X},{5_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SCOUT_HOME">
+      <Text>{1_Unit} is badly hurt: back to {2_City} to heal</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SCOUT_VILLAGE">
+      <Text>{1_Unit} scouts the village of {2_Name} (to {3_X},{4_Y}): met, it can be befriended</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_COMMANDER_POST">
+      <Text>{1_Unit} takes its post in {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FOCUS_FIRE">
+      <Text>{1_Unit}: Focus Fire on {2_Enemy} at {3_X},{4_Y} ({5_Num} unit(s))</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_COORDINATED_ATTACK">
+      <Text>{1_Unit}: Coordinated Attack on {2_Enemy} at {3_X},{4_Y} ({5_Num} unit(s))</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MOVE_STUCK">
+      <Text>{1_Unit} stood still for {4_Num} turn(s) on its way to {2_X},{3_Y}: the order is cancelled</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MILITARY_LEVER">
+      <Text>{1_Num} more settlement(s) would start our own military countdown ({2_Points} of {3_Goal}): settlers first</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_LEVER">
+      <Text>Our military win: {1_Num} more settlement(s) ({2_Points} of {3_Goal})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_FILL_CAP">
+      <Text>Settlers up to the settlement cap, nearest sites first (each settlement is 4 military points)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_MILITARY_LEVER">
+      <Text>Settlers first: they start our own military countdown</Text>
+    </Row>
+    <Row Tag="LOC_XPL_R_NATURAL_WONDER">
+      <Text>Natural wonders: {1_Num} (culture victory points)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_TITLE">
+      <Text>Priority balance</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_TT">
+      <Text>Multiplies how much each yield is worth in every decision: where new citizens go, buildings, town Focus, sites and purchases. Each victory focus has its own balance (science starts at Food ×0.7, Science ×1.5); the sliders show the current focus's. 1.0 = as is; the autopilot's phases still pick their profile, the balance applies on top. UI.log's «economy:» line (every 10 turns) shows the effect.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_SHOW">
+      <Text>Show</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_HIDE">
+      <Text>Hide</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_RESET">
+      <Text>Reset</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_F">
+      <Text>Food</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_P">
+      <Text>Production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_G">
+      <Text>Gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_S">
+      <Text>Science</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_C">
+      <Text>Culture</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_H">
+      <Text>Happiness</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_VALUE">
+      <Text>×{1_Num}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEFT_HAZARD">
+      <Text>{1_Unit} leaves a tile that hurts {4_Num} a turn (plague) for {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_BIAS_SET_NONE">
+      <Text>No focus</Text>
     </Row>
   </EnglishText>
 </Database>

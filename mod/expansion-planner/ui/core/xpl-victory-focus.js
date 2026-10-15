@@ -5,16 +5,168 @@
  * Each path (culture, science, economic; never military: the autopilot does not attack) is
  * scored by how far along this age's final milestone we are, how far ahead of the best rival
  * we are, the leader's preferred victory (the game's TRAIT_<age>_<path>_VICTORY), and how many
- * close triumphs of that kind there are. A path we already completed this age scores lowest.
+ * close triumphs of that kind there are. A path we already completed this age scores lowest,
+ * except in the final age: there the victory itself goes on past the path (science: 100
+ * Innovation, mostly from Crewed Space Flight Preparation after the 3 space projects; economy:
+ * the GDP race), so a completed path keeps its score and the focus stays on it.
  * The focus changes only when another path has been ahead by SWITCH_MARGIN for SWITCH_STREAK
- * checks in a row (or the current one is completed), so it does not flip back and forth.
+ * checks in a row (or the current one is completed, before the final age), so it does not flip
+ * back and forth.
  * Paths whose victory is switched off in this game are never chosen; the player may also name
  * the target («Цель победы»), which is then followed while its path is known and switched on.
  */
 
 export const FOCUS_CLASSES = ["CULTURE", "SCIENCE", "ECONOMIC"];
+
+// ---- the victory watch (research/21 §3.4, M4) ----------------------------------------------
+//
+// A culture, economic or military victory needs a multiple of the second place's score (root CLAUDE.md
+// gotcha 32): the game's own dominance goal, ⌊multiple × second⌋, ≤ 0 until Exploration 50%. A rival
+// near it is blocked by holding second place (or more) high enough: with `need` points the leader
+// stands at no more than 1 / BLOCK_MARGIN of its goal.
+export const BLOCK_MARGIN = 1.15;
+export const WATCH_SHARE = 0.6;
+export const DANGER_SHARE = 0.85;
+const DOMINATION = "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION";
+
+/** The official multiple of the second place's score by age progress (a fallback: the game's goal comes first). null: no race yet. */
+export function dominanceMultiple(age, ageFrac) {
+    const f = Number(ageFrac) || 0;
+    if (age === "AGE_EXPLORATION") return f < 0.5 ? null : f < 0.8 ? 6 : 4;
+    if (age === "AGE_MODERN") return f < 0.2 ? 4 : f < 0.4 ? 3 : f < 0.6 ? 2 : f < 0.8 ? 1.5 : 1.25;
+    return null;
+}
+
+/**
+ * Rivals close to a dominance victory (culture, economic, military) that is switched on (decision 6:
+ * a victory off in this game is never watched). Per race whose leader is not us: the goal G (the
+ * game's; ≤ 0: second × the table's multiple, none before Exploration 50%), share = leader ÷ G,
+ * multiple = G ÷ second, need = ⌈leader × BLOCK_MARGIN ÷ multiple⌉ (the score we must hold as second),
+ * level DANGER (share ≥ DANGER_SHARE or the leader's countdown runs) or WATCH (share ≥ WATCH_SHARE).
+ * @param races victoryRaces() @param me our player id
+ * @returns [{ cls, leader, points, goal, share, multiple, ours, need, level, countdown }]
+ */
+export function victoryWatch(races, me, { age = null, ageFrac = 0, military = null } = {}) {
+    const out = [];
+    for (const r of races ?? []) {
+        if (r.enabled === false || r.scoring !== DOMINATION) continue;
+        const board = r.board ?? [];
+        // The final age: settlements we may still found can start our own military countdown (militaryOutlook).
+        const lever = r.cls === "MILITARY" && military ? militaryOutlook(r, me, { age, ageFrac, ...military }) : null;
+        const own = lever?.reachable && lever.need > 0 ? leverEntry(lever) : ownChance(r, board, me, { age, ageFrac });
+        if (own) out.push(own);
+        const leader = board[0];
+        if (!leader || leader.id === me || !(leader.points > 0)) continue;
+        const second = Number(board[1]?.points) || 0;
+        const ours = Number(board.find((b) => b.id === me)?.points) || 0;
+        let goal = Number(r.goal) || 0;
+        let multiple = null;
+        if (goal > 0) multiple = second > 0 ? goal / second : dominanceMultiple(age, ageFrac);
+        else {
+            multiple = dominanceMultiple(age, ageFrac);
+            goal = multiple && second > 0 ? Math.floor(second * multiple) : 0;
+        }
+        if (!(goal > 0) || !(multiple > 0)) {
+            out.push({ cls: r.cls, leader: leader.id, points: leader.points, goal: null, share: null, multiple: null, ours, need: null, level: null, countdown: leader.dominant ? leader.turns : null });
+            continue;
+        }
+        const share = leader.points / goal;
+        const level = leader.dominant || share >= DANGER_SHARE ? "DANGER" : share >= WATCH_SHARE ? "WATCH" : null;
+        out.push({
+            cls: r.cls, leader: leader.id, points: leader.points, goal, share: Math.round(share * 100) / 100,
+            multiple: Math.round(multiple * 100) / 100, ours, need: Math.ceil((leader.points * BLOCK_MARGIN) / multiple),
+            level, countdown: leader.dominant ? leader.turns : null,
+        });
+    }
+    return out;
+}
+// Our own countdown is within reach at this share of its goal (research/24 F2: at the final age's end every
+// turn in a countdown is 1000 score, more than a whole game's score).
+export const CHANCE_SHARE = 0.85;
+
+/**
+ * Our own chance at a dominance countdown in this race: our goal is the multiple × the best of the others
+ * (we would lead, they would be second). @returns a watch entry { cls, own: true, ours, goal, share, need,
+ * level: "CHANCE" } or null
+ */
+function ownChance(r, board, me, { age, ageFrac }) {
+    const ours = Number(board.find((b) => b.id === me)?.points) || 0;
+    const others = board.filter((b) => b.id !== me);
+    const top = Number(others[0]?.points) || 0;
+    if (!(ours > 0) || !(top > 0)) return null;
+    const second = Number(board[1]?.points) || 0;
+    const multiple = Number(r.goal) > 0 && second > 0 ? Number(r.goal) / second : dominanceMultiple(age, ageFrac);
+    if (!(multiple > 0)) return null;
+    const goal = Math.floor(top * multiple);
+    const share = goal > 0 ? ours / goal : 0;
+    if (share < CHANCE_SHARE) return null;
+    return { cls: r.cls, own: true, ours, goal, share: Math.round(share * 100) / 100, need: Math.max(0, goal - ours), level: "CHANCE", multiple: Math.round(multiple * 100) / 100 };
+}
+
+// Military points (victories.xml VICTORY_TRACKER_SETTLEMENT): 4 a settlement we own (+1 conquered, +1 in the
+// Distant Lands, +2 with our ideology: not counted); Operation Ivy's triumph (MOD_LEGACY_MO_SCIENTIFIC_3) gives 25.
+export const SETTLEMENT_MILITARY_POINTS = 4;
+export const IVY_MILITARY_POINTS = 25;
+// Where the final age's multiple steps down (dominanceMultiple's table).
+const MODERN_STEPS = [0.2, 0.4, 0.6, 0.8];
+
+/** The multiple the final age's next step brings, or null (not the final age, or no step left). */
+export function nextDominanceMultiple(age, ageFrac) {
+    if (age !== "AGE_MODERN") return null;
+    const next = MODERN_STEPS.find((s) => s > (Number(ageFrac) || 0));
+    return next === undefined ? null : dominanceMultiple(age, next);
+}
+
+/**
+ * Settlements that would start our own military countdown (research/26 §3.3: game 11 ended 55 to the leader's 60;
+ * five more settlements would have made us first with the 75 the goal then asks). We would lead, so our goal is
+ * ⌊multiple × the best other⌋; judged at the next step's multiple when it is lower (a settler takes turns to
+ * found; the multiple only falls). Rivals' own growth is not foreseen.
+ * @param race the MILITARY victoryRaces entry (board sorted, the game's goal) @param me our player id
+ * @param { age, ageFrac, room: settlements we may still found, ivy: Operation Ivy can still be ours in time }
+ * @returns { ours, top, multiple, goal, need, needIvy, room, reachable, withIvy } or null (no race yet)
+ */
+export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, ivy = false } = {}) {
+    const board = race?.board ?? [];
+    const ours = Number(board.find((b) => b.id === me)?.points) || 0;
+    const top = Number(board.filter((b) => b.id !== me)[0]?.points) || 0;
+    if (!(top > 0)) return null;
+    const second = Number(board[1]?.points) || 0;
+    const now = Number(race.goal) > 0 && second > 0 ? Number(race.goal) / second : dominanceMultiple(age, ageFrac);
+    if (!(now > 0)) return null;
+    const next = nextDominanceMultiple(age, ageFrac);
+    const multiple = next && next < now ? next : now;
+    const goal = Math.floor(top * multiple);
+    const short = Math.max(0, goal - ours);
+    const need = Math.ceil(short / SETTLEMENT_MILITARY_POINTS);
+    const needIvy = ivy ? Math.ceil(Math.max(0, short - IVY_MILITARY_POINTS) / SETTLEMENT_MILITARY_POINTS) : need;
+    const free = Math.max(0, Number(room) || 0);
+    return {
+        ours, top, multiple: Math.round(multiple * 100) / 100, goal, need, needIvy, room: free,
+        reachable: need <= free || needIvy <= free, withIvy: !!ivy && need > free && needIvy <= free,
+    };
+}
+
+/** The watch entry of a reachable military lever: our own CHANCE, with the settlements it takes. */
+function leverEntry(o) {
+    return {
+        cls: "MILITARY", own: true, ours: o.ours, goal: o.goal, share: Math.round((o.ours / o.goal) * 100) / 100, need: o.goal - o.ours,
+        settlements: o.withIvy ? o.needIvy : o.need, withIvy: o.withIvy, level: "CHANCE", multiple: o.multiple,
+    };
+}
+
 // The player's choice of target («Цель победы»): AUTO = the path chosen here.
 export const VICTORY_TARGETS = ["AUTO", ...FOCUS_CLASSES];
+
+/**
+ * The targets «Цель победы» offers: those whose victory is switched on in this game (`disabled`:
+ * classes switched off); when that would leave only Auto (all off, or unknown), all of them,
+ * like the focus itself ignores a game saying every victory is off.
+ */
+export function victoryOptions(disabled = new Set()) {
+    const options = VICTORY_TARGETS.filter((v) => v === "AUTO" || !disabled.has(v));
+    return options.length > 1 ? options : VICTORY_TARGETS;
+}
 // The priority profile each focus switches to (core/xpl-profiles.js).
 export const PROFILE_FOR_FOCUS = Object.freeze({ CULTURE: "CULTURE", SCIENCE: "SCIENCE", ECONOMIC: "GOLD" });
 // The triumph category (TypeTags) of each focus.
@@ -59,10 +211,11 @@ export function closeTriumphs(triumphs) {
  * @param standings [{ cls, ours, rival, goal }] (this age's legacy paths)
  * @param leaning the leader's preferred class, or null
  * @param triumphs as for closeTriumphs
- * @param options { disabled: Set of classes whose victory is switched off in this game }
+ * @param options { disabled: Set of classes whose victory is switched off in this game,
+ *                  finalAge: the age the victories are won in (a completed path keeps its score) }
  * @returns [{ cls, score, progress, lead, done, ours, rival, goal }] in FOCUS_CLASSES order (paths we know)
  */
-export function scoreFocus(standings, leaning = null, triumphs = [], { disabled = new Set() } = {}) {
+export function scoreFocus(standings, leaning = null, triumphs = [], { disabled = new Set(), finalAge = false } = {}) {
     const close = closeTriumphs(triumphs);
     const out = [];
     for (const cls of FOCUS_CLASSES) {
@@ -77,30 +230,43 @@ export function scoreFocus(standings, leaning = null, triumphs = [], { disabled 
         const done = ours >= s.goal;
         const kind = TRIUMPH_CATEGORY[cls];
         const bonus = Math.min(TRIUMPH_BONUS_MAX, TRIUMPH_BONUS * close.filter((t) => t.category === kind).length);
-        const score = done ? -1 : progress + LEAD_WEIGHT * lead + (leaning === cls ? LEANING_BONUS : 0) + bonus;
-        out.push({ cls, score, progress, lead, done, ours, rival, goal: s.goal });
+        const lean = leaning === cls ? LEANING_BONUS : 0;
+        const score = done && !finalAge ? -1 : progress + LEAD_WEIGHT * lead + lean + bonus;
+        out.push({ cls, score, progress, lead, done, ours, rival, goal: s.goal, lean: done && !finalAge ? 0 : lean });
     }
     return out;
 }
 
 /**
  * @param scores from scoreFocus
- * @param previous { cls, candidate, streak } from the last check (or nothing)
- * @param options { target: one of VICTORY_TARGETS (the player's choice; AUTO = choose here) }
+ * @param previous { cls, candidate, streak } from the last check (or the focus kept across the age change)
+ * @param options { target: one of VICTORY_TARGETS (the player's choice; AUTO = choose here),
+ *                  finalAge: a completed path is kept (its victory goes on); there the focus the age began with is kept
+ *                  unless another victory's own countdown is within reach (`chances`: classes with our CHANCE in the
+ *                  victory watch) — game 19: at Modern turn 1 every new path stood at 0 and Ada's leaning took the focus
+ *                  from science (26 Innovation) to culture (46 against the leader's 117) }
  * @returns { cls, candidate, streak, changed } (cls null when no path is known)
  */
-export function chooseFocus(scores, previous = {}, { target = "AUTO" } = {}) {
+export function chooseFocus(scores, previous = {}, { target = "AUTO", finalAge = false, chances = new Set() } = {}) {
     const none = { cls: previous.cls ?? null, candidate: null, streak: 0, changed: false };
     if (!scores?.length) return none;
     // The player's target, while its path is known (and its victory switched on).
     if (target !== "AUTO" && scores.some((s) => s.cls === target)) return { cls: target, candidate: null, streak: 0, changed: previous.cls !== target };
     const best = scores.reduce((a, b) => (b.score > a.score ? b : a));
     if (!previous.cls) return { cls: best.cls, candidate: null, streak: 0, changed: true };
-    if (best.cls === previous.cls) return { cls: previous.cls, candidate: null, streak: 0, changed: false };
     const current = scores.find((s) => s.cls === previous.cls);
-    // The current path is unknown now or already completed this age: switch at once.
-    if (!current || current.done) return { cls: best.cls, candidate: null, streak: 0, changed: true };
-    if (best.score - current.score < SWITCH_MARGIN) return { cls: previous.cls, candidate: null, streak: 0, changed: false };
+    // The final age: keep the focus, unless another victory's own countdown is within reach.
+    if (finalAge && current) {
+        const chance = scores.find((s) => s.cls !== previous.cls && chances.has(s.cls));
+        if (chance && !chances.has(previous.cls)) return { cls: chance.cls, candidate: null, streak: 0, changed: true };
+        return { cls: previous.cls, candidate: null, streak: 0, changed: false };
+    }
+    if (best.cls === previous.cls) return { cls: previous.cls, candidate: null, streak: 0, changed: false };
+    // The current path is unknown now or already completed this age (before the final age): switch at once.
+    if (!current || (current.done && !finalAge)) return { cls: best.cls, candidate: null, streak: 0, changed: true };
+    // The leader's leaning picks a first focus, it never makes a switch (at an age's start every path is at 0).
+    const base = (s) => s.score - (s.lean ?? 0);
+    if (base(best) - base(current) < SWITCH_MARGIN) return { cls: previous.cls, candidate: null, streak: 0, changed: false };
     const streak = previous.candidate === best.cls ? (previous.streak ?? 0) + 1 : 1;
     if (streak >= SWITCH_STREAK) return { cls: best.cls, candidate: null, streak: 0, changed: true };
     return { cls: previous.cls, candidate: best.cls, streak, changed: false };

@@ -12,6 +12,7 @@
  * Works with the base menu and with Drongo's Compact Production (its rows have a
  * .drongo-compact-action-wrap); decorates the panel, replaces no files.
  */
+import { idString } from '../core/xpl-component-id.js';
 import { modUrl } from '../core/xpl-constants.js';
 import { log } from '../services/xpl-log.js';
 import { isDmtActive } from '../integrations/xpl-dmt-status.js';
@@ -110,7 +111,7 @@ class ProductionTackDecorator {
             const items = [...root.querySelectorAll("production-chooser-item")];
             const cityID = this.cityID();
             const city = cityID ? safe(() => Cities.get(cityID), null) : null;
-            const signature = `${safe(() => ComponentID.toLogString(cityID), "")}|${Game.turn}|${items.map((i) => i.getAttribute("data-type")).join(",")}|${items.filter((i) => i.querySelector(`.${ACTIONS_CLASS}`)).length}`;
+            const signature = `${idString(cityID)}|${Game.turn}|${items.map((i) => i.getAttribute("data-type")).join(",")}|${items.filter((i) => i.querySelector(`.${ACTIONS_CLASS}`)).length}`;
             if (!force && signature === this.signature) return;
             this.signature = signature;
             if (!city || city.owner !== GameContext.localPlayerID) {
@@ -120,7 +121,7 @@ class ProductionTackDecorator {
             const tacks = tacksByType();
             for (const item of items) this.decorateItem(item, city, tacks);
             // Recount after our own changes so the next poll does not redo the work.
-            this.signature = `${safe(() => ComponentID.toLogString(cityID), "")}|${Game.turn}|${items.map((i) => i.getAttribute("data-type")).join(",")}|${items.filter((i) => i.querySelector(`.${ACTIONS_CLASS}`)).length}`;
+            this.signature = `${idString(cityID)}|${Game.turn}|${items.map((i) => i.getAttribute("data-type")).join(",")}|${items.filter((i) => i.querySelector(`.${ACTIONS_CLASS}`)).length}`;
         } catch (error) {
             log.error("production tack buttons failed", error);
         }

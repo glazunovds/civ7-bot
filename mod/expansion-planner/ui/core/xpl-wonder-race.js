@@ -10,6 +10,7 @@
  */
 export const RACE = Object.freeze({
     QUICK_TURNS: 10,  // finishing within this many turns with no rival seen = HIGH
+    SLOW_TURNS: 15,   // ...beyond this LOW whatever the rivals (research/24 P5: two wonders at 29-30 turns, both lost)
     TIGHT_TURNS: 5,   // a seen rival only matters if we need longer than this
     MARGIN_TURNS: 5,  // omniscient: finishing this many turns before the fastest rival = HIGH
 });
@@ -27,6 +28,16 @@ export const RACE_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
  * @returns { label, reasons: [{ key, args }] }
  */
 export function raceLabel(input, k = RACE) {
+    const r = rawRaceLabel(input, k);
+    // A long build is a race lost to someone we have not seen (research/24 P5: Wat Xieng Thong and Serpent Mound at
+    // 29-30 turns in 8-12 production, both lost): HIGH only within QUICK_TURNS, MEDIUM within SLOW_TURNS.
+    if (r.label !== "HIGH" && r.label !== "MEDIUM") return r;
+    if (input.ourTurns > k.SLOW_TURNS) return { label: "LOW", reasons: [...r.reasons, { key: "LOC_XPL_WONDER_R_SLOW", args: [input.ourTurns] }] };
+    if (input.ourTurns > k.QUICK_TURNS && r.label === "HIGH") return { label: "MEDIUM", reasons: r.reasons };
+    return r;
+}
+
+function rawRaceLabel(input, k) {
     const reasons = [];
     if (input.completedElsewhere) return { label: "NONE", reasons: [{ key: "LOC_XPL_WONDER_R_BUILT", args: [] }] };
     if (!Number.isFinite(input.ourTurns)) return { label: "LOW", reasons: [{ key: "LOC_XPL_WONDER_R_CANNOT", args: [] }] };

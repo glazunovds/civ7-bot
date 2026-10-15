@@ -177,6 +177,7 @@
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_BEFRIEND_TT"><fxs-checkbox class="xpl-ap-befriend"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_BEFRIEND_LABEL"></span></div>
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_TACKS_TT"><fxs-checkbox class="xpl-ap-tacks"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_TACKS_LABEL"></span></div>
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_FOCUS_TT"><fxs-checkbox class="xpl-ap-focus"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_FOCUS_LABEL"></span></div>
+        <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_STRATEGY_TT"><fxs-checkbox class="xpl-ap-strategy"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_STRATEGY_LABEL"></span></div>
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_RESOURCES_TT"><fxs-checkbox class="xpl-ap-resources"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_RESOURCES_LABEL"></span></div>
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_DIPLOMACY_TT"><fxs-checkbox class="xpl-ap-diplomacy"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_DIPLOMACY_LABEL"></span></div>
         <div class="xpl-ap-units-title xpl-status-line" data-l10n-id="LOC_XPL_AP_UNITS_TITLE"></div>
@@ -187,6 +188,20 @@
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_MERCHANTS_TT"><fxs-checkbox class="xpl-ap-merchants"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_MERCHANTS_LABEL"></span></div>
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_SKIP_UNITS_TT"><fxs-checkbox class="xpl-ap-skipUnits"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_SKIP_UNITS_LABEL"></span></div>
         <div class="xpl-check" data-tooltip-content="LOC_XPL_AP_END_TURN_TT"><fxs-checkbox class="xpl-ap-endTurn"></fxs-checkbox><span data-l10n-id="LOC_XPL_AP_END_TURN_LABEL"></span></div>
+      </div>
+      <div class="xpl-control-row" data-tooltip-content="LOC_XPL_AP_BIAS_TT">
+        <span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_TITLE"></span>
+        <span class="xpl-control-value xpl-bias-set xpl-ap-bias-set"></span>
+        <fxs-button class="xpl-ap-bias-toggle xpl-small-button" caption="LOC_XPL_AP_BIAS_SHOW"></fxs-button>
+        <fxs-button class="xpl-ap-bias-reset xpl-small-button" caption="LOC_XPL_AP_BIAS_RESET"></fxs-button>
+      </div>
+      <div class="xpl-ap-bias hidden">
+        <div class="xpl-control-row"><span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_F"></span><fxs-slider class="xpl-ap-bias-F xpl-slider" min="0" max="2" steps="20"></fxs-slider><span class="xpl-control-value xpl-bias-value xpl-ap-bias-value-F"></span></div>
+        <div class="xpl-control-row"><span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_P"></span><fxs-slider class="xpl-ap-bias-P xpl-slider" min="0" max="2" steps="20"></fxs-slider><span class="xpl-control-value xpl-bias-value xpl-ap-bias-value-P"></span></div>
+        <div class="xpl-control-row"><span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_G"></span><fxs-slider class="xpl-ap-bias-G xpl-slider" min="0" max="2" steps="20"></fxs-slider><span class="xpl-control-value xpl-bias-value xpl-ap-bias-value-G"></span></div>
+        <div class="xpl-control-row"><span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_S"></span><fxs-slider class="xpl-ap-bias-S xpl-slider" min="0" max="2" steps="20"></fxs-slider><span class="xpl-control-value xpl-bias-value xpl-ap-bias-value-S"></span></div>
+        <div class="xpl-control-row"><span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_C"></span><fxs-slider class="xpl-ap-bias-C xpl-slider" min="0" max="2" steps="20"></fxs-slider><span class="xpl-control-value xpl-bias-value xpl-ap-bias-value-C"></span></div>
+        <div class="xpl-control-row"><span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_BIAS_H"></span><fxs-slider class="xpl-ap-bias-H xpl-slider" min="0" max="2" steps="20"></fxs-slider><span class="xpl-control-value xpl-bias-value xpl-ap-bias-value-H"></span></div>
       </div>
       <div class="xpl-control-row" data-tooltip-content="LOC_XPL_AP_RESERVE_TT">
         <span class="xpl-control-label" data-l10n-id="LOC_XPL_AP_RESERVE"></span>
@@ -217,6 +232,7 @@
         </div>
       </div>
       <div class="xpl-plan-group" data-l10n-id="LOC_XPL_AP_LOG_TITLE"></div>
+      <div class="xpl-ap-gold xpl-status-line hidden"></div>
       <div class="xpl-ap-focus-box xpl-status-line hidden"></div>
       <fxs-scrollable class="xpl-scroll xpl-scroll--fill" attached-scrollbar="true" handle-gamepad-pan="false"><div class="xpl-ap-log"></div></fxs-scrollable>
     </div>

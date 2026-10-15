@@ -83,5 +83,5 @@ test("omniscient mode reads rivals' queues", () => {
     const pyramids = row(w, "WONDER_PYRAMIDS");
     assert.deepEqual(pyramids.rivalTurns, [3]);
     assert.equal(pyramids.race.label, "LOW");
-    assert.equal(row(w, "WONDER_COLOSSEUM").race.label, "HIGH"); // nobody is building it
+    assert.equal(row(w, "WONDER_COLOSSEUM").race.label, "MEDIUM"); // nobody is building it, but 15 turns: capped (research/24 P5)
 });

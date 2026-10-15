@@ -12,7 +12,7 @@
  * Constructibles.getByComponentID, MapConstructibles.getHiddenFilteredConstructibles.
  */
 import { RACE_ORDER, raceLabel, wonderBoost } from '../core/xpl-wonder-race.js';
-import { getProfile } from '../core/xpl-profiles.js';
+import { profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex, zeroYields } from '../core/xpl-yields.js';
 import { getEngineMap } from './xpl-engine-map.js';
 import { getRules } from './xpl-rules-loader.js';
@@ -191,12 +191,14 @@ export function runWonderPlanner(settings) {
     const player = Players.get(localId);
     const engineMap = getEngineMap();
     const rules = getRules();
-    const weights = getProfile(settings.profile).y;
+    const weights = profileFor(settings).y;
     const omniscient = !!settings.wonders?.omniscient;
     const facts = new FactsCache(engineMap, rules, { playerId: localId, includeHidden: false });
     const cities = (safe(() => player.Cities.getCities(), []) ?? []).filter((c) => !c.isTown);
     const outlook = safe(() => ageOutlook(), null);
-    const ageTurnsLeft = outlook && !outlook.isFinalAge ? outlook.turnsLeft : null;
+    // The final age ends too (at 100% the game ends: research/24 F3, Dogo Onsen and Ubudiah were started in
+    // game 9's Modern age though they could not finish).
+    const ageTurnsLeft = outlook ? outlook.turnsLeft : null;
     const world = scanWorld(localId, omniscient);
     const queued = ourQueues(cities);
     const tacks = tacksByPlot(engineMap);

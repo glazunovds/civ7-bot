@@ -6,7 +6,7 @@ import { installFakeEngine } from "./fakes/fake-engine.mjs";
 const FARM_TOWN = { x: 12, y: 10 };
 const MINE_TOWN = { x: 22, y: 10 };
 const near = (x, y, c) => Math.abs(x - c.x) <= 1 && Math.abs(y - c.y) <= 1 && !(x === c.x && y === c.y);
-const fake = installFakeEngine({
+const world = {
     width: 30, height: 20, wrapX: false,
     tiles: () => ({ terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2 } }),
     structures: (x, y) => {
@@ -20,7 +20,8 @@ const fake = installFakeEngine({
         { owner: 0, x: FARM_TOWN.x, y: FARM_TOWN.y, name: "Fields", isTown: true, pop: 8, prod: 4, connected: [0] },
         { owner: 0, x: MINE_TOWN.x, y: MINE_TOWN.y, name: "Pits", isTown: true, pop: 5, prod: 6 },
     ],
-});
+};
+const fake = installFakeEngine(world);
 const { runTownAdvisor } = await import("../mod/expansion-planner/ui/data/xpl-town-job.js");
 const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
 
@@ -36,4 +37,17 @@ test("each town gets the Focus its own tiles favour, with the right warnings", (
     assert.ok(notes.includes("LOC_XPL_FOCUS_GROW_FIRST"));
     assert.ok(notes.includes("LOC_XPL_FOCUS_NOT_CONNECTED"));
     void fake;
+});
+
+test("science: a town counts the science buildings an Urban Center would let it buy, once unlocked (research/22 C2)", () => {
+    const s = { ...DEFAULT_SETTINGS, profile: "SCIENCE", strategy: { townFocusBias: { URBAN: 6 } } };
+    const urban = () => runTownAdvisor(s).rows.find((r) => r.town.name === "Fields").focus.options.find((o) => o.key === "URBAN");
+    try {
+        assert.equal(urban(), undefined, "Writing not researched: no Library to buy");
+        world.research = { tech: { available: [] }, culture: { available: [] }, depth: { NODE_TECH_AQ_WRITING: 1 } };
+        assert.equal(urban()?.opens, 1, "the Library");
+        assert.equal(runTownAdvisor({ ...s, profile: "GOLD" }).rows.find((r) => r.town.name === "Fields").focus.options.find((o) => o.key === "URBAN"), undefined, "the economy wants the Market (Currency not researched)");
+    } finally {
+        delete world.research;
+    }
 });

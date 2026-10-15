@@ -13,7 +13,7 @@ const world = {
     // Our land around London; far columns still unexplored.
     tiles: (x, y) => ({ terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2, YIELD_PRODUCTION: 1 }, owner: near(LONDON, 2)(x, y) ? 0 : -1, revealed: x < 14 }),
     structures: (x, y) => (x === LONDON.x && y === LONDON.y ? { district: "DISTRICT_CITY_CENTER", constructibles: ["BUILDING_PALACE"] } : { district: null, constructibles: [] }),
-    players: [{ id: 0 }, { id: 2 }, { id: 5, isIndependent: true, name: "Hittites" }, { id: 6, isIndependent: true, name: "Celts" }, { id: 7, isIndependent: true, name: "Scythians" }],
+    players: [{ id: 0 }, { id: 2 }, { id: 5, isIndependent: true, name: "Hittites" }, { id: 6, isIndependent: true, name: "Celts" }, { id: 7, isIndependent: true, name: "Scythians" }, { id: 8, isIndependent: true, name: "Nubians" }],
     cities: [
         { owner: 0, ...LONDON, name: "London", pop: 8, prod: 10, queue: { type: "BUILDING_MONUMENT", turns: 5 } },
         { owner: 0, x: 4, y: 14, name: "Leeds", isTown: true, pop: 4 },
@@ -42,7 +42,7 @@ const reset0 = () => {
     fake.sent.length = 0;
 };
 
-test("a commander with a promotion takes the first one it can earn (not a commendation)", () => {
+test("a commander with a promotion takes one it can earn, a promotion before a commendation", () => {
     reset();
     GameInfo.UnitPromotionClassSets = [{ PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISC_BASTION" }];
     GameInfo.UnitPromotionDisciplineDetails = [
@@ -65,13 +65,18 @@ test("a commander with a promotion takes the first one it can earn (not a commen
     assert.deepEqual(units.promoteUnits(), [], "no points: nothing");
 });
 
-test("independents are befriended nearest first; ongoing or unaffordable ones are skipped", () => {
+test("independents are befriended nearest first, one a pass; ongoing or unaffordable ones are skipped", () => {
     reset();
     world.befriend = { 5: { status: DiplomacyProjectStatus.PROJECT_AVAILABLE }, 6: { status: DiplomacyProjectStatus.PROJECT_AVAILABLE }, 7: { status: DiplomacyProjectStatus.PROJECT_AVAILABLE, ongoing: true } };
     const first = choices.befriendIndependents();
     const started = () => fake.sent.filter((s) => s.op === "DIPLOMACY_ACTION_BEFRIEND").map((s) => s.args.ID);
-    assert.deepEqual(started(), [5, 6], "Hattusa is nearer than Alesia; Pazyryk already in progress");
-    assert.deepEqual(first.map((e) => e.key), ["BEFRIEND", "BEFRIEND"]);
+    // Seen in game 5: 4-6 requests in the same second, only the first ever started (the Influence paid for one).
+    assert.deepEqual(started(), [5], "Hattusa is nearer than Alesia; Pazyryk already in progress; one a pass");
+    assert.deepEqual(first.map((e) => e.key), ["BEFRIEND"]);
+    reset();
+    world.befriend[5].ongoing = true;
+    choices.befriendIndependents();
+    assert.deepEqual(started(), [6], "the next pass: the next one");
     reset();
     world.befriend = { 5: { status: DiplomacyProjectStatus.PROJECT_NOT_ENOUGH_INFLUENCE } };
     choices.befriendIndependents();
@@ -144,10 +149,10 @@ test("settlers go into the biggest city even with a busy queue, then to the fron
     assert.equal(front[0].key, "FRONT_LOADED");
     reset();
     world.cities.push({ owner: 0, x: 2, y: 2, name: "Bath", pop: 2 });
-    world.settlementCap = 8;
+    world.settlementCap = 5; // 4 of 5: one at a time (two only below the cap less one: research/23 E3)
     steps.fillProduction(new Map(), { settlers: true });
     delete world.settlementCap;
-    assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler), "4 settlements: one at a time, and one is already in training (Bath trains none)");
+    assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler), "4 settlements of 5: one at a time, and one is already in training (Bath trains none)");
     world.cities.pop();
     delete world.cities[0].trains;
 });
@@ -175,6 +180,39 @@ test("while towns outnumber cities, the best town becomes a city when gold above
     world.cities.pop();
 });
 
+test("no town becomes a city while it is in unrest or unhappy, nor during a crisis without 6 Happiness to spare", () => {
+    // Seen in game 5: a town converted while a -6 Happiness-in-cities crisis card was slotted went
+    // into unrest that turn and revolted 5 turns later (it joined Maurya).
+    const towns = world.cities.filter((c) => c.owner === 0 && c.isTown);
+    const converted = () => fake.sent.some((s) => s.kind === "command" && s.args.Directive === OrderTypes.ORDER_TOWN_UPGRADE);
+    const player = Players.get(0);
+    try {
+        for (const t of towns) t.happy = -1;
+        reset();
+        steps.convertTowns(DEFAULT_SETTINGS, 2);
+        assert.equal(converted(), false, "unhappy");
+        for (const t of towns) Object.assign(t, { happy: 3, unrest: true });
+        reset();
+        steps.convertTowns(DEFAULT_SETTINGS, 2);
+        assert.equal(converted(), false, "in unrest");
+        for (const t of towns) t.unrest = false;
+        player.Culture = { getNumCultureSlots: (slot) => (slot === CultureSlotTypes.CRISIS_CULTURE_SLOT ? 1 : 2) };
+        reset();
+        steps.convertTowns(DEFAULT_SETTINGS, 2);
+        assert.equal(converted(), false, "a crisis, 3 Happiness");
+        for (const t of towns) t.happy = 8;
+        reset();
+        steps.convertTowns(DEFAULT_SETTINGS, 2);
+        assert.equal(converted(), true, "a crisis, 8 Happiness");
+    } finally {
+        for (const t of towns) {
+            delete t.happy;
+            delete t.unrest;
+        }
+        delete player.Culture;
+    }
+});
+
 test("a town that will farm puts new citizens on tiles that get a farm", () => {
     const farm = GameplayMap.getIndexFromXY(5, 14);
     const mine = GameplayMap.getIndexFromXY(3, 14);
@@ -194,16 +232,72 @@ test("a town that will farm puts new citizens on tiles that get a farm", () => {
 const YORK = { x: 12, y: 14 };
 const hattusa = { x: 13, y: 4 };
 
-test("threat: 2+ hostile military units near a settlement; befriended independents and lone units do not count", () => {
-    world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }, { x: YORK.x, y: YORK.y - 2, owner: 5 }, { x: LONDON.x + 2, y: LONDON.y, owner: 6 }];
+test("threat: 2+ hostile military units near a settlement; befriended independents and a lone unit 3+ tiles away do not count", () => {
+    world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }, { x: YORK.x, y: YORK.y - 2, owner: 5 }, { x: LONDON.x + 3, y: LONDON.y, owner: 6 }];
     let threats = units.threatenedSettlements();
-    assert.deepEqual(threats.map((t) => [t.settlement.name, t.count]), [["York", 2]], "London has only one");
+    assert.deepEqual(threats.map((t) => [t.settlement.name, t.count]), [["York", 2]], "London has only one, 3 tiles away");
     assert.deepEqual(threats[0].owners, [{ id: 5, independent: true }]);
     world.indepRelation = { 5: IndependentRelationship.FRIENDLY };
     threats = units.threatenedSettlements();
     assert.deepEqual(threats, [], "a befriended independent is no threat");
     delete world.indepRelation;
     delete world.enemies;
+});
+
+test("threat: an independent at peace with us (NEUTRAL) is no threat; only one at war (HOSTILE)", () => {
+    // Seen in game 6: a village at peace with us for 40 turns kept two towns "threatened".
+    try {
+        world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }, { x: YORK.x, y: YORK.y - 2, owner: 5 }];
+        world.indepRelation = { 5: IndependentRelationship.NEUTRAL };
+        assert.deepEqual(units.threatenedSettlements(), [], "neutral: at peace");
+        world.indepRelation = { 5: IndependentRelationship.HOSTILE };
+        assert.deepEqual(units.threatenedSettlements().map((t) => t.settlement.name), ["York"], "hostile: at war");
+    } finally {
+        delete world.enemies;
+        delete world.indepRelation;
+    }
+});
+
+test("threat: a village's own units at home (within 2 of it) are no threat, unless next to the settlement or it is under attack", () => {
+    // Seen in game 6: a crisis encampment 4 tiles from two towns kept its units at home all age and
+    // never attacked; both towns were "threatened" for 20 turns (walls, soldiers, gold gone).
+    try {
+        world.villages = [{ owner: 5, x: YORK.x + 4, y: YORK.y }];
+        world.enemies = [{ x: YORK.x + 3, y: YORK.y, owner: 5 }, { x: YORK.x + 3, y: YORK.y + 1, owner: 5 }, { x: YORK.x + 2, y: YORK.y, owner: 5 }];
+        assert.deepEqual(units.threatenedSettlements(), [], "all three within 2 of their village");
+        // York's centre is damaged: they are attacking.
+        world.districtHealth = (x, y) => (x === YORK.x && y === YORK.y ? 70 : 100);
+        assert.deepEqual(units.threatenedSettlements().map((t) => [t.settlement.name, t.count]), [["York", 3]]);
+        delete world.districtHealth;
+        // A village 2 tiles from York: its unit next to York counts.
+        world.villages = [{ owner: 5, x: YORK.x + 2, y: YORK.y }];
+        world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }];
+        assert.deepEqual(units.threatenedSettlements().map((t) => [t.settlement.name, t.count]), [["York", 1]]);
+        // Away from their village: raiders.
+        world.villages = [{ owner: 5, x: YORK.x + 8, y: YORK.y }];
+        world.enemies = [{ x: YORK.x + 3, y: YORK.y, owner: 5 }, { x: YORK.x + 3, y: YORK.y + 1, owner: 5 }];
+        assert.deepEqual(units.threatenedSettlements().map((t) => [t.settlement.name, t.count]), [["York", 2]]);
+    } finally {
+        delete world.villages;
+        delete world.enemies;
+        delete world.districtHealth;
+    }
+});
+
+test("threat: one hostile unit within 2 tiles, or one within 4 while the centre is damaged (seen in game 5: lone Line Infantry took three settlements)", () => {
+    try {
+        world.enemies = [{ x: LONDON.x + 2, y: LONDON.y, owner: 6 }];
+        assert.deepEqual(units.threatenedSettlements().map((t) => [t.settlement.name, t.count]), [["London", 1]], "2 tiles away");
+        world.enemies = [{ x: LONDON.x + 4, y: LONDON.y, owner: 6 }];
+        assert.deepEqual(units.threatenedSettlements(), [], "4 tiles away, centre intact");
+        world.districtHealth = (x, y) => (x === LONDON.x && y === LONDON.y ? 60 : 100);
+        assert.deepEqual(units.threatenedSettlements().map((t) => t.settlement.name), ["London"], "4 tiles away, centre damaged");
+        world.enemies = [];
+        assert.deepEqual(units.threatenedSettlements(), [], "damaged with nobody near: healing, not threatened");
+    } finally {
+        delete world.enemies;
+        delete world.districtHealth;
+    }
 });
 
 test("under threat: walls on the settlement's centre, bought when the gold covers them, else queued first (a town only buys)", () => {
@@ -227,7 +321,19 @@ test("under threat: walls on the settlement's centre, bought when the gold cover
         assert.deepEqual([sent("command"), sent("operation")], [[], [[0, LONDON.x, LONDON.y]]], "queued instead");
         assert.equal(out[0].key, "WALLS_QUEUED");
         reset();
-        assert.deepEqual(steps.fortifyThreatened(york), [], "a town cannot build them");
+        // Nothing done: the game's answers go to UI.log (once a turn), so a game without walls tells why.
+        const warn = console.warn;
+        const lines = [];
+        console.warn = (...a) => lines.push(a.join(" "));
+        try {
+            assert.deepEqual(steps.fortifyThreatened(york), [], "a town cannot build them");
+            steps.fortifyThreatened(york);
+        } finally {
+            console.warn = warn;
+        }
+        const why = lines.filter((l) => l.includes("walls: none for York"));
+        assert.equal(why.length, 1, JSON.stringify(lines));
+        assert.match(why[0], /BUILDING_ANCIENT_WALLS build true\/\d+ buy/);
         // Already queued behind the Monument: moved first, not queued again.
         world.cities[0].queued = ["BUILDING_ANCIENT_WALLS"];
         reset();
@@ -265,7 +371,7 @@ test("under threat: befriending that independent first, more Influence if alread
     const threats = [{ settlement: { name: "York", x: YORK.x, y: YORK.y }, count: 2, owners: [{ id: 6, independent: true }] }];
     world.befriend = { 5: { status: 0 }, 6: { status: 0 } };
     choices.befriendIndependents(threats);
-    assert.deepEqual(fake.sent.filter((s) => s.op === "DIPLOMACY_ACTION_BEFRIEND").map((s) => s.args.ID), [6, 5], "the threatening one first, though farther");
+    assert.deepEqual(fake.sent.filter((s) => s.op === "DIPLOMACY_ACTION_BEFRIEND").map((s) => s.args.ID), [6], "the threatening one first, though farther (one a pass)");
     reset();
     world.befriend = { 6: { status: 0, ongoing: true } };
     const out = choices.befriendIndependents(threats);
@@ -276,7 +382,45 @@ test("under threat: befriending that independent first, more Influence if alread
     world.befriend = {};
     choices.befriendIndependents(threats);
     assert.deepEqual(choices.unbefriendable(), [6], "the game offers nothing for it (not met yet)");
+    // Offered but unusable (its village unseen: no viable target): approached too (research/23 E5: a camp raided
+    // game 8's capital 40 turns, never befriended nor approached).
+    reset();
+    world.befriend = { 6: { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS } };
+    choices.befriendIndependents(threats);
+    assert.deepEqual(choices.unbefriendable(), [6], "no viable target");
+    reset();
+    world.befriend = { 6: { status: DiplomacyProjectStatus.PROJECT_NOT_ENOUGH_INFLUENCE } };
+    choices.befriendIndependents(threats);
+    assert.deepEqual(choices.unbefriendable(), [], "short of Influence: it waits, no unit sent");
     delete world.befriend;
+});
+
+test("befriending: a village counts by its own tile (it is not a city), those at war with us before nearer neutral ones", () => {
+    reset();
+    // The Nubians have only a village (no city), 2 tiles from London: before, their distance was
+    // unknown (from their cities: none) and they came last.
+    world.villages = [{ owner: 8, x: LONDON.x + 1, y: LONDON.y + 2 }];
+    world.indepRelation = { 5: IndependentRelationship.NEUTRAL, 6: IndependentRelationship.NEUTRAL, 7: IndependentRelationship.NEUTRAL, 8: IndependentRelationship.NEUTRAL };
+    world.befriend = { 5: { status: 0 }, 6: { status: 0 }, 8: { status: 0 } };
+    const started = () => fake.sent.filter((s) => s.op === "DIPLOMACY_ACTION_BEFRIEND").map((s) => s.args.ID);
+    try {
+        choices.befriendIndependents([]);
+        assert.deepEqual(started(), [8], "the village next to London first");
+        // At war with us (hostile): before nearer neutral ones.
+        reset();
+        world.indepRelation[6] = IndependentRelationship.HOSTILE;
+        choices.befriendIndependents([]);
+        assert.deepEqual(started(), [6], "the hostile one, though farthest");
+        // The first one in order cannot be afforded yet: the Influence is kept for it, nothing else starts.
+        reset();
+        world.befriend[6].status = DiplomacyProjectStatus.PROJECT_NOT_ENOUGH_INFLUENCE;
+        choices.befriendIndependents([]);
+        assert.deepEqual(started(), [], "saving for the hostile one");
+    } finally {
+        delete world.villages;
+        delete world.indepRelation;
+        delete world.befriend;
+    }
 });
 
 test("a unit walks toward an independent we cannot befriend yet, stopping 2 tiles from its settlement; the garrison stays", () => {
@@ -294,6 +438,22 @@ test("a unit walks toward an independent we cannot befriend yet, stopping 2 tile
     const close = fake.sent.find((s) => s.op === UnitOperationTypes.MOVE_TO)?.args;
     assert.equal(GameplayMap.getPlotDistance(close.X, close.Y, hattusa.x, hattusa.y), 2, JSON.stringify(close));
     world.units = [];
+});
+
+test("a unit walks toward a village too (an independent with no city)", () => {
+    reset();
+    const village = { owner: 8, x: 16, y: 8 };
+    world.villages = [village];
+    world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }, { id: 31, type: "UNIT_WARRIOR", x: 9, y: 9 }];
+    try {
+        const r = units.commandUnits(DEFAULT_SETTINGS, { defend: true, approach: [8] });
+        const to = fake.sent.find((s) => s.op === UnitOperationTypes.MOVE_TO)?.args;
+        assert.ok(to, JSON.stringify(r.entries));
+        assert.equal(GameplayMap.getPlotDistance(to.X, to.Y, village.x, village.y), 2);
+    } finally {
+        delete world.villages;
+        world.units = [];
+    }
 });
 
 test("visits to an independent: one unit at a time; after two died on the way, none for a while", () => {
@@ -326,15 +486,15 @@ test("visits to an independent: one unit at a time; after two died on the way, n
     }
 });
 
-test("under threat the nearest city trains its strongest military unit first, even with a busy queue", () => {
+test("under threat the nearest city trains its strongest melee unit first, even with a busy queue", () => {
     reset();
     const threats = [{ settlement: { name: "York", x: YORK.x, y: YORK.y }, count: 3, owners: [{ id: 5, independent: true }] }];
     const out = steps.fillProduction(new Map(), { threats });
     const unit = fake.sent.find((s) => s.kind === "operation" && s.args.UnitType !== undefined);
     const def = GameInfo.Units.lookup(unit?.args.UnitType);
     assert.equal(def?.CoreClass, "CORE_CLASS_MILITARY", JSON.stringify(out));
-    const tiers = Array.from(GameInfo.Units, (u) => u).filter((u) => u.CoreClass === "CORE_CLASS_MILITARY" && u.Domain === "DOMAIN_LAND").map((u) => Number(u.Tier) || 0);
-    assert.equal(Number(def.Tier) || 0, Math.max(...tiers), "the highest tier");
+    const melee = Array.from(GameInfo.Units, (u) => u).filter((u) => u.CanTrain !== "false" && u.CanTrain !== false).map((u) => steps.meleeStrength(u));
+    assert.equal(steps.meleeStrength(def), Math.max(...melee), "the strongest melee unit (the centres' defence follows it)");
     assert.ok(out.some((e) => e.key === "QUEUED_DEFENDER"));
 });
 
@@ -498,6 +658,159 @@ test("upgrades: military units the game allows, threatened ones first, while gol
     world.gold = 100;
     assert.deepEqual(units.upgradeUnits(100, threats), [], "gold at the reserve: none");
     world.gold = 1000;
+    // Gold income below zero (each upgrade adds upkeep): only the threatened settlement's unit.
+    const income = world.goldIncome;
+    world.goldIncome = -5;
+    reset();
+    units.upgradeUnits(100, threats);
+    assert.deepEqual(fake.sent.filter((s) => s.op === "UNITCOMMAND_UPGRADE").map((s) => s.id.id), [91]);
+    world.goldIncome = income;
     delete world.unitCommandOk;
     world.units = [];
+});
+
+test("upgrades are counted in the pass's gold: no more than the free gold covers (the game gives no price; the unit's purchase price stands in)", () => {
+    reset();
+    world.units = [90, 91, 92].map((id, i) => ({ id, type: "UNIT_WARRIOR", x: 2 + i, y: 2, activity: UnitActivityTypes.SLEEP }));
+    world.unitCommandOk = (_id, op) => op === "UNITCOMMAND_UPGRADE";
+    GameInfo.UnitUpgrades = [{ Unit: "UNIT_WARRIOR", UpgradeUnit: "UNIT_SPEARMAN" }];
+    world.gold = 600; // 500 above the 100 kept: two upgrades at 250
+    try {
+        units.upgradeUnits(100, []);
+        assert.equal(fake.sent.filter((s) => s.op === "UNITCOMMAND_UPGRADE").length, 2);
+    } finally {
+        world.gold = 1000;
+        delete world.unitCommandOk;
+        world.units = [];
+    }
+});
+
+test("the strategy's upgrades: only units near a threatened settlement; none in the age's last turns (research/21 E4)", () => {
+    reset();
+    world.units = [
+        { id: 90, type: "UNIT_WARRIOR", x: 2, y: 2, activity: UnitActivityTypes.SLEEP },
+        { id: 91, type: "UNIT_WARRIOR", x: YORK.x, y: YORK.y + 1, activity: UnitActivityTypes.SLEEP },
+    ];
+    world.unitCommandOk = (_id, op) => op === "UNITCOMMAND_UPGRADE";
+    GameInfo.UnitUpgrades = [{ Unit: "UNIT_WARRIOR", UpgradeUnit: "UNIT_SPEARMAN" }];
+    const threats = [{ settlement: { name: "York", x: YORK.x, y: YORK.y }, count: 2, owners: [] }];
+    const ids = () => fake.sent.filter((s) => s.op === "UNITCOMMAND_UPGRADE").map((s) => s.id.id);
+    try {
+        units.upgradeUnits(100, threats, { mode: "THREAT" });
+        assert.deepEqual(ids(), [91], "York's only");
+        reset();
+        units.upgradeUnits(100, threats, { mode: "ANY", ageEnding: true });
+        assert.deepEqual(ids(), [], "the age is ending");
+    } finally {
+        delete world.unitCommandOk;
+        world.units = [];
+    }
+});
+
+test("the final age (the strategy's Commit): no settler is trained", () => {
+    reset();
+    const settler = GameInfo.Units.lookup("UNIT_SETTLER").$hash;
+    const out = steps.fillProduction(new Map(), { settlers: true, trainSettlers: false });
+    assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler), JSON.stringify(out));
+    reset();
+    steps.fillProduction(new Map(), { settlers: true });
+    assert.ok(fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler), "without a strategy: trained as before");
+});
+
+test("the final age's last 8 turns: no settler is trained, it could not walk and found in time (research/24 F3: game 9, one at M67 of 70)", () => {
+    reset();
+    const settler = GameInfo.Units.lookup("UNIT_SETTLER").$hash;
+    try {
+        world.finalAge = true;
+        world.agePoints = 95; // about 6 turns left
+        steps.fillProduction(new Map(), { settlers: true });
+        assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler));
+        reset();
+        world.agePoints = 50;
+        steps.fillProduction(new Map(), { settlers: true });
+        assert.ok(fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler), "half way through: trained");
+    } finally {
+        delete world.finalAge;
+        delete world.agePoints;
+    }
+});
+
+test("a refused open borders request waits 10 turns before it is asked again (research/21 G2)", () => {
+    reset();
+    world.openBorders = { 6: { status: 0 } };
+    const asked = () => fake.sent.filter((s) => s.op === "DIPLOMACY_ACTION_OPEN_BORDERS").length;
+    const turn = Game.turn;
+    try {
+        choices.proposeOpenBorders([6]);
+        assert.equal(asked(), 1);
+        reset();
+        Game.turn = turn + 1;
+        choices.proposeOpenBorders([6]);
+        assert.equal(asked(), 0, "refused (nothing pending): not again the next turn");
+        Game.turn = turn + 10;
+        choices.proposeOpenBorders([6]);
+        assert.equal(asked(), 1, "10 turns later");
+    } finally {
+        Game.turn = turn;
+        delete world.openBorders;
+    }
+});
+
+test("a town the towns step just gave a Focus is not 'considered' again in the same pass (research/22 B6)", () => {
+    reset();
+    world.notifications = [{ name: "NOTIFICATION_CHOOSE_TOWN_PROJECT", target: { owner: 0, id: 2 } }];
+    try {
+        assert.deepEqual(choices.considerTownProjects(new Set(["0:2"])), []);
+        assert.ok(!fake.sent.some((s) => s.op === CityOperationTypes.CONSIDER_TOWN_PROJECT));
+        assert.equal(choices.considerTownProjects()[0]?.key, "TOWN_KEEPS_GROWING", "no Focus set: considered as before");
+    } finally {
+        delete world.notifications;
+    }
+});
+
+test("an independent is named as its flag names it (its own village name), else by its player (research/24: «деревни» in every line)", () => {
+    reset();
+    world.befriend = { 5: { status: DiplomacyProjectStatus.PROJECT_AVAILABLE } };
+    world.indepNames = { 5: "LOC_INDEPENDENT_HITTITE_VILLAGE" };
+    try {
+        assert.equal(choices.befriendIndependents()[0]?.args[0], "LOC_INDEPENDENT_HITTITE_VILLAGE");
+        reset();
+        delete world.indepNames;
+        assert.equal(choices.befriendIndependents()[0]?.args[0], "Hittites");
+    } finally {
+        delete world.befriend;
+        delete world.indepNames;
+    }
+});
+
+test("at peace again, the guards the autopilot queued and not started are dropped from the queues (research/24: leftover defenders built after the peace)", () => {
+    reset();
+    const london = world.cities[0];
+    const RemoveAt = CityOperationsParametersValues.RemoveAt;
+    const removed = () => fake.sent.filter((s) => s.args.InsertMode === RemoveAt).map((s) => s.args.QueueLocation);
+    const keep = { canBuild: world.canBuild, queue: london.queue, queued: london.queued };
+    world.canBuild = (type) => (type === undefined ? { Success: true } : type === "UNIT_SPEARMAN" ? { Success: true } : { Success: false, Plots: [] });
+    try {
+        steps.resetWar();
+        world.units = [];
+        world.relations = { 2: "UNFRIENDLY" };
+        world.cities.push({ owner: 2, x: 13, y: 8, name: "Babylon" }); // seen (x < 14), 5 tiles from London
+        assert.deepEqual(steps.assessWar([]).risk, [2]);
+        const first = steps.fillProduction(new Map(), { defend: true });
+        assert.ok(first.some((e) => e.key === "QUEUED_GUARD"), JSON.stringify(first));
+        // Next turn the risk is gone; the guard waits behind the Monument.
+        london.queued = ["UNIT_SPEARMAN"];
+        delete world.relations;
+        world.cities.pop();
+        reset();
+        steps.assessWar([]);
+        steps.fillProduction(new Map(), { defend: true });
+        assert.deepEqual(removed(), [1]);
+    } finally {
+        world.canBuild = keep.canBuild;
+        london.queue = keep.queue;
+        london.queued = keep.queued;
+        delete world.relations;
+        steps.resetWar();
+    }
 });

@@ -160,6 +160,32 @@ test("switched-off victories: the classes the game's victory manager says no to 
     }
 });
 
+test("victory races: our points, the goal (science: a fixed 100), the best rival we have met, the countdown while we lead, switched on or not", () => {
+    const vm = Game.VictoryManager;
+    const hashOf = (t) => GameInfo.VictoryTypes.lookup(t).$hash;
+    try {
+        world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 34, 1: 20, 2: 90 }, VICTORY_ECONOMIC_MODERN: { 0: 300, 1: 410 } };
+        world.countdown = { VICTORY_SCIENCE_MODERN: 2 };
+        Game.VictoryManager = {
+            isCountdownVictoryEnabled: (t) => t !== "VICTORY_CULTURE_MODERN",
+            getCountdownVictoryDominanceScore: (h) => (h === hashOf("VICTORY_ECONOMIC_MODERN") ? 600 : -1),
+        };
+        const races = victory.victoryRaces();
+        assert.deepEqual(races.map((r) => r.cls), ["MILITARY", "CULTURE", "ECONOMIC", "SCIENCE"], "never score");
+        const of = (cls) => races.find((r) => r.cls === cls);
+        const { board, scoring, focusable, ...science } = of("SCIENCE");
+        assert.deepEqual(science, { cls: "SCIENCE", type: "VICTORY_SCIENCE_MODERN", points: 34, goal: 100, rival: 20, turnsLeft: 3, enabled: true }, "player 2 (90) not met yet");
+        assert.equal(focusable, true);
+        assert.equal(of("MILITARY").focusable, false, "the watch reads it; the focus never takes it");
+        assert.deepEqual([of("ECONOMIC").points, of("ECONOMIC").goal, of("ECONOMIC").rival, of("ECONOMIC").turnsLeft], [300, 600, 410, null]);
+        assert.equal(of("CULTURE").enabled, false);
+    } finally {
+        Game.VictoryManager = vm;
+        delete world.victoryPoints;
+        delete world.countdown;
+    }
+});
+
 test("only this age's legacy paths (GameInfo.LegacyPaths holds every age's; seen in game: no focus after an age change)", () => {
     const rows = GameInfo.LegacyPaths;
     const milestones = GameInfo.AgeProgressionMilestones;
@@ -201,5 +227,22 @@ test("legacy paths switched off in the game setup are left out (the player's ena
         assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["CULTURE", "SCIENCE"]);
     } finally {
         delete me.LegacyPaths.getEnabledLegacyPaths;
+    }
+});
+
+test("victory races carry every major's points, sorted (the victories screen's leaderboard), met or not, and who counts down", () => {
+    const vm = Game.VictoryManager;
+    try {
+        world.victoryPoints = { VICTORY_CULTURE_MODERN: { 0: 300, 1: 1400, 2: 388 } };
+        world.countdowns = { VICTORY_CULTURE_MODERN: { 1: 2 } };
+        Game.VictoryManager = { isCountdownVictoryEnabled: () => true, getCountdownVictoryDominanceScore: () => 1552 };
+        const culture = victory.victoryRaces().find((r) => r.cls === "CULTURE");
+        assert.deepEqual(culture.board.map((b) => [b.id, b.points, b.dominant]), [[1, 1400, true], [2, 388, false], [0, 300, false]]);
+        assert.equal(culture.board.find((b) => b.id === 2).met, (world.met ?? []).includes(2), "met or not, every major is on the board");
+        assert.equal(culture.scoring, "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION");
+    } finally {
+        Game.VictoryManager = vm;
+        delete world.victoryPoints;
+        delete world.countdowns;
     }
 });

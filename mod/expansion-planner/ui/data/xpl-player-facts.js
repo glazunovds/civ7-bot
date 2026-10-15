@@ -21,11 +21,67 @@ function citiesOf(player) {
     }
 }
 
+const VILLAGE_TYPES = new Set(["IMPROVEMENT_VILLAGE", "IMPROVEMENT_ENCAMPMENT"]);
+
+/**
+ * Independents' villages (and crisis encampments) on the map: not cities (player.Cities is empty
+ * for them; only a city-state has a city), so read the way the game's banners find them
+ * (city-banner-manager.js createAllBanners): the independent's constructibles of type
+ * IMPROVEMENT_VILLAGE / IMPROVEMENT_ENCAMPMENT. Only villages whose tile we have seen, unless
+ * includeHidden. `friendly`: Game.IndependentPowers says FRIENDLY to us.
+ * @returns [{ id: the independent's player id, x, y, friendly, type, revealed }]
+ */
+export function villagesOf(playerId, includeHidden = false) {
+    const out = [];
+    const FRIENDLY = globalThis.IndependentRelationship?.FRIENDLY;
+    let players = [];
+    try {
+        players = Players.getAlive() ?? [];
+    } catch (_e) {
+        return out;
+    }
+    for (const p of players) {
+        if (!p?.isIndependent || p.id === playerId) continue;
+        let list = [];
+        try {
+            list = p.Constructibles?.getConstructibles?.() ?? [];
+        } catch (_e) {
+            continue;
+        }
+        for (const c of list) {
+            let type = null;
+            try {
+                type = GameInfo.Constructibles.lookup(c.type)?.ConstructibleType ?? null;
+            } catch (_e) {
+                type = null;
+            }
+            const loc = c?.location;
+            if (!VILLAGE_TYPES.has(type) || !loc) continue;
+            let revealed = false;
+            try {
+                revealed = GameplayMap.getRevealedState(playerId, loc.x, loc.y) != RevealedStates.HIDDEN;
+            } catch (_e) {
+                revealed = false;
+            }
+            if (!revealed && !includeHidden) continue;
+            let rel = null;
+            try {
+                rel = Game.IndependentPowers.getIndependentRelationship(p.id, playerId);
+            } catch (_e) {
+                rel = null;
+            }
+            out.push({ id: p.id, x: loc.x, y: loc.y, friendly: FRIENDLY !== undefined && rel === FRIENDLY, type, revealed });
+        }
+    }
+    return out;
+}
+
 /**
  * @returns {
  *   own: [{ id, idx, x, y, name, isTown, isCapital, population }],
  *   centres: [{ idx, kind: "OWN"|"FOREIGN", name }],
- *   independents: [idx],
+ *   independents: [idx] (city-states' centres and villages),
+ *   villages: [{ idx, id, friendly }] (independents' villages: the site rule angersVillage),
  *   ownedResources: Set<ResourceType>
  * }
  */
@@ -75,5 +131,26 @@ export function gatherSettlements(playerId, engineMap, includeHidden) {
             centres.push({ idx, kind: "FOREIGN", name: safeName(city.name) });
         }
     }
-    return { own, centres, independents, ownedResources };
+    const villages = villagesOf(playerId, includeHidden).map((v) => ({ idx: GameplayMap.getIndexFromXY(v.x, v.y), id: v.id, friendly: v.friendly, revealed: v.revealed !== false }));
+    for (const v of villages) independents.push(v.idx);
+    return { own, centres, independents, villages, ownedResources };
+}
+
+/**
+ * An independent's own name, as its unit flags and the befriend panel show it (Game.IndependentPowers.independentName:
+ * «Хеттская деревня»), else its player's civilization name (research/24: the log said «деревни» for every one).
+ */
+export function independentNameOf(id) {
+    try {
+        const loc = Game.IndependentPowers?.independentName?.(id)?.toString();
+        if (loc) return Locale.compose(loc);
+    } catch (_e) {
+        // fall through
+    }
+    try {
+        const p = Players.get(id);
+        return Locale.compose(p.civilizationName ?? p.name);
+    } catch (_e) {
+        return String(id);
+    }
 }

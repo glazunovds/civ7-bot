@@ -22,7 +22,8 @@ const world = {
     },
     players: [{ id: 0 }, { id: 1 }],
     cities: [
-        { owner: 0, ...ATHENS, name: "Athens", pop: 5, prod: 12 },
+        // A Library with two empty slots: codex masteries are wanted only with room for codices (research/24 P6).
+        { owner: 0, ...ATHENS, name: "Athens", pop: 5, prod: 12, gwBuildings: [{ type: "BUILDING_LIBRARY", slots: [-1, -1] }] },
         { owner: 0, ...SPARTA, name: "Sparta", pop: 3, prod: 6 },
         { owner: 1, x: 20, y: 4, name: "Babylon" },
     ],
@@ -99,9 +100,37 @@ test("research: none of the path's research available yet: the way toward the ne
     }
 });
 
+test("research: nothing of the path left to research or reach: what grants Innovation by itself (Future Tech: 2); never before the path's own", () => {
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    world.treeRecs = () => [{ recommendedType: N("NODE_TECH_AQ_POTTERY"), whichAdvisors: [] }];
+    // No prerequisites known: no way toward the path's other research.
+    const prereqs = GameInfo.ProgressionTreePrereqs;
+    GameInfo.ProgressionTreePrereqs = [];
+    try {
+        world.research = { tech: { available: [N("NODE_TECH_AQ_POTTERY"), N("NODE_TECH_AQ_FUTURE_TECH")] }, culture: { available: [] } };
+        fake.sent.length = 0;
+        const r = steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_FUTURE_TECH")], JSON.stringify(r));
+        assert.equal(r.key, "VICTORY_TECH");
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "ECONOMIC");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_POTTERY")], "economy: the advisor's");
+        // The path's own research (a codex mastery) comes first.
+        world.research = { tech: { available: [N("NODE_TECH_AQ_FUTURE_TECH"), N("NODE_TECH_AQ_MASONRY")] }, culture: { available: [] }, depth: { NODE_TECH_AQ_MASONRY: 1 } };
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_MASONRY")]);
+    } finally {
+        GameInfo.ProgressionTreePrereqs = prereqs;
+        delete world.treeRecs;
+        world.research = { tech: { available: [] }, culture: { available: [] } };
+    }
+});
+
 test("buildings: science gets a Library and an Academy in every city (codex slots), economy a Market and a Lighthouse (resource slots)", () => {
     const offered = new Set(["BUILDING_LIBRARY", "BUILDING_ACADEMY", "BUILDING_MARKET"]);
     world.canBuild = (type, id) => (type === undefined ? { Success: true } : offered.has(type) ? { Success: true, Plots: [GameplayMap.getIndexFromXY(id.id === 0 ? 9 : 15, 9)], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    world.costOf = () => 50; // both cities build them within 12 turns (leverSoon)
     try {
         fake.sent.length = 0;
         const out = steps.pushVictoryWork("SCIENCE");
@@ -119,6 +148,39 @@ test("buildings: science gets a Library and an Academy in every city (codex slot
         assert.deepEqual([move?.id.id, move?.args.QueueSourceLocation, move?.args.QueueDestinationLocation], [1, 1, 0]);
     } finally {
         delete world.canBuild;
+        delete world.costOf;
+        delete world.cities[1].queue;
+        delete world.cities[1].queued;
+    }
+});
+
+test("the path's buildings only where built within 12 turns, and in the final age with 10 turns left to pay (game 16: Laboratories took 25-36 turns)", () => {
+    const offered = new Set(["BUILDING_LIBRARY", "BUILDING_ACADEMY"]);
+    world.canBuild = (type, id) => (type === undefined ? { Success: true } : offered.has(type) ? { Success: true, Plots: [GameplayMap.getIndexFromXY(id.id === 0 ? 9 : 15, 9)], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    world.costOf = () => 120; // Athens (12) 10 turns, Sparta (6) 20 turns
+    try {
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds().map(([id]) => id), [0, 0], "Athens only");
+        // Sparta's Library already queued behind a Granary: not moved ahead (20 turns).
+        world.cities[1].queue = { type: "BUILDING_GRANARY", turns: 3 };
+        world.cities[1].queued = ["BUILDING_LIBRARY"];
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.equal(fake.sent.find((s) => s.args.InsertMode === CityOperationsParametersValues.MoveTo && s.id.id === 1), undefined);
+        // The final age's last turns: nothing that would not pay.
+        world.finalAge = true;
+        world.agePoints = 96;
+        delete world.cities[1].queue;
+        delete world.cities[1].queued;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds(), [], "10 turns to build, too few left to pay");
+    } finally {
+        delete world.canBuild;
+        delete world.costOf;
+        delete world.finalAge;
+        delete world.agePoints;
         delete world.cities[1].queue;
         delete world.cities[1].queued;
     }
@@ -159,6 +221,23 @@ test("growth, science: specialists stack on the urban tile closest to the age's 
         assert.equal(a.bestSpecialist.idx, idx(NEAR));
         assert.equal(a.bestSpecialist.highYield, true);
         assert.equal(a.specialists.find((s) => s.idx === idx(ATHENS)).highYield, false, "the city centre is not a district");
+        // 5 urban tiles at 40 already (the path is done): the triumph's 75 is next, NEAR's +5 no longer counts.
+        const ring = GameplayMap.getPlotIndicesInRadius(ATHENS.x, ATHENS.y, 1).map((i) => GameplayMap.getLocationFromIndex(i))
+            .filter((l) => ![ATHENS, NEAR, FAR].some((p) => p.x === l.x && p.y === l.y)).slice(0, 3);
+        const forty = new Set(ring.map((p) => `${p.x},${p.y}`));
+        const urban = new Set([NEAR, FAR, ...ring].map((p) => `${p.x},${p.y}`));
+        world.structures = (x, y) => ({ district: urban.has(`${x},${y}`) ? "DISTRICT_URBAN" : null, constructibles: [] });
+        const tiles = world.tiles;
+        world.tiles = (x, y) => (forty.has(`${x},${y}`) ? { terrain: "TERRAIN_FLAT", yields: { YIELD_SCIENCE: 45 } } : x === NEAR.x && y === NEAR.y ? { terrain: "TERRAIN_FLAT", yields: { YIELD_SCIENCE: 40 } } : x === FAR.x && y === FAR.y ? { terrain: "TERRAIN_FLAT", yields: { YIELD_SCIENCE: 72 } } : tiles(x, y));
+        try {
+            a = growthAdvice(athens().id, DEFAULT_SETTINGS, { victory: "SCIENCE" });
+            assert.equal(a.bestSpecialist.idx, idx(FAR), JSON.stringify(a.specialists));
+            assert.equal(a.bestSpecialist.highYield, true, "FAR (72) +6 reaches 75");
+            assert.ok(a.specialists.find((s) => s.idx === idx(NEAR)).gain < a.bestSpecialist.gain - 5, "NEAR's +5 is far from 75");
+        } finally {
+            world.tiles = tiles;
+            delete world.structures;
+        }
     } finally {
         Game.age = age;
         delete world.workers;
@@ -201,5 +280,85 @@ test("merchants, economy: trained while trade routes are open, up to 2 at a time
         delete world.tradeCapacity;
         for (const c of world.cities.slice(0, 2)) delete c.queue;
         world.units = [];
+    }
+});
+
+test("science, Antiquity: the research gates (Mathematics' Spherical Earth, Navigation's Chart the Stars) come before a quicker path research off their way (research/21 D1)", () => {
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    world.research = {
+        tech: { available: [N("NODE_TECH_AQ_MASONRY"), N("NODE_TECH_AQ_MATHEMATICS")] }, culture: { available: [] },
+        depth: { NODE_TECH_AQ_MASONRY: 1 }, turns: { NODE_TECH_AQ_MASONRY: 2, NODE_TECH_AQ_MATHEMATICS: 8 },
+    };
+    try {
+        fake.sent.length = 0;
+        const r = steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_MATHEMATICS")], `not Masonry's codex mastery (2 turns): ${JSON.stringify(r)}`);
+        assert.equal(r.key, "VICTORY_TECH");
+        // Both gates reached: the quicker codex mastery.
+        world.research.depth = { NODE_TECH_AQ_MASONRY: 1, NODE_TECH_AQ_MATHEMATICS: 1, NODE_TECH_AQ_NAVIGATION: 1 };
+        world.research.tech.available = [N("NODE_TECH_AQ_MASONRY"), N("NODE_TECH_AQ_MATHEMATICS")];
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_MASONRY")]);
+    } finally {
+        world.research = { tech: { available: [] }, culture: { available: [] } };
+    }
+});
+
+test("Future Tech is taken again after the first (repeatable: 2 Innovation each time; research/21 L2)", () => {
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    const prereqs = GameInfo.ProgressionTreePrereqs;
+    GameInfo.ProgressionTreePrereqs = [];
+    world.research = { tech: { available: [N("NODE_TECH_AQ_FUTURE_TECH")] }, culture: { available: [] }, depth: { NODE_TECH_AQ_FUTURE_TECH: 1 } };
+    try {
+        fake.sent.length = 0;
+        const r = steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_FUTURE_TECH")], JSON.stringify(r));
+        assert.equal(r.key, "VICTORY_TECH");
+    } finally {
+        GameInfo.ProgressionTreePrereqs = prereqs;
+        world.research = { tech: { available: [] }, culture: { available: [] } };
+    }
+});
+
+test("no Future Tech while a rival is near a dominance win (it advances the age: every multiple falls)", () => {
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    const prereqs = GameInfo.ProgressionTreePrereqs;
+    GameInfo.ProgressionTreePrereqs = [];
+    world.treeRecs = () => [{ recommendedType: N("NODE_TECH_AQ_POTTERY"), whichAdvisors: [] }];
+    world.research = { tech: { available: [N("NODE_TECH_AQ_POTTERY"), N("NODE_TECH_AQ_FUTURE_TECH")] }, culture: { available: [] } };
+    try {
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", { ...DEFAULT_SETTINGS, strategy: { noFutureTech: true } }, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_POTTERY")]);
+    } finally {
+        GameInfo.ProgressionTreePrereqs = prereqs;
+        delete world.treeRecs;
+        world.research = { tech: { available: [] }, culture: { available: [] } };
+    }
+});
+
+test("a codex mastery is wanted only with room for the codex: empty great-work slots, or a building with slots queued (research/24 P6: 5 codices archived)", () => {
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    const athens = world.cities[0];
+    const slots = athens.gwBuildings;
+    world.treeRecs = () => [{ recommendedType: N("NODE_TECH_AQ_POTTERY"), whichAdvisors: [] }];
+    const prereqs = GameInfo.ProgressionTreePrereqs;
+    GameInfo.ProgressionTreePrereqs = [];
+    try {
+        world.research = { tech: { available: [N("NODE_TECH_AQ_MASONRY"), N("NODE_TECH_AQ_POTTERY")] }, culture: { available: [] }, depth: { NODE_TECH_AQ_MASONRY: 1 } };
+        athens.gwBuildings = [{ type: "BUILDING_LIBRARY", slots: [7, 8] }];
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_POTTERY")], "both slots full: the advisor's");
+        athens.gwBuildings = [{ type: "BUILDING_LIBRARY", slots: [7, -1] }];
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_MASONRY")], "one slot free");
+    } finally {
+        athens.gwBuildings = slots;
+        GameInfo.ProgressionTreePrereqs = prereqs;
+        delete world.treeRecs;
+        world.research = { tech: { available: [] }, culture: { available: [] } };
     }
 });

@@ -18,7 +18,7 @@ const world = {
         return { district: null, constructibles: [] };
     },
     focusProjects: () => ["PROJECT_TOWN_GRANARY"],
-    players: [{ id: 0 }],
+    players: [{ id: 0 }, { id: 5 }], // 5: a rival major (the victory watch)
     cities: [
         { owner: 0, x: A.x, y: A.y, name: "Athens", pop: 8, prod: 12, food: 20, happy: 20, readyToGrow: true },
         { owner: 0, x: B.x, y: B.y, name: "Sparta", pop: 6, prod: 10 },
@@ -138,6 +138,63 @@ test("victory focus: the path we lead sets this pass's priority (research follow
     }
 });
 
+test("the pass follows the strategy (the final age: 1 turn of income kept) while the saved settings stay the user's", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "SCIENCE", strategy: true, replanEvery: 0, skipUnits: false, endTurn: false, purchases: true, reserveTurns: 2 } });
+    GameInfo.LegacyPaths = [
+        { LegacyPathType: "LP_CULTURE", LegacyPathClassType: "LEGACY_PATH_CLASS_CULTURE", EnabledByDefault: true },
+        { LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true },
+    ];
+    GameInfo.AgeProgressionMilestones = [
+        { LegacyPathType: "LP_CULTURE", FinalMilestone: true, RequiredPathPoints: 7 },
+        { LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 10 },
+    ];
+    Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 8 : 1) };
+    world.finalAge = true;
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.strategy?.phase, "COMMIT", JSON.stringify(keys()));
+        assert.equal(state.get().autopilot.focus?.innovation?.target, 25, "science: Innovation against the age's target (the fake is in Antiquity)");
+        assert.equal(state.get().autopilot.gold?.reserve, 100, "1 turn of the 100 income");
+        assert.equal(settings.get().autopilot.reserveTurns, 2, "the saved settings stay the user's");
+        assert.ok(keys().includes("PHASE"));
+        settings.patch({ autopilot: { strategy: false } });
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.gold?.reserve, 200, "«Стратегия по фазам» off: the user's 2 turns");
+        assert.equal(state.get().autopilot.strategy, null);
+    } finally {
+        delete world.finalAge;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO", strategy: true, purchases: false } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("a rival near a win is logged once per rival and class (RIVAL_NEAR_WIN), its countdown once (RIVAL_COUNTDOWN)", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "SCIENCE", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 8 : 1) };
+    const vm = Game.VictoryManager;
+    world.victoryPoints = { VICTORY_CULTURE_MODERN: { 0: 300, 5: 1400, 1: 388 } };
+    Game.VictoryManager = { isCountdownVictoryEnabled: () => true, getCountdownVictoryDominanceScore: (h) => (h === GameInfo.VictoryTypes.lookup("VICTORY_CULTURE_MODERN").$hash ? 1552 : -1) };
+    const count = (k) => (state.get().autopilot.log ?? []).filter((e) => e.key === k).length;
+    try {
+        state.set({ autopilot: { ...state.get().autopilot, log: [] } });
+        await autopilot.runTurn(true);
+        await autopilot.runTurn(true);
+        assert.equal(count("RIVAL_NEAR_WIN"), 1, JSON.stringify(keys()));
+        assert.ok((state.get().autopilot.focus?.watch ?? []).some((w) => w.cls === "CULTURE" && w.level === "DANGER"));
+        world.countdowns = { VICTORY_CULTURE_MODERN: { 5: 2 } };
+        await autopilot.runTurn(true);
+        await autopilot.runTurn(true);
+        assert.equal(count("RIVAL_COUNTDOWN"), 1);
+    } finally {
+        Game.VictoryManager = vm;
+        delete world.victoryPoints;
+        delete world.countdowns;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
 test("victory focus on science: the pass puts science projects first", async () => {
     settings.patch({ autopilot: { focus: true, victory: "SCIENCE", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
     GameInfo.LegacyPaths = [{ LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true }];
@@ -148,8 +205,14 @@ test("victory focus on science: the pass puts science projects first", async () 
         await autopilot.runTurn(true);
         assert.ok(keys().includes("VICTORY_WORK"), JSON.stringify(keys()));
         assert.ok(fake.sent.some((s) => s.args?.ProjectType === GameInfo.Projects.lookup("PROJECT_CHART_THE_STARS").$hash));
+        // With «Поселенцы» below the settlement cap (Antiquity): projects are not held for expansion
+        // (research/21 D4; settlers go ahead of them anyway).
+        settings.patch({ autopilot: { settlers: true, tacks: false } });
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        assert.ok(fake.sent.some((s) => s.args?.ProjectType === GameInfo.Projects.lookup("PROJECT_CHART_THE_STARS").$hash), JSON.stringify(keys()));
     } finally {
-        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        settings.patch({ autopilot: { focus: false, victory: "AUTO", settlers: false } });
         delete Players.get(0).LegacyPaths;
     }
 });
@@ -205,6 +268,85 @@ test("victory focus: a game saying every victory is off is not believed (the foc
         Game.VictoryManager = vm;
         settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
         delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("victory focus: the victories themselves and those switched off are kept for the tab; our countdown starting is logged once", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "SCIENCE", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    GameInfo.LegacyPaths = [{ LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true }];
+    GameInfo.AgeProgressionMilestones = [{ LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 3 }];
+    Players.get(0).LegacyPaths = { getScore: () => 3 };
+    const vm = Game.VictoryManager;
+    // Domination is not a countdown race: the game says it is off in every game (seen in game).
+    Game.VictoryManager = { isCountdownVictoryEnabled: (t) => t !== "VICTORY_CULTURE_MODERN" && t !== "VICTORY_DOMINATION" };
+    world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 100 } };
+    const countdowns = () => (state.get().autopilot.log ?? []).filter((e) => e.key === "VICTORY_COUNTDOWN");
+    try {
+        await autopilot.runTurn(true);
+        const f = state.get().autopilot.focus;
+        assert.deepEqual(f.off, ["CULTURE"]);
+        assert.deepEqual(f.races.find((r) => r.cls === "SCIENCE"), { cls: "SCIENCE", points: 100, goal: 100, rival: 0, turnsLeft: null });
+        assert.ok(!f.races.some((r) => r.cls === "CULTURE"), "a victory switched off is not shown");
+        assert.equal(countdowns().length, 0);
+        world.countdown = { VICTORY_SCIENCE_MODERN: 1 };
+        await autopilot.runTurn(true);
+        assert.equal(countdowns().length, 1);
+        assert.equal(countdowns()[0].args[1], 4, "4 of 5 turns left");
+        await autopilot.runTurn(true);
+        assert.equal(countdowns().length, 1, "logged once");
+    } finally {
+        Game.VictoryManager = vm;
+        delete world.victoryPoints;
+        delete world.countdown;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("victory focus, the final age: a completed path is kept with «Авто» (its victory goes on)", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "AUTO", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    GameInfo.LegacyPaths = [
+        { LegacyPathType: "LP_CULTURE", LegacyPathClassType: "LEGACY_PATH_CLASS_CULTURE", EnabledByDefault: true },
+        { LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true },
+    ];
+    GameInfo.AgeProgressionMilestones = [
+        { LegacyPathType: "LP_CULTURE", FinalMilestone: true, RequiredPathPoints: 15 },
+        { LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 3 },
+    ];
+    Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 3 : 4) };
+    const final = Object.getOwnPropertyDescriptor(Game.AgeProgressManager, "isFinalAge");
+    try {
+        state.set({ autopilot: { ...state.get().autopilot, focus: null } });
+        Object.defineProperty(Game.AgeProgressManager, "isFinalAge", { value: true, configurable: true });
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus?.cls, "SCIENCE", "the space projects are done; 100 Innovation is still to come");
+        state.set({ autopilot: { ...state.get().autopilot, focus: null } });
+        Object.defineProperty(Game.AgeProgressManager, "isFinalAge", { value: false, configurable: true });
+        await autopilot.runTurn(true);
+        assert.equal(state.get().autopilot.focus?.cls, "CULTURE", "an earlier age: a completed path is left");
+    } finally {
+        if (final) Object.defineProperty(Game.AgeProgressManager, "isFinalAge", final);
+        else delete Game.AgeProgressManager.isFinalAge;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
+    }
+});
+
+test("«Оборона»: the pass strikes a raider next to a soldier when the game's prediction says it pays", async () => {
+    settings.patch({ autopilot: { defend: true, focus: false, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    world.units = [{ id: 30, type: "UNIT_WARRIOR", x: A.x, y: A.y }];
+    world.enemies = [{ x: A.x + 1, y: A.y, owner: 1, type: "UNIT_WARRIOR" }];
+    world.wars = [1];
+    world.combat = () => ({ dealt: 70, taken: 10 });
+    try {
+        fake.sent.length = 0;
+        await autopilot.runTurn(true);
+        const attack = fake.sent.find((s) => s.kind === "unit" && s.id.id === 30 && s.op === UnitOperationTypes.MOVE_TO && s.args.Modifiers & UnitOperationMoveModifiers.ATTACK);
+        assert.deepEqual([attack?.args.X, attack?.args.Y], [A.x + 1, A.y], JSON.stringify(keys()));
+        assert.ok(keys().includes("STRUCK"));
+    } finally {
+        for (const k of ["units", "enemies", "wars", "combat"]) delete world[k];
+        settings.patch({ autopilot: { defend: false } });
     }
 });
 
@@ -332,6 +474,51 @@ test("control lost (the slot became AI at an older age change): taking it back r
     assert.equal(autopilot.isControlLost(), false);
 });
 
+test("a diplomacy screen is open: the turn is not ended until it closes (research/23 D1: the game refused 15 end turns in 30 s)", async () => {
+    const choices = await import("../mod/expansion-planner/ui/data/xpl-autopilot-choices.js");
+    settings.patch({ autopilot: { skipUnits: false, endTurn: true, purchases: false } });
+    const turn = Game.turn;
+    Game.turn = turn + 40;
+    world.turnSent = false;
+    const ends = sent("endTurn").length;
+    choices.setDiplomacyScreenProbe(() => true);
+    try {
+        autopilot.setAutopilot(true);
+        await new Promise((r) => setTimeout(r, 3000));
+        assert.equal(sent("endTurn").length, ends);
+        assert.ok(keys().includes("WAIT_DIPLOMACY"));
+        choices.setDiplomacyScreenProbe(null);
+        engine.trigger("DiplomacySessionClosed", {});
+        await new Promise((r) => setTimeout(r, 4000));
+        assert.equal(sent("endTurn").length, ends + 1, "the session closed: the pass ran again and ended the turn");
+    } finally {
+        choices.setDiplomacyScreenProbe(null);
+        autopilot.setAutopilot(false);
+        Game.turn = turn;
+    }
+});
+
+test("the end of the turn is asked at most 4 times in one turn (research/23 D1)", async () => {
+    settings.patch({ autopilot: { skipUnits: false, endTurn: true, purchases: false } });
+    const turn = Game.turn;
+    Game.turn = turn + 60;
+    world.turnSent = false;
+    const ends = sent("endTurn").length;
+    try {
+        autopilot.setAutopilot(true);
+        await new Promise((r) => setTimeout(r, 3000));
+        for (let i = 0; i < 4; i++) {
+            world.turnSent = false; // the game refused it and activated the turn again
+            await autopilot.runTurn();
+        }
+        assert.equal(sent("endTurn").length, ends + 4);
+        assert.ok(keys().includes("END_TURN_REFUSED"));
+    } finally {
+        autopilot.setAutopilot(false);
+        Game.turn = turn;
+    }
+});
+
 test("the age is over (the game asks for the next civilization): the autopilot says so and switches off", async () => {
     settings.patch({ autopilot: { skipUnits: false, endTurn: true, purchases: false, replanEvery: 0 } });
     world.turnSent = false;
@@ -351,4 +538,54 @@ test("a new age starts (the game asks for its dedications): the autopilot says s
     delete world.blocker;
     assert.ok(state.get().autopilot.log.some((e) => e.key === "AGE_START"));
     assert.ok(!autopilot.isAutopilotOn());
+});
+
+test("any victory, or our defeat, switches the autopilot off (seen in game: it kept playing after Mexico won)", () => {
+    const off = () => (state.get().autopilot.log ?? []).filter((e) => e.key === "GAME_OVER_OFF").length;
+    const before = off();
+    autopilot.setAutopilot(true);
+    engine.trigger("TeamVictory", { team: 4, victory: 0 });
+    assert.equal(autopilot.isAutopilotOn(), false);
+    assert.equal(off(), before + 1);
+    // Switched on again by the player ("one more turn"): only our own defeat stops it.
+    autopilot.setAutopilot(true);
+    engine.trigger("PlayerDefeat", { player: 3 });
+    assert.equal(autopilot.isAutopilotOn(), true, "another player's defeat");
+    engine.trigger("PlayerDefeat", { player: 0 });
+    assert.equal(autopilot.isAutopilotOn(), false);
+    assert.equal(off(), before + 2);
+});
+
+test("unattended (it ends turns): 1 plan tack per settlement and settle tacks only where settlers walk (research/21 H3: UI.log reached 200 MB)", () => {
+    assert.deepEqual(autopilot.tackLimits({ endTurn: true }), { perSettlement: 1, nextSites: 0 });
+    assert.deepEqual(autopilot.tackLimits({ endTurn: false }), { perSettlement: 3, nextSites: 3 });
+});
+
+test("the age change's entries name the science picks with the science focus (research/21 L8, J1, J2)", () => {
+    assert.equal(autopilot.ageChoiceKey("NOTIFICATION_AGE_TRANSITION", "SCIENCE"), "AGE_START_SCIENCE");
+    assert.equal(autopilot.ageChoiceKey("NOTIFICATION_CHOOSE_CIVILIZATION", "SCIENCE"), "AGE_OVER_SCIENCE");
+    assert.equal(autopilot.ageChoiceKey("NOTIFICATION_AGE_TRANSITION", "CULTURE"), "AGE_START");
+    assert.equal(autopilot.ageChoiceKey("NOTIFICATION_CHOOSE_BELIEF", "SCIENCE"), null);
+});
+
+test("the game's second turn activation in the same turn only orders units and ends the turn: nothing bought or queued twice (research/22 B9)", async () => {
+    settings.patch({ autopilot: { purchases: true, production: true, towns: true, skipUnits: false, endTurn: false, focus: false, replanEvery: 0 } });
+    const gold = world.gold;
+    world.gold = 900;
+    Game.turn += 1;
+    const buys = () => sent("command").filter((s) => s.op === CityCommandTypes.PURCHASE).length;
+    try {
+        fake.sent.length = 0;
+        autopilot.setAutopilot(true); // the turn's first pass
+        await new Promise((r) => setTimeout(r, 2500));
+        assert.ok(buys() > 0, "the first pass buys");
+        fake.sent.length = 0;
+        engine.trigger("PlayerTurnActivated", { player: 0 }); // the game activates the turn again
+        await new Promise((r) => setTimeout(r, 3000));
+        assert.equal(buys(), 0, "nothing bought again");
+        assert.equal(sent("operation").length, 0, "nothing queued again");
+    } finally {
+        autopilot.setAutopilot(false);
+        world.gold = gold;
+    }
 });

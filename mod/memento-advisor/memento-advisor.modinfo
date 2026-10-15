@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Mod id="memento-advisor" version="1" xmlns="ModInfo">
+  <Properties>
+    <Name>LOC_MOD_MMA_NAME</Name>
+    <Description>LOC_MOD_MMA_DESCRIPTION</Description>
+    <Authors>glazunovzayac</Authors>
+    <Package>Mod</Package>
+    <AffectsSavedGames>0</AffectsSavedGames>
+    <Version>1.0.0</Version>
+  </Properties>
+  <Dependencies>
+    <Mod id="base-standard" title="LOC_MODULE_BASE_STANDARD_NAME"/>
+  </Dependencies>
+  <ActionCriteria>
+    <Criteria id="always">
+      <AlwaysMet></AlwaysMet>
+    </Criteria>
+  </ActionCriteria>
+  <ActionGroups>
+    <!-- New games: the memento screen of the game setup (front end). -->
+    <ActionGroup id="mma-shell" scope="shell" criteria="always">
+      <Properties>
+        <LoadOrder>1000</LoadOrder>
+      </Properties>
+      <Actions>
+        <UpdateText>
+          <Item>text/en_us/mma-text.xml</Item>
+          <Item>text/ru_ru/mma-text.xml</Item>
+        </UpdateText>
+        <ImportFiles>
+          <Item>data/mma-table.js</Item>
+          <Item>ui/mma-context.js</Item>
+          <Item>ui/mma-decorator.js</Item>
+          <Item>ui/mma-ranking.js</Item>
+          <Item>ui/mma-settings.js</Item>
+          <Item>ui/mma-style.css</Item>
+        </ImportFiles>
+        <UIScripts>
+          <Item>ui/mma-main.js</Item>
+        </UIScripts>
+      </Actions>
+    </ActionGroup>
+    <!-- Age transitions: the same screen, in game. -->
+    <ActionGroup id="mma-game" scope="game" criteria="always">
+      <Properties>
+        <LoadOrder>1000</LoadOrder>
+      </Properties>
+      <Actions>
+        <UpdateText>
+          <Item>text/en_us/mma-text.xml</Item>
+          <Item>text/ru_ru/mma-text.xml</Item>
+        </UpdateText>
+        <ImportFiles>
+          <Item>data/mma-table.js</Item>
+          <Item>ui/mma-context.js</Item>
+          <Item>ui/mma-decorator.js</Item>
+          <Item>ui/mma-ranking.js</Item>
+          <Item>ui/mma-settings.js</Item>
+          <Item>ui/mma-style.css</Item>
+        </ImportFiles>
+        <UIScripts>
+          <Item>ui/mma-main.js</Item>
+        </UIScripts>
+      </Actions>
+    </ActionGroup>
+  </ActionGroups>
+  <LocalizedText>
+    <File>text/en_us/mma-modinfo-text.xml</File>
+  </LocalizedText>
+</Mod>

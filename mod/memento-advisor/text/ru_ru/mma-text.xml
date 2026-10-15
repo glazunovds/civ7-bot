@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <LocalizedText>
+    <Replace Tag="LOC_MMA_FOR_PAIR" Language="ru_RU">
+      <Text>Советуем памятные вещи для: {1_Leader} + {2_Civ}</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_FOR_LEADER" Language="ru_RU">
+      <Text>Советуем памятные вещи для: {1_Leader}</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_FOR_ANY" Language="ru_RU">
+      <Text>Советуем памятные вещи:</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_AUTO" Language="ru_RU">
+      <Text>Авто ({1_Victory})</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_BALANCED" Language="ru_RU">
+      <Text>Баланс</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_CULTURE" Language="ru_RU">
+      <Text>Культура</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_SCIENCE" Language="ru_RU">
+      <Text>Наука</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_ECONOMIC" Language="ru_RU">
+      <Text>Экономика</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_MILITARY" Language="ru_RU">
+      <Text>Военная</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_AUTO_TT" Language="ru_RU">
+      <Text>Победа, которая подходит этому лидеру и цивилизации (предпочтение лидера для эпохи цивилизации, иначе по их характеристикам). Номера на карточках — лучшие памятные вещи для неё, 1 — лучшая; неоткрытые пропускаются.</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_MODE_TT" Language="ru_RU">
+      <Text>Расставить памятные вещи под эту цель (Баланс — среднее четырёх побед). Выбор запоминается.</Text>
+    </Replace>
+    <Replace Tag="LOC_MMA_BADGE_TT" Language="ru_RU">
+      <Text>№{1_Rank} для «{2_Mode}»: {3_Reason}</Text>
+    </Replace>
+  </LocalizedText>
+</Database>

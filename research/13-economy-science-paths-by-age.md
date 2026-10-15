@@ -146,7 +146,7 @@ Read from the game's own logs. They are the evidence sources: `CityBuildQueue.cs
 - **Victory came from:** Ports, trade routes (26), assigned resources and gold buildings. The economic victory was won once without Factories, and once with them on the way.
 
 ## Next: polish the science victory path
-Known gaps and ideas, best first:
+Done on 2026-10-13 (research/14 lists what changed): items 1, 2 (the 120 mark and the Exploration 75 mark), 4, and 5 (settlers leave by a safe way; melee soldiers strike raiders). Item 3 is still to be seen in a game. The original list:
 1. **Modern:** the Launch Pad needs Rocketry, 14 techs deep. The SCIENCE profile plus research toward the path should get there; verify the turn it arrives.
    - Buy the Launch Pad and the science buildings with gold (like the economy buildings).
    - Run `PROJECT_CREWED_SPACE_FLIGHT_PREP` (15, repeatable) in more than one city.
@@ -159,3 +159,11 @@ Known gaps and ideas, best first:
 5. **Not science, but seen:**
    - Raiders kept a settler waiting a whole age. It should try a safe site away from them after a few turns.
    - The raiders' pillaging cost 35 repairs. Walls everywhere under a lasting threat, or a way to deal with the raiders' camp.
+   - **Evidence from game 4** (UI.log, `DiplomacySummary.csv`):
+     - Independent 23 declared war on turn 14 and captured one of our settlements on turn 16. Its befriending (started turn 15) never left VERY_HOSTILE.
+     - 6–7 of its units then stayed within 4 tiles of the capital for the rest of Antiquity.
+     - A settler waited inside a settlement 39 turns in Antiquity (Аксум) and 49 in Exploration (Саба). `runFromDanger` makes a settler that stands in a settlement with a hostile unit within 3 wait there, and it never looks for a safe site.
+     - 47 repairs were bought (1,868 gold) and 11 queued, mostly 12-gold improvements.
+     - No WALLS line appears: the walls step came after the threats ended, so it is untested in game.
+
+The science victory's rules and the gaps they reveal: research/14.

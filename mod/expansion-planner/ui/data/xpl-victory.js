@@ -83,7 +83,88 @@ export function disabledVictories() {
     return out;
 }
 
+/**
+ * The victories themselves (1.4+ countdown races, GameInfo.VictoryTypes), as the victories screen
+ * reads them (ui-next/screens/victories/victories-screen-model.js): our points
+ * (player.Victories.getPointsForVictoryType: Innovation for science, GDP for economy; earned in
+ * every age, StaticCarryover), the goal (a fixed score's MinimumPoints, science 100; else
+ * Game.VictoryManager.getCountdownVictoryDominanceScore, -1 = not yet), the best rival's points
+ * (majors we have met), the countdown (getVictoryCountdownStatus → { isDominant, turns }: turns
+ * left of CountdownDuration while we lead) and whether it is switched on in this game.
+ * Also the military race (`focusable: false`: the focus never takes it, the victory watch does) and
+ * every alive major's standing, sorted by points (the victories screen's leaderboard,
+ * victories-screen-model.js calcVictoryLeaderboard; met or not: the game's dominance goal counts
+ * them all, root CLAUDE.md gotcha 32).
+ * @returns [{ cls, type, scoring, focusable, points, goal, rival, turnsLeft (null unless counting down), enabled,
+ *   board: [{ id, points, dominant, turns, met }] }]
+ */
+export function victoryRaces() {
+    const me = safe(() => Players.get(pid()), null);
+    if (!me?.Victories) return [];
+    const majors = (safe(() => Players.getAlive(), []) ?? []).filter((p) => p?.isMajor);
+    const rivals = majors.filter((p) => p.id !== pid() && safe(() => me.Diplomacy.hasMet(p.id), false));
+    const VM = safe(() => Game.VictoryManager, null);
+    const out = [];
+    for (const v of GameInfo.VictoryTypes ?? []) {
+        const def = safe(() => GameInfo.Victories.find((a) => a.VictoryType === v.VictoryType), null);
+        const cls = String(def?.VictoryClassType ?? "").replace("VICTORY_CLASS_", "");
+        if (!RACE_CLASSES.includes(cls)) continue;
+        const h = v.$hash ?? safe(() => Database.makeHash(v.VictoryType), null);
+        const points = (p) => Number(safe(() => p.Victories.getPointsForVictoryType(h), 0)) || 0;
+        const fixed = v.ScoringType === "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE";
+        const goal = fixed ? Number(v.MinimumPoints) || 0 : Number(safe(() => VM.getCountdownVictoryDominanceScore(h), -1));
+        const status = safe(() => me.Victories.getVictoryCountdownStatus(h), null);
+        const duration = Number(v.CountdownDuration) || 0;
+        const board = majors.map((p) => {
+            const st = safe(() => p.Victories.getVictoryCountdownStatus(h), null);
+            return {
+                id: p.id, points: points(p), dominant: !!st?.isDominant,
+                turns: st?.isDominant ? Math.max(0, duration - (Number(st.turns) || 0)) : null,
+                met: p.id === pid() || !!safe(() => me.Diplomacy.hasMet(p.id), false),
+            };
+        }).sort((a, b) => b.points - a.points);
+        out.push({
+            cls,
+            type: v.VictoryType,
+            scoring: v.ScoringType ?? null,
+            focusable: FOCUS_CLASSES.includes(cls),
+            board,
+            points: points(me),
+            goal: Number.isFinite(goal) ? goal : -1,
+            rival: rivals.reduce((m, p) => Math.max(m, points(p)), 0),
+            turnsLeft: status?.isDominant ? Math.max(0, duration - (Number(status.turns) || 0)) : null,
+            enabled: safe(() => VM.isCountdownVictoryEnabled(v.VictoryType), null) !== false,
+        });
+    }
+    return out;
+}
+
+const RACE_CLASSES = [...FOCUS_CLASSES, "MILITARY"];
+
 /** The leader's preferred victory for this age (else its Modern one), as a focus class, or null. */
+const FOCUS_KEY = "_XPL_OBJ_FOCUS"; // GameTutorial property: the last focus, kept in the save across age changes
+
+/** The focus last chosen in this game (kept in the save: the autopilot's state starts afresh with each age). */
+export function savedFocus() {
+    try {
+        const raw = GameTutorial.getProperty(Database.makeHash(FOCUS_KEY));
+        const data = typeof raw === "string" && raw ? JSON.parse(raw) : null;
+        return FOCUS_CLASSES.includes(data?.cls) ? data.cls : null;
+    } catch (_e) {
+        return null;
+    }
+}
+
+/** Keeps the focus in the save (only when it changes). */
+export function saveFocus(cls) {
+    if (!FOCUS_CLASSES.includes(cls) || savedFocus() === cls) return;
+    try {
+        GameTutorial.setProperty(Database.makeHash(FOCUS_KEY), JSON.stringify({ cls }));
+    } catch (_e) {
+        // no save: the focus is chosen afresh next age
+    }
+}
+
 export function leaderLeaning() {
     const leader = safe(() => GameInfo.Leaders.lookup(Players.get(pid()).leaderType)?.LeaderType, null);
     if (!leader) return null;

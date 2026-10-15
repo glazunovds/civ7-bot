@@ -4,7 +4,7 @@
 // happiness, B adds +7 / +6 for -3 / -4; the best new tile gives +1 food +4 production.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { costMultiplier, costValue, SCARCITY } from "../mod/expansion-planner/ui/core/xpl-scarcity.js";
+import { costMultiplier, costValue, gainMultiplier, gainValue, SCARCITY } from "../mod/expansion-planner/ui/core/xpl-scarcity.js";
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { dot } from "../mod/expansion-planner/ui/core/xpl-yields.js";
 
@@ -44,4 +44,16 @@ test("a city short of happiness: A would push it into unrest, B is the safe choi
     const w = getProfile("BALANCE").y;
     assert.ok(gain(A, w, poor) < 0);
     assert.ok(gain(B, w, poor) > gain(A, w, poor) + 10);
+});
+
+test("gains: food (and happiness) a settlement already has plenty of is worth less; short of it, full weight (research/26 §3.2)", () => {
+    assert.equal(gainMultiplier(0), 1);
+    assert.equal(gainMultiplier(-5), 1, "starving: full weight");
+    assert.ok(Math.abs(gainMultiplier(20) - 0.65) < 1e-9);
+    assert.ok(gainMultiplier(140) < 0.4 && gainMultiplier(140) >= SCARCITY.MIN);
+    assert.equal(gainMultiplier(NaN), 1, "unknown: plain weight");
+    const w = getProfile("BALANCE").y;
+    assert.equal(gainValue(w, [0, 0, 0, 3, 0, 0, 0], nets(200, 200)), w[3] * 3, "science keeps its weight");
+    assert.ok(gainValue(w, [4, 0, 0, 0, 0, 0, 0], nets(60, 0)) < w[0] * 4 * 0.5, "a 4-food tile in a city with 60 food");
+    assert.equal(gainValue(w, [4, 0, 0, 0, 0, 0, 0], null), w[0] * 4, "no nets: plain weights");
 });

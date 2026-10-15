@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Database>
+  <EnglishText>
+    <Row Tag="LOC_MOD_MMA_NAME">
+      <Text>Memento Advisor</Text>
+    </Row>
+    <Row Tag="LOC_MOD_MMA_DESCRIPTION">
+      <Text>Numbers 1–6 on the memento selection screen: the best mementos for your leader and civilization, for their victory, a balanced game, or a victory you pick.</Text>
+    </Row>
+  </EnglishText>
+  <LocalizedText>
+    <Replace Tag="LOC_MOD_MMA_NAME" Language="ru_RU">
+      <Text>Советник по памятным вещам</Text>
+    </Replace>
+    <Replace Tag="LOC_MOD_MMA_DESCRIPTION" Language="ru_RU">
+      <Text>Номера 1–6 на экране выбора памятных вещей: лучшие вещи для вашего лидера и цивилизации — под их победу, сбалансированную игру или выбранную вами победу.</Text>
+    </Replace>
+  </LocalizedText>
+</Database>

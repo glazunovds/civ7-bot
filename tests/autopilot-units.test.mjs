@@ -9,7 +9,7 @@ import { installFakeEngine } from "./fakes/fake-engine.mjs";
 const world = {
     width: 40, height: 20, wrapX: false,
     tiles: () => ({ terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2 } }),
-    players: [{ id: 0 }, { id: 1 }, { id: 2 }],
+    players: [{ id: 0 }, { id: 1 }, { id: 2 }, { id: 9, isIndependent: true, name: "Nubians" }],
     cities: [
         { owner: 0, x: 5, y: 5, name: "Athens" },
         { owner: 1, x: 20, y: 5, name: "Babylon" },
@@ -33,7 +33,7 @@ const fresh = (list, extra = {}) => {
     units.resetUnitGoals();
     fake.sent.length = 0;
     world.units = list;
-    for (const k of ["startsWar", "claimOk", "aiSuggestions", "rangeTargets", "enemies", "tradeRoutes", "unitCommandOk", "unitCommandResult", "unitCanStart", "tradeCapacity", "unreachable", "owningCity", "expand", "wars"]) delete world[k];
+    for (const k of ["startsWar", "claimOk", "aiSuggestions", "rangeTargets", "enemies", "tradeRoutes", "unitCommandOk", "unitCommandResult", "unitCanStart", "tradeCapacity", "unreachable", "owningCity", "expand", "wars", "combat", "districtAt", "villages", "indepRelation"]) delete world[k];
     Object.assign(world, extra);
 };
 
@@ -108,21 +108,39 @@ const army = () => [
     { id: 9, type: "UNIT_WARRIOR", x: 6, y: 6, activity: UnitActivityTypes.OPERATION },
 ];
 
-test("defence: the archer shoots the most damaged enemy, the hurt unit heals, the rest fortify", () => {
-    const targets = { rangeTargets: (id) => (id.id === 4 ? [{ x: 4, y: 7 }, { x: 3, y: 6 }] : []), enemies: [{ x: 4, y: 7, damage: 10 }, { x: 3, y: 6, damage: 50 }] };
+test("defence: the archer shoots the most damaged enemy (of two soldiers away from our settlements), the hurt unit heals, the rest fortify", () => {
+    const targets = { rangeTargets: (id) => (id.id === 4 ? [{ x: 9, y: 9 }, { x: 10, y: 9 }] : []), enemies: [{ x: 9, y: 9, damage: 10 }, { x: 10, y: 9, damage: 50 }] };
     fresh(army(), targets);
     const r = run({ defend: true });
     const shot = orderOf(4).find((s) => s.op === UnitOperationTypes.RANGE_ATTACK)?.args;
-    assert.deepEqual([shot?.X, shot?.Y], [3, 6]);
+    assert.deepEqual([shot?.X, shot?.Y], [10, 9]);
     assert.deepEqual(orderOf(5).map((s) => s.op), ["UNITOPERATION_REST_UNTIL_HEALED"]);
     assert.deepEqual(orderOf(6).map((s) => s.op), ["UNITOPERATION_FORTIFY"]);
     for (const id of [1, 7, 9]) assert.deepEqual(orderOf(id), [], `unit ${id}: not military, or busy`);
     assert.deepEqual(r.entries.map((e) => e.key).sort(), ["FORTIFY", "HEAL", "RANGED"]);
 
-    fresh(army(), { ...targets, startsWar: (_id, l) => (l.x === 3 && l.y === 6 ? 2 : undefined) });
+    fresh(army(), { ...targets, startsWar: (_id, l) => (l.x === 10 && l.y === 9 ? 2 : undefined) });
     run({ defend: true });
     const safeShot = orderOf(4).find((s) => s.op === UnitOperationTypes.RANGE_ATTACK)?.args;
-    assert.deepEqual([safeShot?.X, safeShot?.Y], [4, 7], "never a shot that declares war");
+    assert.deepEqual([safeShot?.X, safeShot?.Y], [9, 9], "never a shot that declares war");
+});
+
+test("defence: archers shoot the soldier attacking our settlement first, then soldiers, then the rest; never an empty tile", () => {
+    // Seen in game 5: crossbowmen shot scouts and an empty village tile while a swordsman took the town.
+    const all = [{ x: 4, y: 7 }, { x: 9, y: 9 }, { x: 8, y: 3 }, { x: 9, y: 3 }];
+    const shotAt = (enemies, targets = all) => {
+        fresh(army(), { rangeTargets: (id) => (id.id === 4 ? targets : []), enemies });
+        run({ defend: true });
+        const shot = orderOf(4).find((s) => s.op === UnitOperationTypes.RANGE_ATTACK)?.args;
+        return shot ? [shot.X, shot.Y] : null;
+    };
+    const near = { x: 4, y: 7, damage: 10 };                         // 2 tiles from Athens
+    const far = { x: 9, y: 9, damage: 60 };                          // a soldier away from our settlements
+    const scout = { x: 8, y: 3, damage: 90, type: "UNIT_SCOUT" };    // not a soldier
+    assert.deepEqual(shotAt([near, far, scout]), [4, 7], "the one attacking Athens");
+    assert.deepEqual(shotAt([far, scout]), [9, 9], "a soldier before a scout");
+    assert.deepEqual(shotAt([scout]), [8, 3]);
+    assert.equal(shotAt([], [{ x: 9, y: 3 }]), null, "an empty tile (a village, a district): no shot");
 });
 
 test("defence: when the game refuses to fortify (a new capital), the unit stands guard", () => {
@@ -230,9 +248,9 @@ test("skipping idle units never cancels an order the game has not taken yet", as
     const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
     fresh([]);
     world.readyUnits = [{ owner: 0, id: 6 }, { owner: 0, id: 8 }];
-    steps.skipIdleUnits(new Set(["0:6"]));
+    await steps.skipIdleUnits(new Set(["0:6"]));
     assert.deepEqual(orders(), [], "unit 6 was just told to fortify");
-    steps.skipIdleUnits(new Set());
+    await steps.skipIdleUnits(new Set());
     assert.deepEqual(orders().map((s) => s.id.id), [6, 8]);
     assert.deepEqual(orders()[0].args, { X: -9999, Y: -9999, UnitAbilityType: -1 }, "the parameters the game's unit panel sends");
 });
@@ -241,10 +259,66 @@ test("skipping: every idle unit, even when the first ready one was just given an
     const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
     fresh([{ id: 1, type: "UNIT_FOUNDER", x: 5, y: 5 }, { id: 3, type: "UNIT_WARRIOR", x: 6, y: 5 }, { id: 4, type: "UNIT_WARRIOR", x: 4, y: 5, activity: UnitActivityTypes.OPERATION }]);
     world.readyUnits = [{ owner: 0, id: 1 }];
-    const out = steps.skipIdleUnits(new Set(["0:1"]));
+    const out = await steps.skipIdleUnits(new Set(["0:1"]));
     assert.deepEqual(orders().map((s) => s.id.id), [3], "the founder keeps its order, the busy warrior its own");
     assert.deepEqual(orders()[0].args, { X: -9999, Y: -9999, UnitAbilityType: -1 }, "the parameters the game's unit panel sends");
     assert.equal(out[0].key, "UNITS_SKIPPED");
+});
+
+test("skipping: a unit the game stopped after part of a move (moves left) is skipped too (game 12 T31)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    fresh([{ id: 1, type: "UNIT_WARRIOR", x: 5, y: 5, moved: true }, { id: 2, type: "UNIT_WARRIOR", x: 6, y: 5, moved: true, moves: 0 }]);
+    world.readyUnits = [];
+    await steps.skipIdleUnits(new Set());
+    assert.deepEqual(orders().map((s) => s.id.id), [1], "moves left: skipped; none left: nothing to do");
+});
+
+test("skipping: the game's ready list is followed while it takes each skip a moment later", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    fresh([]);
+    world.readyUnits = [{ owner: 0, id: 6 }, { owner: 0, id: 8 }, { owner: 0, id: 9 }];
+    world.readyLag = 20;
+    try {
+        const out = await steps.skipIdleUnits(new Set());
+        assert.deepEqual(orders().map((s) => s.id.id), [6, 8, 9], "before: only the first, the next ask still named it");
+        assert.deepEqual(out[0].args, [3]);
+    } finally {
+        delete world.readyLag;
+    }
+});
+
+test("a move order kept 2 turns on one tile is cancelled; walking or fortified units are left alone", () => {
+    const at = (turn) => {
+        Game.turn = turn;
+        fake.sent.length = 0;
+        return run({ defend: true });
+    };
+    const OP = UnitActivityTypes.OPERATION;
+    units.resetUnitGoals();
+    world.units = [
+        { id: 3, type: "UNIT_WARRIOR", x: 8, y: 5, activity: OP, dest: { x: 12, y: 5 } },
+        { id: 4, type: "UNIT_WARRIOR", x: 8, y: 7, activity: UnitActivityTypes.SLEEP },
+    ];
+    const turn0 = Game.turn;
+    world.unitCommandOk = (_id, op) => op === "UNITCOMMAND_CANCEL";
+    try {
+        at(10);
+        at(11);
+        assert.deepEqual(orders().filter((s) => s.op === "UNITCOMMAND_CANCEL"), [], "one turn: it may still go");
+        const r = at(12);
+        assert.deepEqual(orders().filter((s) => s.op === "UNITCOMMAND_CANCEL").map((s) => s.id.id), [3]);
+        assert.deepEqual(r.entries.find((e) => e.key === "MOVE_STUCK")?.args.slice(1), [12, 5, 2]);
+        // A unit that moves on is not stuck.
+        units.resetUnitGoals();
+        world.units = [{ id: 3, type: "UNIT_WARRIOR", x: 8, y: 5, activity: OP, dest: { x: 12, y: 5 } }];
+        at(20);
+        world.units[0].x = 9;
+        at(22);
+        assert.deepEqual(orders().filter((s) => s.op === "UNITCOMMAND_CANCEL"), []);
+    } finally {
+        Game.turn = turn0;
+        delete world.unitCommandOk;
+    }
 });
 
 test("stepping aside in a crowded city: a tile with only our civilian is fine, never one with someone else's unit", () => {
@@ -443,6 +517,26 @@ test("settlers: no site with an enemy within 3 tiles, no way passing within 2 of
     delete world.wars;
 });
 
+test("settlers: a war risk's soldiers next to the way are danger too, though we are not at war; 2 tiles away only when its leader is Hostile (research/23 D9, research/24 X4)", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { enemies: [foe(8, 4)] });
+    run({ settlers: true, riskOwners: [1] });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], "its way passes next to the risk's soldier");
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { enemies: [foe(8, 4)] });
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5], "no risk: no danger");
+    // Two tiles from the way: game 9's espionage risk kept every site «unsafe» for 48 turns.
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { enemies: [foe(8, 3)] });
+    run({ settlers: true, riskOwners: [1] });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5], "a risk that is not Hostile, 2 tiles away");
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { enemies: [foe(8, 3)], relations: { 1: "HOSTILE" } });
+    try {
+        run({ settlers: true, riskOwners: [1] });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], "Hostile: 2 tiles is too close");
+    } finally {
+        delete world.relations;
+    }
+});
+
 test("settlers: an enemy within 3 tiles: back to our nearest settlement by a way never next to it; in a settlement it waits", () => {
     fresh([{ id: 2, type: "UNIT_SETTLER", x: 8, y: 5 }], { ...AT_WAR, enemies: [foe(10, 5)] });
     let r = run({ settlers: true });
@@ -463,6 +557,33 @@ test("settlers: an enemy within 3 tiles: back to our nearest settlement by a way
     const to = moveOf(2);
     assert.ok(to && dist({ x: to.X, y: to.Y }, { x: 10, y: 5 }) > dist({ x: 12, y: 5 }, { x: 10, y: 5 }), JSON.stringify(to));
     assert.equal(r.entries[0]?.key, "SETTLER_AWAY");
+    delete world.wars;
+});
+
+test("settlers: in a settlement with raiders near, it leaves for a safe site by a way out of their reach; else it waits", () => {
+    // Raiders 3 tiles west of Athens; the best site lies east, every step of the way 4+ tiles from them.
+    const raider = foe(2, 5);
+    assert.equal(dist(raider, { x: 5, y: 5 }), 3);
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [raider] });
+    let r = run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5], JSON.stringify(r.entries));
+    assert.deepEqual(r.entries[0]?.key, "SETTLER_LEAVES");
+    assert.deepEqual(r.entries[0]?.args.slice(1, 4), ["Athens", 12, 5]);
+    // Walking now, away from them: it keeps going.
+    fake.sent.length = 0;
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 7, y: 5, activity: UnitActivityTypes.OPERATION }];
+    run({ settlers: true });
+    assert.deepEqual(orders(), []);
+    // A way that comes within 3 of them is not taken, though the site is safe: the next site.
+    const north = foe(9, 2);
+    assert.ok(dist(north, { x: 12, y: 5 }) > 3 && dist(north, { x: 8, y: 5 }) === 3);
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [raider, north] });
+    r = run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], JSON.stringify(r.entries));
+    // No safe site left: it waits.
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [raider, north, foe(9, 12), foe(13, 6)] });
+    r = run({ settlers: true });
+    assert.equal(r.entries[0]?.key, "SETTLER_WAITS", JSON.stringify(r.entries));
     delete world.wars;
 });
 
@@ -490,6 +611,69 @@ test("settlers: one already walking gets a new order when an enemy comes near it
     run({ settlers: true });
     assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
     delete world.wars;
+});
+
+test("raiders: a melee soldier strikes one next to it when the game's prediction says it pays", async () => {
+    const attackOf = (id) => orderOf(id).find((s) => s.op === UnitOperationTypes.MOVE_TO && s.args.Modifiers & UnitOperationMoveModifiers.ATTACK)?.args;
+    const raider = foe(6, 5); // next to Athens
+    // Fortified in Athens: it wakes to strike (a good trade: 60 dealt, 20 taken).
+    fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5, activity: UnitActivityTypes.SLEEP }], { ...AT_WAR, enemies: [raider], combat: () => ({ dealt: 60, taken: 20 }) });
+    let r = await units.strikeRaiders();
+    assert.deepEqual([attackOf(4)?.X, attackOf(4)?.Y], [6, 5], JSON.stringify(orders()));
+    assert.equal(r.entries[0]?.key, "STRUCK");
+    assert.ok(r.ordered.has("0:4"));
+    // A poor trade, or one that leaves it below half its health: no attack (and UI.log says why).
+    const warn = console.warn;
+    const lines = [];
+    console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        for (const combat of [() => ({ dealt: 30, taken: 25 }), () => ({ dealt: 90, taken: 60 }), () => null]) {
+            fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { ...AT_WAR, enemies: [raider], combat });
+            r = await units.strikeRaiders();
+            assert.deepEqual(orders(), [], String(combat));
+        }
+    } finally {
+        console.warn = warn;
+    }
+    const why = lines.filter((l) => l.includes("strike: 1 raider"));
+    assert.equal(why.length, 3, JSON.stringify(lines));
+    assert.match(why[0], /0 without the game's prediction, 0 impossible, 1 not worth it/);
+    assert.match(why[2], /0 without the game's prediction, 1 impossible, 0 not worth it/, "an answer without the attacker: no attack possible");
+    // An even trade that kills a wounded raider: yes.
+    fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { ...AT_WAR, enemies: [{ ...raider, damage: 70 }], combat: () => ({ dealt: 35, taken: 30 }) });
+    await units.strikeRaiders();
+    assert.ok(attackOf(4));
+    // A ranged unit (it shoots instead), no attack left, a raider in a settlement's defences, one not next to it: no.
+    const good = () => ({ dealt: 60, taken: 20 });
+    for (const [list, extra, why] of [
+        [[{ id: 4, type: "UNIT_ARCHER", x: 5, y: 5, ranged: 25, melee: 15 }], {}, "ranged"],
+        [[{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5, attacks: 0 }], {}, "no attack left"],
+        [[{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { districtAt: (x, y) => x === 6 && y === 5 }, "a settlement"],
+        [[{ id: 4, type: "UNIT_WARRIOR", x: 4, y: 5 }], {}, "two tiles away"],
+    ]) {
+        fresh(list, { ...AT_WAR, enemies: [raider], combat: good, ...extra });
+        await units.strikeRaiders();
+        assert.deepEqual(orders(), [], why);
+    }
+    // Far from our settlements, or not hostile (no war): no.
+    fresh([{ id: 4, type: "UNIT_WARRIOR", x: 14, y: 15 }], { ...AT_WAR, enemies: [foe(15, 15)], combat: good });
+    await units.strikeRaiders();
+    assert.deepEqual(orders(), [], "far from home");
+    fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { enemies: [raider], combat: good });
+    await units.strikeRaiders();
+    assert.deepEqual(orders(), [], "not at war");
+    delete world.wars;
+});
+
+test("raiders: the trade rule", () => {
+    const at = (o) => units.strikeWorthIt({ ourHealth: 100, ourMax: 100, theirHealth: 100, ...o });
+    assert.equal(at({ dealt: 40, taken: 20 }), true);
+    assert.equal(at({ dealt: 39, taken: 20 }), false);
+    assert.equal(at({ dealt: 41, taken: 22, siege: true }), true, "a siege: 1.3 times is enough (research/23 D8)");
+    assert.equal(at({ dealt: 25, taken: 22, siege: true }), false);
+    assert.equal(at({ dealt: 100, taken: 45 }), true, "a kill");
+    assert.equal(at({ dealt: 100, taken: 51 }), false, "below half");
+    assert.equal(at({ dealt: 0, taken: 0 }), false);
 });
 
 test("settlers: never a site closer than 5 tiles to another player's settlement (the game's suggestions too)", () => {
@@ -535,6 +719,35 @@ test("rough seas: a unit on deep ocean heads for the nearest coast (a ship) or l
         assert.ok(orders().some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"), "Antiquity: the game explores");
     } finally {
         Game.age = age;
+        world.tiles = tiles;
+    }
+});
+
+test("a soldier or scout waiting on water (coast, a navigable river: embarked, it cannot fight) goes ashore; one walking keeps its order", () => {
+    const tiles = world.tiles;
+    const terrainAt = (x, y) => world.tiles(x, y).terrain;
+    try {
+        // Calm seas (Antiquity): coast below y 10, a navigable river along x 20.
+        world.tiles = (x, y) => ({ ...tiles(x, y), terrain: y >= 10 ? "TERRAIN_COAST" : x === 20 ? "TERRAIN_NAVIGABLE_RIVER" : "TERRAIN_FLAT" });
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 9, y: 11 }, { id: 9, type: "UNIT_ARCHER", x: 20, y: 6 }]);
+        const r = run({ explore: false, defend: true });
+        assert.equal(terrainAt(moveOf(8)?.X, moveOf(8)?.Y), "TERRAIN_FLAT", JSON.stringify(orders()));
+        assert.equal(terrainAt(moveOf(9)?.X, moveOf(9)?.Y), "TERRAIN_FLAT", "off the river");
+        assert.deepEqual(r.entries.map((e) => e.key), ["LEFT_WATER", "LEFT_WATER"]);
+        // Not next to a hostile unit: every land tile beside the archer touches one, so it walks further.
+        const enemies = [foe(18, 5), foe(18, 7), foe(22, 6)];
+        const beside = GameplayMap.getPlotIndicesInRadius(20, 6, 1).map((i) => GameplayMap.getLocationFromIndex(i)).filter((l) => l.x !== 20);
+        assert.ok(beside.length > 0 && beside.every((l) => enemies.some((e) => dist(e, l) === 1)), JSON.stringify(beside));
+        fresh([{ id: 9, type: "UNIT_ARCHER", x: 20, y: 6 }], { ...AT_WAR, enemies });
+        run({ defend: true });
+        const to = moveOf(9);
+        assert.ok(to && enemies.every((e) => dist({ x: to.X, y: to.Y }, e) > 1) && terrainAt(to.X, to.Y) === "TERRAIN_FLAT", JSON.stringify(orders()));
+        delete world.wars;
+        // Walking across the water: its order stands.
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 9, y: 11, activity: UnitActivityTypes.OPERATION }]);
+        run({ explore: false });
+        assert.deepEqual(orders(), []);
+    } finally {
         world.tiles = tiles;
     }
 });
@@ -586,5 +799,500 @@ test("discoveries: none next to hostile units; after a scout died on its way the
         assert.ok(!r.entries.some((e) => e.key === "DISCOVERY" || e.key === "DETOUR"), JSON.stringify(r.entries));
     } finally {
         world.structures = structures;
+    }
+});
+
+test("settlers: never a site that would anger an independent's village: within 6 of any, friendly or not (the game's suggestions too)", () => {
+    // Seen in game 5: five villages declared war the turn we settled 4-5 tiles away; four of those settlements fell.
+    const village = { owner: 9, x: 16, y: 5 };
+    state.set({ results: { ...state.get().results, sites: { picks: [{ x: 12, y: 5, rank: 1 }, { x: 9, y: 10, rank: 2 }] } } });
+    try {
+        // 12,5 is 4 tiles from a neutral village: skipped for the next site.
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 9, y: 5 }], { villages: [village], indepRelation: { 9: IndependentRelationship.NEUTRAL } });
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10]);
+        // A friendly village too (probe P2, game 6: friendly camps declared war at a founding 4-5 tiles away).
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 9, y: 5 }], { villages: [village], indepRelation: { 9: IndependentRelationship.FRIENDLY } });
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10]);
+        // 3 tiles: never, friendly or not; nor the game's own suggestion that close.
+        state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 9, y: 5 }], { villages: [{ ...village, x: 15 }], indepRelation: { 9: IndependentRelationship.FRIENDLY }, aiSuggestions: () => [{ location: { x: 12, y: 5 } }] });
+        run({ settlers: true });
+        assert.equal(moveOf(2), undefined, "the game's suggestion is 3 tiles from the village");
+        // An unseen village does not count (we cannot know it).
+        const tiles = world.tiles;
+        world.tiles = (x, y) => ({ ...tiles(x, y), revealed: !(x === 15 && y === 5) });
+        try {
+            fresh([{ id: 2, type: "UNIT_SETTLER", x: 9, y: 5 }], { villages: [{ ...village, x: 15 }], aiSuggestions: () => [{ location: { x: 12, y: 5 } }] });
+            run({ settlers: true });
+            assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+        } finally {
+            world.tiles = tiles;
+        }
+    } finally {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 12, y: 5, rank: 1 }, { x: 9, y: 10, rank: 2 }, { x: 38, y: 18, rank: 3 }] } } });
+    }
+});
+
+test("raiders: no prediction from the game (probe P1): a clearly stronger soldier strikes on the estimate, a weaker one does not", async () => {
+    const attackOf = (id) => orderOf(id).find((s) => s.op === UnitOperationTypes.MOVE_TO && s.args.Modifiers & UnitOperationMoveModifiers.ATTACK)?.args;
+    const raider = { x: 6, y: 5, owner: 1, type: "UNIT_WARRIOR" };
+    try {
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5, melee: 45 }], { wars: [1], enemies: [raider], noPrediction: true });
+        let r = await units.strikeRaiders();
+        assert.deepEqual([attackOf(4)?.X, attackOf(4)?.Y], [6, 5], JSON.stringify(r.entries));
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5, melee: 15 }], { wars: [1], enemies: [raider], noPrediction: true });
+        r = await units.strikeRaiders();
+        assert.equal(attackOf(4), undefined, "weaker: no");
+    } finally {
+        delete world.noPrediction;
+        delete world.wars;
+    }
+});
+
+test("a settler walking for 12 turns takes the nearest safe site, any role (research/21 C3a)", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 8, y: 9 }]);
+    let r = run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5], "the best site first");
+    const turn = Game.turn;
+    try {
+        Game.turn += 12;
+        fake.sent.length = 0;
+        r = run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], JSON.stringify(r.entries));
+        assert.ok(r.entries.some((e) => e.key === "SETTLER_GIVES_UP"));
+    } finally {
+        Game.turn = turn;
+    }
+});
+
+test("a rival's countdown to beat (settleNear, research/24 F1): a settler takes the nearest safe site, over a farther goal too", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 8, y: 9 }]);
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5], "the best site first");
+    fake.sent.length = 0;
+    run({ settlers: true, settleNear: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10]);
+});
+
+test("threats count the land raiders apart: ships near a settlement are not land raiders (research/22 B7)", () => {
+    fresh([], { ...AT_WAR, enemies: [{ x: 6, y: 5, owner: 1, type: "UNIT_GALLEY" }, { x: 4, y: 5, owner: 1, type: "UNIT_GALLEY" }] });
+    try {
+        const [t] = units.threatenedSettlements();
+        assert.deepEqual([t?.settlement.name, t?.count, t?.land, t?.ships], ["Athens", 2, 0, 2], "ships are counted apart (game 10: ranged defenders against them)");
+        fresh([], { ...AT_WAR, enemies: [foe(6, 5), { x: 4, y: 5, owner: 1, type: "UNIT_GALLEY" }] });
+        assert.equal(units.threatenedSettlements()[0]?.land, 1);
+    } finally {
+        delete world.wars;
+    }
+});
+
+test("a settler stepping away from raiders stays on our land (research/22 B8: one stepped out of our borders and was killed)", () => {
+    const tiles = world.tiles;
+    world.tiles = (x, y) => ({ ...tiles(x, y), owner: x <= 8 && Math.abs(y - 5) <= 3 ? 0 : -1 });
+    try {
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 8, y: 5, damage: 50 }], { ...AT_WAR, enemies: [foe(7, 5)] });
+        const r = run({ settlers: true });
+        const m = moveOf(2);
+        assert.ok(!m || GameplayMap.getOwner(m.X, m.Y) === 0, `moved to ${JSON.stringify(m)}: ${JSON.stringify(r.entries)}`);
+    } finally {
+        world.tiles = tiles;
+        delete world.wars;
+    }
+});
+
+test("few settlements: only sites within 5 turns, the best value per turn of walking (research/22 A1: game 7 walks of 6-10 turns)", () => {
+    const keep = state.get().results.sites;
+    try {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 16, y: 14, rank: 1 }, { x: 9, y: 7, rank: 2 }] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 7], "16,14 is 8 turns away");
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 14, y: 5, rank: 1, value: 1 }, { x: 7, y: 6, rank: 2, value: 0.9 }] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [7, 6], "0.9 a turn away beats 1.0 five turns away");
+    } finally {
+        state.set({ results: { ...state.get().results, sites: keep } });
+    }
+});
+
+test("a settler waiting in a threatened settlement goes for a near site after 3 turns, by a way never next to the raiders (research/22 A1: game 7, 19 turns)", () => {
+    const raider = foe(2, 5);
+    const north = foe(9, 2);
+    // Only the site itself can be walked to (no waypoint around the danger: the wide detour is not possible).
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [raider, north, foe(9, 12)], unreachable: (x, y) => !(x === 12 && y === 5) });
+    const turn = Game.turn;
+    try {
+        let r;
+        for (let i = 0; i < 3; i++) {
+            fake.sent.length = 0;
+            Game.turn = turn + i;
+            r = run({ settlers: true });
+            assert.equal(r.entries[0]?.key, "SETTLER_WAITS", `turn ${i + 1}: ${JSON.stringify(r.entries)}`);
+        }
+        fake.sent.length = 0;
+        Game.turn = turn + 3;
+        r = run({ settlers: true });
+        assert.equal(r.entries[0]?.key, "SETTLER_GOES", JSON.stringify(r.entries));
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+    } finally {
+        Game.turn = turn;
+        delete world.wars;
+    }
+});
+
+test("a settler takes a site from the relaxed search 4 tiles from a foreign settlement; a normal one keeps 5 (research/22 A1)", () => {
+    const keep = state.get().results.sites;
+    try {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 16, y: 5, rank: 1, relaxed: true }] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 5 }]);
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [16, 5], "4 tiles from Babylon: relaxed");
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 16, y: 5, rank: 1 }] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 5 }]);
+        run({ settlers: true });
+        assert.notDeepEqual([moveOf(2)?.X, moveOf(2)?.Y], [16, 5], "not relaxed: 5 tiles");
+    } finally {
+        state.set({ results: { ...state.get().results, sites: keep } });
+    }
+});
+
+test("raiders next to our settlement (a siege): a 41-to-22 trade is taken; away from it, not (research/23 D8: Забид fell while such strikes were refused)", async () => {
+    const attackOf = (id) => orderOf(id).find((s) => s.op === UnitOperationTypes.MOVE_TO && s.args.Modifiers & UnitOperationMoveModifiers.ATTACK)?.args;
+    try {
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { wars: [1], enemies: [foe(6, 5)], combat: () => ({ dealt: 41, taken: 22 }) });
+        await units.strikeRaiders();
+        assert.deepEqual([attackOf(4)?.X, attackOf(4)?.Y], [6, 5], "next to Athens");
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 6, y: 7 }], { wars: [1], enemies: [foe(7, 8)], combat: () => ({ dealt: 41, taken: 22 }) });
+        await units.strikeRaiders();
+        assert.equal(attackOf(4), undefined, "two tiles from Athens, its centre whole");
+    } finally {
+        delete world.wars;
+    }
+});
+
+test("a hurt soldier near hostile units steps back before it heals; a garrison heals where it stands (research/23 D11)", () => {
+    try {
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 8, y: 5, damage: 40 }], { wars: [1], enemies: [foe(10, 5)] });
+        let r = run({ defend: true });
+        assert.equal(r.entries[0]?.key, "WITHDRAW", JSON.stringify(r.entries));
+        assert.ok(moveOf(4));
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 8, y: 5, damage: 40 }], { wars: [1], enemies: [foe(14, 5)] });
+        r = run({ defend: true });
+        assert.equal(r.entries[0]?.key, "HEAL", "no hostile unit near");
+    } finally {
+        delete world.wars;
+    }
+});
+
+test("a hurt soldier resting next to land melee raiders hides on shallow water when no ship or ranged unit is near; with a ship near it withdraws on land (research/24 W6)", () => {
+    const tiles = world.tiles;
+    const terrainAt = (x, y) => world.tiles(x, y).terrain;
+    try {
+        world.tiles = (x, y) => ({ ...tiles(x, y), terrain: y >= 10 ? "TERRAIN_COAST" : "TERRAIN_FLAT" });
+        const hurt = { id: 7, type: "UNIT_WARRIOR", x: 12, y: 9, damage: 60, activity: UnitActivityTypes.HEAL };
+        fresh([hurt], { ...AT_WAR, enemies: [foe(12, 8), foe(13, 8)] });
+        let r = run({ defend: true });
+        assert.equal(terrainAt(moveOf(7)?.X, moveOf(7)?.Y), "TERRAIN_COAST", JSON.stringify(orders()));
+        assert.equal(r.entries[0]?.key, "TO_WATER");
+        fresh([hurt], { ...AT_WAR, enemies: [foe(12, 8), foe(13, 8), { x: 12, y: 13, owner: 1, type: "UNIT_GALLEY" }] });
+        r = run({ defend: true });
+        assert.equal(terrainAt(moveOf(7)?.X, moveOf(7)?.Y), "TERRAIN_FLAT", "a galley would sink it there");
+        assert.equal(r.entries[0]?.key, "WITHDRAW");
+        fresh([hurt], { ...AT_WAR, enemies: [foe(12, 8), { x: 13, y: 7, owner: 1, type: "UNIT_ARCHER" }] });
+        r = run({ defend: true });
+        assert.notEqual(r.entries[0]?.key, "TO_WATER", "an archer shoots onto the water");
+    } finally {
+        world.tiles = tiles;
+    }
+});
+
+test("on shallow water with land raiders ashore it stays there (no ship, no ranged unit near); with them gone it goes ashore (the user: units die where water would save them)", () => {
+    const tiles = world.tiles;
+    try {
+        world.tiles = (x, y) => ({ ...tiles(x, y), terrain: y >= 10 ? "TERRAIN_COAST" : "TERRAIN_FLAT" });
+        fresh([{ id: 7, type: "UNIT_WARRIOR", x: 12, y: 10, damage: 60 }], { ...AT_WAR, enemies: [foe(12, 9), foe(13, 8)] });
+        let r = run({ defend: true });
+        assert.deepEqual([r.entries[0]?.key, moveOf(7)], ["WATER_WAIT", undefined], JSON.stringify(orders()));
+        assert.ok(orderOf(7).some((s) => s.op === "UNITOPERATION_SKIP_TURN"));
+        fresh([{ id: 7, type: "UNIT_WARRIOR", x: 12, y: 10, damage: 60 }], { ...AT_WAR, enemies: [foe(30, 2)] });
+        r = run({ defend: true });
+        assert.equal(r.entries[0]?.key, "LEFT_WATER");
+    } finally {
+        world.tiles = tiles;
+    }
+});
+
+test("a new age's upkeep above the gold income: soldiers above 2 per settlement are disbanded, furthest from foreign settlements first, never a garrison (research/24 G3)", () => {
+    const soldiers = [
+        { id: 70, type: "UNIT_WARRIOR", x: 5, y: 5 },  // Athens' garrison
+        { id: 71, type: "UNIT_WARRIOR", x: 12, y: 5 },
+        { id: 72, type: "UNIT_WARRIOR", x: 2, y: 2 },
+        { id: 73, type: "UNIT_WARRIOR", x: 10, y: 5 },
+        { id: 74, type: "UNIT_WARRIOR", x: 6, y: 7 },
+    ];
+    const deleted = () => orders().filter((s) => s.op === "UNITCOMMAND_DELETE").map((s) => s.id.id).sort((a, b) => a - b);
+    const go = (o) => units.disbandSurplus({ income: 10, ageFrac: 0.02, firstAge: false, peace: true, ...o });
+    try {
+        fresh(soldiers, { unitUpkeep: () => 5, unitCommandOk: (_id, op) => op === "UNITCOMMAND_DELETE" });
+        const out = go();
+        assert.deepEqual(deleted(), [72, 74], JSON.stringify(out));
+        assert.equal(out[0]?.key, "DISBANDED");
+        for (const o of [{ peace: false }, { firstAge: true }, { ageFrac: 0.5 }, { income: 30 }]) {
+            fresh(soldiers, { unitUpkeep: () => 5, unitCommandOk: (_id, op) => op === "UNITCOMMAND_DELETE" });
+            assert.deepEqual([go(o), deleted()], [[], []], JSON.stringify(o));
+        }
+    } finally {
+        delete world.unitUpkeep;
+    }
+});
+
+test("below 3 settlements a settler with no site 5 turns away for 2 turns takes one up to 10 turns away; the nearest give-up looks that far at once (research/24 X2)", () => {
+    const picks = state.get().results.sites;
+    const turn = Game.turn;
+    try {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 5, y: 19, rank: 1 }] } } }); // 7 turns away
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+        run({ settlers: true });
+        assert.equal(moveOf(2), undefined, "turn 1: beyond 5 turns");
+        assert.equal(units.settlersStarved(), false);
+        Game.turn = turn + 1;
+        fake.sent.length = 0;
+        run({ settlers: true });
+        assert.equal(moveOf(2), undefined, "turn 2");
+        assert.equal(units.settlersStarved(), true, "the hud's relaxed search runs");
+        Game.turn = turn + 2;
+        fake.sent.length = 0;
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [5, 19], "turn 3: up to 10 turns");
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+        run({ settlers: true, settleNear: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [5, 19], "the nearest: up to 10 turns at once");
+    } finally {
+        Game.turn = turn;
+        state.set({ results: { ...state.get().results, sites: picks } });
+    }
+});
+
+test("a settler in a garrisoned, undamaged centre waits instead of retreating; retreats count as waits, then it goes for a near site (research/24 X5: 18 retreats in Antiquity)", () => {
+    const turn = Game.turn;
+    world.cities.push({ owner: 0, x: 5, y: 12, name: "Sparta" });
+    try {
+        // No site anywhere: it may only wait or retreat.
+        state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+        const garrison = { id: 9, type: "UNIT_WARRIOR", x: 5, y: 5 };
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }, garrison], { ...AT_WAR, enemies: [foe(3, 3)] });
+        let r = run({ settlers: true });
+        assert.ok(r.entries.some((e) => e.key === "SETTLER_WAITS"), JSON.stringify(r.entries));
+        assert.equal(moveOf(2), undefined, "it stays in Athens behind its garrison");
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [foe(3, 3)] });
+        const keys = [];
+        for (let i = 0; i < 4; i++) {
+            Game.turn = turn + 300 + i;
+            fake.sent.length = 0;
+            keys.push(run({ settlers: true }).entries.map((e) => e.key).find((k) => k.startsWith("SETTLER_")));
+        }
+        assert.deepEqual(keys, ["SETTLER_RETREAT", "SETTLER_RETREAT", "SETTLER_RETREAT", "SETTLER_WAITS"], "the fourth turn of waiting and retreating: no more back and forth");
+    } finally {
+        Game.turn = turn;
+        world.cities.pop();
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 12, y: 5, rank: 1 }, { x: 9, y: 10, rank: 2 }, { x: 38, y: 18, rank: 3 }] } } });
+    }
+});
+
+test("a walking settler with no progress for 2 turns founds where it stands; when it may not, it drops that site and takes another (research/24 X6)", () => {
+    const turn = Game.turn;
+    const walking = { id: 2, type: "UNIT_SETTLER", x: 10, y: 5, activity: UnitActivityTypes.OPERATION };
+    try {
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 10, y: 5 }]);
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+        world.units = [walking];
+        for (let i = 1; i <= 2; i++) {
+            Game.turn = turn + 400 + i;
+            fake.sent.length = 0;
+            run({ settlers: true });
+        }
+        assert.ok(orderOf(2).some((s) => s.op === "UNITOPERATION_FOUND_CITY"), JSON.stringify(orders()));
+        // The game will not let it found there: another site.
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 10, y: 5 }], { unitCanStart: (_id, op) => (op === "UNITOPERATION_FOUND_CITY" ? { Success: false } : undefined) });
+        run({ settlers: true });
+        world.units = [walking];
+        for (let i = 1; i <= 2; i++) {
+            Game.turn = turn + 500 + i;
+            fake.sent.length = 0;
+            run({ settlers: true });
+        }
+        assert.ok(moveOf(2) && !(moveOf(2).X === 12 && moveOf(2).Y === 5), JSON.stringify(orders()));
+    } finally {
+        Game.turn = turn;
+    }
+});
+
+test("a settler leaves a raided settlement around the danger, widely: a waypoint first, its site kept (game 10: it waited and shuttled instead)", () => {
+    const raider = foe(2, 5);
+    const north = foe(9, 2);
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [raider, north, foe(9, 12)] });
+    const r = run({ settlers: true });
+    const to = moveOf(2);
+    assert.equal(r.entries[0]?.key, "SETTLER_LEAVES", JSON.stringify(r.entries));
+    assert.ok(to && !(to.X === 12 && to.Y === 5), "not straight past the northern raider");
+    assert.ok([raider, north, foe(9, 12)].every((e) => dist({ x: to.X, y: to.Y }, e) > 3), JSON.stringify(to));
+    assert.deepEqual(units.settlerGoals().map((g) => [g.x, g.y]), [[12, 5]], "the site stays its goal");
+    delete world.wars;
+});
+
+test("a walking settler whose way now passes danger goes around it widely instead of home (game 10: home twice, 4 turns lost)", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 8, y: 7 }]);
+    run({ settlers: true });
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+    // A raider appears beside the way, 3 tiles from the settler and 4 from the site.
+    fake.sent.length = 0;
+    Object.assign(world, { ...AT_WAR, enemies: [foe(9, 4)] });
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 8, y: 7, activity: UnitActivityTypes.OPERATION }];
+    const r = run({ settlers: true });
+    assert.equal(r.entries[0]?.key, "SETTLER_DETOUR", JSON.stringify(r.entries));
+    const to = moveOf(2);
+    assert.ok(to && dist({ x: to.X, y: to.Y }, foe(9, 4)) > 3, JSON.stringify(to));
+    delete world.wars;
+});
+
+test("two settlers on one raided settlement cannot skip: one steps aside, away from the raiders, so the turn can end (game 10)", () => {
+    const stacked = (id, op) => (op === "UNITOPERATION_SKIP_TURN" ? { Success: false } : undefined);
+    state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+    try {
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }, { id: 3, type: "UNIT_SETTLER", x: 5, y: 5 }], { ...AT_WAR, enemies: [foe(7, 5)], unitCanStart: stacked });
+        const r = run({ settlers: true });
+        const moved = [2, 3].map(moveOf).filter(Boolean);
+        assert.ok(moved.length >= 1, JSON.stringify(r.entries));
+        assert.ok(moved.every((m) => dist({ x: m.X, y: m.Y }, foe(7, 5)) > 1), JSON.stringify(moved));
+        assert.ok(r.entries.some((e) => e.key === "STEP_ASIDE"));
+    } finally {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 12, y: 5, rank: 1 }, { x: 9, y: 10, rank: 2 }, { x: 38, y: 18, rank: 3 }] } } });
+        delete world.wars;
+    }
+});
+
+test("a scout hit twice in one place: the spot is avoided, no game auto-explore while hurt or near danger; badly hurt it heals at home (game 10)", () => {
+    const turn = Game.turn;
+    const tiles = world.tiles;
+    world.tiles = (x, y) => ({ ...tiles(x, y), revealed: x < 22 }); // fog from x 22: a frontier to explore
+    try {
+        // Turn 1: unhurt, nobody near: the game explores with it.
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 14, y: 8 }]);
+        run({ explore: true });
+        assert.ok(orderOf(8).some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"));
+        // Turn 2: hit (damage rose), the warrior out of sight now: our own frontier, widely, not the game's exploring.
+        Game.turn = turn + 1;
+        fake.sent.length = 0;
+        world.units = [{ id: 8, type: "UNIT_SCOUT", x: 14, y: 8, damage: 30 }];
+        let r = run({ explore: true });
+        assert.ok(!orderOf(8).some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"), JSON.stringify(r.entries));
+        const to = moveOf(8);
+        assert.ok(to && dist({ x: to.X, y: to.Y }, { x: 14, y: 8 }) > 3, `away from where it was hit: ${JSON.stringify(r.entries)}`);
+        // Another scout, unhurt, 2 tiles from that spot (the warrior unseen): no game auto-explore there either.
+        fake.sent.length = 0;
+        world.units = [{ id: 8, type: "UNIT_SCOUT", x: 14, y: 8, damage: 30 }, { id: 9, type: "UNIT_SCOUT", x: 16, y: 8 }];
+        run({ explore: true });
+        assert.ok(!orderOf(9).some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"), "the hit spot is danger for 5 turns");
+        // Badly hurt: home to heal (Athens).
+        Game.turn = turn + 2;
+        fake.sent.length = 0;
+        world.units = [{ id: 8, type: "UNIT_SCOUT", x: 10, y: 8, damage: 60 }];
+        r = run({ explore: true });
+        assert.equal(r.entries[0]?.key, "SCOUT_HOME", JSON.stringify(r.entries));
+        assert.deepEqual([moveOf(8)?.X, moveOf(8)?.Y], [5, 5]);
+    } finally {
+        Game.turn = turn;
+        world.tiles = tiles;
+    }
+});
+
+test("scouts first reveal the unseen villages near our settlements, the nearest first, one scout each (game 10: «0 seen, 16 unseen», no befriending until turn 56)", () => {
+    const tiles = world.tiles;
+    const villages = [{ owner: 9, x: 14, y: 5 }, { owner: 9, x: 9, y: 9 }];
+    world.tiles = (x, y) => ({ ...tiles(x, y), revealed: !villages.some((v) => v.x === x && v.y === y) });
+    try {
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 5, y: 5 }, { id: 9, type: "UNIT_SCOUT", x: 6, y: 5 }], { villages });
+        const r = run({ explore: true });
+        const keys = r.entries.map((e) => e.key);
+        assert.deepEqual(keys, ["SCOUT_VILLAGE", "SCOUT_VILLAGE"], JSON.stringify(r.entries));
+        const to8 = moveOf(8);
+        const to9 = moveOf(9);
+        assert.ok(dist({ x: to8.X, y: to8.Y }, villages[1]) <= 2, "the nearer village first");
+        assert.ok(dist({ x: to9.X, y: to9.Y }, villages[0]) <= 2, "the other scout to the other one");
+        // A scout the game explores with is taken off it for the village too.
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 5, y: 5, activity: UnitActivityTypes.OPERATION }], { villages });
+        assert.equal(run({ explore: true }).entries[0]?.key, "SCOUT_VILLAGE");
+        // Seen now: back to exploring.
+        world.tiles = tiles;
+        fresh([{ id: 8, type: "UNIT_SCOUT", x: 5, y: 5 }], { villages });
+        run({ explore: true });
+        assert.ok(orderOf(8).some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"));
+    } finally {
+        world.tiles = tiles;
+    }
+});
+
+test("scouts keep exploring with the game's help when hostile units are 4+ tiles away; a lightly hurt one with nothing safe to explore heals (game 11: scouts idle in half the passes)", () => {
+    fresh([{ id: 8, type: "UNIT_SCOUT", x: 8, y: 5 }], { ...AT_WAR, enemies: [foe(12, 5)] });
+    run({ explore: true });
+    assert.ok(orderOf(8).some((s) => s.op === "UNITOPERATION_AUTOMATE_EXPLORE"), "a hostile unit 4 tiles away");
+    fresh([{ id: 8, type: "UNIT_SCOUT", x: 8, y: 5, damage: 10 }], { ...AT_WAR, enemies: [foe(11, 5)] });
+    const r = run({ explore: true });
+    assert.equal(r.entries[0]?.key, "HEAL", JSON.stringify(r.entries));
+    delete world.wars;
+});
+
+// Game 18: the plague (25 damage a turn to units starting their turn on infected tiles, 6 turns) killed our fortified
+// garrisons. Plague here: Athens and the tiles next to it.
+const ATHENS = { x: 5, y: 5 };
+const plagued = (x, y) => (GameplayMap.getPlotDistance(x, y, ATHENS.x, ATHENS.y) <= 1 ? ["PLOTEFFECT_PLAGUE"] : []);
+
+test("plague: a fortified soldier in an infected city wakes and walks to the nearest safe tile it reaches this turn", () => {
+    fresh([{ id: 4, type: "UNIT_WARRIOR", ...ATHENS, activity: UnitActivityTypes.SLEEP }], { plotEffects: plagued, unitCommandOk: (_id, op) => op === "UNITCOMMAND_WAKE" });
+    try {
+        const r = run({ defend: true });
+        assert.ok(orderOf(4).some((s) => s.op === "UNITCOMMAND_WAKE"), JSON.stringify(orders()));
+        const to = moveOf(4);
+        assert.ok(to && GameplayMap.getPlotDistance(to.X, to.Y, ATHENS.x, ATHENS.y) === 2, JSON.stringify(to));
+        assert.deepEqual(r.entries.find((e) => e.key === "LEFT_HAZARD")?.args.slice(3), [25]);
+        // Unit options off: the autopilot leaves units alone.
+        fresh([{ id: 4, type: "UNIT_WARRIOR", ...ATHENS }], { plotEffects: plagued });
+        run({});
+        assert.deepEqual(orders(), []);
+        // A trap hurts only who enters: no reason to leave.
+        fresh([{ id: 4, type: "UNIT_WARRIOR", ...ATHENS }], { plotEffects: (x, y) => (x === ATHENS.x && y === ATHENS.y ? ["PLOTEFFECT_STONE_TRAP"] : []) });
+        const t = run({ defend: true });
+        assert.ok(!t.entries.some((e) => e.key === "LEFT_HAZARD"));
+    } finally {
+        delete world.plotEffects;
+    }
+});
+
+test("plague: a healthy soldier with raiders near holds its city; a badly hurt one leaves", () => {
+    const raider = { x: 8, y: 5, owner: 1, type: "UNIT_WARRIOR" };
+    fresh([{ id: 4, type: "UNIT_WARRIOR", ...ATHENS }], { ...AT_WAR, enemies: [raider], plotEffects: plagued });
+    try {
+        let r = run({ defend: true });
+        assert.ok(!r.entries.some((e) => e.key === "LEFT_HAZARD"), JSON.stringify(r.entries));
+        fresh([{ id: 4, type: "UNIT_WARRIOR", ...ATHENS, damage: 60 }], { ...AT_WAR, enemies: [raider], plotEffects: plagued });
+        r = run({ defend: true });
+        assert.ok(r.entries.some((e) => e.key === "LEFT_HAZARD"), JSON.stringify(r.entries));
+    } finally {
+        delete world.plotEffects;
+        delete world.wars;
+    }
+});
+
+test("plague: no order sends a unit onto an infected tile (a settler takes its other site)", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { plotEffects: (x, y) => (x === 12 && y === 5 ? ["PLOTEFFECT_PLAGUE"] : []) });
+    try {
+        run({ settlers: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [9, 10], "12,5 is infected");
+    } finally {
+        delete world.plotEffects;
     }
 });

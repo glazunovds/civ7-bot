@@ -38,3 +38,12 @@ test("the current Focus is marked", () => {
     const r = recommendFocus({ ...base, farm: 4, mine: 1, current: "PROJECT_TOWN_PRODUCTION" }, BALANCE);
     assert.ok(r.options.find((o) => o.key === "MINE").current);
 });
+
+test("a science lean picks Urban Center for a town that could buy a Library there, even with no quarter yet (research/22 C2)", () => {
+    const SCIENCE = getProfile("SCIENCE").y;
+    const bias = { URBAN: 6, FARM: 2 };
+    assert.equal(recommendFocus({ ...base, farm: 3, urbanBuys: 1 }, SCIENCE, bias).best.key, "URBAN");
+    assert.equal(recommendFocus({ ...base, farm: 3, urbanBuys: 0 }, SCIENCE, bias).best.key, "FARM", "nothing to buy there");
+    assert.equal(recommendFocus({ ...base, farm: 3, urbanBuys: 1 }, SCIENCE).best.key, "FARM", "no lean: as before");
+    assert.equal(recommendFocus({ ...base, farm: 3, urbanBuys: 1 }, SCIENCE).options.some((o) => o.key === "URBAN"), false);
+});

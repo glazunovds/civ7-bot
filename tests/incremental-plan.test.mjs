@@ -74,6 +74,14 @@ test("changed settings, ten turns later, or the option off: a full plan", async 
     assert.equal((await plan(off)).incremental, null);
 });
 
+test("a changed priority balance (the Autopilot tab's sliders): a full plan", async () => {
+    await plan();
+    assert.notEqual((await plan()).incremental, null, "same settings: incremental");
+    const tilted = { ...settings, yieldBias: { F: 0.5, P: 1, G: 1, S: 2, C: 1, H: 1 } };
+    assert.equal((await plan(tilted)).incremental, null, "the weights changed: every layout is solved again");
+    assert.notEqual((await plan(tilted)).incremental, null);
+});
+
 test("the plan logs its timing per phase", async () => {
     const t = (await plan()).timings;
     for (const k of ["engine", "setup", "greedy", "search", "repair", "describe", "busy", "frames", "deltas"]) assert.equal(typeof t[k], "number", k);

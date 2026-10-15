@@ -12,7 +12,7 @@ import { orderAtTack } from './xpl-tack-orders.js';
 import { getRules } from './xpl-rules-loader.js';
 import { ageOutlook } from './xpl-town-job.js';
 import { rankPurchases } from '../core/xpl-purchase-advisor.js';
-import { getProfile } from '../core/xpl-profiles.js';
+import { profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex } from '../core/xpl-yields.js';
 import { log } from '../services/xpl-log.js';
 
@@ -64,7 +64,7 @@ function queuedTypes(city) {
  * those already queued and those the game refuses there now (a future tile, locked...).
  * @returns { queued: [type], refused: number }
  */
-export function queueNextBuildings(plans, sid, max = QUEUE_MAX_NEW) {
+export function queueNextBuildings(plans, sid, max = QUEUE_MAX_NEW, { skip = null } = {}) {
     const city = cityOfSid(sid);
     if (!city || city.isTown) return { queued: [], refused: 0 };
     const inQueue = queuedTypes(city);
@@ -72,7 +72,7 @@ export function queueNextBuildings(plans, sid, max = QUEUE_MAX_NEW) {
     let refused = 0;
     for (const p of plans.placements.filter((q) => q.sid === sid)) {
         if (queued.length >= max) break;
-        if (inQueue.has(p.type) || p.locked) continue;
+        if (inQueue.has(p.type) || p.locked || skip?.(p.type)) continue;
         const def = GameInfo.Constructibles.lookup(p.type);
         if (!def) continue;
         if (orderAtTack(city.id, def, { x: p.x, y: p.y }, false)) queued.push(p.type);
@@ -115,7 +115,7 @@ export function goldBalance() {
  * @returns { gold, picks, budgetLeft }
  */
 export function purchaseAdvice(plans, settings, max = 5) {
-    const weights = getProfile(settings.profile).y;
+    const weights = profileFor(settings).y;
     const turnsLeft = plans.horizon ?? safe(() => ageOutlook().turnsLeft, 60) ?? 60;
     // Turns until production would finish it: the plan's build order when it has one.
     const etaOf = (city, p) => {

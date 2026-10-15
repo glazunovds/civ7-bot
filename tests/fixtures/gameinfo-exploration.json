@@ -1360,6 +1360,156 @@
 "RandomCityNameDepth": "10"
 }
 ],
+"ConstructibleModifiers": [
+{
+"ConstructibleType": "IMPROVEMENT_MONASTERY",
+"ModifierId": "MOD_MONASTERY_YIELD"
+},
+{
+"ConstructibleType": "IMPROVEMENT_TRADING_FACTORY",
+"ModifierId": "MOD_TRADING_FACTORY_GOLD"
+},
+{
+"ConstructibleType": "IMPROVEMENT_TRADING_FACTORY",
+"ModifierId": "MOD_TRADING_FACTORY_YIELDS"
+},
+{
+"ConstructibleType": "WONDER_NOTRE_DAME",
+"ModifierId": "MOD_NOTRE_DAME_GOLDEN_AGE"
+},
+{
+"ConstructibleType": "WONDER_HOUSE_OF_WISDOM",
+"ModifierId": "MOD_HOUSE_OF_WISDOM_FREE_RELICS"
+},
+{
+"ConstructibleType": "WONDER_HOUSE_OF_WISDOM",
+"ModifierId": "MOD_HOUSE_OF_WISDOM_SCIENCE_VP"
+},
+{
+"ConstructibleType": "BUILDING_ARMORER",
+"ModifierId": "MOD_ARMORER_UNIT_PRODUCTION"
+},
+{
+"ConstructibleType": "BUILDING_BANK",
+"ModifierId": "MOD_BANK_GOLD_ON_URBAN_PLOTS"
+},
+{
+"ConstructibleType": "BUILDING_HOSPITAL",
+"ModifierId": "MOD_HOSPITAL_GROWTH_RATE"
+},
+{
+"ConstructibleType": "BUILDING_KILN",
+"ModifierId": "MOD_KILN_WONDER_PRODUCTION"
+},
+{
+"ConstructibleType": "BUILDING_MENAGERIE",
+"ModifierId": "MOD_MENAGERIE_HAPPINESS_ON_CAMPS_PASTURES"
+},
+{
+"ConstructibleType": "BUILDING_PAVILION",
+"ModifierId": "MOD_PAVILLION_HAPPINESS_ON_URBAN_PLOTS"
+},
+{
+"ConstructibleType": "BUILDING_SHIPYARD",
+"ModifierId": "MOD_SHIPYARD_UNIT_PRODUCTION"
+},
+{
+"ConstructibleType": "BUILDING_UNIVERSITY",
+"ModifierId": "MOD_UNIVERSITY_SCIENCE_ON_URBAN_PLOTS"
+},
+{
+"ConstructibleType": "BUILDING_ANJUVANNAM",
+"ModifierId": "MOD_ANJUVANNAM_SEA_UNIT_RATE"
+},
+{
+"ConstructibleType": "BUILDING_MOTTE",
+"ModifierId": "MOD_MOTTE_ROUGH_HAPPINESS"
+},
+{
+"ConstructibleType": "IMPROVEMENT_CARAVANSERAI",
+"ModifierId": "MOD_CARAVANSERAI_TRADE_ROUTE_RANGE"
+},
+{
+"ConstructibleType": "WONDER_BOROBUDUR",
+"ModifierId": "MOD_BOROBUDUR_URBAN_FOOD"
+},
+{
+"ConstructibleType": "WONDER_BOROBUDUR",
+"ModifierId": "MOD_BOROBUDUR_URBAN_HAPPINESS"
+},
+{
+"ConstructibleType": "WONDER_BRIHADEESWARAR_TEMPLE",
+"ModifierId": "MOD_BRIHADEESWARAR_TEMPLE_ADJACENCT_NAVIGABLE_HAPPINESS"
+},
+{
+"ConstructibleType": "WONDER_EL_ESCORIAL",
+"ModifierId": "MOD_EL_ESCORIAL_SETTLEMENT_CAP"
+},
+{
+"ConstructibleType": "WONDER_EL_ESCORIAL",
+"ModifierId": "MOD_EL_ESCORIAL_HAPPINESS_NEARBY"
+},
+{
+"ConstructibleType": "WONDER_ERDENE_ZUU",
+"ModifierId": "MOD_ERDENE_ZUU_CAVALRY_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_FORBIDDEN_CITY",
+"ModifierId": "MOD_FORBIDDEN_CITY_FORTIFICATION_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_FORBIDDEN_CITY",
+"ModifierId": "MOD_FORBIDDEN_CITY_FORTIFICATION_TOURISM"
+},
+{
+"ConstructibleType": "WONDER_HALE_O_KEAWE",
+"ModifierId": "MOD_HALE_O_KEAWE_MARINE_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_HOUSE_OF_WISDOM",
+"ModifierId": "MOD_HOUSE_OF_WISDOM_GREATWORKS_SCIENCE"
+},
+{
+"ConstructibleType": "WONDER_MACHU_PIKCHU",
+"ModifierId": "MOD_MACHU_PIKCHU_MOUNTAIN_ADJACENT_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_MACHU_PIKCHU",
+"ModifierId": "MOD_MACHU_PIKCHU_MOUNTAIN_ADJACENT_GOLD"
+},
+{
+"ConstructibleType": "WONDER_SHWEDAGON_ZEDI_DAW",
+"ModifierId": "MOD_SHWEDAGON_ZEDI_DAW_TILE_APPEAL_SCIENCE"
+},
+{
+"ConstructibleType": "WONDER_SHWEDAGON_ZEDI_DAW",
+"ModifierId": "MOD_SHWEDAGON_ZEDI_DAW_WILDCARD_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_SHWEDAGON_ZEDI_DAW",
+"ModifierId": "MOD_SHWEDAGON_ZEDI_DAW_SCIENCE_VP"
+},
+{
+"ConstructibleType": "WONDER_TOMB_OF_ASKIA",
+"ModifierId": "MOD_TOMB_OF_ASKIA_RESOURCE_CAP"
+},
+{
+"ConstructibleType": "WONDER_TOMB_OF_ASKIA",
+"ModifierId": "MOD_TOMB_OF_ASKIA_RESOURCE_GOLD"
+},
+{
+"ConstructibleType": "WONDER_TOMB_OF_ASKIA",
+"ModifierId": "MOD_TOMB_OF_ASKIA_RESOURCE_PRODUCTION"
+},
+{
+"ConstructibleType": "WONDER_WHITE_TOWER",
+"ModifierId": "MOD_WHITE_TOWER_CIV_TRADITION_HAPPINESS"
+},
+{
+"ConstructibleType": "WONDER_NOTRE_DAME",
+"ModifierId": "MOD_NOTRE_DAME_GOLDEN_AGE_SPECIALIST"
+}
+],
 "Constructible_Adjacencies": [
 {
 "ConstructibleType": "BUILDING_PALACE",
@@ -16091,6 +16241,357 @@
 "TraitType": "TRAIT_CHOLA"
 }
 ],
+"Unit_Stats": [
+{
+"UnitType": "UNIT_SANDBOX",
+"Combat": "65"
+},
+{
+"UnitType": "UNIT_GREAT_MERCHANT",
+"Combat": "65"
+},
+{
+"UnitType": "UNIT_TREASURE_FLEET_SMALL",
+"Combat": "65"
+},
+{
+"UnitType": "UNIT_AUDIO_SANDBOX_MELEE",
+"Combat": "55"
+},
+{
+"UnitType": "UNIT_AUDIO_SANDBOX_RANGED",
+"Combat": "25",
+"RangedCombat": "55",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_SCOUT"
+},
+{
+"UnitType": "UNIT_MERCHANT"
+},
+{
+"UnitType": "UNIT_ARMY_COMMANDER"
+},
+{
+"UnitType": "UNIT_FLEET_COMMANDER"
+},
+{
+"UnitType": "UNIT_SQUADRON_COMMANDER"
+},
+{
+"UnitType": "UNIT_CARRIER_COMMANDER"
+},
+{
+"UnitType": "UNIT_SWORDSMAN",
+"Combat": "35"
+},
+{
+"UnitType": "UNIT_HEAVY_ARCHER",
+"Combat": "20",
+"RangedCombat": "30",
+"Bombard": "20",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_COURSER",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_CATAPULT",
+"Combat": "25",
+"RangedCombat": "20",
+"Bombard": "40",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_COG",
+"Combat": "30",
+"RangedCombat": "35",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_MAN_AT_ARMS",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_CROSSBOWMAN",
+"Combat": "25",
+"RangedCombat": "35",
+"Bombard": "25",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KNIGHT",
+"Combat": "45"
+},
+{
+"UnitType": "UNIT_TREBUCHET",
+"Combat": "30",
+"RangedCombat": "25",
+"Bombard": "45",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CARRACK",
+"Combat": "35",
+"RangedCombat": "40",
+"Bombard": "35",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_PRIVATEER",
+"Combat": "35",
+"RangedCombat": "10",
+"Bombard": "10",
+"Range": "1"
+},
+{
+"UnitType": "UNIT_PIKEMAN",
+"Combat": "45"
+},
+{
+"UnitType": "UNIT_ARQUEBUSIER",
+"Combat": "30",
+"RangedCombat": "40",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_LANCER",
+"Combat": "50"
+},
+{
+"UnitType": "UNIT_BOMBARD",
+"Combat": "35",
+"RangedCombat": "30",
+"Bombard": "50",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_GALLEON",
+"Combat": "40",
+"RangedCombat": "45",
+"Bombard": "40",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_PRIVATEER_2",
+"Combat": "40",
+"RangedCombat": "15",
+"Bombard": "15",
+"Range": "1"
+},
+{
+"UnitType": "UNIT_TREASURE_FLEET",
+"Combat": "0"
+},
+{
+"UnitType": "UNIT_GOLD_BANGLES",
+"Combat": "35"
+},
+{
+"UnitType": "UNIT_GOLD_BANGLES_2",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_GOLD_BANGLES_3",
+"Combat": "45"
+},
+{
+"UnitType": "UNIT_LEIOMANO",
+"Combat": "35"
+},
+{
+"UnitType": "UNIT_LEIOMANO_2",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_LEIOMANO_3",
+"Combat": "45"
+},
+{
+"UnitType": "UNIT_TERCIO",
+"Combat": "37"
+},
+{
+"UnitType": "UNIT_TERCIO_2",
+"Combat": "42"
+},
+{
+"UnitType": "UNIT_TERCIO_3",
+"Combat": "47"
+},
+{
+"UnitType": "UNIT_XUNLEICHONG",
+"Combat": "35",
+"RangedCombat": "20",
+"Bombard": "5",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_XUNLEICHONG_2",
+"Combat": "40",
+"RangedCombat": "25",
+"Bombard": "10",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_XUNLEICHONG_3",
+"Combat": "45",
+"RangedCombat": "30",
+"Bombard": "15",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KESHIG",
+"Combat": "20",
+"RangedCombat": "30",
+"Bombard": "20",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KESHIG_2",
+"Combat": "25",
+"RangedCombat": "35",
+"Bombard": "25",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KESHIG_3",
+"Combat": "30",
+"RangedCombat": "40",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_WARAKAQ",
+"Combat": "20",
+"RangedCombat": "30",
+"Bombard": "20",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_WARAKAQ_2",
+"Combat": "25",
+"RangedCombat": "35",
+"Bombard": "25",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_WARAKAQ_3",
+"Combat": "30",
+"RangedCombat": "40",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CHEVALER",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_CHEVALER_2",
+"Combat": "45"
+},
+{
+"UnitType": "UNIT_CHEVALER_3",
+"Combat": "50"
+},
+{
+"UnitType": "UNIT_MAMLUK",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_MAMLUK_2",
+"Combat": "45"
+},
+{
+"UnitType": "UNIT_MAMLUK_3",
+"Combat": "50"
+},
+{
+"UnitType": "UNIT_CETBANG",
+"Combat": "30",
+"RangedCombat": "35",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CETBANG_2",
+"Combat": "35",
+"RangedCombat": "40",
+"Bombard": "35",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CETBANG_3",
+"Combat": "40",
+"RangedCombat": "45",
+"Bombard": "40",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KALAM",
+"Combat": "30",
+"RangedCombat": "35",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KALAM_2",
+"Combat": "35",
+"RangedCombat": "40",
+"Bombard": "35",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_KALAM_3",
+"Combat": "40",
+"RangedCombat": "45",
+"Bombard": "40",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CORSAIR",
+"Combat": "30",
+"RangedCombat": "35",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CORSAIR_2",
+"Combat": "35",
+"RangedCombat": "40",
+"Bombard": "35",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CORSAIR_3",
+"Combat": "40",
+"RangedCombat": "45",
+"Bombard": "40",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CHASQUI"
+},
+{
+"UnitType": "UNIT_MANDARIN"
+},
+{
+"UnitType": "UNIT_NOYAN"
+},
+{
+"UnitType": "UNIT_OTTRU"
+},
+{
+"UnitType": "UNIT_TAJIRO"
+},
+{
+"UnitType": "UNIT_PHYSICIAN"
+}
+],
 "Units": [
 {
 "UnitType": "UNIT_MIGRANT",
@@ -17669,6 +18170,54 @@
 "Description": "LOC_VICTORY_MODERN_SCIENCE_DESCRIPTION",
 "RequirementSetId": "REQSET_VICTORY_MODERN_SCIENCE_COUNTDOWN",
 "VictorySound": "Victory_Science"
+}
+],
+"VictoryTypes": [
+{
+"VictoryType": "VICTORY_MILITARY_MODERN",
+"Name": "LOC_VICTORY_MILITARY_MODERN_NAME",
+"Description": "LOC_VICTORY_MILITARY_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_MILITARY_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION"
+},
+{
+"VictoryType": "VICTORY_CULTURE_MODERN",
+"Name": "LOC_VICTORY_CULTURE_MODERN_NAME",
+"Description": "LOC_VICTORY_CULTURE_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_CULTURE_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION"
+},
+{
+"VictoryType": "VICTORY_ECONOMIC_MODERN",
+"Name": "LOC_VICTORY_ECONOMIC_MODERN_NAME",
+"Description": "LOC_VICTORY_ECONOMIC_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_ECONOMIC_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION"
+},
+{
+"VictoryType": "VICTORY_SCIENCE_MODERN",
+"Name": "LOC_VICTORY_SCIENCE_MODERN_NAME",
+"Description": "LOC_VICTORY_SCIENCE_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_SCIENCE_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE",
+"MinimumPoints": "100"
+},
+{
+"VictoryType": "VICTORY_SCORE",
+"Name": "LOC_VICTORY_SCORE_NAME",
+"Description": "LOC_VICTORY_SCORE_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_SCORE_PREREQ",
+"CountdownDuration": "0",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_END_AGE"
 }
 ],
 "Wonders": [

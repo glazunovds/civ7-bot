@@ -16,7 +16,7 @@
  *   ctx:          scoring context (see site-scorer.js); ctx.centres must contain all known centres
  */
 import { dot } from './xpl-yields.js';
-import { REJECT } from './xpl-site-scorer.js';
+import { angersVillage, REJECT } from './xpl-site-scorer.js';
 import { scoreSiteRoles } from './xpl-site-roles.js';
 import { selectSites } from './xpl-site-selector.js';
 
@@ -70,6 +70,7 @@ export function* findSites(input) {
         }
         if (nearest <= input.minSpacing) { reject(REJECT.SPACING); rejectedPlots.push({ idx, code: REJECT.SPACING }); continue; }
         if (nearestForeign < (input.minForeignDistance ?? 0)) { reject(REJECT.FOREIGN); rejectedPlots.push({ idx, code: REJECT.FOREIGN }); continue; }
+        if ((ctx.villages ?? []).some((v) => angersVillage(ctx.map.distance(idx, v.idx), v.friendly, ctx.tuning))) { reject(REJECT.INDEPENDENT); rejectedPlots.push({ idx, code: REJECT.INDEPENDENT }); continue; }
         if (!input.isSettleable(idx)) { reject(REJECT.CLAIM); rejectedPlots.push({ idx, code: REJECT.CLAIM }); continue; }
         candidates.push({ idx, nearestOwnDist: nearestOwn });
     }

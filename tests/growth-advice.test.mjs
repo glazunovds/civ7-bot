@@ -99,3 +99,32 @@ test("a specialist's food upkeep weighs less in a city with plenty of food", () 
     world.cities[0].food = undefined;
     assert.ok(rich > lean + 1, `lean ${lean} rich ${rich}`);
 });
+
+test("a city with plenty of food values more food less: a specialist beats the farm; short of food the farm wins (research/26 §3.2: game 14, 44 farms to 8 specialists)", () => {
+    urbanScience = 5;
+    try {
+        world.cities[0].food = 40;
+        let a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+        assert.equal(a.choice, "SPECIALIST", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+        world.cities[0].food = 1;
+        a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+        assert.equal(a.choice, "TILE", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+    } finally {
+        delete world.cities[0].food;
+        urbanScience = 6;
+    }
+});
+
+test("the player's balance tilts the choice: science ×2 sends the citizen to the specialist, food ×2 keeps it on the farm", () => {
+    let a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+    assert.equal(a.choice, "TILE");
+    a = growthAdvice(athens().id, { ...DEFAULT_SETTINGS, yieldBias: { F: 1, P: 1, G: 1, S: 2, C: 1, H: 1 } });
+    assert.equal(a.choice, "SPECIALIST", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+    world.cities[0].food = 40;
+    try {
+        a = growthAdvice(athens().id, { ...DEFAULT_SETTINGS, yieldBias: { F: 2, P: 1, G: 1, S: 0.5, C: 1, H: 1 } });
+        assert.equal(a.choice, "TILE", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+    } finally {
+        delete world.cities[0].food;
+    }
+});

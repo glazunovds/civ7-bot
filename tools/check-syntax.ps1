@@ -1,9 +1,9 @@
 <#
-  Syntax gate before a game run: parses every mod .js/.mjs file with Node (no execution)
-  and checks that every XML/.modinfo file is well-formed.
+  Syntax gate before a game run: parses every .js/.mjs file of every mod under mod/ with Node
+  (no execution) and checks that every XML/.modinfo file is well-formed.
 #>
 $ErrorActionPreference = 'Stop'
-$root = Join-Path $PSScriptRoot '..\mod\expansion-planner' | Resolve-Path
+$root = Join-Path $PSScriptRoot '..\mod' | Resolve-Path
 $failed = 0
 
 Get-ChildItem $root -Recurse -Include *.js, *.mjs | ForEach-Object {

@@ -1,0 +1,187 @@
+// Army commanders (research/25): promotions in our order with commendations spent, a post in the most
+// threatened (or the unhappiest) settlement, and Focus Fire / Coordinated Attack on a raider when enough of our
+// units in its radius join. Before this a commander took the game's first promotion (Bastion, then Assault), never
+// spent a commendation and stood idle all game (game 11: Bastion only, 0 XP from fights).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { installFakeEngine } from "./fakes/fake-engine.mjs";
+
+const ATHENS = { x: 5, y: 5 };
+const SPARTA = { x: 12, y: 5 };
+const CORINTH = { x: 5, y: 12 };
+const world = {
+    width: 30, height: 20, wrapX: false,
+    tiles: () => ({ terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2 } }),
+    players: [{ id: 0 }, { id: 1 }],
+    cities: [
+        { owner: 0, ...ATHENS, name: "Athens", happy: 2 },
+        { owner: 0, ...SPARTA, name: "Sparta", happy: -3 },
+        { owner: 0, ...CORINTH, name: "Corinth", happy: -1 },
+        { owner: 1, x: 25, y: 15, name: "Babylon" },
+    ],
+};
+const fake = installFakeEngine(world);
+const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
+const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+
+const orders = () => fake.sent.filter((s) => s.kind === "unit" || s.kind === "unitCommand");
+const moveOf = (id) => orders().find((s) => s.id.id === id && s.op === UnitOperationTypes.MOVE_TO)?.args;
+const fresh = (list, extra = {}) => {
+    units.resetUnitGoals();
+    fake.sent.length = 0;
+    world.units = list;
+    for (const k of ["enemies", "wars", "rangeTargets", "unitCommandResult", "unitCommandOk", "combat", "districtAt"]) delete world[k];
+    Object.assign(world, extra);
+};
+const run = (options) => units.commandUnits(DEFAULT_SETTINGS, { explore: false, settlers: false, defend: true, merchants: false, ...options });
+const idx = (x, y) => GameplayMap.getIndexFromXY(x, y);
+const dist = (a, b) => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y);
+
+test("a commander's promotion: our order (Bastion before Assault), promotions before commendations, and commendations are spent", () => {
+    GameInfo.UnitPromotionClassSets = [
+        { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_ASSAULT" },
+        { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_BASTION" },
+        { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_COMMENDATION_ORDER" },
+    ];
+    GameInfo.UnitPromotionDisciplineDetails = [
+        { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_ASSAULT", UnitPromotionType: "PROMOTION_ARMY_INITIATIVE" },
+        { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_BASTION", UnitPromotionType: "PROMOTION_ARMY_STEADFAST" },
+        { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_COMMENDATION_ORDER", UnitPromotionType: "PROMOTION_COMMENDATION_ARMY_ORDER" },
+    ];
+    const promos = {
+        PROMOTION_ARMY_INITIATIVE: { Name: "Initiative" },
+        PROMOTION_ARMY_STEADFAST: { Name: "Steadfast" },
+        PROMOTION_COMMENDATION_ARMY_ORDER: { Name: "Order", Commendation: true },
+    };
+    GameInfo.UnitPromotions = { lookup: (t) => promos[t] ?? null };
+    const promoted = (earnable) => {
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS, promotions: { can: true, has: [], earnable } }], { unitCommandOk: (_id, op) => op === UnitCommandTypes.PROMOTE });
+        const out = units.promoteUnits();
+        const cmd = fake.sent.find((s) => s.op === UnitCommandTypes.PROMOTE);
+        return [cmd?.args.PromotionType, out.length];
+    };
+    assert.deepEqual(promoted(["PROMOTION_ARMY_INITIATIVE", "PROMOTION_ARMY_STEADFAST", "PROMOTION_COMMENDATION_ARMY_ORDER"]), [Database.makeHash("PROMOTION_ARMY_STEADFAST"), 1], "Bastion's Steadfast, though Assault comes first in the game's tables");
+    assert.deepEqual(promoted(["PROMOTION_ARMY_INITIATIVE", "PROMOTION_COMMENDATION_ARMY_ORDER"]), [Database.makeHash("PROMOTION_ARMY_INITIATIVE"), 1], "a promotion before a commendation (one a pass)");
+    assert.deepEqual(promoted(["PROMOTION_COMMENDATION_ARMY_ORDER"]), [Database.makeHash("PROMOTION_COMMENDATION_ARMY_ORDER"), 1], "a stored commendation is spent: Order");
+});
+
+test("a land commander takes a post: the most threatened settlement, in peace the unhappiest; one commander each", () => {
+    // Under threat: to Corinth (2 raiders), not unhappy Sparta.
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }]);
+    const threats = [{ settlement: CORINTH, count: 2, land: 2 }, { settlement: SPARTA, count: 1, land: 1 }];
+    let r = run({ threats });
+    assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [CORINTH.x, CORINTH.y], JSON.stringify(orders()));
+    assert.equal(r.entries.find((e) => e.key === "COMMANDER_POST")?.args[1], "Corinth");
+    // Two commanders: the second to the next threatened one.
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, { id: 2, type: "UNIT_ARMY_COMMANDER", x: 6, y: 5 }]);
+    run({ threats });
+    assert.deepEqual([[moveOf(1)?.X, moveOf(1)?.Y], [moveOf(2)?.X, moveOf(2)?.Y]], [[CORINTH.x, CORINTH.y], [SPARTA.x, SPARTA.y]]);
+    // Peace: the unhappiest settlement (Sparta −3 before Corinth −1).
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }]);
+    run({});
+    assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [SPARTA.x, SPARTA.y]);
+    // At its post it stays (no order: the skip step skips it).
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...SPARTA }]);
+    r = run({});
+    assert.deepEqual(orders(), []);
+    // Off the map's centres in peace with everyone happy: to the nearest centre.
+    world.cities[1].happy = 1;
+    world.cities[2].happy = 1;
+    try {
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", x: 11, y: 7 }]);
+        run({});
+        assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [SPARTA.x, SPARTA.y]);
+    } finally {
+        world.cities[1].happy = -3;
+        world.cities[2].happy = -1;
+    }
+    // Without «Оборона» and «Армия»: left alone, as before.
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }]);
+    run({ defend: false });
+    assert.deepEqual(orders(), []);
+});
+
+test("a commander the game stopped on its way (moved, moves left) gets its post again", () => {
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", x: 5, y: 8, moved: true }]);
+    run({ threats: [{ settlement: CORINTH, count: 2, land: 2 }] });
+    assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [CORINTH.x, CORINTH.y], JSON.stringify(orders()));
+});
+
+test("a commander's way to its post never passes next to a hostile unit", () => {
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [{ x: 9, y: 6, owner: 1, type: "UNIT_WARRIOR" }] });
+    run({});
+    assert.equal(moveOf(1), undefined, "the straight way to Sparta passes the warrior");
+});
+
+test("Focus Fire: two ranged units in the commander's radius that can shoot the raider; one is not enough", async () => {
+    const raider = { x: 7, y: 5, owner: 1, type: "UNIT_WARRIOR" };
+    const result = (_id, op) => ({ Success: false, Plots: op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED" ? [idx(raider.x, raider.y)] : [] });
+    const archers = [{ id: 2, type: "UNIT_ARCHER", x: 4, y: 5, ranged: 20, melee: 10 }, { id: 3, type: "UNIT_ARCHER", x: 6, y: 5, ranged: 20, melee: 10 }];
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], { wars: [1], enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
+    const r = await units.strikeRaiders();
+    const cmd = orders().find((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED");
+    assert.deepEqual([cmd?.id.id, cmd?.args.X, cmd?.args.Y], [1, raider.x, raider.y], JSON.stringify(orders()));
+    assert.deepEqual(r.entries.map((e) => [e.key, e.args[4]]), [["FOCUS_FIRE", 2]]);
+    assert.ok(r.ordered.has("0:2") && r.ordered.has("0:3"), "the archers took part: no other order");
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, archers[1]], { wars: [1], enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
+    await units.strikeRaiders();
+    assert.deepEqual(orders(), [], "one archer: it shoots on its own");
+    // Not a hostile unit (no war): nothing.
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], { enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
+    await units.strikeRaiders();
+    assert.deepEqual(orders(), []);
+});
+
+test("Coordinated Attack: two healthy melee units next to the raider and in the radius; not against a stronger one", async () => {
+    const C = ATHENS;
+    // A raider 2 tiles from the commander with two tiles next to both.
+    let target = null;
+    let pair = null;
+    for (let y = C.y - 2; y <= C.y + 2 && !target; y++) {
+        for (let x = C.x - 2; x <= C.x + 2 && !target; x++) {
+            if (dist(C, { x, y }) !== 2) continue;
+            const common = [];
+            for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 2; xx <= x + 2; xx++) if (dist({ x: xx, y: yy }, { x, y }) === 1 && dist({ x: xx, y: yy }, C) === 1) common.push({ x: xx, y: yy });
+            if (common.length >= 2) {
+                target = { x, y };
+                pair = common.slice(0, 2);
+            }
+        }
+    }
+    assert.ok(target, "a geometry for the test");
+    const result = (_id, op) => ({ Success: false, Plots: op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE" ? [idx(target.x, target.y)] : [] });
+    const warriors = pair.map((p, i) => ({ id: 2 + i, type: "UNIT_WARRIOR", ...p }));
+    const raider = { ...target, owner: 1, type: "UNIT_WARRIOR", damage: 30 };
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...C }, ...warriors], { wars: [1], enemies: [raider], unitCommandResult: result, combat: () => ({ dealt: 60, taken: 20 }) });
+    const r = await units.strikeRaiders();
+    const cmd = orders().find((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE");
+    assert.deepEqual([cmd?.id.id, cmd?.args.X, cmd?.args.Y], [1, target.x, target.y], JSON.stringify(orders()));
+    assert.deepEqual(r.entries.map((e) => e.key), ["COORDINATED_ATTACK"], "the warriors do not strike again on their own");
+    // A stronger raider (Horseman 35 against our 20 + 2), a hurt warrior, or a raider in a district: no.
+    for (const [extra, list, why] of [
+        [{ enemies: [{ ...raider, type: "UNIT_HORSEMAN" }] }, warriors, "stronger"],
+        [{}, [warriors[0], { ...warriors[1], damage: 60 }], "one is badly hurt"],
+        [{ districtAt: (x, y) => x === target.x && y === target.y }, warriors, "in a district"],
+    ]) {
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...C }, ...list], { wars: [1], enemies: [raider], unitCommandResult: result, ...extra });
+        await units.strikeRaiders();
+        assert.equal(orders().find((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE"), undefined, why);
+    }
+});
+
+test("the game's experience and army parameters are logged once (their values are compiled into the game)", () => {
+    GameInfo.GlobalParameters = [{ Name: "EXPERIENCE_MAX_BARB_LEVEL", Value: "2" }, { Name: "ARMY_MAX_UNITS", Value: "4" }, { Name: "CITY_MIN_RANGE", Value: "3" }];
+    const warn = console.warn;
+    const lines = [];
+    console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        fresh([]);
+        run({});
+        run({});
+    } finally {
+        console.warn = warn;
+    }
+    const logged = lines.filter((l) => l.includes("commander parameters"));
+    assert.equal(logged.length, 1, JSON.stringify(lines));
+    assert.match(logged[0], /EXPERIENCE_MAX_BARB_LEVEL=2, ARMY_MAX_UNITS=4$/);
+});

@@ -26,6 +26,31 @@ export function costMultiplier(net, cost) {
 }
 
 /**
+ * Weight multiplier for gaining a yield the settlement already has `net` per turn of: the same curve, the other way
+ * round (research/26 §3.2: game 14's Exploration had twice the rivals' food and half their science; new citizens
+ * went to farm tiles 44 times and to specialists 8). Short (net ≤ 0): full weight; plenty: down to MIN.
+ */
+export function gainMultiplier(net) {
+    if (!Number.isFinite(net) || net <= 0) return 1;
+    return SCARCITY.MIN + (1 - SCARCITY.MIN) * SCARCITY.REF / (SCARCITY.REF + net);
+}
+
+/**
+ * Weighted value of a recurring gain (amounts by yield): food and happiness scaled down by what the settlement has
+ * to spare (gainMultiplier); the other yields at the profile's weight. Losses (negative amounts) at full weight.
+ * @param weights profile weights[7] @param gains number[7] @param nets number[7] | null (null: plain weights)
+ */
+export function gainValue(weights, gains, nets) {
+    let v = 0;
+    gains.forEach((g, i) => {
+        if (!g) return;
+        const m = nets && LOCAL.includes(i) && g > 0 ? gainMultiplier(nets[i]) : 1;
+        v += (weights[i] ?? 0) * g * m;
+    });
+    return v;
+}
+
+/**
  * Weighted value of a recurring cost (positive amounts by yield), food and happiness
  * scaled by what the settlement has to spare.
  * @param weights profile weights[7]

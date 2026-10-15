@@ -34,11 +34,12 @@ Game.UnitOperations.sendRequest = (id, op, args) => {
     // A move or a skip ends the unit's turn (a move also changes its tile).
     const unit = world.units.find((u) => u.id === id.id);
     if (unit && op === UnitOperationTypes.MOVE_TO) {
-        const move = () => Object.assign(unit, { x: args.X, y: args.Y, moved: true });
+        const move = () => Object.assign(unit, { x: args.X, y: args.Y, moved: true, moves: 0 });
         if (world.slowMoves) world.pendingMoves.push(move);
         else move();
     }
-    if (unit && op === "UNITOPERATION_SKIP_TURN") unit.moved = true;
+    // Like the game: a skip ends the unit's turn (no moves left, so it is not ready again).
+    if (unit && op === "UNITOPERATION_SKIP_TURN") Object.assign(unit, { moved: true, moves: 0 });
     if (op !== "UNITOPERATION_FOUND_CITY") return;
     setTimeout(() => {
         world.units = world.units.filter((u) => u.id !== id.id);
@@ -138,6 +139,42 @@ test("production: the advisor's military unit only below 2 soldiers per settleme
     assert.equal(out[0]?.key, "QUEUED_FALLBACK", JSON.stringify(out));
     world.units = before;
     delete world.buildRecs;
+});
+
+test("science or economy in peace: the advisor's soldier and Barracks are skipped; under threat they are allowed (research/21 E2)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    const warrior = GameInfo.Units.lookup("UNIT_WARRIOR").$hash;
+    const barracks = GameInfo.Constructibles.lookup("BUILDING_BARRACKS").$hash;
+    const subjects = GameInfo.AdvisorySubjects;
+    GameInfo.AdvisorySubjects = { lookup: (h) => ({ 8: { AdvisorySubjectType: "ADVISORY_SUBJECT_PRODUCE_UNITS" }, 9: { AdvisorySubjectType: "ADVISORY_SUBJECT_PRODUCE_CONSTRUCTIBLES" } })[h] ?? null };
+    const near = GameplayMap.getIndexFromXY(SITE.x + 1, SITE.y);
+    const canBuild = world.canBuild;
+    const costOf = world.costOf;
+    world.canBuild = (type, id, args) => (type === "BUILDING_BARRACKS" ? { Success: true, Plots: [near], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+    world.costOf = (type) => (type === "BUILDING_BARRACKS" ? 10 : costOf(type)); // the cheapest building too
+    const queued = () => fake.sent.filter((s) => s.kind === "operation").map((s) => s.args);
+    const before = world.units;
+    world.units = [];
+    const strategy = { advisorSoldiers: false, militaryBuildings: false };
+    try {
+        world.buildRecs = () => [{ subject: 8, recommendedType: "UNIT_WARRIOR", whichAdvisors: [] }, { subject: 9, recommendedType: "BUILDING_BARRACKS", whichAdvisors: [] }];
+        fake.sent.length = 0;
+        let out = steps.fillProduction(new Map(), { strategy });
+        assert.ok(![warrior].includes(queued()[0]?.UnitType) && queued()[0]?.ConstructibleType !== barracks, JSON.stringify(out));
+        assert.equal(out[0]?.key, "QUEUED_FALLBACK", "the cheapest building that is not military");
+        fake.sent.length = 0;
+        out = steps.fillProduction(new Map(), { strategy, threats: [{ settlement: { name: "Rome", x: SITE.x, y: SITE.y }, count: 0, owners: [] }] });
+        assert.equal(queued()[0]?.UnitType, warrior, `under threat: ${JSON.stringify(out)}`);
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), {});
+        assert.equal(queued()[0]?.UnitType, warrior, "no strategy: as before");
+    } finally {
+        world.units = before;
+        world.canBuild = canBuild;
+        world.costOf = costOf;
+        GameInfo.AdvisorySubjects = subjects;
+        delete world.buildRecs;
+    }
 });
 
 test("turn 4: two warriors on the capital (the game refuses fortify): one steps aside, the other is skipped, the turn ends", async () => {
@@ -339,4 +376,29 @@ test("a citizen that arrives after the growth step is placed in the end-of-turn 
     assert.equal(fake.sent.filter((s) => s.kind === "endTurn").length, 1);
     delete world.expand;
     world.units = [];
+});
+
+test("no site known (our search and the game's both empty): no settler trained (research/21 C3b)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const settler = GameInfo.Units.lookup("UNIT_SETTLER").$hash;
+    const suggestions = world.aiSuggestions;
+    const sites = state.get().results.sites;
+    world.aiSuggestions = () => [];
+    state.set({ results: { ...state.get().results, sites: null } });
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === "UNIT_SETTLER" ? { Success: true } : canBuild ? canBuild(type, id, args) : { Success: false, Plots: [] });
+    try {
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { settlers: true });
+        assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler));
+        world.aiSuggestions = suggestions;
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { settlers: true });
+        assert.ok(fake.sent.some((s) => s.kind === "operation" && s.args.UnitType === settler), "the game suggests a site: trained");
+    } finally {
+        world.aiSuggestions = suggestions;
+        world.canBuild = canBuild;
+        state.set({ results: { ...state.get().results, sites } });
+    }
 });

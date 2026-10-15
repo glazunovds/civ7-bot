@@ -2,7 +2,7 @@
 // which triumphs are close.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chooseFocus, closeTriumphs, profileForFocus, scoreFocus, SWITCH_STREAK, wondersAtOnce } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
+import { chooseFocus, closeTriumphs, profileForFocus, scoreFocus, SWITCH_STREAK, victoryOptions, wondersAtOnce } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
 
 const STANDINGS = [
     { cls: "CULTURE", ours: 4, rival: 2, goal: 7 },
@@ -70,6 +70,29 @@ test("choosing: the best path at once the first time; another one must lead by a
     assert.equal(chooseFocus([], { cls: "CULTURE" }).cls, "CULTURE", "nothing known: keep");
 });
 
+test("«Цель победы» offers only the victories switched on (all off or unknown: all)", () => {
+    assert.deepEqual(victoryOptions(new Set(["CULTURE"])), ["AUTO", "SCIENCE", "ECONOMIC"]);
+    assert.deepEqual(victoryOptions(new Set()), ["AUTO", "CULTURE", "SCIENCE", "ECONOMIC"]);
+    assert.deepEqual(victoryOptions(new Set(["CULTURE", "SCIENCE", "ECONOMIC"])), ["AUTO", "CULTURE", "SCIENCE", "ECONOMIC"]);
+});
+
+test("the final age: a completed path is kept, its victory goes on (science: 100 Innovation after the 3 space projects)", () => {
+    const standings = [{ cls: "SCIENCE", ours: 3, rival: 1, goal: 3 }, { cls: "CULTURE", ours: 9, rival: 2, goal: 15 }];
+    const before = scoreFocus(standings);
+    assert.ok(before.find((x) => x.cls === "SCIENCE").score < 0, "an earlier age: completed scores lowest");
+    const final = scoreFocus(standings, null, [], { finalAge: true });
+    const sci = final.find((x) => x.cls === "SCIENCE");
+    assert.ok(sci.done && sci.score > final.find((x) => x.cls === "CULTURE").score, JSON.stringify(final));
+    let f = chooseFocus(final, { cls: "SCIENCE" }, { finalAge: true });
+    assert.deepEqual([f.cls, f.changed], ["SCIENCE", false]);
+    // Even when another path scores higher, a completed one is not left at once there.
+    const ahead = [{ cls: "SCIENCE", score: 0.9, done: true }, { cls: "CULTURE", score: 0.95 }];
+    f = chooseFocus(ahead, { cls: "SCIENCE" }, { finalAge: true });
+    assert.equal(f.cls, "SCIENCE");
+    f = chooseFocus(ahead, { cls: "SCIENCE" });
+    assert.equal(f.cls, "CULTURE", "before the final age it is");
+});
+
 test("the focus's priority: economy keeps science up while its path's techs are missing", () => {
     assert.equal(profileForFocus("ECONOMIC", { techsLeft: 2 }), "GOLD_SCIENCE");
     assert.equal(profileForFocus("ECONOMIC", { techsLeft: 0 }), "GOLD");
@@ -95,4 +118,32 @@ test("victories switched off in this game are never chosen; the player's target 
     assert.deepEqual([f.cls, f.changed], ["ECONOMIC", false]);
     f = chooseFocus(off, { cls: "SCIENCE" }, { target: "CULTURE" });
     assert.equal(f.cls, "SCIENCE", "a switched-off target: the autopilot's own choice");
+});
+
+// Game 19: at Modern turn 1 every new path stood at 0, Ada's leaning (+0.15) took the focus from science (26
+// Innovation) to culture (46 against the leader's 117), and the game was lost to culture with 30 Innovation.
+const NEW_AGE = [{ cls: "CULTURE", ours: 0, rival: 0, goal: 15 }, { cls: "SCIENCE", ours: 0, rival: 0, goal: 10 }, { cls: "ECONOMIC", ours: 0, rival: 0, goal: 20 }];
+
+test("the final age keeps the focus it began with; only our own countdown within reach elsewhere moves it", () => {
+    const scores = scoreFocus(NEW_AGE, "CULTURE", [], { finalAge: true });
+    assert.equal(best(scores), "CULTURE", "the leaning alone");
+    let pick = chooseFocus(scores, { cls: "SCIENCE" }, { finalAge: true });
+    assert.deepEqual([pick.cls, pick.changed], ["SCIENCE", false]);
+    for (let i = 0; i < SWITCH_STREAK + 2; i++) pick = chooseFocus(scores, pick, { finalAge: true });
+    assert.equal(pick.cls, "SCIENCE", "not after several checks either");
+    pick = chooseFocus(scores, { cls: "SCIENCE" }, { finalAge: true, chances: new Set(["ECONOMIC"]) });
+    assert.deepEqual([pick.cls, pick.changed], ["ECONOMIC", true], "our economic countdown is near");
+    assert.equal(chooseFocus(scores, { cls: "SCIENCE" }, { finalAge: true, chances: new Set(["SCIENCE", "CULTURE"]) }).cls, "SCIENCE", "a chance of our own: stay");
+    assert.equal(chooseFocus(scores, {}, { finalAge: true }).cls, "CULTURE", "nothing known before: the best, leaning included");
+});
+
+test("the leader's leaning picks a first focus but never makes a switch; a real lead does", () => {
+    const scores = scoreFocus(NEW_AGE, "CULTURE");
+    let pick = { cls: "SCIENCE" };
+    for (let i = 0; i < SWITCH_STREAK + 2; i++) pick = chooseFocus(scores, pick);
+    assert.equal(pick.cls, "SCIENCE", "culture ahead by the leaning alone");
+    const ahead = scoreFocus([{ cls: "CULTURE", ours: 6, rival: 0, goal: 15 }, { cls: "SCIENCE", ours: 0, rival: 0, goal: 10 }], "CULTURE");
+    pick = { cls: "SCIENCE" };
+    for (let i = 0; i < SWITCH_STREAK; i++) pick = chooseFocus(ahead, pick);
+    assert.equal(pick.cls, "CULTURE", "40% along its path: a real lead");
 });

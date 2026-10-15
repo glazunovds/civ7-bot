@@ -29,7 +29,7 @@ const project = (actionType, target, cost = 60, status = DiplomacyProjectStatus.
 const started = () => fake.sent.filter((s) => s.kind === "player" && String(s.op).startsWith("OP_")).map((s) => [s.args.Type, s.args.Player2]);
 const reset = (extra = {}) => {
     fake.sent.length = 0;
-    for (const k of ["projects", "relations", "relationLevels", "events", "notifications", "diplomacy", "wars", "befriend", "allies", "blocker", "nextCallToArms", "peaceOk", "pendingDeals"]) delete world[k];
+    for (const k of ["projects", "relations", "relationLevels", "events", "notifications", "diplomacy", "wars", "befriend", "allies", "blocker", "nextCallToArms", "peaceOk", "pendingDeals", "formalWarOk", "dealAnswer", "incomingDeals"]) delete world[k];
     world.influence = 200;
     Object.assign(world, extra);
 };
@@ -67,6 +67,21 @@ test("counter-spy: not for our own spy caught, not for an unrevealed one, not wh
     reset({ projects, influence: 100 });
     choices.tendDiplomacy(DEFAULT_SETTINGS);
     assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_COUNTER_SPY, 1]], "remembered: started once Influence allows");
+});
+
+test("counter-spy also against a leader whose espionage reached us as a proposal to answer; a sanction is a hostile act, not a spy (research/23 D10)", () => {
+    const projects = { 3: [project(A.DIPLOMACY_ACTION_COUNTER_SPY, 3, 80)] };
+    const steal = { initialPlayer: 3, targetPlayer: 0, actionType: A.DIPLOMACY_ACTION_ESPIONAGE_STEAL_RICHES, responses: [{ responseType: 1, responseName: "OK", cost: 0 }] };
+    reset({ notifications: [{ name: "NOTIFICATION_DIPLOMATIC_RESPONSE_REQUIRED", target: { id: 72 } }], diplomacy: { 72: steal }, projects });
+    choices.answerDiplomacy();
+    reset({ projects });
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started().filter(([t]) => t === A.DIPLOMACY_ACTION_COUNTER_SPY), [[A.DIPLOMACY_ACTION_COUNTER_SPY, 3]]);
+    assert.equal(choices.hostileActs().get(3), Game.turn);
+    reset({ events: { 0: [{ initialPlayer: 2, targetPlayer: 0, actionType: A.DIPLOMACY_ACTION_SABOTAGE_RESEARCH }] }, projects: { 2: [project(A.DIPLOMACY_ACTION_COUNTER_SPY, 2, 80)] } });
+    assert.equal(choices.hostileActs().get(2), Game.turn, "a sanction under way against us");
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started().filter(([t]) => t === A.DIPLOMACY_ACTION_COUNTER_SPY), [], "no spy: no counter-spy");
 });
 
 test("reconciliation with an Unfriendly leader; nothing but counter-spy while a settlement is threatened", () => {
@@ -177,30 +192,149 @@ test("an ally's call to arms is never joined (a surprise war with war weariness,
     assert.deepEqual(war(), []);
 });
 
-test("peace, nothing given or asked, is proposed to a leader at war with us when the game allows it, every 3 turns at most", () => {
-    const deals = () => fake.sent.filter((s) => s.kind === "deal");
-    reset({ wars: [1], peaceOk: [1] });
-    const out = choices.seekPeace();
-    assert.deepEqual(deals().map((d) => d.op), ["clear", "add", "send"]);
+const P = DiplomacyDealProposalActions;
+const deals = () => fake.sent.filter((s) => s.kind === "deal");
+const dealSends = () => deals().filter((d) => d.op === "send").map((d) => d.action);
+
+test("peace: the AI is first asked privately (INSPECT, nothing shown), white peace is proposed only when it would accept, then not again for 3 turns (research/23 D2)", async () => {
+    choices.resetPeace();
+    reset({ wars: [1], peaceOk: [1], dealAnswer: () => P.ACCEPTED });
+    const out = await choices.seekPeace();
+    assert.deepEqual(deals().map((d) => d.op), ["clear", "add", "send", "send"]);
     assert.deepEqual(deals()[0].id, { direction: DiplomacyDealDirection.OUTGOING, player1: 0, player2: 1 });
     assert.deepEqual(deals()[1].item, { type: DiplomacyDealItemTypes.AGREEMENTS, agreementType: DiplomacyDealItemAgreementTypes.MAKE_PEACE });
-    assert.equal(deals()[2].action, DiplomacyDealProposalActions.PROPOSED);
+    assert.deepEqual(dealSends(), [P.INSPECT, P.PROPOSED]);
     assert.equal(out[0].key, "PEACE_PROPOSED");
-    reset({ wars: [1], peaceOk: [1] });
-    choices.seekPeace();
+    reset({ wars: [1], peaceOk: [1], dealAnswer: () => P.ACCEPTED });
+    await choices.seekPeace();
     assert.deepEqual(deals(), [], "not again so soon");
     const turn = Game.turn;
     try {
         Game.turn = turn + 3;
-        reset({ wars: [1], peaceOk: [1], pendingDeals: [1] });
-        choices.seekPeace();
+        reset({ wars: [1], peaceOk: [1], pendingDeals: [1], dealAnswer: () => P.ACCEPTED });
+        await choices.seekPeace();
         assert.deepEqual(deals(), [], "a deal is pending");
-        reset({ wars: [1] });
-        choices.seekPeace();
+        reset({ wars: [1], dealAnswer: () => P.ACCEPTED });
+        await choices.seekPeace();
         assert.deepEqual(deals(), [], "the game does not allow peace yet");
-        reset({ wars: [1], peaceOk: [1] });
-        choices.seekPeace();
-        assert.equal(deals().length, 3, "three turns later: again");
+        reset({ wars: [1], peaceOk: [1], dealAnswer: () => P.ACCEPTED });
+        await choices.seekPeace();
+        assert.deepEqual(dealSends(), [P.INSPECT, P.PROPOSED], "three turns later: again");
+    } finally {
+        Game.turn = turn;
+    }
+});
+
+test("peace: a leader who would refuse gets no proposal (no dialog); it is asked again after 3, then 6 turns (research/23 D2: 8 refusals in game 8)", async () => {
+    choices.resetPeace();
+    const turn = Game.turn;
+    try {
+        reset({ wars: [1], peaceOk: [1], dealAnswer: () => P.REJECTED });
+        const out = await choices.seekPeace();
+        assert.deepEqual(dealSends(), [P.INSPECT]);
+        assert.deepEqual(out, []);
+        assert.ok(deals().some((d) => d.op === "closeSession"), "the inspect's session is closed");
+        for (const [dt, asked] of [[2, false], [3, true], [8, false], [9, true]]) {
+            Game.turn = turn + dt;
+            reset({ wars: [1], peaceOk: [1], dealAnswer: () => P.REJECTED });
+            await choices.seekPeace();
+            assert.deepEqual(dealSends(), asked ? [P.INSPECT] : [], `turn +${dt}`);
+        }
+    } finally {
+        Game.turn = turn;
+    }
+});
+
+test("peace: nothing is proposed while a diplomacy screen is open (research/23 D1)", async () => {
+    choices.resetPeace();
+    choices.setDiplomacyScreenProbe(() => true);
+    try {
+        reset({ wars: [1], peaceOk: [1], dealAnswer: () => P.ACCEPTED });
+        await choices.seekPeace();
+        assert.deepEqual(deals(), []);
+    } finally {
+        choices.setDiplomacyScreenProbe(null);
+    }
+});
+
+test("a deal a leader sends us: a peace asking nothing, or a little gold, is accepted; one asking a settlement or much gold is rejected, so it never holds the turn (research/23 D1)", () => {
+    const I = DiplomacyDealItemTypes;
+    const peace = { type: I.AGREEMENTS, subType: DiplomacyDealItemAgreementTypes.MAKE_PEACE, from: 1, to: 0 };
+    const answer = (items, gold = 1000) => {
+        choices.resetPeace();
+        reset({ wars: [1], incomingDeals: { 1: items } });
+        world.gold = gold;
+        return choices.answerIncomingDeals();
+    };
+    let out = answer([peace]);
+    assert.deepEqual(deals().map((d) => [d.op, d.action, d.id.player2]), [["send", P.ACCEPTED, 1]]);
+    assert.equal(out[0].key, "PEACE_ACCEPTED");
+    out = answer([peace, { type: I.CITIES, from: 0, to: 1, cityId: { owner: 0, id: 3 } }]);
+    assert.deepEqual(dealSends(), [P.REJECTED]);
+    assert.deepEqual(out[0].key, "DEAL_REJECTED");
+    answer([peace, { type: I.GOLD, from: 0, to: 1, amount: 200 }]);
+    assert.deepEqual(dealSends(), [P.ACCEPTED], "200 of 1000 gold");
+    answer([peace, { type: I.GOLD, from: 0, to: 1, amount: 400 }]);
+    assert.deepEqual(dealSends(), [P.REJECTED], "400 of 1000 gold");
+    answer([peace, { type: I.GOLD, from: 1, to: 0, amount: 400 }]);
+    assert.deepEqual(dealSends(), [P.ACCEPTED], "gold for us");
+    delete world.incomingDeals;
+});
+
+test("a call to arms against an enemy far away on another continent is joined with a formal war; on our continent or near, declined (research/21 G1, decision 5)", () => {
+    const CALL = "NOTIFICATION_DIPLOMATIC_ALLY_AT_WAR";
+    const call = (enemy) => ({ notifications: [{ name: CALL, target: { id: 90 } }], diplomacy: { 90: { initialPlayer: 2, targetPlayer: enemy } }, allies: [2], blocker: { type: EndTurnBlockingTypes.OTHER, name: CALL }, nextCallToArms: 90 });
+    const war = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.DECLARE_WAR).map((s) => s.args);
+    const tiles = world.tiles;
+    // Carthage (20,2) on continent 2, Rome (2,2) on continent 1.
+    world.tiles = (x, y) => ({ ...tiles(x, y), continent: x >= 15 ? 2 : 1 });
+    try {
+        reset({ ...call(1), formalWarOk: [1] });
+        let out = choices.answerCallsToArms({ retry: true });
+        assert.deepEqual(war(), [{ Player1: 0, Player2: 1, Type: A.DIPLOMACY_ACTION_DECLARE_FORMAL_WAR }], JSON.stringify(out));
+        assert.ok(out.some((e) => e.key === "JOINED_WAR"));
+        reset({ ...call(1) });
+        out = choices.answerCallsToArms({ retry: true });
+        assert.deepEqual(war(), [], "no formal war allowed: declined");
+        assert.ok(out.some((e) => e.key === "DECLINED_WAR"));
+        reset({ ...call(3), formalWarOk: [3] });
+        choices.answerCallsToArms({ retry: true });
+        assert.deepEqual(war(), [], "Memphis is on our continent, 2 tiles away: declined");
+        world.tiles = (x, y) => ({ ...tiles(x, y), continent: 1 });
+        reset({ ...call(1), formalWarOk: [1] });
+        choices.answerCallsToArms({ retry: true });
+        assert.deepEqual(war(), [], "Carthage is far away but on our continent: declined");
+        world.tiles = (x, y) => ({ ...tiles(x, y), continent: x >= 15 ? 2 : 1 });
+        world.tiles = (x, y) => ({ ...tiles(x, y), continent: x >= 3 ? 2 : 1 });
+        reset({ ...call(3), formalWarOk: [3] });
+        choices.answerCallsToArms({ retry: true });
+        assert.deepEqual(war(), [], "another continent but only 2 tiles away: declined");
+    } finally {
+        world.tiles = tiles;
+    }
+});
+
+test("counter-spy renewed against a leader whose spy hit us within 30 turns, once ours has run its 20 turns (research/24 W9: steals at M40, M49, M66)", () => {
+    const projects = { 2: [project(A.DIPLOMACY_ACTION_COUNTER_SPY, 2, 80)] };
+    const counter = () => started().filter(([t, p]) => t === A.DIPLOMACY_ACTION_COUNTER_SPY && p === 2).length;
+    const turn = Game.turn;
+    try {
+        Game.turn = turn + 1000;
+        reset({ ...caught(2), projects });
+        choices.tendDiplomacy(DEFAULT_SETTINGS);
+        assert.equal(counter(), 1);
+        Game.turn = turn + 1010;
+        reset({ projects });
+        choices.tendDiplomacy(DEFAULT_SETTINGS);
+        assert.equal(counter(), 0, "ours still runs (20 turns)");
+        Game.turn = turn + 1020;
+        reset({ projects });
+        choices.tendDiplomacy(DEFAULT_SETTINGS);
+        assert.equal(counter(), 1, "ran out, the spy came 20 turns ago: renewed");
+        Game.turn = turn + 1060;
+        reset({ projects });
+        choices.tendDiplomacy(DEFAULT_SETTINGS);
+        assert.equal(counter(), 0, "no spy for 60 turns");
     } finally {
         Game.turn = turn;
     }

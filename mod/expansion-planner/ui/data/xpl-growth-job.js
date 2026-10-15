@@ -13,11 +13,11 @@
  * A specialist's food and happiness upkeep is weighted by what the city has to spare
  * (core/xpl-scarcity.js): plenty left -> cheap, running short -> expensive.
  */
-import { getProfile } from '../core/xpl-profiles.js';
+import { profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex, F, G, H } from '../core/xpl-yields.js';
 import { improvementKind } from '../core/xpl-town-focus.js';
-import { costValue } from '../core/xpl-scarcity.js';
-import { HIGH_YIELD_DISTRICT, highYieldBonus, RESOURCE_TILE_VALUE } from '../core/xpl-victory-levers.js';
+import { costValue, gainValue } from '../core/xpl-scarcity.js';
+import { highYieldBonus, highYieldTarget, RESOURCE_TILE_VALUE } from '../core/xpl-victory-levers.js';
 import { state } from '../services/xpl-state.js';
 
 export const PLAN_TILE_BONUS = 2;    // least weighted value of claiming a tile a planned building needs
@@ -70,15 +70,30 @@ function plannedTiles() {
  *            specialists: [{ idx, x, y, gain, yields, upkeep }], bestSpecialist,
  *            choice: "TILE" | "SPECIALIST" | null }
  */
+/** Each of our urban tiles' (not a city centre) total yield: how many reach the science marks already. */
+function urbanTotals(pid) {
+    const out = [];
+    for (const c of safe(() => Players.get(pid).Cities.getCities(), []) ?? []) {
+        for (const idx of safe(() => c.getPurchasedPlots(), []) ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            const d = loc ? safe(() => Districts.getAtLocation({ x: loc.x, y: loc.y }), null) : null;
+            if (!d || safe(() => GameInfo.Districts.lookup(d.type)?.DistrictType, null) !== "DISTRICT_URBAN") continue;
+            out.push((safe(() => GameplayMap.getYields(idx, pid), []) ?? []).reduce((sum, [, amount]) => sum + (Number(amount) || 0), 0));
+        }
+    }
+    return out;
+}
+
 export function growthAdvice(cityID, settings, { focusKind = null, victory = null } = {}) {
     const city = safe(() => Cities.get(cityID), null);
     if (!city) return null;
     const pid = GameContext.localPlayerID;
-    const weights = getProfile(settings.profile).y;
+    const weights = profileFor(settings).y;
     // Victory focus: economy values a tile with a resource (improving it gains the resource);
-    // Exploration science values specialists that take an urban tile to 40 total yield.
+    // science values specialists that take an urban tile to the age's next mark (40 total yield,
+    // then 75, in the Exploration age; highYieldTarget).
     const resourceValue = victory === "ECONOMIC" ? RESOURCE_TILE_VALUE : 0;
-    const threshold = victory === "SCIENCE" ? HIGH_YIELD_DISTRICT[safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, "")] ?? 0 : 0;
+    const threshold = victory === "SCIENCE" ? highYieldTarget(safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, ""), urbanTotals(pid)) : 0;
     const centre = safe(() => GameplayMap.getIndexFromXY(city.location.x, city.location.y), -1);
     const planned = plannedTiles();
     const owned = new Set(safe(() => city.getPurchasedPlots(), []) ?? []);
@@ -98,7 +113,8 @@ export function growthAdvice(cityID, settings, { focusKind = null, victory = nul
         const plan = planned.get(idx);
         const names = plan?.names ?? [];
         const isOwned = owned.has(idx);
-        let score = dot(weights, yields);
+        // Food (and happiness) a city already has plenty of is worth less (research/26 §3.2).
+        let score = gainValue(weights, yields, nets);
         let buildTurn = null;
         if (plan && !isOwned) score += plan.bonus;
         else if (plan && plan.eta !== null && planned.horizon) {
@@ -135,7 +151,7 @@ export function growthAdvice(cityID, settings, { focusKind = null, victory = nul
             const total = (safe(() => GameplayMap.getYields(w.PlotIndex, pid), []) ?? []).reduce((sum, [, amount]) => sum + (Number(amount) || 0), 0);
             bonus = highYieldBonus(total, yields.reduce((a, b) => a + b, 0), threshold);
         }
-        specialists.push({ idx: w.PlotIndex, x: loc.x, y: loc.y, yields, upkeep, highYield: bonus > 0, gain: Math.round((dot(weights, yields) - costValue(weights, upkeep, nets) + bonus) * 10) / 10 });
+        specialists.push({ idx: w.PlotIndex, x: loc.x, y: loc.y, yields, upkeep, highYield: bonus > 0, gain: Math.round((gainValue(weights, yields, nets) - costValue(weights, upkeep, nets) + bonus) * 10) / 10 });
     }
     specialists.sort((a, b) => b.gain - a.gain || a.idx - b.idx);
     const best = expand[0] ?? null;

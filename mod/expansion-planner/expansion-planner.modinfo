@@ -53,7 +53,11 @@
           <Item>ui/panel/xpl-panel.css</Item>
           <Item>ui/panel/xpl-panel.html</Item>
           <Item>ui/core/xpl-adjacency-rules.js</Item>
+          <Item>ui/core/xpl-combat.js</Item>
+          <Item>ui/core/xpl-component-id.js</Item>
           <Item>ui/core/xpl-constants.js</Item>
+          <Item>ui/core/xpl-deals.js</Item>
+          <Item>ui/core/xpl-effect-value.js</Item>
           <Item>ui/core/xpl-heap.js</Item>
           <Item>ui/core/xpl-hex.js</Item>
           <Item>ui/core/xpl-placement-model.js</Item>
@@ -62,11 +66,13 @@
           <Item>ui/core/xpl-profiles.js</Item>
           <Item>ui/core/xpl-purchase-advisor.js</Item>
           <Item>ui/core/xpl-rule-book.js</Item>
+          <Item>ui/core/xpl-savings.js</Item>
           <Item>ui/core/xpl-scarcity.js</Item>
           <Item>ui/core/xpl-site-pipeline.js</Item>
           <Item>ui/core/xpl-site-roles.js</Item>
           <Item>ui/core/xpl-site-scorer.js</Item>
           <Item>ui/core/xpl-site-selector.js</Item>
+          <Item>ui/core/xpl-strategy.js</Item>
           <Item>ui/core/xpl-town-advisor.js</Item>
           <Item>ui/core/xpl-town-focus.js</Item>
           <Item>ui/core/xpl-town-scorer.js</Item>

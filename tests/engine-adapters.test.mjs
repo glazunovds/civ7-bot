@@ -29,7 +29,7 @@ const world = {
     wrapX: false,
     tiles,
     cities: [{ owner: 0, x: CAPITAL.x, y: CAPITAL.y, name: "Rome" }, { owner: 1, x: FOREIGN.x, y: FOREIGN.y, name: "Carthage" }],
-    players: [{ id: 0 }, { id: 1 }],
+    players: [{ id: 0 }, { id: 1 }, { id: 4, isIndependent: true, name: "Nubians" }],
     aiSuggestions: () => [{ location: { x: 15, y: 9 }, factors: [{ positive: true, title: "LOC_FRESH", description: "" }] }],
 };
 
@@ -88,6 +88,59 @@ test("site search runs end to end on the fake engine", async () => {
     assert.equal(state.get().status.busy, false);
 });
 
+test("site search: an independent's village (not a city) keeps sites away: none within 6 of a hostile one", async () => {
+    // Seen in game 5: villages are not in player.Cities, so the rule never applied; every site
+    // was 4-5 tiles from a village we had seen, and settling there made it hostile.
+    const village = { owner: 4, x: 15, y: 11 };
+    world.villages = [village];
+    try {
+        const handle = startSiteSearch({ ...DEFAULT_SETTINGS, radius: 10, topN: 8, useAI: false });
+        await handle.promise;
+        const sites = state.get().results.sites;
+        const at = fake.grid.index(village.x, village.y);
+        assert.ok(sites.picks.length > 0);
+        for (const p of sites.picks) assert.ok(fake.grid.distance(p.idx, at) > 6, `pick ${p.x},${p.y} is ${fake.grid.distance(p.idx, at)} from the village`);
+        assert.ok(sites.stats.rejected.INDEPENDENT > 0);
+    } finally {
+        delete world.villages;
+    }
+});
+
+test("the relaxed search (sites ran out far below the cap): 5-6 tiles from a village allowed, never within 4; its picks say so (research/22 A1)", async () => {
+    const village = { owner: 4, x: 15, y: 11 };
+    world.villages = [village];
+    try {
+        await startSiteSearch({ ...DEFAULT_SETTINGS, radius: 10, topN: 15, useAI: false, relaxedSites: true }).promise;
+        const sites = state.get().results.sites;
+        const at = fake.grid.index(village.x, village.y);
+        const d = sites.picks.map((p) => fake.grid.distance(p.idx, at));
+        assert.ok(d.some((x) => x >= 5 && x <= 6), `distances ${JSON.stringify(d)}`);
+        assert.ok(d.every((x) => x > 4));
+        assert.ok(sites.relaxed && sites.picks.every((p) => p.relaxed));
+    } finally {
+        delete world.villages;
+    }
+});
+
+test("the sites line counts only the villages we have seen as seen (research/23: «18 seen, 18 unseen» in game 8)", async () => {
+    const village = { owner: 4, x: 15, y: 11 };
+    world.villages = [village];
+    const tiles = world.tiles;
+    world.tiles = (x, y) => ({ ...tiles(x, y), revealed: !(x === village.x && y === village.y) });
+    const warn = console.warn;
+    const lines = [];
+    console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        await startSiteSearch({ ...DEFAULT_SETTINGS, radius: 10, topN: 15, useAI: false, includeHidden: true }).promise;
+        const line = lines.find((l) => l.includes("sites:") && l.includes("villages"));
+        assert.match(line ?? "", /villages 0 seen, 1 unseen/);
+    } finally {
+        console.warn = warn;
+        world.tiles = tiles;
+        delete world.villages;
+    }
+});
+
 test("include-hidden mode can pick plots beyond the fog", async () => {
     const handle = startSiteSearch({ ...DEFAULT_SETTINGS, radius: 15, topN: 15, includeHidden: true, useAI: false });
     await handle.promise;
@@ -118,4 +171,23 @@ test("mountains are mountains: not workable, not buildable (Terrains has no Moun
     assert.equal(m.isMountain, true);
     assert.equal(m.workable, false);
     assert.equal(m.urbanizable, false);
+});
+
+test("far below the cap (unseenVillagePenalty) a village never seen costs a site value, not the site (research/24 X3: «18 unseen; INDEPENDENT 171»)", async () => {
+    const village = { owner: 4, x: 15, y: 11 };
+    world.villages = [village];
+    const tiles = world.tiles;
+    world.tiles = (x, y) => ({ ...tiles(x, y), revealed: !(x === village.x && y === village.y) });
+    try {
+        const at = fake.grid.index(village.x, village.y);
+        await startSiteSearch({ ...DEFAULT_SETTINGS, radius: 10, topN: 15, useAI: false, includeHidden: true }).promise;
+        assert.ok(state.get().results.sites.picks.every((p) => fake.grid.distance(p.idx, at) > 6), "the strict rule");
+        await startSiteSearch({ ...DEFAULT_SETTINGS, radius: 10, topN: 15, useAI: false, includeHidden: true, unseenVillagePenalty: true }).promise;
+        const sites = state.get().results.sites;
+        assert.ok(sites.picks.some((p) => fake.grid.distance(p.idx, at) <= 6), JSON.stringify(sites.picks.map((p) => fake.grid.distance(p.idx, at))));
+        assert.ok(!(sites.stats.rejected.INDEPENDENT > 0), JSON.stringify(sites.stats.rejected));
+    } finally {
+        world.tiles = tiles;
+        delete world.villages;
+    }
 });

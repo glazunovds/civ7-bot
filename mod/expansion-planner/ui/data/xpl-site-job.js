@@ -2,15 +2,15 @@
  * Builds the scoring context from the live game and runs the settlement site search
  * (core/site-pipeline.js) through the scheduler. Results go to services/state.js.
  */
-import { TUNING } from '../core/xpl-tuning.js';
-import { getProfile } from '../core/xpl-profiles.js';
+import { siteTuning, TUNING } from '../core/xpl-tuning.js';
+import { profileFor } from '../core/xpl-profiles.js';
 import { findSites } from '../core/xpl-site-pipeline.js';
 import { topReasons } from '../core/xpl-site-scorer.js';
 import { getEngineMap } from './xpl-engine-map.js';
 import { getRules } from './xpl-rules-loader.js';
 import { FactsCache } from './xpl-map-facts.js';
 import { createSettleOracle } from './xpl-settle-oracle.js';
-import { gatherSettlements } from './xpl-player-facts.js';
+import { gatherSettlements, villagesOf } from './xpl-player-facts.js';
 import { isDmtActive } from '../integrations/xpl-dmt-status.js';
 import { plannedCityCentres } from '../integrations/xpl-dmt-bridge.js';
 import { runJob } from '../services/xpl-scheduler.js';
@@ -19,6 +19,7 @@ import { log } from '../services/xpl-log.js';
 
 import { rolesOf, scoreSiteRoles } from '../core/xpl-site-roles.js';
 import { isCoastal } from '../core/xpl-site-scorer.js';
+import { disabledVictories } from './xpl-victory.js';
 
 function compose(key, ...args) {
     try {
@@ -75,20 +76,34 @@ function buildSiteContext(settings) {
         }
     }
 
+    // Relaxed (the autopilot when sites ran out far below the cap): looser distances, HIGH overlap, and
+    // villages we have never seen do not count.
+    const relaxed = !!settings.relaxedSites;
     const ctx = {
         map: engineMap.map,
         facts: (idx) => facts.facts(idx),
-        profile: getProfile(settings.profile),
-        tuning: TUNING,
-        overlapTol: settings.overlapTol,
+        profile: profileFor(settings),
+        tuning: siteTuning(relaxed),
+        overlapTol: relaxed ? "HIGH" : settings.overlapTol,
         centres: settlements.centres,
         independents: settlements.independents,
+        // Far below the cap (the autopilot's unseenVillagePenalty) an unseen village is only a penalty: it stays among
+        // the independents (INDEPENDENT_PENALTY), not the villages the site rule rejects (research/24 X3).
+        villages: relaxed || settings.unseenVillagePenalty ? settlements.villages.filter((v) => v.revealed) : settlements.villages,
         adjFamilies: rules.siteFamilies,
         adjOpts: { playerId, charming: rules.appealCharming, breathtaking: rules.appealBreathtaking },
         avgKnownTileValue: 0,
         aiPicks: new Map(),
         ownedResources: settlements.ownedResources,
         siteRoles: rolesOf(settings.siteRoles),
+        // Natural wonders are culture victory points (research/26 §4.5): valued while the culture victory is on.
+        naturalWonders: (() => {
+            try {
+                return !disabledVictories().has("CULTURE");
+            } catch (_e) {
+                return false;
+            }
+        })(),
         continentOf: (idx) => {
             const { x, y } = engineMap.location(idx);
             try {
@@ -128,7 +143,7 @@ export function startSiteSearch(settings) {
         origins,
         radius: settings.radius,
         minSpacing: rules.minSpacing,
-        minForeignDistance: TUNING.FOREIGN_MIN_DISTANCE,
+        minForeignDistance: ctx.tuning.FOREIGN_MIN_DISTANCE,
         minPickDist: rules.minSpacing + (settings.spread ? 2 : 1),
         topN: settings.topN,
         includeHidden,
@@ -179,7 +194,7 @@ export function startSiteSearch(settings) {
                 state.set({ status: { busy: false, progress: 1, message: "" }, results: { ...state.get().results, sites: { empty: r.empty, picks: [], stats: null } } });
                 return;
             }
-            const picks = r.picks.map((p) => describePick(p, settlements, engineMap));
+            const picks = r.picks.map((p) => ({ ...describePick(p, settlements, engineMap), relaxed: !!settings.relaxedSites }));
             const sites = {
                 picks,
                 scored: r.scored.map((s) => ({ idx: s.idx, score: s.score, tier: s.tier })),
@@ -188,6 +203,7 @@ export function startSiteSearch(settings) {
                 origins,
                 settingsKey: JSON.stringify([settings.profile, settings.radius, settings.topN, settings.includeHidden, settings.overlapTol, settings.spread, settings.useAI, settings.siteRoles]),
                 claimFallback: !!r.claimFallback,
+                relaxed: !!settings.relaxedSites,
                 empty: picks.length === 0 ? "NO_SITES" : null,
                 computedTurn: Game.turn,
             };
@@ -200,7 +216,14 @@ export function startSiteSearch(settings) {
             const pct = (q) => (values.length ? values[Math.min(values.length - 1, Math.floor(q * values.length))] : 0);
             const top = r.picks[0];
             log.info(`site values p10=${pct(0.1)} p50=${pct(0.5)} p90=${pct(0.9)} max=${pct(1)}; top comps ${top ? JSON.stringify(top.comps) : "-"}`);
-            log.info(`sites: ${r.stats.scanned} scanned, ${r.stats.candidates} candidates, ${r.stats.scored} scored, ${picks.length} picks in ${outcome.elapsedMs} ms (${outcome.busyMs} ms busy, ${outcome.frames} frames); rejected ${JSON.stringify(r.stats.rejected)}`);
+            // Villages the rule saw, and those still unseen (probe P2: a settlement founded 4 tiles from a camp).
+            let unseen = "?";
+            try {
+                unseen = villagesOf(playerId, true).filter((v) => !v.revealed).length;
+            } catch (_e) {
+                unseen = "?";
+            }
+            log.info(`sites: ${r.stats.scanned} scanned, ${r.stats.candidates} candidates, ${r.stats.scored} scored, ${picks.length} picks${settings.relaxedSites ? " (relaxed)" : ""} in ${outcome.elapsedMs} ms (${outcome.busyMs} ms busy, ${outcome.frames} frames); villages ${(ctx.villages ?? []).filter((v) => v.revealed !== false).length} seen, ${unseen} unseen; rejected ${JSON.stringify(r.stats.rejected)}`);
         })
         .catch((error) => {
             log.error("site search failed", error);

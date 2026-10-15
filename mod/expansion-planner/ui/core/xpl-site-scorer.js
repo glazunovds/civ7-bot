@@ -14,6 +14,7 @@
  *   overlapTol: "LOW" | "MEDIUM" | "HIGH"
  *   centres:   [{ idx, kind: "OWN"|"FOREIGN"|"PLANNED", name }] known settlement centres
  *   independents: [idx]  independent-people village centres
+ *   villages:  [{ idx, friendly }]  independents' villages (site rule: angersVillage)
  *   adjFamilies: [{ key, yieldIndex, buildings: [{ type, rules }] }]  terrain-only rules
  *   adjOpts:   { playerId, charming, breathtaking }
  *   avgKnownTileValue: number
@@ -29,10 +30,23 @@ export const REJECT = Object.freeze({
     OWNED: "OWNED",
     SPACING: "SPACING",
     FOREIGN: "FOREIGN", // closer than TUNING.FOREIGN_MIN_DISTANCE to another player's settlement
+    INDEPENDENT: "INDEPENDENT", // founding here would anger an independent's village (angersVillage)
     CLAIM: "CLAIM",
     ROOM: "ROOM",
     RING1: "RING1",
 });
+
+/**
+ * Would a settlement `distance` tiles from an independent's village make it hostile? Within
+ * VILLAGE_HOSTILE_DISTANCE always; within VILLAGE_ANGER_DISTANCE too, friendly or not (probe P2,
+ * game 6: Фучжоу was founded 4 and 5 tiles from two camps at peace with us, our own city-states
+ * of the previous age; both declared a surprise war at the founding and took the town). `friendly`
+ * is kept for the callers; it no longer matters.
+ */
+export function angersVillage(distance, _friendly, tuning) {
+    if (distance <= (tuning?.VILLAGE_HOSTILE_DISTANCE ?? 3)) return true;
+    return distance <= (tuning?.VILLAGE_ANGER_DISTANCE ?? 6);
+}
 
 const FOOTPRINT_RADIUS = 3;
 const CENTRE_SEARCH_RADIUS = 6; // a centre further than this cannot touch any ring tile
@@ -316,6 +330,32 @@ function bestFamily(adj, profile) {
         }
     }
     return best;
+}
+
+/**
+ * Natural wonders this site would bring us (research/26 §4.5: 10 culture victory points each, while the culture
+ * victory is on: ctx.naturalWonders), by ring (TUNING.NATURAL_WONDER_RING) and share; a wonder already owned by
+ * anyone counts nothing; a wonder of several tiles once. @returns { value (site value), count, reason }
+ */
+export function naturalWonderBonus(candIdx, ctx, extraCentres = []) {
+    const none = { value: 0, count: 0, reason: null };
+    if (!ctx.naturalWonders) return none;
+    const t = ctx.tuning;
+    const nearby = nearbyCentres(candIdx, ctx, extraCentres);
+    const best = new Map(); // feature (or tile) -> its best weight
+    for (const { idx, ring } of ctx.map.radius(candIdx, FOOTPRINT_RADIUS)) {
+        const f = ctx.facts(idx);
+        if (!f?.known || !f.isNaturalWonder || ring === 0) continue;
+        // availability: 0 for a tile owned already (by anyone), shared near other settlements.
+        const w = (t.NATURAL_WONDER_RING?.[ring] ?? 0) * availability(f, nearby, ctx);
+        const key = f.feature ?? `tile:${idx}`;
+        if (w > (best.get(key) ?? 0)) best.set(key, w);
+    }
+    let sum = 0;
+    for (const w of best.values()) sum += w;
+    if (!(sum > 0)) return none;
+    const value = sum * (t.NATURAL_WONDER ?? 0);
+    return { value, count: best.size, reason: reason("+", "LOC_XPL_R_NATURAL_WONDER", [best.size], value * 20) };
 }
 
 /** Diminishing returns: saturate(1) = 1, approaches 2 for large c. */

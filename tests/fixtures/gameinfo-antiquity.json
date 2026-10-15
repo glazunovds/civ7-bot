@@ -1279,6 +1279,192 @@
 "RandomCityNameDepth": "1"
 }
 ],
+"ConstructibleModifiers": [
+{
+"ConstructibleType": "WONDER_NALANDA",
+"ModifierId": "MOD_NALANDA_FREE_CODEX"
+},
+{
+"ConstructibleType": "BUILDING_AMPHITHEATER",
+"ModifierId": "MOD_AMPHITHEATER_WONDER_PRODUCTION"
+},
+{
+"ConstructibleType": "BUILDING_ARENA",
+"ModifierId": "MOD_ARENA_HAPPINESS_ON_URBAN_PLOTS"
+},
+{
+"ConstructibleType": "BUILDING_BARRACKS",
+"ModifierId": "MOD_BARRACKS_UNIT_PRODUCTION"
+},
+{
+"ConstructibleType": "BUILDING_BATH",
+"ModifierId": "MOD_BATHS_GROWTH_RATE"
+},
+{
+"ConstructibleType": "BUILDING_BLACKSMITH",
+"ModifierId": "MOD_BLACKSMITH_PRODUCTION_ON_URBAN_PLOTS"
+},
+{
+"ConstructibleType": "BUILDING_KUH_NAH",
+"ModifierId": "MOD_KUH_NAH_VEGETATED_SCIENCE"
+},
+{
+"ConstructibleType": "BUILDING_PARTHENON",
+"ModifierId": "MOD_PARTHENON_ROUGH_DIPLOMACY"
+},
+{
+"ConstructibleType": "IMPROVEMENT_BARAY",
+"ModifierId": "MOD_BARAY_RIVER_FLOOD_IMMUNITY"
+},
+{
+"ConstructibleType": "IMPROVEMENT_SOUQ",
+"ModifierId": "MOD_SOUQ_CITIES_GOLD"
+},
+{
+"ConstructibleType": "IMPROVEMENT_ICE_HOUSE",
+"ModifierId": "MOD_ICE_HOUSE_FOOD"
+},
+{
+"ConstructibleType": "IMPROVEMENT_FESTIVAL_GROUNDS",
+"ModifierId": "MOD_FESTIVAL_GROUNDS_CELEBRATION_BONUS"
+},
+{
+"ConstructibleType": "WONDER_ANGKOR_WAT",
+"ModifierId": "MOD_ANGKOR_WAT_WORKER_CAP"
+},
+{
+"ConstructibleType": "WONDER_COLOSSEUM",
+"ModifierId": "MOD_COLOSSEUM_URBAN_HAPPINESS"
+},
+{
+"ConstructibleType": "WONDER_COLOSSEUM",
+"ModifierId": "MOD_COLOSSEUM_URBAN_GOLD"
+},
+{
+"ConstructibleType": "WONDER_COLOSSUS",
+"ModifierId": "MOD_COLOSSUS_RESOURCE_CAP"
+},
+{
+"ConstructibleType": "WONDER_COLOSSUS",
+"ModifierId": "MOD_COLOSSUS_ECONOMIC_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_DUR_SHARRUKIN",
+"ModifierId": "MOD_DUR_SHARRUKIN_FORTIFICATION_SCIENCE"
+},
+{
+"ConstructibleType": "WONDER_DUR_SHARRUKIN",
+"ModifierId": "MOD_DUR_SHARRUKIN_WALL_COMBAT_STRENGTH"
+},
+{
+"ConstructibleType": "WONDER_EMILE_BELL",
+"ModifierId": "MOD_EMILE_BELL_POLITICAL_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_EMILE_BELL",
+"ModifierId": "MOD_EMILE_BELL_DIPLOMATIC_ACTION"
+},
+{
+"ConstructibleType": "WONDER_GATE_OF_ALL_NATIONS",
+"ModifierId": "MOD_GATE_OF_ALL_NATIONS_WAR_SUPPORT"
+},
+{
+"ConstructibleType": "WONDER_GREAT_STELE",
+"ModifierId": "MOD_GREAT_STELE_GOLD_ON_WONDER_CREATED"
+},
+{
+"ConstructibleType": "WONDER_HA_AMONGA_A_MAUI",
+"ModifierId": "MOD_HA_AMONGA_A_MAUI_CULTURAL_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_HANGING_GARDENS",
+"ModifierId": "MOD_HANGING_GARDENS_GROWTH_RATE"
+},
+{
+"ConstructibleType": "WONDER_HANGING_GARDENS",
+"ModifierId": "MOD_HANGING_GARDENS_EXPANSIONIST_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_MAUSOLEUM_OF_THEODORIC",
+"ModifierId": "MOD_MAUSOLEUM_OF_THEODORIC_MILITARISTIC_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_MAUSOLEUM_OF_THEODORIC",
+"ModifierId": "MOD_MAUSOLEUM_OF_THEODORIC_PILLAGE_BUILDINGS"
+},
+{
+"ConstructibleType": "WONDER_MAUSOLEUM_OF_THEODORIC",
+"ModifierId": "MOD_MAUSOLEUM_OF_THEODORIC_PILLAGE_IMPROVEMENTS"
+},
+{
+"ConstructibleType": "WONDER_MONKS_MOUND",
+"ModifierId": "MOD_MONKS_MOUND_RESOURCE_CAP"
+},
+{
+"ConstructibleType": "WONDER_MUNDO_PERDIDO",
+"ModifierId": "MOD_MUNDO_PERDIDO_URBAN_HAPPINESS"
+},
+{
+"ConstructibleType": "WONDER_NALANDA",
+"ModifierId": "MOD_NALANDA_SCIENTIFIC_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_NALANDA",
+"ModifierId": "MOD_NALANDA_SCIENCE_VP"
+},
+{
+"ConstructibleType": "WONDER_ORACLE",
+"ModifierId": "MOD_ORACLE_NARRATIVE_EVENT_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_ORACLE",
+"ModifierId": "MOD_ORACLE_WILDCARD_ATTRIBUTE"
+},
+{
+"ConstructibleType": "WONDER_PETRA",
+"ModifierId": "MOD_PETRA_URBAN_GOLD"
+},
+{
+"ConstructibleType": "WONDER_PETRA",
+"ModifierId": "MOD_PETRA_RURAL_PRODUCTION"
+},
+{
+"ConstructibleType": "WONDER_PYRAMID_OF_THE_SUN",
+"ModifierId": "MOD_PYRAMID_OF_THE_SUN_URBAN_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_PYRAMIDS",
+"ModifierId": "MOD_PYRAMIDS_URBAN_GOLD"
+},
+{
+"ConstructibleType": "WONDER_PYRAMIDS",
+"ModifierId": "MOD_PYRAMIDS_URBAN_PRODUCTION"
+},
+{
+"ConstructibleType": "WONDER_SANCHI_STUPA",
+"ModifierId": "MOD_SANCHI_STUPA_HAPPINESS_CULTURE"
+},
+{
+"ConstructibleType": "WONDER_TERRACOTTA_ARMY",
+"ModifierId": "MOD_TERRACOTTA_ARMY_COMMANDER"
+},
+{
+"ConstructibleType": "WONDER_TERRACOTTA_ARMY",
+"ModifierId": "MOD_TERRACOTTA_ARMY_COMMANDER_XP"
+},
+{
+"ConstructibleType": "WONDER_GREAT_LIBRARY",
+"ModifierId": "MOD_GREAT_LIBRARY_SCIENCE_ON_SCIENCE_BUILDING_EMPIRE"
+},
+{
+"ConstructibleType": "WONDER_GREAT_LIBRARY",
+"ModifierId": "MOD_GREAT_LIBRARY_SCIENCE_VP"
+},
+{
+"ConstructibleType": "WONDER_WEIYANG_PALACE",
+"ModifierId": "MOD_WEIYANG_PALACE_TRADITION_SLOT"
+}
+],
 "Constructible_Adjacencies": [
 {
 "ConstructibleType": "BUILDING_PALACE",
@@ -15499,6 +15685,226 @@
 "TraitType": "TRAIT_MAYA"
 }
 ],
+"Unit_Stats": [
+{
+"UnitType": "UNIT_SANDBOX",
+"Combat": "65"
+},
+{
+"UnitType": "UNIT_GREAT_MERCHANT",
+"Combat": "65"
+},
+{
+"UnitType": "UNIT_TREASURE_FLEET_SMALL",
+"Combat": "65"
+},
+{
+"UnitType": "UNIT_AUDIO_SANDBOX_MELEE",
+"Combat": "55"
+},
+{
+"UnitType": "UNIT_AUDIO_SANDBOX_RANGED",
+"Combat": "25",
+"RangedCombat": "55",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_SCOUT"
+},
+{
+"UnitType": "UNIT_MERCHANT"
+},
+{
+"UnitType": "UNIT_ARMY_COMMANDER"
+},
+{
+"UnitType": "UNIT_FLEET_COMMANDER"
+},
+{
+"UnitType": "UNIT_SQUADRON_COMMANDER"
+},
+{
+"UnitType": "UNIT_CARRIER_COMMANDER"
+},
+{
+"UnitType": "UNIT_WARRIOR",
+"Combat": "20"
+},
+{
+"UnitType": "UNIT_SLINGER",
+"Combat": "5",
+"RangedCombat": "15",
+"Bombard": "5",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_SPEARMAN",
+"Combat": "25"
+},
+{
+"UnitType": "UNIT_ARCHER",
+"Combat": "10",
+"RangedCombat": "20",
+"Bombard": "10",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_CHARIOT",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_BALLISTA",
+"Combat": "15",
+"RangedCombat": "10",
+"Bombard": "30",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_GALLEY",
+"Combat": "25",
+"RangedCombat": "20",
+"Bombard": "15",
+"Range": "1"
+},
+{
+"UnitType": "UNIT_PHALANX",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_HORSEMAN",
+"Combat": "35"
+},
+{
+"UnitType": "UNIT_QUADRIREME",
+"Combat": "30",
+"RangedCombat": "25",
+"Bombard": "20",
+"Range": "1"
+},
+{
+"UnitType": "UNIT_HOPLITE",
+"Combat": "20"
+},
+{
+"UnitType": "UNIT_HOPLITE_2",
+"Combat": "25"
+},
+{
+"UnitType": "UNIT_HOPLITE_3",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_IMMORTAL",
+"Combat": "25"
+},
+{
+"UnitType": "UNIT_IMMORTAL_2",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_LEGION",
+"Combat": "25"
+},
+{
+"UnitType": "UNIT_LEGION_2",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_MEDJAY",
+"Combat": "20"
+},
+{
+"UnitType": "UNIT_MEDJAY_2",
+"Combat": "25"
+},
+{
+"UnitType": "UNIT_MEDJAY_3",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_FOEDERATI",
+"Combat": "25"
+},
+{
+"UnitType": "UNIT_BURNING_ARROW",
+"Combat": "5",
+"RangedCombat": "15",
+"Bombard": "8",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_BURNING_ARROW_2",
+"Combat": "10",
+"RangedCombat": "20",
+"Bombard": "13",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_HULCHE",
+"Combat": "5",
+"RangedCombat": "15",
+"Bombard": "5",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_HULCHE_2",
+"Combat": "10",
+"RangedCombat": "20",
+"Bombard": "10",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_NU",
+"Combat": "10",
+"RangedCombat": "15",
+"Bombard": "5",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_NU_2",
+"Combat": "15",
+"RangedCombat": "20",
+"Bombard": "10",
+"Range": "2"
+},
+{
+"UnitType": "UNIT_DANTINAS_TATHA",
+"Combat": "35"
+},
+{
+"UnitType": "UNIT_DANTINAS_TATHA_2",
+"Combat": "40"
+},
+{
+"UnitType": "UNIT_PURABHETTARAH",
+"Combat": "30"
+},
+{
+"UnitType": "UNIT_PURABHETTARAH_2",
+"Combat": "35"
+},
+{
+"UnitType": "UNIT_DHOW",
+"Combat": "25",
+"RangedCombat": "20",
+"Bombard": "20",
+"Range": "1"
+},
+{
+"UnitType": "UNIT_DHOW_2",
+"Combat": "30",
+"RangedCombat": "25",
+"Bombard": "25",
+"Range": "1"
+},
+{
+"UnitType": "UNIT_HAZARAPATIS"
+},
+{
+"UnitType": "UNIT_JAGUAR_SLAYER",
+"Combat": "20"
+}
+],
 "Units": [
 {
 "UnitType": "UNIT_MIGRANT",
@@ -16950,6 +17356,54 @@
 "Description": "LOC_VICTORY_MODERN_SCIENCE_DESCRIPTION",
 "RequirementSetId": "REQSET_VICTORY_MODERN_SCIENCE_COUNTDOWN",
 "VictorySound": "Victory_Science"
+}
+],
+"VictoryTypes": [
+{
+"VictoryType": "VICTORY_MILITARY_MODERN",
+"Name": "LOC_VICTORY_MILITARY_MODERN_NAME",
+"Description": "LOC_VICTORY_MILITARY_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_MILITARY_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION"
+},
+{
+"VictoryType": "VICTORY_CULTURE_MODERN",
+"Name": "LOC_VICTORY_CULTURE_MODERN_NAME",
+"Description": "LOC_VICTORY_CULTURE_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_CULTURE_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION"
+},
+{
+"VictoryType": "VICTORY_ECONOMIC_MODERN",
+"Name": "LOC_VICTORY_ECONOMIC_MODERN_NAME",
+"Description": "LOC_VICTORY_ECONOMIC_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_ECONOMIC_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION"
+},
+{
+"VictoryType": "VICTORY_SCIENCE_MODERN",
+"Name": "LOC_VICTORY_SCIENCE_MODERN_NAME",
+"Description": "LOC_VICTORY_SCIENCE_MODERN_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_MODERN_VICTORY_SCIENCE_PREREQ",
+"CountdownDuration": "5",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE",
+"MinimumPoints": "100"
+},
+{
+"VictoryType": "VICTORY_SCORE",
+"Name": "LOC_VICTORY_SCORE_NAME",
+"Description": "LOC_VICTORY_SCORE_DESCRIPTION",
+"FinalAge": "AGE_MODERN",
+"PrereqRequirementSetId": "REQSET_SCORE_PREREQ",
+"CountdownDuration": "0",
+"ScoringType": "COUNTDOWN_VICTORY_SCORING_TYPE_END_AGE"
 }
 ],
 "Wonders": [

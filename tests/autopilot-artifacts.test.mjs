@@ -105,3 +105,12 @@ test("cities train explorers (up to 2) while there is something to dig or resear
     steps.fillProduction(new Map(), { explore: false });
     assert.equal(queued(), 0, "only while the autopilot explores");
 });
+
+test("science or economy focus: no explorers trained even with ruins to dig (the strategy leaves them to culture)", () => {
+    const explorer = GameInfo.Units.lookup("UNIT_EXPLORER").$hash;
+    const queued = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType === explorer).length;
+    ruins = RUINS;
+    fresh([{ id: 10, type: "UNIT_SCOUT", x: 9, y: 9, activity: UnitActivityTypes.SLEEP }, { id: 11, type: "UNIT_SCOUT", x: 9, y: 9, activity: UnitActivityTypes.SLEEP }]);
+    const out = steps.fillProduction(new Map(), { explore: true, explorers: false });
+    assert.equal(queued(), 0, JSON.stringify(out));
+});

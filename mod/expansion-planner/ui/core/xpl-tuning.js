@@ -2,6 +2,17 @@
  * Tunable constants for site scoring (PLAN.md section 4.3). Starting values;
  * calibrated in-game in M1. Pure module.
  */
+/**
+ * Few sites and far below the settlement cap (research/22 A1; the user: "too low space to settle, but we
+ * should if we have too few cities"): a second search with looser rules — 4 tiles from a foreign
+ * settlement instead of 5, 5-6 tiles from a village allowed (still none within 4), unseen villages
+ * ignored, overlap HIGH. @returns the tuning for a search (relaxed or the normal one)
+ */
+export function siteTuning(relaxed = false) {
+    return relaxed ? Object.freeze({ ...TUNING, FOREIGN_MIN_DISTANCE: 4, VILLAGE_ANGER_DISTANCE: 4, RELAXED: true }) : TUNING;
+}
+export const RELAXED_MIN_PICKS = 2; // fewer picks than this (and far below the cap): search again, relaxed
+
 export const TUNING = Object.freeze({
     // Weight of a tile's value by ring (0 = centre). Ring 1 is owned at founding,
     // rings 2-3 come with growth.
@@ -22,6 +33,14 @@ export const TUNING = Object.freeze({
     // No city or town planned closer than this to another player's settlement centre
     // (another civilization's, an independent's or a city-state's): the user's rule.
     FOREIGN_MIN_DISTANCE: 5,
+
+    // An independent's village (not a city: player.Cities is empty for it) turns hostile when a
+    // settlement is founded within 3 tiles, and its relationship drops one level (friendly →
+    // neutral, neutral → hostile) within 6 (Civilopedia, walls page). Seen in game 5: five villages
+    // declared war on the turn we settled 4–5 tiles away, and took four of those settlements.
+    // No site that close: within 3 of any village, within 6 of one not friendly to us.
+    VILLAGE_HOSTILE_DISTANCE: 3,
+    VILLAGE_ANGER_DISTANCE: 6,
 
     // Minimum availability-weighted growable tiles in rings 1-3 (out of 36),
     // keyed by the "overlap tolerance" setting.
@@ -54,6 +73,11 @@ export const TUNING = Object.freeze({
     TIERS: { EXCELLENT: 85, GOOD: 70, FAIR: 55 },
 
     PROD_TILE_BONUS: 0.5,    // production potential added per vegetated/rough tile
+    // A natural wonder the settlement would own: 10 culture victory points (victories.xml VICTORY_TRACKER_NATURAL_WONDER;
+    // research/26 §4.5), in site value (1.0 = a reference good site), by ring: ring 1 is owned at founding, rings 2-3
+    // only if growth reaches them. Counted while the culture victory is on (ctx.naturalWonders).
+    NATURAL_WONDER: 0.12,
+    NATURAL_WONDER_RING: [0, 1, 0.5, 0.25],
     ADJ_TO_PROD: 0.5,        // share of production-family adjacency added to production potential
 
     // Kept towns (xpl-town-scorer.js): grow to population 7, then send all Food to connected cities.

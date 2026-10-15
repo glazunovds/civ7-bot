@@ -5,7 +5,9 @@
  */
 import { adviseTown, compareAdvice, estimateAgeTurnsLeft } from '../core/xpl-town-advisor.js';
 import { improvementKind, recommendFocus } from '../core/xpl-town-focus.js';
-import { getProfile } from '../core/xpl-profiles.js';
+import { profileFor } from '../core/xpl-profiles.js';
+import { focusOfProfile } from '../core/xpl-effect-value.js';
+import { FOCUS_YIELD_TAG } from '../core/xpl-victory-levers.js';
 import { getEngineMap } from './xpl-engine-map.js';
 import { getRules } from './xpl-rules-loader.js';
 import { FactsCache } from './xpl-map-facts.js';
@@ -30,13 +32,32 @@ function net(city, yieldType) {
     return Number(safe(() => city.Yields.getNetYield(yieldType), 0)) || 0;
 }
 
+let lastAgeTurns = null; // how many turns the previous age took (sampleAgeProgress)
+
+/** How many turns an age took, from its samples (sampling may have started late: scaled by the points seen). */
+function ageLength(samples) {
+    const s = (samples ?? []).filter((x) => Number.isFinite(x?.turn) && Number.isFinite(x?.points));
+    if (s.length < 2) return null;
+    const first = s[0];
+    const last = s[s.length - 1];
+    const dt = last.turn - first.turn;
+    const dp = last.points - first.points;
+    if (!(dt > 0) || !(dp > 0)) return null;
+    return Math.round((dt * last.points) / dp) + 1;
+}
+
 /** Records (turn, age points) once per turn so the age's pace can be estimated. */
 function sampleAgeProgress(ageType, points) {
     try {
         const hash = Database.makeHash(AGE_SAMPLES_KEY);
         const raw = GameTutorial.getProperty(hash);
         let data = typeof raw === "string" && raw ? JSON.parse(raw) : null;
-        if (!data || data.age !== ageType) data = { age: ageType, samples: [] };
+        if (!data || data.age !== ageType) {
+            // A new age: remember how long the last one took, for this one's first turns (research/24 F3: at E1 the
+            // estimate said 118 turns, the age had 70).
+            data = { age: ageType, samples: [], lastTurns: ageLength(data?.samples) ?? data?.lastTurns ?? null };
+        }
+        lastAgeTurns = data.lastTurns ?? null;
         const turn = Game.turn;
         const last = data.samples[data.samples.length - 1];
         if (!last || last.turn !== turn) {
@@ -59,7 +80,7 @@ export function ageOutlook() {
     const max = Number(safe(() => apm.getMaxAgeProgressionPoints(), 0));
     const isFinalAge = !!safe(() => apm.isFinalAge, false);
     const samples = sampleAgeProgress(rules.age, points);
-    return { turnsLeft: estimateAgeTurnsLeft(samples, points, max), isFinalAge, ageFrac: max > 0 ? points / max : 0 };
+    return { turnsLeft: estimateAgeTurnsLeft(samples, points, max, lastAgeTurns ?? undefined), isFinalAge, ageFrac: max > 0 ? points / max : 0 };
 }
 
 /** Median of (gold purchase cost / production cost) for current-age buildings in a real city. */
@@ -91,9 +112,30 @@ function productionPotential(city, prodNow, facts, engineMap) {
     return prodNow + extra.slice(0, GROWTH_TILES).reduce((a, b) => a + b, 0);
 }
 
+/**
+ * How many of this age's buildings an Urban Center would let the town buy for the focus (TypeTags URBANCENTER
+ * and the focus's yield tag: Library, Observatory, Schoolhouse for science), unlocked and not there yet
+ * (research/22 C2, probe P3).
+ */
+function urbanBuys(have, focus) {
+    const tag = FOCUS_YIELD_TAG[focus];
+    if (!tag) return 0;
+    const pid = GameContext.localPlayerID;
+    const reached = (r) => (Number(safe(() => Game.ProgressionTrees.getNode(pid, r.ProgressionTreeNodeType)?.depthUnlocked, 0)) || 0) >= (Number(r.UnlockDepth) || 1);
+    let n = 0;
+    for (const t of GameInfo.TypeTags?.filter((r) => r.Tag === "URBANCENTER") ?? []) {
+        if (have.has(t.Type) || !GameInfo.TypeTags.find((r) => r.Type === t.Type && r.Tag === tag)) continue;
+        if (safe(() => GameInfo.Constructibles.lookup(t.Type)?.ConstructibleClass, null) !== "BUILDING") continue;
+        const unlocks = GameInfo.ProgressionTreeNodeUnlocks?.filter((r) => r.TargetType === t.Type && !r.RequiredTraitType) ?? [];
+        if (unlocks.length === 0 || unlocks.some(reached)) n++;
+    }
+    return n;
+}
+
 /** What a Town Focus would act on, counted on the town's own tiles. */
-function townFocusFacts(city, facts, rules) {
+function townFocusFacts(city, facts, rules, focus = null) {
     const out = { farm: 0, mine: 0, appealing: 0, quarters: 0, buildings: 0, resources: 0 };
+    const have = new Set();
     const charming = rules.appealCharming ?? 3;
     for (const plot of safe(() => city.getPurchasedPlots(), []) ?? []) {
         const s = facts.structures(plot);
@@ -107,6 +149,7 @@ function townFocusFacts(city, facts, rules) {
             } else if (c.cls === "BUILDING" && !c.obsolete) {
                 buildingsHere++;
             }
+            if (c.cls === "BUILDING") have.add(c.type);
         }
         out.buildings += buildingsHere;
         if (buildingsHere >= 2) out.quarters++;
@@ -114,6 +157,7 @@ function townFocusFacts(city, facts, rules) {
         if (!urban && (s.appeal ?? 0) >= charming) out.appealing++;
         if (s.resource) out.resources++;
     }
+    out.urbanBuys = urbanBuys(have, focus);
     return out;
 }
 
@@ -160,7 +204,7 @@ export function runTownAdvisor(settings) {
         agePoints,
         ageMax,
         isFinalAge,
-        ageTurnsLeft: estimateAgeTurnsLeft(samples, agePoints, ageMax),
+        ageTurnsLeft: estimateAgeTurnsLeft(samples, agePoints, ageMax, lastAgeTurns ?? undefined),
         expectKeepCities: !!settings.towns?.expectKeepCities,
     };
 
@@ -180,14 +224,17 @@ export function runTownAdvisor(settings) {
                 prodNow,
                 prodPot: productionPotential(city, prodNow, facts, engineMap),
                 cost: Number(safe(() => city.Gold.getTownUpgradeCost(), -1)),
-                canConvert: !!check?.Success,
-                failureReasons: check?.FailureReasons ?? [],
+                // The game says Success false while the gold is short (its button is disabled then): the
+                // conversion is still possible, and the gold plan saves for it (research/22 B2).
+                canConvert: !!(check?.Success || check?.InsufficientFunds),
+                affordable: !!check?.Success,
+                failureReasons: check?.InsufficientFunds ? [] : check?.FailureReasons ?? [],
                 hasFocus,
                 focusValue: [YieldTypes.YIELD_FOOD, YieldTypes.YIELD_GOLD, YieldTypes.YIELD_SCIENCE, YieldTypes.YIELD_CULTURE, YieldTypes.YIELD_HAPPINESS].reduce((s, y) => s + Math.max(0, net(city, y)), 0),
                 foodSurplus: net(city, YieldTypes.YIELD_FOOD),
                 costFallsWithPop: true, // Civilopedia: the conversion cost falls as the town grows
             };
-            const focus = recommendFocus({ ...townFocusFacts(city, facts, rules), ...townFocusContext(city), population: town.pop }, getProfile(settings.profile).y);
+            const focus = recommendFocus({ ...townFocusFacts(city, facts, rules, focusOfProfile(settings.profile)), ...townFocusContext(city), population: town.pop }, profileFor(settings).y, settings.strategy?.townFocusBias ?? null);
             rows.push({ town, advice: adviseTown(town, ctx), focus });
         } catch (error) {
             log.error(`town advisor failed for a town`, error);

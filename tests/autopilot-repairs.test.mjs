@@ -37,6 +37,15 @@ test("damaged buildings are bought with gold when it covers them, in towns too",
     assert.deepEqual(out.map((e) => e.key), ["REPAIR_BOUGHT", "REPAIR_BOUGHT"]);
 });
 
+test("two repairs that each fit the gold are not both bought: the treasury does not change during a pass (seen in game 6)", () => {
+    fake.sent.length = 0;
+    world.gold = 200;
+    const out = steps.repairBuildings();
+    assert.deepEqual(sent("command", CityCommandTypes.PURCHASE).map((s) => [s.id.id, s.args.ConstructibleType]), [[0, LIBRARY]], "120 of 200 spent: Ostia's 120 waits");
+    assert.deepEqual(out.map((e) => e.key), ["REPAIR_BOUGHT"]);
+    world.gold = 500;
+});
+
 test("not enough gold: the repair is queued in a city (towns only buy)", () => {
     fake.sent.length = 0;
     world.gold = 100;

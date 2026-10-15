@@ -30,19 +30,108 @@ const builds = () => fake.sent.filter((s) => s.kind === "operation" && s.args.In
 const offered = new Set(["PROJECT_LAUNCH_SATELLITE", "PROJECT_CREWED_SPACE_FLIGHT_PREP", "BUILDING_LAUNCH_PAD", "BUILDING_FACTORY"]);
 world.canBuild = (type, id) => (type === undefined ? { Success: true } : offered.has(type) ? { Success: true, Plots: type.startsWith("BUILDING") ? [idx(id.id === 0 ? 4 : 11, 3)] : [], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
 
-test("science: every Innovation project the game offers, in the best producing city; a Launch Pad when we have none", () => {
-    fake.sent.length = 0;
-    const out = steps.pushVictoryWork("SCIENCE");
-    assert.deepEqual(builds(), [[0, P("PROJECT_CREWED_SPACE_FLIGHT_PREP")], [0, P("PROJECT_LAUNCH_SATELLITE")], [0, C("BUILDING_LAUNCH_PAD")]]);
-    assert.ok(out.every((e) => e.key === "VICTORY_WORK"));
-    const pad = fake.sent.find((s) => s.args.ConstructibleType === C("BUILDING_LAUNCH_PAD"));
-    assert.deepEqual([pad.args.X, pad.args.Y], [4, 3], "on a tile the game offers");
-    // A Launch Pad already stands in Paris: none more.
-    world.structures = (x, y) => ({ district: null, constructibles: x === 4 && y === 3 ? ["BUILDING_LAUNCH_PAD"] : [] });
-    fake.sent.length = 0;
-    steps.pushVictoryWork("SCIENCE");
-    assert.ok(!builds().some(([, t]) => t === C("BUILDING_LAUNCH_PAD")));
-    delete world.structures;
+test("science: the first Launch Pad in the best producing city, more (up to 3) and the Airfield only where done within 10 turns; no Radio Station; projects once, the repeatable one wherever a Launch Pad stands", () => {
+    world.cities.push({ owner: 0, x: 3, y: 9, name: "Nice", prod: 20 }, { owner: 0, x: 10, y: 9, name: "Lille", prod: 5 });
+    const SITES = ["BUILDING_LAUNCH_PAD", "BUILDING_AIRFIELD", "BUILDING_RADIO_STATION"];
+    // Turns each city would take (seen in game 5: 13-15 turns each in a 46-production capital).
+    const TURNS = { Paris: 8, Nice: 9, Lyon: 20, Lille: 40 };
+    world.turnsFor = (c) => TURNS[c.name] ?? -1;
+    const pads = new Set(); // city names with a Launch Pad standing
+    const padAt = (c) => ({ x: c.x + 1, y: c.y });
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id) => {
+        const c = world.cities.find((x) => x.name === Cities.get(id)?.name);
+        if (SITES.includes(type)) return { Success: true, Plots: [idx(padAt(c).x, padAt(c).y)], ExpandUrbanPlots: [] };
+        // Projects need a Launch Pad in their own city.
+        if (type === "PROJECT_CREWED_SPACE_FLIGHT_PREP" || type === "PROJECT_LAUNCH_SATELLITE") return { Success: pads.has(c.name), Plots: [] };
+        // Offered (a Radio Station stands somewhere), but 5 Innovation for 1200: never queued.
+        if (type === "PROJECT_CREWED_SPACE_FLIGHT_RESEARCH") return { Success: true, Plots: [] };
+        return { Success: false, Plots: [] };
+    };
+    world.structures = (x, y) => ({ district: null, constructibles: world.cities.some((c) => pads.has(c.name) && padAt(c).x === x && padAt(c).y === y) ? ["BUILDING_LAUNCH_PAD"] : [] });
+    const city = (name) => Players.get(0).Cities.getCities().find((c) => c.name === name).id.id;
+    world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } }; // Trans-Oceanic Flight open: the Airfield is wanted
+    try {
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        // No Launch Pad yet: Paris and Nice (Lyon would take 20 turns); the Airfield in Paris; no
+        // Radio Station; no project can start yet.
+        assert.deepEqual(builds(), [
+            [city("Paris"), C("BUILDING_AIRFIELD")],
+            [city("Paris"), C("BUILDING_LAUNCH_PAD")], [city("Nice"), C("BUILDING_LAUNCH_PAD")],
+        ]);
+        // A weak empire: Paris is slow too, yet the victory's first Launch Pad goes there, and the Airfield, which
+        // no city builds within 10 turns, too while it and its project fit the age (research/24 P1: never built in
+        // game 9); with 18 turns left it does not.
+        TURNS.Paris = 30;
+        TURNS.Nice = 25;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds(), [[city("Paris"), C("BUILDING_AIRFIELD")], [city("Paris"), C("BUILDING_LAUNCH_PAD")]]);
+        world.agePoints = 85;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        delete world.agePoints;
+        assert.deepEqual(builds(), [[city("Paris"), C("BUILDING_LAUNCH_PAD")]]);
+        TURNS.Paris = 8;
+        TURNS.Nice = 9;
+        const pad = fake.sent.find((s) => s.args.ConstructibleType === C("BUILDING_LAUNCH_PAD"));
+        assert.deepEqual([pad.args.X, pad.args.Y], [4, 3], "on a tile the game offers");
+        // Launch Pads stand in Paris and Lyon: a third goes to Nice; Launch Satellite once (Paris),
+        // Crewed Space Flight Preparation in both cities with a Launch Pad.
+        pads.add("Paris").add("Lyon");
+        fake.sent.length = 0;
+        const out = steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds().filter(([, t]) => t === C("BUILDING_LAUNCH_PAD")), [[city("Nice"), C("BUILDING_LAUNCH_PAD")]]);
+        assert.deepEqual(builds().filter(([, t]) => t === P("PROJECT_CREWED_SPACE_FLIGHT_PREP") || t === P("PROJECT_LAUNCH_SATELLITE")), [
+            [city("Paris"), P("PROJECT_CREWED_SPACE_FLIGHT_PREP")], [city("Lyon"), P("PROJECT_CREWED_SPACE_FLIGHT_PREP")], [city("Paris"), P("PROJECT_LAUNCH_SATELLITE")],
+        ]);
+        assert.ok(out.every((e) => e.key === "VICTORY_WORK"));
+        assert.ok(!builds().some(([, t]) => t === P("PROJECT_CREWED_SPACE_FLIGHT_RESEARCH")), "no Crewed Space Flight Research");
+        // Three Launch Pads: no fourth.
+        pads.add("Nice");
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.ok(!builds().some(([, t]) => t === C("BUILDING_LAUNCH_PAD")));
+    } finally {
+        world.canBuild = canBuild;
+        delete world.structures;
+        delete world.turnsFor;
+        delete world.research;
+        world.cities.splice(-2, 2);
+    }
+});
+
+test("science: cities buy the Launch Pad queued there, then the age's science buildings, with the gold above the reserve", () => {
+    world.cities[0].queued = ["BUILDING_LAUNCH_PAD"];
+    world.canBuy = (type, id) => (id.id !== 0 ? { Success: false }
+        : type === "BUILDING_LAUNCH_PAD" ? { Success: true, Plots: [idx(4, 3)], Cost: 900 }
+        : type === "BUILDING_AIRFIELD" ? { Success: true, Plots: [idx(4, 4)], Cost: 300 }
+        : type === "BUILDING_SCHOOLHOUSE" ? { Success: true, Plots: [idx(2, 3)], Cost: 400 }
+        : { Success: false });
+    const bought = () => fake.sent.filter((s) => s.kind === "command" && s.op === CityCommandTypes.PURCHASE).map((s) => [s.id.id, s.args.ConstructibleType]);
+    try {
+        world.goldIncome = 0;
+        world.gold = 1000;
+        fake.sent.length = 0;
+        steps.buyVictoryWork("SCIENCE", 2);
+        assert.deepEqual(bought(), [[0, C("BUILDING_LAUNCH_PAD")]], "the queued Launch Pad first (the Airfield, not queued, after the science buildings)");
+        world.cities[0].queued = [];
+        fake.sent.length = 0;
+        steps.buyVictoryWork("SCIENCE", 2);
+        assert.deepEqual(bought(), [[0, C("BUILDING_SCHOOLHOUSE")]], "then the age's science building");
+        // No science building left to buy: the sites nobody builds (too slow everywhere) are bought.
+        const buy = world.canBuy;
+        world.canBuy = (type, id) => (type === "BUILDING_SCHOOLHOUSE" ? { Success: false } : buy(type, id));
+        fake.sent.length = 0;
+        steps.buyVictoryWork("SCIENCE", 2);
+        assert.deepEqual(bought(), [[0, C("BUILDING_LAUNCH_PAD")]], "a missing Launch Pad");
+    } finally {
+        delete world.cities[0].queued;
+        delete world.canBuy;
+        delete world.gold;
+        delete world.goldIncome;
+    }
 });
 
 test("economy: Rail Station, Port and Factory in every city that can build them; the first of them queued goes to the front, behind repairs", () => {
@@ -254,4 +343,277 @@ test("the Great Banker teleports to another capital, opens the World Bank office
         delete world.unitCommandOk;
         world.units = [];
     }
+});
+
+test("science research: until Rocketry is researched, only its way (masteries wait); then the masteries", () => {
+    // Seen in game 5: Radio's and Flight's masteries came first (~6000 science) and Rocketry was never reached.
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    const N = (t) => GameInfo.ProgressionTreeNodes.lookup(t).$hash;
+    const chosen = () => fake.sent.filter((s) => s.op === TECH).map((s) => GameInfo.ProgressionTreeNodes.lookup(s.args.ProgressionTreeNodeType)?.ProgressionTreeNodeType);
+    const done = ["ACADEMICS", "STEAM_ENGINE", "MILITARY_SCIENCE", "ELECTRICITY", "URBANIZATION", "COMBUSTION", "RADIO", "FLIGHT"];
+    const depth = Object.fromEntries(done.map((t) => [`NODE_TECH_MO_${t}`, 1]));
+    try {
+        // Flight's mastery (Trans-Oceanic Flight, wanted) is offered first; Industrialization is on Rocketry's way.
+        world.research = { tech: { available: [N("NODE_TECH_MO_FLIGHT"), N("NODE_TECH_MO_INDUSTRIALIZATION")] }, culture: { available: [] }, depth };
+        fake.sent.length = 0;
+        const r = steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(), ["NODE_TECH_MO_INDUSTRIALIZATION"], JSON.stringify(r));
+        assert.match(r.args[0], /→/, "names the goal");
+        // Rocketry available: taken.
+        world.research = { tech: { available: [N("NODE_TECH_MO_FLIGHT"), N("NODE_TECH_MO_ROCKETRY")] }, culture: { available: [] }, depth };
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(), ["NODE_TECH_MO_ROCKETRY"]);
+        // Rocketry researched: the masteries' turn (Trans-Oceanic Flight).
+        world.research = { tech: { available: [N("NODE_TECH_MO_FLIGHT"), N("NODE_TECH_MO_NUCLEAR_FISSION")] }, culture: { available: [] }, depth: { ...depth, NODE_TECH_MO_ROCKETRY: 1 } };
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(), ["NODE_TECH_MO_FLIGHT"]);
+        // Other focuses: no gate.
+        world.research = { tech: { available: [N("NODE_TECH_MO_FLIGHT"), N("NODE_TECH_MO_INDUSTRIALIZATION")] }, culture: { available: [] }, depth };
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "ECONOMIC");
+        assert.notDeepEqual(chosen(), [], "economy researches something");
+    } finally {
+        delete world.research;
+    }
+});
+
+test("the gate's progress: the share of Rocketry's way researched; open once Rocketry is in", () => {
+    const pre = new Map();
+    for (const r of GameInfo.ProgressionTreePrereqs) pre.set(r.Node, [...(pre.get(r.Node) ?? []), r.PrereqNode]);
+    const gate = steps.gateState("SCIENCE").goal;
+    assert.ok(gate, "a node unlocks the Launch Pad");
+    const way = new Set();
+    const stack = [gate];
+    while (stack.length) {
+        const n = stack.pop();
+        if (way.has(n)) continue;
+        way.add(n);
+        stack.push(...(pre.get(n) ?? []));
+    }
+    const half = [...way].filter((n) => n !== gate).slice(0, Math.floor(way.size / 2));
+    world.research = { depth: Object.fromEntries(half.map((n) => [n, 1])) };
+    try {
+        const g = steps.gateState("SCIENCE");
+        assert.equal(g.open, false);
+        assert.ok(Math.abs(g.progress - half.length / way.size) < 1e-9, JSON.stringify(g));
+        world.research.depth[gate] = 1;
+        assert.equal(steps.gateState("SCIENCE").open, true);
+    } finally {
+        delete world.research;
+    }
+});
+
+test("before Rocketry the gold for Launch Pads is held as research nears it: smaller purchases wait (research/21 L3)", () => {
+    world.cities.push({ owner: 0, x: 3, y: 9, name: "Nice", prod: 20 }, { owner: 0, x: 10, y: 9, name: "Lille", prod: 5 });
+    world.buyCost = (type) => (type === "BUILDING_LAUNCH_PAD" ? 1000 : 400);
+    world.canBuy = (type, id) => (type === "BUILDING_SCHOOLHOUSE" && id.id === 0 ? { Success: true, Plots: [idx(2, 3)], Cost: 400 } : { Success: false });
+    const s = { ...DEFAULT_SETTINGS, strategy: { goals: ["CONVERT", "PADS"], pads: 4, gate: { open: false, progress: 0.5 }, phase: "COMMIT" } };
+    const bought = () => fake.sent.filter((x) => x.kind === "command" && x.op === CityCommandTypes.PURCHASE).length;
+    try {
+        world.goldIncome = 50;
+        world.gold = 1300;
+        steps.resetGoldPlan();
+        fake.sent.length = 0;
+        let p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 1 });
+        assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.cost, p.budget.goal?.hold], ["PADS", 4000, 938], "4 pads at 1000; one pad held at a time, at most 75% of the 1250 above the reserve");
+        steps.buyVictoryWork("SCIENCE", 1, p.budget, { pads: 4, commit: true });
+        assert.equal(bought(), 0, "1300 - 50 kept - 938 held: 312 for a 400 Schoolhouse");
+        world.gold = 1600;
+        fake.sent.length = 0;
+        p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 1 });
+        assert.equal(p.budget.goal?.hold, 1000, "the next pad's price");
+        steps.buyVictoryWork("SCIENCE", 1, p.budget, { pads: 4, commit: true });
+        assert.equal(bought(), 1, "550 free: the Schoolhouse");
+        // A bank far beyond the treasury never freezes it (research/22 B3: game 7 held 6,832 against 1,395).
+        world.gold = 600;
+        world.buyCost = (type) => (type === "BUILDING_LAUNCH_PAD" ? 2400 : 100);
+        world.canBuy = (type, id) => (type === "BUILDING_SCHOOLHOUSE" && id.id === 0 ? { Success: true, Plots: [idx(2, 3)], Cost: 100 } : { Success: false });
+        fake.sent.length = 0;
+        p = steps.goldPlan({ ...s, strategy: { ...s.strategy, gate: { open: false, progress: 0.95 } } }, { focus: "SCIENCE", reserveTurns: 1 });
+        steps.buyVictoryWork("SCIENCE", 1, p.budget, { pads: 4, commit: true });
+        assert.equal(bought(), 1, "550 above the reserve, at most 412 held: the 100 Schoolhouse is bought");
+    } finally {
+        world.cities.splice(-2, 2);
+        for (const k of ["buyCost", "canBuy", "gold", "goldIncome"]) delete world[k];
+    }
+});
+
+test("Rocketry in: Launch Pads bought in up to 5 cities in one pass (research/21 L3, D8)", () => {
+    world.cities.push({ owner: 0, x: 3, y: 9, name: "Nice", prod: 20 }, { owner: 0, x: 10, y: 9, name: "Lille", prod: 5 }, { owner: 0, x: 16, y: 9, name: "Lens", prod: 5 });
+    world.canBuy = (type, id) => (type === "BUILDING_LAUNCH_PAD" ? { Success: true, Plots: [idx(1 + id.id * 3, 6)], Cost: 1500 } : { Success: false });
+    const pads = () => fake.sent.filter((x) => x.kind === "command" && x.op === CityCommandTypes.PURCHASE && x.args.ConstructibleType === C("BUILDING_LAUNCH_PAD")).length;
+    try {
+        world.goldIncome = 0;
+        world.gold = 10000;
+        fake.sent.length = 0;
+        const out = steps.buyVictoryWork("SCIENCE", 1, undefined, { pads: 5, commit: true });
+        assert.equal(pads(), 5, JSON.stringify(out));
+    } finally {
+        world.cities.splice(-3, 3);
+        for (const k of ["canBuy", "gold", "goldIncome"]) delete world[k];
+    }
+});
+
+test("the Airfield only once Flight's mastery opens Trans-Oceanic Flight (research/21 D5: seen in game 6, an Airfield idle most of the age)", () => {
+    const airfield = () => fake.sent.filter((x) => x.kind === "operation" && x.args.ConstructibleType === C("BUILDING_AIRFIELD")).length;
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id) => (type === "BUILDING_AIRFIELD" || type === "BUILDING_LAUNCH_PAD" ? { Success: true, Plots: [idx(id.id === 0 ? 4 : 11, 4)], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    try {
+        world.research = { depth: { NODE_TECH_MO_FLIGHT: 1 } };
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.equal(airfield(), 0, "Flight researched, its mastery not");
+        world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } };
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.equal(airfield(), 1);
+    } finally {
+        world.canBuild = canBuild;
+        delete world.research;
+    }
+});
+
+test("science, Modern: owned Tea (a science factory resource) gets a Factory in the best producing city (research/21 L7)", () => {
+    const factory = () => fake.sent.filter((x) => x.kind === "operation" && x.args.ConstructibleType === C("BUILDING_FACTORY")).map((x) => x.id.id);
+    try {
+        world.resources = [{ value: 1, type: "RESOURCE_TEA" }];
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(factory(), [0], "Paris");
+        world.resources = [{ value: 1, type: "RESOURCE_COTTON" }];
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(factory(), [], "Cotton gives production, not science");
+    } finally {
+        delete world.resources;
+    }
+});
+
+test("Rocketry too late to pay (the strategy's gateLate): the Innovation masteries come first, no gate (research/22 A2)", () => {
+    const N = (t) => GameInfo.ProgressionTreeNodes.lookup(t).$hash;
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    const chosen = () => fake.sent.filter((s) => s.op === TECH).map((s) => s.args.ProgressionTreeNodeType);
+    world.research = {
+        tech: { available: [N("NODE_TECH_MO_ELECTRICITY"), N("NODE_TECH_MO_RADIO")] }, culture: { available: [] },
+        depth: { NODE_TECH_MO_ELECTRICITY: 1 }, turns: { NODE_TECH_MO_ELECTRICITY: 6, NODE_TECH_MO_RADIO: 2 },
+    };
+    try {
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", { ...DEFAULT_SETTINGS, strategy: { gateLate: true } }, "SCIENCE");
+        assert.deepEqual(chosen(), [N("NODE_TECH_MO_ELECTRICITY")], "Electricity's mastery: 2 Innovation now");
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULT_SETTINGS, "SCIENCE");
+        assert.deepEqual(chosen(), [N("NODE_TECH_MO_RADIO")], "in time: the way to Rocketry");
+    } finally {
+        delete world.research;
+    }
+});
+
+test("the Airfield as a savings goal, also more than 12 turns of income away while it fits the age (research/24 P1: «goal none» with 234-795 gold)", () => {
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id) => (type === "BUILDING_AIRFIELD" ? { Success: true, Plots: [idx(id.id === 0 ? 4 : 11, 4)], ExpandUrbanPlots: [] } : canBuild(type, id));
+    world.canBuy = (type, id) => (type === "BUILDING_AIRFIELD" && id.id === 0 ? { Success: false, InsufficientFunds: true, Plots: [idx(4, 4)], Cost: 1100 } : { Success: false });
+    const s = { ...DEFAULT_SETTINGS, strategy: { goals: ["AIRFIELD"], phase: "COMMIT" } };
+    try {
+        world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } };
+        world.goldIncome = 50;
+        world.gold = 100;
+        steps.resetGoldPlan();
+        let p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
+        assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.cost], ["AIRFIELD", 1100], "20 turns of income: still a goal");
+        world.research = { depth: { NODE_TECH_MO_FLIGHT: 1 } };
+        p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
+        assert.equal(p.budget.goal, null, "its projects cannot start yet");
+    } finally {
+        world.canBuild = canBuild;
+        for (const k of ["canBuy", "gold", "goldIncome", "research"]) delete world[k];
+    }
+});
+
+// Game 11 (Лянчжоу): the Launch Pad's overflow went into a Cannery the plan had queued behind it, and Crewed Space
+// Flight Preparation waited 9 turns behind the Cannery's progress.
+const MOVE = () => fake.sent.filter((s) => s.args.InsertMode === CityOperationsParametersValues.MoveTo).map((s) => [s.id.id, s.args.QueueSourceLocation, s.args.QueueDestinationLocation]);
+const withPad = (fn) => {
+    const structures = world.structures;
+    const canBuild = world.canBuild;
+    world.structures = (x, y) => (x === 4 && y === 3 ? { district: null, constructibles: ["BUILDING_LAUNCH_PAD"] } : { district: null, constructibles: [] });
+    world.canBuild = (type, id) => (type === undefined || type === "PROJECT_CREWED_SPACE_FLIGHT_PREP" ? { Success: true, Plots: [] } : canBuild(type, id));
+    try {
+        fn();
+    } finally {
+        world.structures = structures;
+        world.canBuild = canBuild;
+        delete world.cities[0].queue;
+        delete world.cities[0].queued;
+        world.cities[0].queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+    }
+};
+
+test("a space city: Crewed Space Flight Preparation goes ahead of a plain building with progress (nothing is lost either way)", () => {
+    withPad(() => {
+        world.cities[0].queue = { type: "BUILDING_CANNERY", turns: 9, pct: 30 };
+        world.cities[0].queued = ["PROJECT_CREWED_SPACE_FLIGHT_PREP"];
+        world.costOf = () => 400;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        delete world.costOf;
+        assert.deepEqual(MOVE().filter(([id]) => id === 0), [[0, 1, 0]]);
+    });
+});
+
+test("a science project never goes ahead of a Launch Pad in production: the projects need it", () => {
+    withPad(() => {
+        world.cities[0].queue = { type: "BUILDING_LAUNCH_PAD", turns: 5, pct: 50 };
+        world.cities[0].queued = ["PROJECT_LAUNCH_SATELLITE"];
+        world.costOf = () => 700;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        delete world.costOf;
+        assert.deepEqual(MOVE().filter(([id]) => id === 0), [], "behind the pad");
+    });
+});
+
+test("the final push: a space city's empty queue takes no plan building but its science sites; no explorer, settler or scout from it", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const plans = state.get().results.plans;
+    const C2 = (t) => GameInfo.Constructibles.lookup(t)?.ConstructibleType;
+    withPad(() => {
+        const canBuild = world.canBuild;
+        world.canBuild = (type, id, args) => (type === "BUILDING_CANNERY" ? { Success: true, Plots: [idx(4, 2)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+        delete world.cities[0].queue;
+        state.set({ results: { ...state.get().results, plans: { placements: [{ sid: `c:${PARIS.x}-${PARIS.y}`, type: "BUILDING_CANNERY", x: 4, y: 2 }] } } });
+        const commit = { victory: "SCIENCE", strategy: { phase: "COMMIT", pads: 3, gate: { open: true } } };
+        try {
+            fake.sent.length = 0;
+            steps.fillProduction(new Map(), commit);
+            const built = fake.sent.filter((s) => s.kind === "operation" && s.id.id === 0 && s.args.ConstructibleType !== undefined).map((s) => C2(s.args.ConstructibleType));
+            assert.ok(!built.includes("BUILDING_CANNERY"), JSON.stringify(built));
+            // Nor the advisor's buildings (only its projects).
+            const subjects = GameInfo.AdvisorySubjects;
+            GameInfo.AdvisorySubjects = { lookup: (h) => (h === 9 ? { AdvisorySubjectType: "ADVISORY_SUBJECT_PRODUCE_CONSTRUCTIBLES" } : null) };
+            world.buildRecs = () => [{ subject: 9, recommendedType: "BUILDING_CANNERY", whichAdvisors: [] }];
+            state.set({ results: { ...state.get().results, plans: { placements: [] } } });
+            fake.sent.length = 0;
+            steps.fillProduction(new Map(), commit);
+            delete world.buildRecs;
+            GameInfo.AdvisorySubjects = subjects;
+            assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.id.id === 0 && C2(s.args.ConstructibleType) === "BUILDING_CANNERY"), "the advisor's Cannery neither");
+            state.set({ results: { ...state.get().results, plans: { placements: [{ sid: `c:${PARIS.x}-${PARIS.y}`, type: "BUILDING_CANNERY", x: 4, y: 2 }] } } });
+            fake.sent.length = 0;
+            steps.fillProduction(new Map(), { victory: "SCIENCE", strategy: { phase: "BUILD" } });
+            assert.ok(fake.sent.some((s) => s.kind === "operation" && s.id.id === 0 && C2(s.args.ConstructibleType) === "BUILDING_CANNERY"), "outside the final push: the plan as before");
+            // Explorers and scouts wanted: not from Paris (a space city); Lyon trains them.
+            world.cities[0].queue = { type: "PROJECT_CREWED_SPACE_FLIGHT_PREP", turns: 20 };
+            world.canBuild = (type, id, args) => (type === "UNIT_SCOUT" ? { Success: true } : canBuild(type, id, args));
+            fake.sent.length = 0;
+            steps.fillProduction(new Map(), { ...commit, explore: true });
+            const scouts = fake.sent.filter((s) => s.kind === "operation" && GameInfo.Units.lookup(s.args.UnitType)?.UnitType === "UNIT_SCOUT").map((s) => s.id.id);
+            assert.ok(scouts.length > 0 && scouts.every((id) => id !== 0), JSON.stringify(scouts));
+        } finally {
+            world.canBuild = canBuild;
+            state.set({ results: { ...state.get().results, plans } });
+        }
+    });
 });

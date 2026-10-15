@@ -148,6 +148,15 @@
     color: #e8dcb8;
 }
 
+.xpl-bias-value {
+    flex: 0 0 3rem;
+}
+
+.xpl-bias-set {
+    flex: 0 0 auto;
+    margin-right: 0.5rem;
+}
+
 .xpl-dropdown {
     flex: 1 1 auto;
     min-width: 8rem;

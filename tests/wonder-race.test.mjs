@@ -8,12 +8,13 @@ const base = { ourTurns: 8, completedElsewhere: false, rivalsSeen: 0, rivalTurns
 
 test("fair mode labels", () => {
     assert.equal(raceLabel(base).label, "HIGH");
-    assert.equal(raceLabel({ ...base, ourTurns: 25 }).label, "MEDIUM");
+    assert.equal(raceLabel({ ...base, ourTurns: 12 }).label, "MEDIUM");
+    assert.equal(raceLabel({ ...base, ourTurns: 25 }).label, "LOW", "research/24 P5: 29-30 turns, both lost to rivals unseen");
     assert.equal(raceLabel({ ...base, rivalsSeen: 1 }).label, "LOW");
     assert.equal(raceLabel({ ...base, ourTurns: 4, rivalsSeen: 1 }).label, "MEDIUM");
     assert.equal(raceLabel({ ...base, completedElsewhere: true }).label, "NONE");
     assert.equal(raceLabel({ ...base, ourTurns: 90 }).label, "LOW"); // the age ends first
-    assert.equal(raceLabel({ ...base, ourTurns: 90, ageTurnsLeft: null }).label, "MEDIUM"); // final age
+    assert.equal(raceLabel({ ...base, ourTurns: 12, ageTurnsLeft: null }).label, "MEDIUM"); // final age
     assert.equal(raceLabel({ ...base, ourTurns: Infinity }).label, "LOW");
 });
 
@@ -21,7 +22,8 @@ test("omniscient mode compares with rivals' queues", () => {
     assert.equal(raceLabel({ ...base, rivalTurns: [6] }).label, "LOW");
     assert.equal(raceLabel({ ...base, rivalTurns: [11] }).label, "MEDIUM");
     assert.equal(raceLabel({ ...base, rivalTurns: [30, 40] }).label, "HIGH");
-    assert.equal(raceLabel({ ...base, ourTurns: 25, rivalTurns: [] }).label, "HIGH");
+    assert.equal(raceLabel({ ...base, ourTurns: 9, rivalTurns: [] }).label, "HIGH");
+    assert.deepEqual([12, 25].map((t) => raceLabel({ ...base, ourTurns: t, rivalTurns: [] }).label), ["MEDIUM", "LOW"], "no rival: capped by our turns (research/24 P5)");
 });
 
 test("wonder boost counts every adjacent yield building's +1 per wonder", () => {

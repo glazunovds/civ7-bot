@@ -1,12 +1,14 @@
 <#
-  Links the dev copy of the mod into the game's local Mods folder with a directory
-  junction (no admin rights needed). Safe to re-run: an existing correct junction is
-  left alone; anything else at the target path is NOT touched.
+  Links the dev copy of a mod (default: expansion-planner; -Mod memento-advisor for the other)
+  into the game's local Mods folder with a directory junction (no admin rights needed). Safe to
+  re-run: an existing correct junction is left alone; anything else at the target path is NOT
+  touched.
 #>
+param([string]$Mod = 'expansion-planner')
 $ErrorActionPreference = 'Stop'
-$source = Join-Path $PSScriptRoot '..\mod\expansion-planner' | Resolve-Path
+$source = Join-Path $PSScriptRoot "..\mod\$Mod" | Resolve-Path
 $modsDir = Join-Path $env:LOCALAPPDATA "Firaxis Games\Sid Meier's Civilization VII\Mods"
-$target = Join-Path $modsDir 'expansion-planner'
+$target = Join-Path $modsDir $Mod
 
 if (-not (Test-Path $modsDir)) { throw "Mods folder not found: $modsDir" }
 

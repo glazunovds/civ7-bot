@@ -12,7 +12,7 @@
  */
 import { PlanState, hashString } from '../core/xpl-placement-model.js';
 import { solveLayout } from '../core/xpl-placement-solver.js';
-import { getProfile } from '../core/xpl-profiles.js';
+import { biasFor, profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex } from '../core/xpl-yields.js';
 import { getEngineMap } from './xpl-engine-map.js';
 import { getRules, unlockedUniqueQuarters } from './xpl-rules-loader.js';
@@ -352,6 +352,7 @@ function inputSignature(target, settings, members, roleBySid, selected, lockedSe
     return JSON.stringify({
         target: target.key,
         profile: settings.profile,
+        bias: biasFor(settings),
         hidden: !!settings.includeHidden,
         bs,
         rules: `${rules.age}|${rules.civ}|${rules.uniqueQuarters.map((q) => q.type).join(",")}`,
@@ -376,7 +377,7 @@ export function startBuildingPlan(target, settings, options = {}) {
     const engineMap = getEngineMap();
     const rules = getRules();
     const bs = settings.buildings ?? {};
-    const profile = getProfile(settings.profile);
+    const profile = profileFor(settings);
     const allTargets = listTargets();
     const members = target.kind === "all" ? allTargets : bs.region ? regionAround(target, allTargets, engineMap) : [target];
     if (members.length === 0) return { promise: Promise.resolve({ cancelled: true }) };

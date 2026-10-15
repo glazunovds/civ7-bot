@@ -2,7 +2,7 @@
 // path in each age, and the 40-yield bonus for Exploration science specialists.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { highYieldBonus, leverBuildings, pickVictoryResearch, researchToward, wantedResearch } from "../mod/expansion-planner/ui/core/xpl-victory-levers.js";
+import { highYieldBonus, highYieldTarget, leverBuildings, pickVictoryResearch, researchToward, wantedResearch } from "../mod/expansion-planner/ui/core/xpl-victory-levers.js";
 
 test("research: the quickest of the candidates whose next research unlocks the path's work", () => {
     const c = [
@@ -43,4 +43,10 @@ test("40-yield bonus: full when a specialist reaches it, else the share of the w
     assert.equal(highYieldBonus(40, 5, 40, 10), 0, "already counts");
     assert.equal(highYieldBonus(30, 0, 40, 10), 0);
     assert.equal(highYieldBonus(30, 5, 0, 10), 0, "no threshold this age");
+    // The age's next mark: Exploration 40 (the path) until 5 urban tiles reach it, then 75 (the triumph).
+    assert.equal(highYieldTarget("AGE_EXPLORATION", [41, 40, 50, 12, 39]), 40, "4 at 40");
+    assert.equal(highYieldTarget("AGE_EXPLORATION", [41, 40, 50, 12, 45, 60]), 75);
+    assert.equal(highYieldTarget("AGE_EXPLORATION", [75, 80, 90, 100, 76]), 0, "both done");
+    assert.equal(highYieldTarget("AGE_MODERN", []), 120);
+    assert.equal(highYieldTarget("AGE_UNKNOWN", []), 0);
 });

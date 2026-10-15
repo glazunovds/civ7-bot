@@ -7,8 +7,13 @@ import { settings } from '../services/xpl-settings.js';
 import { state } from '../services/xpl-state.js';
 import { aiPlayAvailable, isAiPlaying, isAutopilotOn, isControlLost, runTurn, setAutopilot, startAiTurns, stopAiTurns, takeBackControl } from '../hud/xpl-autopilot.js';
 import { log } from '../services/xpl-log.js';
+import { disabledVictories } from '../data/xpl-victory.js';
+import { victoryOptions } from '../core/xpl-victory-focus.js';
+import { BIAS_DEFAULTS, BIAS_KEYS, BIAS_SETS, normaliseBias } from '../core/xpl-profiles.js';
 
-const CHECKS = ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"];
+const BIAS_SAVE_MS = 300; // a dragged slider is saved once it rests
+
+const CHECKS = ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "strategy", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"];
 const MAX_WONDER_OPTIONS = [1, 2, 3];
 const RESERVE_OPTIONS = [0, 1, 2, 3, 5];
 const REPLAN_OPTIONS = [0, 1, 3, 5, 10];
@@ -45,11 +50,20 @@ export class AutopilotTab {
         this.now = q(".xpl-ap-now");
         this.logBox = q(".xpl-ap-log");
         this.focusBox = q(".xpl-ap-focus-box");
+        this.goldLine = q(".xpl-ap-gold");
         this.aiButton = q(".xpl-ap-ai-start");
         this.aiNote = q(".xpl-ap-ai-note");
         this.lostBox = q(".xpl-ap-lost");
         this.takeBack = q(".xpl-ap-take-back");
         this.checks = Object.fromEntries(CHECKS.map((k) => [k, q(`.xpl-ap-${k}`)]));
+        // «Баланс приоритетов»: a multiplier per yield on every profile (core/xpl-profiles.js profileFor).
+        this.biasBox = q(".xpl-ap-bias");
+        this.biasToggle = q(".xpl-ap-bias-toggle");
+        this.biasReset = q(".xpl-ap-bias-reset");
+        this.biasSetLabel = q(".xpl-ap-bias-set");
+        this.biasSliders = Object.fromEntries(BIAS_KEYS.map((k) => [k, { slider: q(`.xpl-ap-bias-${k}`), value: q(`.xpl-ap-bias-value-${k}`) }]));
+        this.biasTimer = null;
+        this.renderBias();
         this.dropdowns = {
             reserveTurns: { el: q(".xpl-ap-reserve"), options: RESERVE_OPTIONS, label: (v) => compose("LOC_XPL_AP_RESERVE_N", v) },
             replanEvery: { el: q(".xpl-ap-replan"), options: REPLAN_OPTIONS, label: (v) => (v === 0 ? compose("LOC_XPL_AP_REPLAN_NEVER") : compose("LOC_XPL_AP_REPLAN_N", v)) },
@@ -88,6 +102,27 @@ export class AutopilotTab {
             else startAiTurns(Number(settings.get().autopilot.aiTurns) || 5);
             this.render();
         });
+        this.listen(this.biasToggle, "action-activate", () => {
+            settings.patch({ autopilot: { biasOpen: !settings.get().autopilot.biasOpen } });
+            this.renderBias();
+        });
+        this.listen(this.biasReset, "action-activate", () => {
+            const set = this.biasSet();
+            settings.patch({ yieldBias: { [set]: { ...BIAS_DEFAULTS[set] } } });
+            this.renderBias({ sliders: true });
+        });
+        for (const [k, b] of Object.entries(this.biasSliders)) {
+            this.listen(b.slider, "component-value-changed", (e) => {
+                const v = normaliseBias({ [k]: e.detail?.value })[k];
+                if (b.value) b.value.textContent = compose("LOC_XPL_AP_BIAS_VALUE", v.toFixed(1));
+                const set = this.biasSet();
+                if (v === this.biasOf(set)[k]) return; // set from code, or no change
+                clearTimeout(this.biasTimer);
+                this.biasTimer = setTimeout(() => {
+                    if (this.biasOf(set)[k] !== v) settings.patch({ yieldBias: { [set]: { ...this.biasOf(set), [k]: v } } });
+                }, BIAS_SAVE_MS);
+            });
+        }
         for (const [k, box] of Object.entries(this.checks)) {
             this.listen(box, "component-value-changed", (e) => {
                 if (e.detail?.forced) return; // set from code, not a click
@@ -103,7 +138,11 @@ export class AutopilotTab {
             });
         }
         this.unsubscribe = state.subscribe((_s, changed) => {
-            if (this.active && changed.includes("autopilot")) this.render();
+            if (this.active && changed.includes("autopilot")) {
+                this.render();
+                // The focus may have changed: the sliders show its own balance.
+                if (this.shownBiasSet !== this.biasSet()) this.renderBias();
+            }
         });
         const onAuto = () => this.active && this.render();
         engine.on("AutoplayStarted", onAuto);
@@ -124,11 +163,59 @@ export class AutopilotTab {
 
     show() {
         this.active = true;
+        this.refreshVictoryOptions();
         this.render();
+    }
+
+    /**
+     * «Цель победы» offers only the victories switched on in this game (Game.VictoryManager, as
+     * the victories screen asks; all off or unknown: all offered, like the focus itself).
+     */
+    refreshVictoryOptions() {
+        const d = this.dropdowns?.victory;
+        if (!d?.el) return;
+        let off = new Set();
+        try {
+            off = disabledVictories();
+        } catch (error) {
+            log.debug("autopilot tab: victories unknown", error);
+        }
+        const usable = victoryOptions(off);
+        if (usable.join() === d.options.join()) return;
+        d.options = usable;
+        d.el.setAttribute("dropdown-items", JSON.stringify(usable.map((v) => ({ label: d.label(v) }))));
+        d.el.setAttribute("selected-item-index", String(Math.max(0, usable.indexOf(settings.get().autopilot.victory))));
     }
 
     hide() {
         this.active = false;
+    }
+
+    /** The balance set the sliders edit: the autopilot's victory focus (its own set), else the one without a focus. */
+    biasSet() {
+        const focus = state.get().autopilot?.focus?.cls;
+        return BIAS_SETS.includes(focus) ? focus : "NONE";
+    }
+
+    /** A balance set as saved (its default when unset). */
+    biasOf(set) {
+        return normaliseBias(settings.get().yieldBias?.[set] ?? BIAS_DEFAULTS[set]);
+    }
+
+    /** The balance block: shown or hidden, the focus it belongs to, each slider's value («×1.2»); `sliders`: move the sliders too. */
+    renderBias({ sliders = true } = {}) {
+        const s = settings.get();
+        const open = !!s.autopilot?.biasOpen;
+        this.biasBox?.classList.toggle("hidden", !open);
+        this.biasToggle?.setAttribute("caption", compose(open ? "LOC_XPL_AP_BIAS_HIDE" : "LOC_XPL_AP_BIAS_SHOW"));
+        const set = this.biasSet();
+        this.shownBiasSet = set;
+        if (this.biasSetLabel) this.biasSetLabel.textContent = compose(set === "NONE" ? "LOC_XPL_AP_BIAS_SET_NONE" : `LOC_XPL_FOCUS_${set}`);
+        const bias = this.biasOf(set);
+        for (const [k, b] of Object.entries(this.biasSliders ?? {})) {
+            if (sliders && b.slider && Number(b.slider.getAttribute("value")) !== bias[k]) b.slider.setAttribute("value", String(bias[k]));
+            if (b.value) b.value.textContent = compose("LOC_XPL_AP_BIAS_VALUE", bias[k].toFixed(1));
+        }
     }
 
     render() {
@@ -146,7 +233,8 @@ export class AutopilotTab {
         // The game plays the civ by itself (the slot became AI at an age change during an older run).
         const lost = isControlLost();
         this.lostBox?.classList.toggle("hidden", !lost);
-        this.renderFocus(ap.focus);
+        this.renderGold(ap.gold);
+        this.renderFocus(ap.focus, ap.strategy);
         if (!this.logBox) return;
         this.logBox.innerHTML = "";
         const entries = ap.log ?? [];
@@ -164,17 +252,58 @@ export class AutopilotTab {
         }
     }
 
+    /** The last pass's gold plan (steps.logGold): the treasury, the reserve, the goal saved for, what was spent. */
+    renderGold(gold) {
+        if (!this.goldLine) return;
+        this.goldLine.classList.toggle("hidden", !gold);
+        if (!gold) return;
+        const g = gold.goal && !gold.goal.done ? gold.goal : null;
+        let text = g
+            ? compose("LOC_XPL_AP_GOLD_LINE", gold.balance, gold.reserve, g.label, g.cost)
+            : compose("LOC_XPL_AP_GOLD_NO_GOAL", gold.balance, gold.reserve);
+        if (gold.spent > 0) text += `; ${compose("LOC_XPL_AP_GOLD_SPENT", gold.spent)}`;
+        this.goldLine.setAttribute("data-l10n-id", text);
+    }
+
     /** The victory focus: the chosen path, each path against the best rival, the close triumphs. */
-    renderFocus(focus) {
+    renderFocus(focus, strategy = null) {
         if (!this.focusBox) return;
         this.focusBox.innerHTML = "";
         this.focusBox.classList.toggle("hidden", !focus);
         if (!focus) return;
         const line = (text) => this.focusBox.appendChild(el("div", "xpl-ap-focus-row", text));
         line(compose("LOC_XPL_AP_FOCUS_NOW", focus.cls ? compose(`LOC_XPL_FOCUS_${focus.cls}`) : compose("LOC_XPL_AP_FOCUS_NONE")));
+        // The strategy's phase, with what it changes this pass in the tooltip (core/xpl-strategy.js strategyLines).
+        if (strategy?.phase) {
+            const row = line(compose("LOC_XPL_AP_STRATEGY_NOW", compose(`LOC_XPL_AP_PHASE_${strategy.phase}`), compose(`LOC_XPL_FOCUS_${strategy.focus}`)));
+            const tip = (strategy.lines ?? []).map((l) => compose(l.key, ...(l.args ?? []))).join("[N]");
+            if (tip) row.setAttribute("data-tooltip-content", tip);
+        }
         for (const p of focus.scores ?? []) {
             line(compose(p.done ? "LOC_XPL_AP_FOCUS_PATH_DONE" : "LOC_XPL_AP_FOCUS_PATH", compose(`LOC_XPL_FOCUS_${p.cls}`), p.ours, p.goal, p.rival));
         }
+        // The victories themselves (Innovation, GDP…), once they have points or a goal.
+        for (const r of focus.races ?? []) {
+            if (!(r.points > 0) && !(r.goal > 0)) continue;
+            const goal = r.goal > 0 ? r.goal : "—";
+            const name = compose(`LOC_XPL_FOCUS_${r.cls}`);
+            line(r.turnsLeft === null || r.turnsLeft === undefined
+                ? compose("LOC_XPL_AP_FOCUS_RACE", name, r.points, goal, r.rival)
+                : compose("LOC_XPL_AP_FOCUS_RACE_COUNTDOWN", name, r.points, goal, r.turnsLeft));
+        }
+        // Rivals near a victory (victoryWatch): «… у порога победы (Культура): 1400 из 1552 (×4); нам нужно 403».
+        for (const w of focus.watch ?? []) {
+            if (!w.level) continue;
+            if (w.own) {
+                line(w.settlements !== undefined
+                    ? compose("LOC_XPL_AP_WATCH_LEVER", w.settlements, w.ours, w.goal)
+                    : compose("LOC_XPL_AP_WATCH_OWN", compose(`LOC_XPL_FOCUS_${w.cls}`), w.ours, w.goal));
+                continue;
+            }
+            line(compose(w.level === "DANGER" ? "LOC_XPL_AP_WATCH_DANGER" : "LOC_XPL_AP_WATCH", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal, w.multiple, w.need));
+        }
+        if (focus.innovation?.target) line(compose("LOC_XPL_AP_INNOVATION_TARGET", focus.innovation.points, focus.innovation.target));
+        if ((focus.off ?? []).length > 0) line(compose("LOC_XPL_AP_FOCUS_OFF", focus.off.map((c) => compose(`LOC_XPL_FOCUS_${c}`)).join(", ")));
         if ((focus.close ?? []).length > 0) {
             line(compose("LOC_XPL_AP_FOCUS_TRIUMPHS", focus.close.map((t) => `${compose(t.name)} ${t.current}/${t.total}`).join("; ")));
         }

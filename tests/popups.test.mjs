@@ -39,3 +39,14 @@ test("an active pop-up is closed only once its window is drawn; queued ones any 
     assert.ok(closable(tech, { active: true, showing: true }));
     assert.ok(!closable({ category: "DiplomacyDialog" }, { active: true, showing: true }));
 });
+
+test("a leader's dialog that only informs is closed after 5 s; not a first meeting, not with a deal waiting (research/24 W7)", async () => {
+    const { leaderDialogClosable } = await import("../mod/expansion-planner/ui/core/xpl-popups.js");
+    const war = { Choices: [{ ChoiceType: "CHOICE_ACKNOWLEDGE" }, { ChoiceType: "CHOICE_EXIT" }], StatementFrameDef: { Selections: "CHOICES_DECLARE_WAR" } };
+    assert.equal(leaderDialogClosable(war, { shownMs: 6000 }), true);
+    assert.equal(leaderDialogClosable(war, { shownMs: 3000 }), false, "not yet");
+    assert.equal(leaderDialogClosable(war, { shownMs: 6000, pendingDeal: true }), false);
+    assert.equal(leaderDialogClosable({ ...war, StatementFrameDef: { Selections: "CHOICES_FIRST_MEET_NO_MANS" } }, { shownMs: 6000 }), false);
+    assert.equal(leaderDialogClosable({ ...war, DealAction: 4 }, { shownMs: 6000, dealActions: { PROPOSED: 4, ADJUSTED: 3 } }), false, "a proposal");
+    assert.equal(leaderDialogClosable({ Choices: [{ ChoiceType: "CHOICE_ACCEPT_DEAL" }] }, { shownMs: 6000 }), false);
+});

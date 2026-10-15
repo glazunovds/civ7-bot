@@ -17,6 +17,19 @@ installFakeEngine({
 const { runTownAdvisor } = await import("../mod/expansion-planner/ui/data/xpl-town-job.js");
 const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
 
+test("a new age's first turns: the age length is the last age's, not 120 turns (research/24 F3: E1 said 118, the age had 70)", async () => {
+    const { ageOutlook } = await import("../mod/expansion-planner/ui/data/xpl-town-job.js");
+    const key = Database.makeHash("_XPL_OBJ_AGE_SAMPLES");
+    const before = GameTutorial.getProperty(key);
+    try {
+        GameTutorial.setProperty(key, JSON.stringify({ age: "AGE_OLD", samples: [{ turn: 1, points: 0 }, { turn: 70, points: 100 }] }));
+        assert.equal(ageOutlook().turnsLeft, 56, "80% of a 70-turn age left");
+        assert.equal(JSON.parse(GameTutorial.getProperty(key)).lastTurns, 70);
+    } finally {
+        GameTutorial.setProperty(key, before);
+    }
+});
+
 test("advisor ranks the productive town above the farming town", () => {
     const towns = runTownAdvisor(DEFAULT_SETTINGS);
     assert.equal(towns.rows.length, 2);

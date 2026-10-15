@@ -1,0 +1,59 @@
+/* Memento Advisor: badges on the suggested memento cards and the ranking row. Our own classes
+   only; never restyle the screen's (.memento-select*, .img-unit-panelbox). The card root is
+   already position: relative. */
+.mma-badge {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    z-index: 5;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    line-height: 1;
+    color: #1d1405;
+    background-color: #e8c66a;
+    border: 0.12rem solid #fff3c8;
+    box-shadow: 0 0 0.4rem rgba(0, 0, 0, 0.8);
+}
+
+.mma-switch {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 0.3rem 1rem 0.4rem 1rem;
+}
+
+.mma-switch-label {
+    flex: 0 0 auto;
+    margin-right: 0.8rem;
+    font-size: 1rem;
+    color: #e8d9b0;
+}
+
+.mma-mode {
+    flex: 0 0 auto;
+    margin: 0.15rem 0.3rem;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.95rem;
+    color: #d6c9a8;
+    border: 0.08rem solid rgba(232, 198, 106, 0.45);
+    border-radius: 0.3rem;
+    background-color: rgba(20, 16, 10, 0.6);
+    cursor: pointer;
+}
+
+.mma-mode:hover {
+    color: #ffffff;
+    border-color: #e8c66a;
+}
+
+.mma-mode--on {
+    color: #1d1405;
+    background-color: #e8c66a;
+    border-color: #fff3c8;
+}

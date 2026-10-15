@@ -257,6 +257,196 @@ test("celebration: the bonus worth most by the chosen priority", () => {
     culture.getGoldenAgeChoices = () => [];
 });
 
+// Modifier tables as the game has them (GameInfo.Modifiers → DynamicModifiers, ModifierArguments).
+const useModifiers = (mods) => {
+    GameInfo.Modifiers = mods.map((m) => ({ ModifierId: m.id, ModifierType: `MT_${m.id}` }));
+    GameInfo.DynamicModifiers = mods.map((m) => ({ ModifierType: `MT_${m.id}`, EffectType: m.effect }));
+    GameInfo.ModifierArguments = mods.flatMap((m) => Object.entries(m.args ?? {}).map(([Name, Value]) => ({ ModifierId: m.id, Name, Value: String(Value) })));
+};
+const clearModifiers = () => {
+    for (const t of ["Modifiers", "DynamicModifiers", "ModifierArguments", "TraditionModifiers", "CityStateBonusModifiers", "CityStateBonuses"]) delete GameInfo[t];
+};
+
+test("celebration: a lump grant Policy Yield Previews cannot value counts (Elective Republic's +1000 Science beats a little culture)", () => {
+    reset();
+    const ages = [
+        { GoldenAgeType: "GOLDEN_AGE_ELECTIVE_REPUBLIC_1", Name: "Science", $hash: 511 },
+        { GoldenAgeType: "GOLDEN_AGE_ELECTIVE_REPUBLIC_2", Name: "Culture", $hash: 512 },
+    ];
+    GameInfo.GoldenAges = { lookup: (h) => ages.find((a) => a.$hash === h) ?? null };
+    GameInfo.GoldenAgeModifiers = [
+        { GoldenAgeType: "GOLDEN_AGE_ELECTIVE_REPUBLIC_1", ModifierID: "MOD_ER_SCIENCE" },
+        { GoldenAgeType: "GOLDEN_AGE_ELECTIVE_REPUBLIC_2", ModifierID: "MOD_ER_CULTURE" },
+    ];
+    useModifiers([
+        { id: "MOD_ER_SCIENCE", effect: "EFFECT_PLAYER_GRANT_YIELD", args: { YieldType: "YIELD_SCIENCE", Amount: 1000 } },
+        { id: "MOD_ER_CULTURE", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_CULTURE", Amount: 2 } },
+    ]);
+    const previews = globalThis.LfYieldsPreview;
+    // As Policy Yield Previews answers: the lump grant is worth nothing to it.
+    globalThis.LfYieldsPreview = { previewModifierByIds: (ids) => ({ isValid: true, yields: ids.includes("MOD_ER_CULTURE") ? { YIELD_CULTURE: 10 } : {} }) };
+    culture.getGoldenAgeChoices = () => [511, 512];
+    world.notifications = [{ name: "NOTIFICATION_CHOOSE_GOLDEN_AGE" }];
+    try {
+        choices.chooseCelebration({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        const req = fake.sent.find((s) => s.op === PlayerOperationTypes.CHOOSE_GOLDEN_AGE);
+        assert.equal(req?.args.GoldenAgeType, Database.makeHash("GOLDEN_AGE_ELECTIVE_REPUBLIC_1"));
+    } finally {
+        delete world.notifications;
+        culture.getGoldenAgeChoices = () => [];
+        globalThis.LfYieldsPreview = previews;
+        clearModifiers();
+    }
+});
+
+test("policies: what Policy Yield Previews cannot value counts too (Public Works, +30% production toward projects, in a Modern science game)", () => {
+    installPreviews();
+    const card = { TraditionType: "TRADITION_PUBLIC_WORKS", Name: "Public Works", slot: 2, yields: {}, $index: rows.length, $hash: 100 + rows.length };
+    rows.push(card);
+    GameInfo.TraditionModifiers = [{ TraditionType: "TRADITION_PUBLIC_WORKS", ModifierId: "PUBLIC_WORKS_MOD_PROJECT_PRODUCTION" }];
+    useModifiers([{ id: "PUBLIC_WORKS_MOD_PROJECT_PRODUCTION", effect: "EFFECT_CITY_ADJUST_PROJECT_PRODUCTION", args: { Percent: 30 } }]);
+    world.cities.push({ owner: 0, x: 2, y: 2, name: "Rome", prod: 100 });
+    const age = Game.age;
+    Game.age = GameInfo.Ages.lookup("AGE_MODERN").$hash;
+    try {
+        reset();
+        slots[2] = 1;
+        choices.fillOnePolicySlot({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.deepEqual(chosen(), ["TRADITION_PUBLIC_WORKS"], "30 production toward the Innovation projects beats 8 science");
+        reset();
+        choices.fillOnePolicySlot({ ...DEFAULT_SETTINGS, profile: "GOLD" });
+        assert.deepEqual(chosen(), ["TRADITION_GOLD"], "economy: projects matter little");
+    } finally {
+        rows.pop();
+        slots[2] = 0;
+        world.cities.pop();
+        Game.age = age;
+        clearModifiers();
+    }
+});
+
+test("city-state bonus: an effect it attaches counts (Professional Architects: +25% production toward projects)", () => {
+    reset();
+    const bonuses = [
+        { CityStateBonusType: "CS_SCIENCE_YIELD", Name: "Science" },
+        { CityStateBonusType: "CS_PROFESSIONAL_ARCHITECTS", Name: "Architects" },
+    ];
+    GameInfo.CityStateBonuses = bonuses;
+    GameInfo.CityStateBonusModifiers = [{ CityStateBonusType: "CS_PROFESSIONAL_ARCHITECTS", ModifierID: "MOD_CS_ARCHITECTS" }];
+    useModifiers([
+        { id: "MOD_CS_ARCHITECTS", effect: "EFFECT_ATTACH_MODIFIERS", args: { ModifierId: "ATTACH_PROJECT_PRODUCTION" } },
+        { id: "ATTACH_PROJECT_PRODUCTION", effect: "EFFECT_CITY_ADJUST_PROJECT_PRODUCTION", args: { Percent: 25 } },
+    ]);
+    const previews = globalThis.LfYieldsPreview;
+    globalThis.LfYieldsPreview = { previewCityStateBonusYields: (t) => ({ isValid: true, yields: t === "CS_SCIENCE_YIELD" ? { YIELD_SCIENCE: 3 } : {} }) };
+    const cs = Game.CityStates;
+    Game.CityStates = { getCityStateBonusToSelect: () => 7, canHaveBonus: () => true };
+    world.cities.push({ owner: 0, x: 2, y: 2, name: "Rome", prod: 100 });
+    const age = Game.age;
+    Game.age = GameInfo.Ages.lookup("AGE_MODERN").$hash;
+    try {
+        choices.chooseCityStateBonus({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        const req = fake.sent.find((s) => s.op === PlayerOperationTypes.CHOOSE_CITY_STATE_BONUS);
+        assert.equal(req?.args.CityStateBonusType, Database.makeHash("CS_PROFESSIONAL_ARCHITECTS"));
+    } finally {
+        Game.CityStates = cs;
+        Game.age = age;
+        world.cities.pop();
+        globalThis.LfYieldsPreview = previews;
+        clearModifiers();
+    }
+});
+
+test("a civilization that pays per policy slotted (Ming: -15 Science each, traditions free): no policy worth less than an empty slot, unless the empty slot holds the turn; never dropped into an empty slot", () => {
+    installPreviews();
+    reset();
+    const me = Players.get(0);
+    const civ = me.civilizationType;
+    const tables = { CivilizationTraits: GameInfo.CivilizationTraits, TraitModifiers: GameInfo.TraitModifiers };
+    me.civilizationType = GameInfo.Civilizations.lookup("CIVILIZATION_HAN").$hash;
+    GameInfo.CivilizationTraits = [{ CivilizationType: "CIVILIZATION_HAN", TraitType: "TRAIT_TEST_ABILITY" }];
+    GameInfo.TraitModifiers = [{ TraitType: "TRAIT_TEST_ABILITY", ModifierId: "TRAIT_MOD_LOSE_SCIENCE_PER_NON_UNIQUE_TRADITION" }];
+    useModifiers([{ id: "TRAIT_MOD_LOSE_SCIENCE_PER_NON_UNIQUE_TRADITION", effect: "EFFECT_PLAYER_ADJUST_YIELD_PER_ACTIVE_TRADITION", args: { YieldType: "YIELD_SCIENCE", Amount: -15, CivUnique: "true", Invert: "true" } }]);
+    const own = { TraditionType: "TRADITION_OWN", Name: "Own tradition", slot: 2, TraitType: "TRAIT_HAN", yields: { YIELD_CULTURE: 2 }, $index: rows.length, $hash: 100 + rows.length };
+    const H = (t) => rows.find((r) => r.TraditionType === t).$hash;
+    const science = { ...DEFAULT_SETTINGS, profile: "SCIENCE" };
+    const before = Game.PlayerOperations.sendRequest;
+    try {
+        // Every policy loses 30 (15 Science x 2): even the 8-science card (16) is worth less than nothing.
+        slots[2] = 1;
+        assert.deepEqual(choices.fillOnePolicySlot(science), [], "the slot stays empty");
+        assert.deepEqual(chosen(), []);
+        // The civilization's own tradition costs nothing: it goes in.
+        rows.push(own);
+        choices.fillOnePolicySlot(science);
+        assert.deepEqual(chosen(), ["TRADITION_OWN"]);
+        rows.pop();
+        // The empty slot holds the turn (seen in game 6): the least bad policy goes in.
+        reset();
+        const out1 = choices.fillOnePolicySlot(science, new Set(), { forced: true });
+        assert.deepEqual(chosen(), ["TRADITION_SCIENCE"], "8 science: the least bad");
+        assert.equal(out1[0]?.key, "POLICY_FORCED");
+        // A policy already slotted is not taken out into an empty slot (the game would hold the
+        // turn until it is filled again): only for a better card.
+        reset();
+        active.add(H("TRADITION_SCIENCE"));
+        culture.canSwapCultureSlot = () => true;
+        Game.PlayerOperations.sendRequest = (pid, op, args) => {
+            if (op === PlayerOperationTypes.CHANGE_TRADITION && args.Action === PlayerOperationParameters.Deactivate) {
+                fake.sent.push({ kind: "player", op, args: { ...args } });
+                active.delete(rows[args.TraditionType].$hash);
+                return;
+            }
+            return before(pid, op, args);
+        };
+        const out = choices.swapOnePolicy(science);
+        assert.deepEqual(out, [], "every other policy is worse");
+        assert.equal(active.size, 1);
+    } finally {
+        Game.PlayerOperations.sendRequest = before;
+        delete culture.canSwapCultureSlot;
+        me.civilizationType = civ;
+        slots[2] = 0;
+        active.clear();
+        Object.assign(GameInfo, tables);
+        clearModifiers();
+    }
+});
+
+test("the end-of-turn retry: an empty policy slot holding the turn (NOTIFICATION_TRADITIONS_AVAILABLE) gets the least bad card; not in the first pass", async () => {
+    // Seen in game 6 (Ming): the empty slot held the turn; «seen it» (CONSIDER_ASSIGN_TRADITIONS) did not release it.
+    installPreviews();
+    reset();
+    const me = Players.get(0);
+    const civ = me.civilizationType;
+    const tables = { CivilizationTraits: GameInfo.CivilizationTraits, TraitModifiers: GameInfo.TraitModifiers };
+    me.civilizationType = GameInfo.Civilizations.lookup("CIVILIZATION_HAN").$hash;
+    GameInfo.CivilizationTraits = [{ CivilizationType: "CIVILIZATION_HAN", TraitType: "TRAIT_TEST_ABILITY" }];
+    GameInfo.TraitModifiers = [{ TraitType: "TRAIT_TEST_ABILITY", ModifierId: "TRAIT_MOD_LOSE_SCIENCE_PER_NON_UNIQUE_TRADITION" }];
+    useModifiers([{ id: "TRAIT_MOD_LOSE_SCIENCE_PER_NON_UNIQUE_TRADITION", effect: "EFFECT_PLAYER_ADJUST_YIELD_PER_ACTIVE_TRADITION", args: { YieldType: "YIELD_SCIENCE", Amount: -15, CivUnique: "true", Invert: "true" } }]);
+    const science = { ...DEFAULT_SETTINGS, profile: "SCIENCE" };
+    try {
+        slots[2] = 1;
+        world.blocker = { type: 5, name: "NOTIFICATION_TRADITIONS_AVAILABLE" };
+        await choices.makeChoices(science);
+        assert.deepEqual(chosen(), [], "the first pass leaves it empty");
+        await choices.makeChoices(science, { retry: true });
+        assert.deepEqual(chosen(), ["TRADITION_SCIENCE"], "the retry fills it");
+        // Another hold: the retry does not force a card in.
+        reset();
+        world.blocker = { type: 5, name: "NOTIFICATION_CHOOSE_TECH" };
+        await choices.makeChoices(science, { retry: true });
+        assert.ok(!chosen().includes("TRADITION_SCIENCE"));
+    } finally {
+        delete world.blocker;
+        me.civilizationType = civ;
+        slots[2] = 0;
+        active.clear();
+        Object.assign(GameInfo, tables);
+        clearModifiers();
+    }
+});
+
 test("story event: the option the game's AI prefers, answered once", () => {
     reset();
     const id = { owner: 0, id: 9, type: 3 };
@@ -344,6 +534,30 @@ test("government: only when the game asks for one", () => {
     world.notifications = [{ name: "NOTIFICATION_CHOOSE_GOVERNMENT" }];
     assert.equal(choices.chooseGovernment()[0]?.key, "GOVERNMENT");
     delete world.notifications;
+});
+
+test("government: the best the game allows for the focus; a military one only when nothing else is allowed", () => {
+    reset();
+    const govs = ["GOVERNMENT_FEUDAL_MONARCHY", "GOVERNMENT_PLUTOCRACY", "GOVERNMENT_THEOCRACY"];
+    GameInfo.StartingGovernments = govs.map((GovernmentType) => ({ GovernmentType }));
+    GameInfo.Governments = { lookup: (t) => (govs.includes(t) ? { GovernmentType: t, Name: t, $index: govs.indexOf(t) } : null) };
+    culture.getGovernmentType = () => -1;
+    const picked = () => govs[fake.sent.filter((s) => s.op === PlayerOperationTypes.CHANGE_GOVERNMENT).at(-1)?.args.GovernmentType];
+    const canStart = Game.PlayerOperations.canStart;
+    try {
+        choices.chooseGovernment({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.equal(picked(), "GOVERNMENT_PLUTOCRACY");
+        choices.chooseGovernment({ ...DEFAULT_SETTINGS, profile: "CULTURE" });
+        assert.equal(picked(), "GOVERNMENT_THEOCRACY");
+        choices.chooseGovernment(DEFAULT_SETTINGS);
+        assert.equal(picked(), "GOVERNMENT_PLUTOCRACY", "no focus: not the military one listed first");
+        Game.PlayerOperations.canStart = (p, op, args) => (op === PlayerOperationTypes.CHANGE_GOVERNMENT ? { Success: govs[args.GovernmentType] === "GOVERNMENT_FEUDAL_MONARCHY" } : canStart(p, op, args));
+        choices.chooseGovernment({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.equal(picked(), "GOVERNMENT_FEUDAL_MONARCHY", "the only one allowed");
+    } finally {
+        Game.PlayerOperations.canStart = canStart;
+        culture.getGovernmentType = () => 4;
+    }
 });
 
 test("a leader's proposal: the cheapest answer that is not a rejection; only rejection possible: left for the player", () => {
@@ -485,5 +699,163 @@ test("great works waiting in the archive go into free slots the game accepts; da
         world.cities.pop();
         delete world.greatWorks;
         delete world.archive;
+    }
+});
+
+test("a crisis card Policy Yield Previews cannot value (a combat penalty) counts as 0, not below a known gold penalty (probe P9)", () => {
+    installPreviews();
+    reset();
+    rows.push({ TraditionType: "CRISIS_COMBAT", Name: "Combat crisis", slot: 3, yields: null, $index: rows.length, $hash: 100 + rows.length });
+    slots[3] = 1;
+    try {
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["CRISIS_COMBAT"], "not the −2 gold one");
+    } finally {
+        rows.pop();
+        slots[3] = 0;
+    }
+});
+
+test("an advisor warning is marked as seen once, not on every choices pass (research/21 G3)", () => {
+    reset();
+    world.notifications = [{ name: "NOTIFICATION_ADVISOR_WARNING_CULTURE" }];
+    const marked = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.VIEWED_ADVISOR_WARNING).length;
+    try {
+        choices.dismissAdvisorWarnings();
+        choices.dismissAdvisorWarnings();
+        assert.equal(marked(), 1);
+    } finally {
+        delete world.notifications;
+    }
+});
+
+test("a crisis card's Happiness loss counts double where it would push a settlement below 0 (research/22 A4: a town revolted)", () => {
+    installPreviews();
+    reset();
+    rows.push({ TraditionType: "CRISIS_SCORN", Name: "Provincial scorn", slot: 3, yields: { YIELD_HAPPINESS: -6 }, $index: rows.length, $hash: 100 + rows.length });
+    rows.push({ TraditionType: "CRISIS_TAX", Name: "Tax", slot: 3, yields: { YIELD_GOLD: -7 }, $index: rows.length, $hash: 100 + rows.length });
+    const offeredBefore = culture.getUnlockedTraditions;
+    culture.getUnlockedTraditions = (t) => (t === 3 ? rows.filter((r) => r.TraditionType === "CRISIS_SCORN" || r.TraditionType === "CRISIS_TAX").map((r) => r.$hash) : offeredBefore(t));
+    useModifiers([{ id: "SCORN_MOD", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: -6 } }]);
+    GameInfo.Modifiers[0].SubjectRequirementSetId = "REQSET_TOWNS";
+    GameInfo.TraditionModifiers = [{ TraditionType: "CRISIS_SCORN", ModifierId: "SCORN_MOD" }];
+    GameInfo.RequirementSetRequirements = [{ RequirementSetId: "REQSET_TOWNS", RequirementId: "REQ_TOWN" }];
+    GameInfo.Requirements = [{ RequirementId: "REQ_TOWN", RequirementType: "REQUIREMENT_CITY_IS_TOWN" }];
+    world.cities = [{ owner: 0, x: 2, y: 2, name: "Rome", happy: 20 }, { owner: 0, x: 6, y: 6, name: "Cole", isTown: true, happy: -1 }];
+    slots[3] = 1;
+    try {
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["CRISIS_TAX"], "−6 Happiness in a town at −1 is worse than −7 gold");
+        reset();
+        world.cities[1].happy = 30;
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["CRISIS_SCORN"], "a town with plenty to spare hardly feels it");
+    } finally {
+        rows.splice(-2);
+        culture.getUnlockedTraditions = offeredBefore;
+        clearModifiers();
+        delete GameInfo.RequirementSetRequirements;
+        delete GameInfo.Requirements;
+        world.cities = [];
+        slots[3] = 0;
+    }
+});
+
+test("a story's Happiness option comes first while a settlement is in unrest (research/22 A4: War Support was taken instead)", () => {
+    reset();
+    const id = { owner: 0, id: 11, type: 3 };
+    const stories = [
+        { NarrativeStoryType: "STORY_R", Name: "Revolt" },
+        { NarrativeStoryType: "STORY_R_WAR", Activation: "LINKED" },
+        { NarrativeStoryType: "STORY_R_HAPPY", Activation: "LINKED" },
+    ];
+    GameInfo.NarrativeStories = { lookup: (t) => stories.find((s) => s.NarrativeStoryType === t) ?? null };
+    GameInfo.NarrativeStory_Links = [
+        { FromNarrativeStoryType: "STORY_R", ToNarrativeStoryType: "STORY_R_WAR", AIPriority: true },
+        { FromNarrativeStoryType: "STORY_R", ToNarrativeStoryType: "STORY_R_HAPPY" },
+    ];
+    // The War Support option also brings gold and science: worth more than Happiness while all is calm.
+    GameInfo.NarrativeRewardIcons = [{ NarrativeStoryType: "STORY_R_WAR", RewardIconType: "YIELD_GOLD" }, { NarrativeStoryType: "STORY_R_WAR", RewardIconType: "YIELD_SCIENCE" }, { NarrativeStoryType: "STORY_R_HAPPY", RewardIconType: "YIELD_HAPPINESS" }];
+    Players.get(0).Stories = { getFirstPendingMetId: () => id, find: () => ({ type: "STORY_R" }), canAfford: () => true, determineRequisiteLink: () => false };
+    const answer = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.CHOOSE_NARRATIVE_STORY_DIRECTION).map((s) => s.args.TargetType);
+    try {
+        world.cities = [{ owner: 0, x: 2, y: 2, name: "Rome", happy: 5 }, { owner: 0, x: 6, y: 6, name: "Cole", isTown: true, happy: 2, unrest: true }];
+        choices.chooseStory(new Set());
+        assert.deepEqual(answer(), ["STORY_R_HAPPY"]);
+        reset();
+        world.cities[1].unrest = false;
+        choices.chooseStory(new Set());
+        assert.deepEqual(answer(), ["STORY_R_WAR"], "all calm: the option worth most");
+    } finally {
+        delete Players.get(0).Stories;
+        world.cities = [];
+    }
+});
+
+test("a story's option is chosen by what the profile values: +Science over +Gold for science, a negative icon subtracts (research/23 S5: the base game sets no AIPriority)", () => {
+    reset();
+    const id = { owner: 0, id: 12, type: 3 };
+    const stories = [
+        { NarrativeStoryType: "STORY_D", Name: "LOC_STORY_D_NAME", StoryTitle: "LOC_STORY_D_TITLE" },
+        { NarrativeStoryType: "STORY_D_B", Activation: "LINKED" },
+        { NarrativeStoryType: "STORY_D_C", Activation: "LINKED" },
+    ];
+    GameInfo.NarrativeStories = { lookup: (t) => stories.find((s) => s.NarrativeStoryType === t) ?? null };
+    GameInfo.NarrativeStory_Links = [
+        { FromNarrativeStoryType: "STORY_D", ToNarrativeStoryType: "STORY_D_C" },
+        { FromNarrativeStoryType: "STORY_D", ToNarrativeStoryType: "STORY_D_B" },
+    ];
+    GameInfo.NarrativeRewardIcons = [
+        { NarrativeStoryType: "STORY_D_B", RewardIconType: "YIELD_SCIENCE" }, { NarrativeStoryType: "STORY_D_B", RewardIconType: "YIELD_GOLD", Negative: true },
+        { NarrativeStoryType: "STORY_D_C", RewardIconType: "YIELD_GOLD" },
+    ];
+    Players.get(0).Stories = { getFirstPendingMetId: () => id, find: () => ({ type: "STORY_D" }), canAfford: () => true, determineRequisiteLink: () => false };
+    const answer = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.CHOOSE_NARRATIVE_STORY_DIRECTION).map((s) => s.args.TargetType);
+    try {
+        world.cities = [{ owner: 0, x: 2, y: 2, name: "Rome", happy: 5 }];
+        const out = choices.chooseStory(new Set(), { ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.deepEqual(answer(), ["STORY_D_B"], "2.0 science − 0.5 gold beats 0.5 gold");
+        assert.equal(out[0].args[0], "LOC_STORY_D_TITLE", "the story's title, not its Name");
+        reset();
+        choices.chooseStory(new Set(), { ...DEFAULT_SETTINGS, profile: "GOLD" });
+        assert.deepEqual(answer(), ["STORY_D_C"], "gold: the gold option");
+    } finally {
+        delete Players.get(0).Stories;
+        world.cities = [];
+    }
+});
+
+test("story options with no icons are valued by their rewards' yields: +Happiness in unrest over war support (research/24 W10: game 9's revolt)", () => {
+    reset();
+    const id = { owner: 0, id: 13, type: 3 };
+    const stories = [
+        { NarrativeStoryType: "LOYALTY002A", Name: "Revolt" },
+        { NarrativeStoryType: "LOYALTY002C", Activation: "LINKED" },
+        { NarrativeStoryType: "LOYALTY002D", Activation: "LINKED" },
+    ];
+    GameInfo.NarrativeStories = { lookup: (t) => stories.find((s) => s.NarrativeStoryType === t) ?? null };
+    GameInfo.NarrativeStory_Links = [
+        { FromNarrativeStoryType: "LOYALTY002A", ToNarrativeStoryType: "LOYALTY002C" },
+        { FromNarrativeStoryType: "LOYALTY002A", ToNarrativeStoryType: "LOYALTY002D" },
+    ];
+    GameInfo.NarrativeRewardIcons = [];
+    GameInfo.NarrativeStory_Rewards = [{ NarrativeStoryType: "LOYALTY002C", NarrativeRewardType: "R_C" }, { NarrativeStoryType: "LOYALTY002D", NarrativeRewardType: "R_D" }];
+    GameInfo.NarrativeRewards = [{ NarrativeRewardType: "R_C", ModifierID: "M_C" }, { NarrativeRewardType: "R_D", ModifierID: "M_D" }];
+    useModifiers([
+        { id: "M_C", effect: "EFFECT_DIPLOMACY_ADJUST_DIPLOMATIC_ACTION_TOKEN_BONUS", args: { ActionType: "DIPLOMACY_ACTION_DECLARE_WAR", Amount: 2 } },
+        { id: "M_D", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: 2 } },
+    ]);
+    Players.get(0).Stories = { getFirstPendingMetId: () => id, find: () => ({ type: "LOYALTY002A" }), canAfford: () => true, determineRequisiteLink: () => false };
+    const answer = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.CHOOSE_NARRATIVE_STORY_DIRECTION).map((s) => s.args.TargetType);
+    try {
+        world.cities = [{ owner: 0, x: 2, y: 2, name: "Rome", happy: 5 }, { owner: 0, x: 6, y: 6, name: "Cole", isTown: true, happy: -2, unrest: true }];
+        choices.chooseStory(new Set());
+        assert.deepEqual(answer(), ["LOYALTY002D"]);
+    } finally {
+        delete Players.get(0).Stories;
+        delete GameInfo.NarrativeStory_Rewards;
+        delete GameInfo.NarrativeRewards;
+        clearModifiers();
+        world.cities = [];
     }
 });

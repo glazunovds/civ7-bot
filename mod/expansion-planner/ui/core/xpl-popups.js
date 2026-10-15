@@ -44,3 +44,21 @@ export function isInfoPopup(request, options = {}) {
     if (request.category === "PopupSequencer") return INFO_SCREENS.has(request.screenId);
     return false;
 }
+
+// A leader's dialog (a war declared, a peace accepted, a greeting) stays on screen until a human closes it (research/24
+// W7: 30, 26 and 11 seconds with the user there; unattended it would wait for the turn timer).
+export const LEADER_DIALOG_CLOSE_MS = 5000;
+
+/**
+ * May the autopilot close the leader dialog on screen (DiplomacyManager.currentDiplomacyDialogData)? After
+ * LEADER_DIALOG_CLOSE_MS, when it only informs: every choice acknowledges or exits (the game's own choices just
+ * close it), it is not a first meeting (its choice opens the greeting screen), and no deal waits on it.
+ * @param dialog { Choices: [{ ChoiceType }], StatementFrameDef: { Selections }, DealAction }
+ * @param state { shownMs: how long it has been on screen, pendingDeal: a deal with that leader waits, dealActions: { PROPOSED, ADJUSTED } }
+ */
+export function leaderDialogClosable(dialog, { shownMs = 0, pendingDeal = false, dealActions = {} } = {}) {
+    if (!dialog || shownMs < LEADER_DIALOG_CLOSE_MS || pendingDeal) return false;
+    if (String(dialog.StatementFrameDef?.Selections ?? "").includes("FIRST_MEET")) return false;
+    if (dialog.DealAction !== undefined && (dialog.DealAction === dealActions.PROPOSED || dialog.DealAction === dealActions.ADJUSTED)) return false;
+    return (dialog.Choices ?? []).every((c) => ["CHOICE_EXIT", "CHOICE_ACKNOWLEDGE"].includes(String(c?.ChoiceType ?? "")));
+}

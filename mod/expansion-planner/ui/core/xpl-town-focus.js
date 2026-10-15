@@ -49,16 +49,19 @@ function gainVector(entries) {
 
 /**
  * @param t { farm, mine, appealing, quarters, buildings, resources, connectedSettlements,
- *            connectedCities, population, available: Set<ProjectType> | null, current: ProjectType | "GROWTH" | null }
+ *            connectedCities, population, available: Set<ProjectType> | null, current: ProjectType | "GROWTH" | null,
+ *            urbanBuys: buildings of the focus an Urban Center would let the town buy }
+ * @param bias the strategy's lean per Focus key (townFocusBias); with a lean to Urban Center, a town that could
+ *             buy a building of the path there takes it even with no quarter yet (research/22 C2)
  * @param weights profile yield weights
  * @returns { best, options: [{ key, project, gain, value, count, availableNow, current }], notes: [{ key, args }] }
  */
-export function recommendFocus(t, weights) {
+export function recommendFocus(t, weights, bias = null) {
     const defs = [
         { key: "FARM", count: t.farm ?? 0, gain: gainVector([[F, t.farm ?? 0]]) },
         { key: "MINE", count: t.mine ?? 0, gain: gainVector([[G, 2 * (t.mine ?? 0)]]) },
         { key: "RESORT", count: t.appealing ?? 0, gain: gainVector([[H, t.appealing ?? 0], [G, t.appealing ?? 0]]) },
-        { key: "URBAN", count: t.quarters ?? 0, gain: gainVector([[S, t.quarters ?? 0], [C, t.quarters ?? 0]]) },
+        { key: "URBAN", count: t.quarters ?? 0, opens: Number(bias?.URBAN) > 0 ? t.urbanBuys ?? 0 : 0, gain: gainVector([[S, t.quarters ?? 0], [C, t.quarters ?? 0]]) },
         { key: "HUB", count: t.connectedSettlements ?? 0, gain: gainVector([[I, t.connectedSettlements ?? 0]]) },
         { key: "RELIGIOUS", count: t.buildings ?? 0, gain: gainVector([[H, 2 * (t.buildings ?? 0)]]) },
         { key: "TRADE", count: t.resources ?? 0, gain: gainVector([[H, t.resources ?? 0]]) },
@@ -70,12 +73,13 @@ export function recommendFocus(t, weights) {
         return {
             ...d,
             project: usable[0] ?? projects[0],
-            value: Math.round(dot(weights, d.gain) * 10) / 10,
+            // The strategy's lean (core/xpl-strategy.js townFocusBias: Growth leans to farming, science to Urban Center...).
+            value: Math.round((dot(weights, d.gain) + (d.count > 0 || d.opens > 0 ? Number(bias?.[d.key]) || 0 : 0)) * 10) / 10,
             // Unknown availability (no list from the game): assume the common ones exist.
             availableNow: available ? usable.length > 0 : !["HUB", "RELIGIOUS", "TRADE"].includes(d.key),
             current: projects.includes(t.current),
         };
-    }).filter((o) => o.count > 0 || o.current);
+    }).filter((o) => o.count > 0 || o.opens > 0 || o.current);
     options.sort((a, b) => Number(b.availableNow) - Number(a.availableNow) || b.value - a.value);
     const notes = [];
     if ((t.population ?? 0) < FOCUS_POPULATION) notes.push({ key: "LOC_XPL_FOCUS_GROW_FIRST", args: [t.population ?? 0] });
