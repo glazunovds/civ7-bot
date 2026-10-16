@@ -732,6 +732,58 @@
 "TraitType": "TRAIT_ROME"
 }
 ],
+"CivilizationFavoredWonders": [
+{
+"CivilizationType": "CIVILIZATION_AKSUM",
+"FavoredWonderType": "WONDER_GREAT_STELE",
+"FavoredWonderName": "LOC_WONDER_GREAT_STELE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_EGYPT",
+"FavoredWonderType": "WONDER_PYRAMIDS",
+"FavoredWonderName": "LOC_WONDER_PYRAMIDS_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_GREECE",
+"FavoredWonderType": "WONDER_ORACLE",
+"FavoredWonderName": "LOC_WONDER_ORACLE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_HAN",
+"FavoredWonderType": "WONDER_WEIYANG_PALACE",
+"FavoredWonderName": "LOC_WONDER_WEIYANG_PALACE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_KHMER",
+"FavoredWonderType": "WONDER_ANGKOR_WAT",
+"FavoredWonderName": "LOC_WONDER_ANGKOR_WAT_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MAURYA",
+"FavoredWonderType": "WONDER_SANCHI_STUPA",
+"FavoredWonderName": "LOC_WONDER_SANCHI_STUPA_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MAYA",
+"FavoredWonderType": "WONDER_MUNDO_PERDIDO",
+"FavoredWonderName": "LOC_WONDER_MUNDO_PERDIDO_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MISSISSIPPIAN",
+"FavoredWonderType": "WONDER_MONKS_MOUND",
+"FavoredWonderName": "LOC_WONDER_MONKS_MOUND_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_PERSIA",
+"FavoredWonderType": "WONDER_GATE_OF_ALL_NATIONS",
+"FavoredWonderName": "LOC_WONDER_GATE_OF_ALL_NATIONS_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_ROME",
+"FavoredWonderType": "WONDER_COLOSSEUM",
+"FavoredWonderName": "LOC_WONDER_COLOSSEUM_NAME"
+}
+],
 "CivilizationTraits": [
 {
 "CivilizationType": "CIVILIZATION_AKSUM",
@@ -1995,6 +2047,52 @@
 }
 ],
 "Constructible_RequiredFeatureClasses": [],
+"Constructible_ValidBiomes": [
+{
+"ConstructibleType": "WONDER_MUNDO_PERDIDO",
+"BiomeType": "BIOME_TROPICAL"
+},
+{
+"ConstructibleType": "WONDER_NALANDA",
+"BiomeType": "BIOME_PLAINS"
+},
+{
+"ConstructibleType": "WONDER_PETRA",
+"BiomeType": "BIOME_DESERT"
+},
+{
+"ConstructibleType": "WONDER_PYRAMIDS",
+"BiomeType": "BIOME_DESERT"
+},
+{
+"ConstructibleType": "WONDER_PYRAMIDS",
+"BiomeType": "BIOME_GRASSLAND"
+},
+{
+"ConstructibleType": "WONDER_PYRAMIDS",
+"BiomeType": "BIOME_PLAINS"
+},
+{
+"ConstructibleType": "WONDER_PYRAMIDS",
+"BiomeType": "BIOME_TROPICAL"
+},
+{
+"ConstructibleType": "WONDER_SANCHI_STUPA",
+"BiomeType": "BIOME_PLAINS"
+},
+{
+"ConstructibleType": "WONDER_TERRACOTTA_ARMY",
+"BiomeType": "BIOME_GRASSLAND"
+},
+{
+"ConstructibleType": "WONDER_WEIYANG_PALACE",
+"BiomeType": "BIOME_GRASSLAND"
+},
+{
+"ConstructibleType": "IMPROVEMENT_ICE_HOUSE",
+"BiomeType": "BIOME_DESERT"
+}
+],
 "Constructible_ValidDistricts": [
 {
 "ConstructibleType": "BUILDING_PALACE",

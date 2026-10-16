@@ -10,7 +10,7 @@
  *    every (building, tile) it can evaluate (called directly, never through the
  *    base UI's shared BuildingPlacementManager).
  */
-import { PlanState, hashString } from '../core/xpl-placement-model.js';
+import { PlanState, SPECIALIST_START_CAP, hashString, specialistCost } from '../core/xpl-placement-model.js';
 import { solveLayout } from '../core/xpl-placement-solver.js';
 import { biasFor, profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex } from '../core/xpl-yields.js';
@@ -28,6 +28,8 @@ import { siteRoleAt } from './xpl-site-job.js';
 import { cityEntry, noteCache } from './xpl-engine-cache.js';
 import { upkeepIn } from './xpl-city-actions.js';
 import { costValue } from '../core/xpl-scarcity.js';
+import { runWonderPlanner } from './xpl-wonder-job.js';
+import { tierValue } from '../core/xpl-wonder-tiers.js';
 
 const JOB_NAME = "buildings";
 const AREA_RADIUS = 3;
@@ -39,6 +41,10 @@ const LOCK_DELAY = 15;          // turns until a not-yet-unlocked building can s
 const UQ_BONUS = 4;             // value of completing the civ's unique quarter (weighted yield units)
 const TACK_ETA = 10;            // completion turn assumed for the player's own building tacks
 const FINAL_AGE_HORIZON = 150;  // turns counted in the final age (cities never revert)
+const NEXT_AGE_SHARE = 0.5;     // share of the next age counted for the adjacency ageless buildings keep (root gotcha 50)
+const ANCHOR_VALUE = 10;        // a planned wonder's worth wherever it stands: the plan always gives it a tile (research/27 P1)
+const MAX_ANCHORS = 2;          // wonders the plan reserves a tile for, besides our civilization's own
+const ANCHOR_RACES = new Set(["HIGH", "MEDIUM"]);
 const MAX_CALIBRATION_SHARE = 0.5; // above this share of disagreeing tiles, distrust the reading instead
 const WAREHOUSE_GUESS = 2;         // settlement-wide value of a warehouse where the game cannot tell us (planned sites)
 const DEFAULT_BUDGET_MS = 6;       // CPU per frame; the Buildings tab asks for more while the player waits
@@ -221,6 +227,47 @@ function applyUserTacks(planState, queuedBySid = new Map()) {
     return { count: n, kept };
 }
 
+/**
+ * Wonders the plan reserves a tile for (research/27 P1: the video's "plan the wonder spots first, then the quarters
+ * around them"): every building group gets +1 next to a wonder. Simulated on random cities, a wonder planned with
+ * the buildings left the plan 3.6% better than placing it afterwards on its best tile (tools: sim_anchor).
+ * - The wonders the autopilot would start: a race we can win (HIGH or MEDIUM), done 2 turns before the age ends, by
+ *   value per turn (yields, tier, the tile's boost), at most MAX_ANCHORS, each in its fastest member city on the
+ *   tiles the game allows there.
+ * - Our civilization's own wonder (CivilizationFavoredWonders: our civic unlocks it early) first; while it is still
+ *   locked, in our best producing city on the tiles its rules allow (biome, terrain, river, an urban neighbour).
+ * @returns [{ type, sid, plots: Set<plot> | null, turns }]
+ */
+function wonderAnchors(settings, rules, members, roleBySid) {
+    const cityMembers = members.filter((m) => m.city && !m.city.isTown && roleBySid.get(m.key) === "CITY");
+    if (cityMembers.length === 0) return [];
+    // This turn's answer when there is one (the game's queries are not repeated within a turn).
+    const last = state.get().results.wonders;
+    const w = last?.computedTurn === Game.turn && last.omniscient === !!settings.wonders?.omniscient ? last : runWonderPlanner(settings);
+    if (!w?.rows) return [];
+    const keys = new Set(cityMembers.map((m) => m.key));
+    const favored = safe(() => GameInfo.CivilizationFavoredWonders?.find((r) => r.CivilizationType === rules.civ)?.FavoredWonderType, null);
+    const scored = [];
+    for (const r of w.rows) {
+        if (r.status !== "AVAILABLE" || !ANCHOR_RACES.has(r.race?.label)) continue;
+        const o = r.options.find((x) => keys.has(x.cityKey) && x.plots.length > 0);
+        if (!o || !(o.turns > 0) || (w.ageTurnsLeft != null && o.turns > w.ageTurnsLeft - 2)) continue;
+        const factor = r.race.label === "HIGH" ? 1 : 0.6;
+        const score = ((r.baseValue + tierValue(r.type) + (o.plots[0]?.value ?? 0)) * factor) / o.turns;
+        scored.push({ type: r.type, sid: o.cityKey, plots: new Set(o.plots.map((p) => p.idx)), turns: o.turns, score, favored: r.type === favored });
+    }
+    scored.sort((a, b) => Number(b.favored) - Number(a.favored) || b.score - a.score);
+    const out = scored.slice(0, MAX_ANCHORS + (scored[0]?.favored ? 1 : 0)).map(({ type, sid, plots, turns }) => ({ type, sid, plots, turns }));
+    const row = favored ? w.rows.find((r) => r.type === favored) : null;
+    if (row?.status === "LOCKED") {
+        const prod = (m) => Number(safe(() => m.city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+        const best = [...cityMembers].sort((a, b) => prod(b) - prod(a))[0];
+        const cost = Number(safe(() => best.city.Production.getConstructibleProductionCost(favored), 0)) || rules.costOf(favored);
+        out.push({ type: favored, sid: best.key, plots: null, turns: LOCK_DELAY + Math.ceil(cost / Math.max(1, prod(best))) });
+    }
+    return out;
+}
+
 /** Building types in each member city's build queue: sid -> Set<type>. */
 function queuedTypes(members) {
     const out = new Map();
@@ -280,7 +327,7 @@ export async function placePlanTacks(plans, { replacePrevious = true, onProgress
             return n < perSettlement;
         });
     }
-    const entries = chosen.map((p) => ({ x: p.x, y: p.y, type: p.type }));
+    const entries = [...chosen, ...(plans.anchors ?? [])].map((p) => ({ x: p.x, y: p.y, type: p.type }));
     const near = nearCentres(plans.centres);
     const kept = new Set(plans.keptTacks ?? []);
     return placeTacks(entries, "build", { replacePrevious, onProgress, replaceFilter: (e) => near(e) && !kept.has(tackKey(e.x, e.y, e.type)) });
@@ -304,14 +351,18 @@ function bestNowFor(p, forType, engineHere, planState, plannedAt, describe, name
     return { ...describe(best.idx, p.sid), yields: best.yields.slice(), here: engineHere?.yields?.slice() ?? null, takenBy };
 }
 
-/** Fingerprint of what the game told us about one city (tiles allowed, exact yields). */
+/**
+ * Fingerprint of what the game told us about one city: the tiles allowed and its adjacency per building and tile.
+ * Not the settlement's yield totals there: they move with every citizen and modifier, and marked most cities changed
+ * on every recalculation (game 20: 584 settlements re-solved in 166 incremental plans).
+ */
 function engineFingerprint(entry, types) {
     const parts = [];
     for (const type of types) {
         const a = entry.validity.get(type);
         parts.push(a ? `${type}:${a.exists ? 1 : 0}${a.buildable ? 1 : 0}:${a.plots ? [...a.plots].sort((x, y) => x - y).join(",") : ""}` : `${type}:-`);
     }
-    for (const [key, e] of entry.placements ?? []) parts.push(`${key}=${e.yields.join(",")}/${e.adjacencyIn.join(",")}`);
+    for (const [key, e] of entry.placements ?? []) parts.push(`${key}=${e.adjacencyIn.join(",")}`);
     return hashString(parts.join("|"));
 }
 
@@ -347,7 +398,7 @@ function regionAround(target, all, engineMap) {
 }
 
 /** Settings and inputs that change what a plan is (not UI-only ones): a change means a full recalculation. */
-function inputSignature(target, settings, members, roleBySid, selected, lockedSet, rules) {
+function inputSignature(target, settings, selected, lockedSet, rules) {
     const { optionsOpen: _o, lastTarget: _l, autoTacks: _a, incremental: _i, growthHints: _g, ...bs } = settings.buildings ?? {};
     return JSON.stringify({
         target: target.key,
@@ -356,10 +407,31 @@ function inputSignature(target, settings, members, roleBySid, selected, lockedSe
         hidden: !!settings.includeHidden,
         bs,
         rules: `${rules.age}|${rules.civ}|${rules.uniqueQuarters.map((q) => q.type).join(",")}`,
-        members: members.map((m) => `${m.key}:${roleBySid.get(m.key)}`),
         selected: [...selected].sort(),
-        locked: [...lockedSet].sort(),
+        // Locked buildings are planned anyway (later); an unlock changes the game's answers of every city instead.
+        locked: bs.includeLocked === false ? [...lockedSet].sort() : [],
     });
+}
+
+/**
+ * Fingerprint of one settlement's own inputs beyond its tiles and the game's answers: its role, its specialist
+ * limit, the wonders it keeps a tile for. A settlement whose fingerprint changed (or a new one) is solved again;
+ * a founding or a town turned city no longer re-plans every settlement.
+ */
+function memberSignature(settlement, role, anchors) {
+    const kept = anchors.filter((a) => a.sid === settlement.id).map((a) => `${a.type}:${a.plots ? [...a.plots].sort((x, y) => x - y).join(".") : "rules"}`);
+    return `${role}/${settlement.specialists?.slots ?? 0}/${kept.join(",")}`;
+}
+
+/** Why a plan is a full one: the inputs that changed, or none (for the log). */
+function inputsChanged(before, now) {
+    try {
+        const a = JSON.parse(before);
+        const b = JSON.parse(now);
+        return Object.keys(b).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+    } catch (_e) {
+        return ["all"];
+    }
 }
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -384,6 +456,7 @@ export function startBuildingPlan(target, settings, options = {}) {
     const previous = state.get().results.plans;
     const timing = { engine: 0, setup: 0, post: 0, queried: 0, cached: 0 };
     let ctx = null; // filled by the job's setup phase
+    let fullWhy = null; // why a plan was a full one (the timing log)
 
     function* setup() {
         let t0 = now();
@@ -467,11 +540,9 @@ export function startBuildingPlan(target, settings, options = {}) {
 
         // Timing: turns left in the age, production per settlement, building costs.
         const timeAware = bs.timeAware !== false;
+        const outlook = safe(() => ageOutlook(), null);
         let horizon;
-        if (timeAware) {
-            const outlook = safe(() => ageOutlook(), null);
-            horizon = outlook ? (outlook.isFinalAge ? FINAL_AGE_HORIZON : outlook.turnsLeft) : undefined;
-        }
+        if (timeAware) horizon = outlook ? (outlook.isFinalAge ? FINAL_AGE_HORIZON : outlook.turnsLeft) : undefined;
         const cities = safe(() => Players.get(playerId).Cities.getCities(), []);
         const prodToGold = safe(() => productionToGoldRatio(cities, rules), 2.5) || 2.5;
         const capital = cities.find((c) => !c.isTown) ?? null;
@@ -480,9 +551,17 @@ export function startBuildingPlan(target, settings, options = {}) {
             const engineCost = sample && capital ? Number(safe(() => capital.Production.getConstructibleProductionCost(sample), 0)) : 0;
             return engineCost > 0 ? engineCost / rules.costOf(sample) : 1;
         })();
-        const specialists = Number(bs.specialists) || 0;
+        // Specialists (root CLAUDE.md gotcha 49): the setting is the share of each city's specialist limit
+        // (the game's getCityWorkerCap; the capital's for a planned site) counted on tiles whose adjacency pays
+        // for a specialist's upkeep. Towns have none.
+        const fill = Number(bs.specialists) || 0;
+        const capOf = (city) => Number(safe(() => city?.Workers.getCityWorkerCap(), 0)) || 0;
+        const defaultCap = capOf(capital) || SPECIALIST_START_CAP[rules.age] || 1;
+        const perSpecialist = specialistCost(profile.y, rules.age);
 
         const roleBySid = new Map(members.map((m) => [m.key, settlementRole(m, settings)]));
+        const anchors = safe(() => wonderAnchors(settings, rules, members, roleBySid), []);
+        const anchorsOf = (sid) => anchors.filter((a) => a.sid === sid);
         const settlements = members.map((m) => {
             const centre = engineMap.index(m.x, m.y);
             const v = validity.get(m.key);
@@ -492,11 +571,16 @@ export function startBuildingPlan(target, settings, options = {}) {
                 // Towns buy buildings with gold: production turns into gold 1:1, and buying costs prodToGold gold per production.
                 production = Math.max(1, m.kind === "town" ? prod / prodToGold : prod);
             }
+            const slots = m.kind === "town" ? 0 : fill * (capOf(m.city) || defaultCap);
             return {
                 id: m.key,
                 centre,
                 owned: ownedBy.get(m.key),
-                adjMult: m.kind === "town" ? 1 : 1 + specialists,
+                adjMult: 1 + slots, // shown with each building; the plan values specialists per tile
+                specialists: slots > 0 ? { slots, cost: perSpecialist } : null,
+                // Wonder anchors: the tiles the game allows for each (null: the wonder's own rules), and when it is done.
+                wonderPlots: new Map(anchorsOf(m.key).filter((a) => a.plots).map((a) => [a.type, a.plots])),
+                fixedEta: horizon ? new Map(anchorsOf(m.key).map((a) => [a.type, a.turns])) : null,
                 engineValid: v?.valid ?? null,
                 allowFuture: bs.futureTiles !== false,
                 production,
@@ -523,6 +607,7 @@ export function startBuildingPlan(target, settings, options = {}) {
             uniqueQuarters: rules.uniqueQuarters,
             uqBonus: UQ_BONUS,
             tackEta: TACK_ETA,
+            nextAge: outlook?.isFinalAge ? 0 : NEXT_AGE_SHARE,
         });
         // Anchor our adjacency to the game's own number wherever the game evaluated a tile
         // (before the player's tacks are added: the game's numbers describe the map as it is).
@@ -558,6 +643,7 @@ export function startBuildingPlan(target, settings, options = {}) {
         for (const st of settlements) {
             for (const type of warehouseTypes) planState.setExtraValue(st.id, type, warehouseValue.get(`${st.id}|${type}`) ?? WAREHOUSE_GUESS);
         }
+        for (const a of anchors) planState.setExtraValue(a.sid, a.type, ANCHOR_VALUE);
         const tackInfo = bs.respectTacks !== false ? applyUserTacks(planState, queuedTypes(members)) : { count: 0, kept: new Set() };
         planState.invalidateAll();
 
@@ -567,24 +653,28 @@ export function startBuildingPlan(target, settings, options = {}) {
 
         // A town only gets what a town can buy (Altar, warehouses); a city everything selected.
         const townSelection = adjacencySelection.filter((t) => rules.placementOf(t).town);
-        const selectionFor = (sid) => (roleBySid.get(sid) === "TOWN" ? townSelection : adjacencySelection);
+        const selectionFor = (sid) => [...(roleBySid.get(sid) === "TOWN" ? townSelection : adjacencySelection), ...anchorsOf(sid).map((a) => a.type)];
 
         // Incremental: same target and settings, recent plan -> re-solve only changed settlements.
-        const memberSigs = Object.fromEntries(settlements.map((st) => [st.id, `${planState.settlementSignature(st.id)}/${engineSigs.get(st.id) ?? ""}`]));
-        const inputSig = inputSignature(target, settings, members, roleBySid, selected, lockedSet, rules);
+        const memberSigs = Object.fromEntries(settlements.map((st) => [st.id, `${planState.settlementSignature(st.id)}/${engineSigs.get(st.id) ?? ""}/${memberSignature(st, roleBySid.get(st.id), anchors)}`]));
+        const inputSig = inputSignature(target, settings, selected, lockedSet, rules);
         let dirty = null;
         let seed = null;
-        if (bs.incremental !== false && previous?.seed && previous.inputSig === inputSig && Game.turn - (previous.computedTurn ?? -Infinity) < FULL_AFTER_TURNS) {
+        if (bs.incremental === false) fullWhy = "option off";
+        else if (!previous?.seed) fullWhy = "first plan";
+        else if (previous.inputSig !== inputSig) fullWhy = `inputs: ${inputsChanged(previous.inputSig, inputSig).join(", ")}`;
+        else if (Game.turn - (previous.computedTurn ?? -Infinity) >= FULL_AFTER_TURNS) fullWhy = `${FULL_AFTER_TURNS} turns`;
+        else {
             const changed = settlements.filter((st) => previous.memberSigs?.[st.id] !== memberSigs[st.id]).map((st) => st.id);
             if (changed.length < settlements.length) {
                 dirty = new Set(changed);
                 seed = previous.seed;
-            }
+            } else fullWhy = "every settlement changed";
         }
         timing.setup += now() - t0;
         ctx = {
             facts, areaSet, uniqueTypes, validity, engineData, lockedSet, locked, horizon, roleBySid, settlements, planState,
-            calibration, tackInfo, adjacencySelection, warehouseSelection, selectionFor, memberSigs, inputSig, dirty, seed,
+            calibration, tackInfo, adjacencySelection, warehouseSelection, selectionFor, memberSigs, inputSig, dirty, seed, anchors,
         };
     }
 
@@ -631,7 +721,10 @@ export function startBuildingPlan(target, settings, options = {}) {
             };
             const netsBySid = new Map(members.map((m) => [m.key, netsOf(m.city)]));
             const upkeepValue = (sid, upkeep) => costValue(profile.y, upkeep, netsBySid.get(sid) ?? null);
-            const placements = plan.placements.map((p) => {
+            // Wonder anchors are kept apart: the autopilot starts wonders by its own rules, on the tile kept here.
+            const isWonder = (type) => rules.classOf(type) === "WONDER";
+            const anchorRows = plan.placements.filter((p) => isWonder(p.type)).map((p) => ({ type: p.type, sid: p.sid, idx: p.idx, eta: p.eta, ...describe(p.idx, p.sid), name: nameOf(p.type) }));
+            const placements = plan.placements.filter((p) => !isWonder(p.type)).map((p) => {
                 const hash = GameInfo.Constructibles.lookup(p.type)?.$hash;
                 const engine = engineData.get(`${hash}:${p.idx}`) ?? null;
                 const upkeep = upkeepOf(p.sid, p.type);
@@ -664,7 +757,7 @@ export function startBuildingPlan(target, settings, options = {}) {
                 busy: outcome.busyMs,
                 frames: outcome.frames,
             };
-            for (const k of ["seed", "greedy", "search", "repair", "describe"]) timings[k] = Math.round(timings[k] ?? 0);
+            for (const k of ["seed", "greedy", "search", "repair", "anneal", "describe"]) timings[k] = Math.round(timings[k] ?? 0);
             const plans = {
                 targetKey: target.key,
                 targetName: target.name,
@@ -673,6 +766,7 @@ export function startBuildingPlan(target, settings, options = {}) {
                 members: members.map((m) => ({ key: m.key, name: names.get(m.key), role: roleBySid.get(m.key) })),
                 placements,
                 fillers,
+                anchors: anchorRows,
                 unplaced: [...plan.unplaced, ...locked.map((type) => ({ type, reason: "LOCKED" }))].map((u) => ({ ...u, name: nameOf(u.type), settlementName: names.get(u.sid) ?? "" })),
                 total: plan.total,
                 timeAware: !!horizon,
@@ -683,12 +777,14 @@ export function startBuildingPlan(target, settings, options = {}) {
                 userTackSig: userTackSignature([...centres.values()]),
                 uniqueQuartersSig: unlockedUniqueQuarters().join(","),
                 engineUsed: validity.size > 0,
+                nextAge: planState.nextAge, // share of the next age counted for ageless adjacency (0 in the final age)
                 unexplored: members.length === 1 && !target.city && areaSet.size < 7,
                 elapsedMs: Date.now() - started,
                 seed: plan.seed,
                 inputSig,
                 memberSigs,
                 incremental: dirty ? { changed: dirty.size, of: settlements.length } : null,
+                fullWhy: dirty ? null : fullWhy,
                 timings,
             };
             state.set({ status: { busy: false, progress: 1, message: "" }, results: { ...state.get().results, plans }, stale: { ...state.get().stale, plans: false } });
@@ -697,9 +793,10 @@ export function startBuildingPlan(target, settings, options = {}) {
             const calibMsg = `buildings: our adjacency differed from the game's on ${calibration.gaps.length}/${calibration.compared} (building, tile) pairs; ${calibration.applied ? "using the game's numbers there" : "too many, NOT applied"} ${JSON.stringify(calibration.sample)}`;
             if (calibration.applied) log.info(calibMsg);
             else log.warn(calibMsg);
+            if (ctx.anchors.length > 0) log.info(`buildings: wonder tiles kept ${anchorRows.map((a) => `${a.type} ${a.x},${a.y} (${a.sid})`).join(", ") || "none"} of ${ctx.anchors.map((a) => `${a.type}${a.plots ? "" : " (rules)"}`).join(", ")}`);
             log.info(`buildings: ${placements.length} placed, ${fillers.length} fillers, ${plans.unplaced.length} unplaced ${JSON.stringify(why)} for ${members.map((m) => m.key).join("+")}: area ${planState.tiles.size} tiles, ${lockedSet.size} locked, horizon ${horizon ?? "-"}, ${rules.uniques.length} uniques, in ${plans.elapsedMs} ms (engine ${plans.engineUsed}, ${tackCount} tacks respected)`);
             const tm = timings;
-            log.info(`buildings timing: ${dirty ? `incremental ${dirty.size}/${settlements.length} settlements re-solved (${tm.seeded} kept)` : "full"}; busy ${tm.busy} ms in ${tm.frames} frames; game queries ${tm.engine} ms (${tm.queried} cities asked, ${tm.cached} from this turn's cache), setup ${tm.setup}, seed ${tm.seed}, greedy ${tm.greedy}, search ${tm.search} (${tm.rounds} rounds), repair ${tm.repair}, describe ${tm.describe}, results ${tm.post} ms; work ${tm.deltas} gains, ${tm.values} tile values, ${tm.views} views`);
+            log.info(`buildings timing: ${dirty ? `incremental ${dirty.size}/${settlements.length} settlements re-solved (${tm.seeded} kept)` : `full (${fullWhy})`}; busy ${tm.busy} ms in ${tm.frames} frames; game queries ${tm.engine} ms (${tm.queried} cities asked, ${tm.cached} from this turn's cache), setup ${tm.setup}, seed ${tm.seed}, greedy ${tm.greedy}, search ${tm.search} (${tm.rounds} rounds), repair ${tm.repair}, anneal ${tm.anneal} (+${tm.annealGain}), describe ${tm.describe}, results ${tm.post} ms; work ${tm.deltas} gains, ${tm.values} tile values, ${tm.views} views`);
         })
         .catch((error) => {
             log.error("building plan failed", error);

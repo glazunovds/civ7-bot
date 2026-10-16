@@ -268,18 +268,19 @@ export function installFakeEngine(world, age = "antiquity") {
             ...(c.trains ? [entry(c.trains)] : []),
         ],
     });
-    // Wonders in the world: world.wonders = [{ owner, type, x, y, complete }].
-    const wonderIds = (world.wonders ?? []).map((w, i) => {
+    // Wonders in the world: world.wonders = [{ owner, type, x, y, complete }], read on every call (a test may add one).
+    const wonderIds = () => (world.wonders ?? []).map((w, i) => {
         const id = `w-${i}`;
         componentIds.set(id, { type: info.Constructibles.lookup(w.type).$hash, complete: w.complete !== false, location: { x: w.x, y: w.y } });
         return { id, w };
     });
+    wonderIds();
     const players = (world.players ?? [{ id: 0 }]).map((p) => ({
         id: p.id,
         // world.players[i].civ = "CIVILIZATION_GREECE" (optional)
         civilizationType: p.civ ? info.Civilizations.lookup(p.civ)?.$hash : undefined,
         Constructibles: {
-            getWonders: (pid) => wonderIds.filter(({ w }) => w.owner === pid).map(({ id }) => id),
+            getWonders: (pid) => wonderIds().filter(({ w }) => w.owner === pid).map(({ id }) => id),
             // world.villages = [{ owner, x, y, type? }]: an independent's village (not a city: like
             // the game, it is only among the independent's constructibles), IMPROVEMENT_VILLAGE by default.
             getConstructibles: () => (world.villages ?? []).filter((v) => v.owner === p.id)

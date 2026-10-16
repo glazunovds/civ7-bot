@@ -22,8 +22,15 @@
  *   adjOpts:  { playerId, charming, breathtaking }
  *   ruralLoss: share of a developed rural tile's yields lost when it becomes urban
  *   area:     iterable of plot indices the plan may use
- *   settlements: [{ id, centre, owned: Set, adjMult, engineValid?(type, idx), allowFuture,
- *                   production, startTurn, costOf?(type) }]
+ *   settlements: [{ id, centre, owned: Set, adjMult, specialists?: { slots, cost }, engineValid?(type, idx),
+ *                   allowFuture, production, startTurn, costOf?(type) }]
+ *     wonderPlots: Map(wonder type -> Set(plot)) the game allows for a wonder this settlement may build (an anchor:
+ *     research/27 P1); without it, the wonder's own placement rules. fixedEta: Map(type -> completion turn) for
+ *     items whose time is known (an anchor's turns in the wonder planner), not taken from the build queue.
+ *     specialists: each specialist repeats all the adjacency of its tile (game 1.4.0: 100%) and costs
+ *     food and happiness, so specialists go only where a tile's adjacency pays for them: a tile is worth
+ *     slots × max(0, its weighted adjacency − cost) more (see specialistGain). Without it, the flat
+ *     adjMult (adjacency × adjMult) of older callers.
  *     (legacy single-settlement options centre/owned/adjMult/engineValid/allowFuture are accepted)
  *   horizon:  turns left in the age (undefined/Infinity = static mode)
  *   lockDelay: turns before a locked building can start (time-aware mode)
@@ -31,6 +38,10 @@
  *   uniqueQuarters: [{ type, b1, b2 }] for the player's civ
  *   uqBonus:  value of a completed unique quarter (weighted yield units)
  *   tackEta:  completion turn assumed for the player's own building tacks
+ *   nextAge:  share of the next age counted for the adjacency an AGELESS building keeps (0 in the final
+ *             age). At an age change the other buildings lose their adjacency and stop making quarters,
+ *             so only quarters of ageless buildings (warehouses, uniques) still count for the Palace's
+ *             +1 Science +1 Culture per adjacent quarter (research/27; root CLAUDE.md gotcha 50).
  *
  * Speed: adjacency only reaches neighbouring tiles, so a tile's view (what its
  * neighbours' rules see) depends on that tile alone and its value on that tile and its
@@ -48,6 +59,31 @@ const CONSTRUCTIBLE_SELECTORS = ["AdjacentConstructible", "AdjacentConstructible
 // Something finished after the age ends still counts a little (bought with gold sooner,
 // or kept if ageless), so such buildings still get a sensible tile instead of none.
 const WT_FLOOR = 0.05;
+
+// Specialists (root CLAUDE.md gotcha 49).
+export const SPECIALIST_UPKEEP = Object.freeze({ AGE_ANTIQUITY: 2, AGE_EXPLORATION: 4, AGE_MODERN: 6 }); // food and happiness each (Civilopedia)
+export const SPECIALIST_START_CAP = Object.freeze({ AGE_ANTIQUITY: 1, AGE_EXPLORATION: 1, AGE_MODERN: 3 }); // CITY_WORKER_STARTING_CAP
+const RURAL_CITIZEN_YIELDS = 2; // what the citizen would make on a rural tile instead
+
+/** Weighted cost of one specialist in an age: its food and happiness upkeep plus the rural tile it does not work. */
+export function specialistCost(weights, age) {
+    const upkeep = SPECIALIST_UPKEEP[age] ?? SPECIALIST_UPKEEP.AGE_ANTIQUITY;
+    let mean = 0;
+    for (let i = 0; i < 6; i++) mean += (weights[i] ?? 0) / 6;
+    return ((weights[0] ?? 0) + (weights[5] ?? 0)) * upkeep + RURAL_CITIZEN_YIELDS * mean;
+}
+
+/**
+ * What specialists add to a tile (weighted yields): `slots` specialists each repeat the tile's adjacency
+ * and cost `cost` (their food and happiness upkeep plus the rural tile the citizen would work instead),
+ * both counted for the share `weight` of the age the tile's buildings stand. Zero below the cost: the
+ * player (and the growth advice) puts specialists only where they pay, so adjacency gathered on few
+ * tiles is worth more than the same adjacency spread thin.
+ */
+export function specialistGain(specialists, adjacency, weight = 1) {
+    if (!specialists || !(specialists.slots > 0)) return 0;
+    return specialists.slots * Math.max(0, adjacency - specialists.cost * weight);
+}
 
 /** Short stable hash (FNV-1a, base 36) to keep fingerprints small. */
 export function hashString(str) {
@@ -73,6 +109,7 @@ export class PlanState {
         this.uqBonus = o.uqBonus ?? 0;
         this.uniqueQuarters = o.uniqueQuarters ?? [];
         this.tackEta = o.tackEta ?? 10;
+        this.nextAge = Number(o.nextAge) > 0 ? Number(o.nextAge) : 0;
         // A building planned on a tile the settlement does not own yet counts at a discount
         // (the tile may never be claimed, or be claimed by a neighbour) and, time-aware,
         // only from when the tile is likely claimed: a tile usable today wins unless the
@@ -100,6 +137,9 @@ export class PlanState {
                 centre: s.centre,
                 owned: s.owned ?? new Set(),
                 adjMult: s.adjMult ?? 1,
+                specialists: s.specialists ?? null,
+                wonderPlots: s.wonderPlots ?? null,
+                fixedEta: s.fixedEta ?? null,
                 engineValid: s.engineValid ?? null,
                 allowFuture: s.allowFuture !== false,
                 production: Math.max(0.5, s.production ?? 5),
@@ -239,6 +279,8 @@ export class PlanState {
     /** Completion turn if `type` were queued next in settlement s. */
     nextEta(s, type) {
         if (!this.horizon) return 0;
+        const fixed = s.fixedEta?.get(type);
+        if (fixed !== undefined) return fixed;
         let start = s.startTurn + s.committed;
         if (this.isLocked(type)) start = Math.max(start, this.lockDelay);
         return start + this.buildTurns(s, type);
@@ -271,6 +313,25 @@ export class PlanState {
 
     isQuarter(tile) {
         return this.quarterInfo(tile).is;
+    }
+
+    /** A quarter that outlives the age: 2+ ageless slot buildings, or one ageless full-tile building. */
+    lastingQuarter(types) {
+        let n = 0;
+        for (const type of types) {
+            const p = this.book.placementOf(type);
+            if (p.cls !== "BUILDING" || p.slotless || !p.ageless) continue;
+            if (p.fullTile) return true;
+            n++;
+        }
+        return n >= 2;
+    }
+
+    /** What a neighbour's view still holds in the next age: ageless buildings, improvements, lasting quarters. */
+    lastingView(v) {
+        if (!v) return v;
+        const types = (v.constructibles ?? []).filter((t) => this.book.placementOf(t).ageless || this.book.classOf(t) === "IMPROVEMENT");
+        return { ...v, constructibles: types, isQuarter: this.lastingQuarter(types) };
     }
 
     /** Unique quarter on the tile (both buildings present). Returns { type, t } or null. */
@@ -419,12 +480,14 @@ export class PlanState {
         const future = idx !== s.centre && !s.owned.has(idx);
         let adjacency = 0;
         let base = 0;
+        let standing = 0; // share of the age the tile's earliest building stands (for the specialists' upkeep)
         for (const item of t.items) {
             if (item.obsolete) continue;
             const late = item.planned && future;
             const tItem = late && this.horizon ? Math.max(item.t ?? 0, this.futureTileDelay) : item.t ?? 0;
             const discount = late ? this.futureFactor : 1;
             const wt = this.wt(tItem) * discount;
+            standing = Math.max(standing, wt);
             if (item.planned) {
                 base += wt * dot(this.weights, this.book.baseYields.get(item.type) ?? []);
                 base += wt * (this.extraValue.get(`${t.sid}|${item.type}`) ?? 0);
@@ -444,7 +507,24 @@ export class PlanState {
             const info = this.uniqueQuarterInfo(t);
             if (info && info.t !== undefined && t.items.some((i) => i.planned)) uq = this.uqBonus * this.wt(info.t);
         }
-        return adjacency * s.adjMult + base + uq;
+        const specialists = s.specialists ? specialistGain(s.specialists, adjacency, standing) : adjacency * (s.adjMult - 1);
+        return adjacency + specialists + base + uq + this.nextAgeValue(t, views, future);
+    }
+
+    /** The share `nextAge` of the adjacency this tile's ageless buildings keep after the age change. */
+    nextAgeValue(tile, views, future) {
+        if (this.nextAge <= 0) return 0;
+        let value = 0;
+        let lasting = null;
+        for (const item of tile.items) {
+            if (item.obsolete || !this.book.placementOf(item.type).ageless) continue;
+            const rules = this.book.rulesByType.get(item.type);
+            if (!rules || rules.length === 0) continue;
+            lasting ??= views.map((v) => this.lastingView(v));
+            const discount = item.planned && future ? this.futureFactor : 1;
+            value += this.nextAge * discount * dot(this.weights, adjacencyFromNeighbours(rules, lasting, this.adjOpts).byYield);
+        }
+        return value;
     }
 
     // ---- validity -------------------------------------------------------------
@@ -471,6 +551,7 @@ export class PlanState {
         if (!s.allowFuture && !ownedBySettlement) return { ok: false, reason: "NOT_OWNED" };
         if (f.owner >= 0 && !ownedBySettlement && f.owner !== this.adjOpts.playerId) return { ok: false, reason: "FOREIGN" };
         if (!p.multiplePerCity && s.planned.has(type)) return { ok: false, reason: "ALREADY_IN_SETTLEMENT" };
+        if (p.cls === "WONDER") return this.canPlaceWonder(type, t, s, p, f);
         if (t.district === WONDER) return { ok: false, reason: "WONDER_TILE" };
         if (t.reserved && !this.isUrbanLike(t)) return { ok: false, reason: "RESERVED" }; // the player's improvement tack
         // For tiles the settlement can build on now, the engine's yes beats our stricter terrain rules
@@ -561,6 +642,44 @@ export class PlanState {
         return { ok: true, overbuild };
     }
 
+    /**
+     * A wonder (an anchor of the plan, research/27 P1) takes a whole tile that is not urban: one the game allows
+     * for it (the settlement's `wonderPlots`, once it is unlocked), else one its placement rules allow (terrain,
+     * biome, river, lake, coast, an existing urban district next to it). No contiguity: a wonder need not touch
+     * the urban tiles, and it does not connect them either.
+     */
+    canPlaceWonder(type, t, s, p, f) {
+        const idx = t.idx;
+        if (t.district === URBAN || t.district === CENTRE || t.district === WONDER) return { ok: false, reason: "OCCUPIED" };
+        if (t.reserved) return { ok: false, reason: "RESERVED" };
+        const plots = s.wonderPlots?.get(type);
+        if (plots) return plots.has(idx) ? { ok: true, overbuild: null } : { ok: false, reason: "ENGINE" };
+        const neighbours = this.nbrs(idx).map((n) => this.tiles.get(n)?.facts ?? this.factsOf(n)).filter((n) => n && n.known);
+        if (p.validTerrains.size > 0) {
+            if (!p.validTerrains.has(f.terrain)) return { ok: false, reason: "TERRAIN" };
+            if (f.isWater && !neighbours.some((n) => !n.isWater)) return { ok: false, reason: "NEEDS_COAST" };
+        } else if (f.isWater || f.isNavRiver || f.isMountain) {
+            return { ok: false, reason: "TERRAIN" };
+        }
+        if (!f.isWater && (f.resource || f.isNaturalWonder)) return { ok: false, reason: "RESOURCE" };
+        if (p.validBiomes.size > 0 && !p.validBiomes.has(f.biome)) return { ok: false, reason: "BIOME" };
+        if (p.adjacentRiver && !f.isRiver && !neighbours.some((n) => n.isRiver)) return { ok: false, reason: "NEEDS_RIVER" };
+        if (p.adjacentLake && !neighbours.some((n) => n.isLake)) return { ok: false, reason: "NEEDS_LAKE" };
+        if (p.adjacentTerrain && !neighbours.some((n) => n.terrain === p.adjacentTerrain)) return { ok: false, reason: "NEEDS_TERRAIN" };
+        if (p.noRiver && (f.isRiver || f.isNavRiver)) return { ok: false, reason: "NO_RIVER" };
+        if (p.noFeature && f.feature) return { ok: false, reason: "NO_FEATURE" };
+        if (p.adjacentDistrict) {
+            // Existing districts only: a planned neighbour may move away later.
+            const want = p.adjacentDistrict;
+            const near = this.nbrs(idx).some((n) => {
+                const d = this.tiles.get(n)?.origDistrict ?? this.factsOf(n)?.district ?? null;
+                return d === want || (want === URBAN && d === CENTRE);
+            });
+            if (!near) return { ok: false, reason: "NEEDS_DISTRICT" };
+        }
+        return { ok: true, overbuild: null };
+    }
+
     // ---- mutation -------------------------------------------------------------
 
     /** Places `type` on idx. `eta` = completion turn (time-aware mode); defaults to queueing it next. */
@@ -573,7 +692,10 @@ export class PlanState {
             token.overbuilt = check.overbuild;
             t.items = t.items.filter((i) => i !== check.overbuild);
         }
-        if (!this.isUrbanLike(t)) {
+        if (this.book.placementOf(type).cls === "WONDER") {
+            t.district = WONDER;
+            t.districtTime = time;
+        } else if (!this.isUrbanLike(t)) {
             t.district = URBAN;
             t.districtTime = time;
         }
@@ -581,7 +703,7 @@ export class PlanState {
         t.items.push(token.item);
         s.planned.set(type, idx);
         this.touch(idx);
-        if (eta === undefined && this.horizon) {
+        if (eta === undefined && this.horizon && s.fixedEta?.get(type) === undefined) {
             let start = s.startTurn + s.committed;
             if (this.isLocked(type)) start = Math.max(start, this.lockDelay);
             s.committed = start - s.startTurn + this.buildTurns(s, type);

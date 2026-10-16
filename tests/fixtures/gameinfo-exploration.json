@@ -785,6 +785,58 @@
 "TraitType": "TRAIT_SPAIN"
 }
 ],
+"CivilizationFavoredWonders": [
+{
+"CivilizationType": "CIVILIZATION_ABBASID",
+"FavoredWonderType": "WONDER_HOUSE_OF_WISDOM",
+"FavoredWonderName": "LOC_WONDER_HOUSE_OF_WISDOM_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_CHOLA",
+"FavoredWonderType": "WONDER_BRIHADEESWARAR_TEMPLE",
+"FavoredWonderName": "LOC_WONDER_BRIHADEESWARAR_TEMPLE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_HAWAII",
+"FavoredWonderType": "WONDER_HALE_O_KEAWE",
+"FavoredWonderName": "LOC_WONDER_HALE_O_KEAWE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_INCA",
+"FavoredWonderType": "WONDER_MACHU_PIKCHU",
+"FavoredWonderName": "LOC_WONDER_MACHU_PIKCHU_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MAJAPAHIT",
+"FavoredWonderType": "WONDER_BOROBUDUR",
+"FavoredWonderName": "LOC_WONDER_BOROBUDUR_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MING",
+"FavoredWonderType": "WONDER_FORBIDDEN_CITY",
+"FavoredWonderName": "LOC_WONDER_FORBIDDEN_CITY_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MONGOLIA",
+"FavoredWonderType": "WONDER_ERDENE_ZUU",
+"FavoredWonderName": "LOC_WONDER_ERDENE_ZUU_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_NORMAN",
+"FavoredWonderType": "WONDER_WHITE_TOWER",
+"FavoredWonderName": "LOC_WONDER_WHITE_TOWER_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_SONGHAI",
+"FavoredWonderType": "WONDER_TOMB_OF_ASKIA",
+"FavoredWonderName": "LOC_WONDER_TOMB_OF_ASKIA_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_SPAIN",
+"FavoredWonderType": "WONDER_EL_ESCORIAL",
+"FavoredWonderName": "LOC_WONDER_EL_ESCORIAL_NAME"
+}
+],
 "CivilizationTraits": [
 {
 "CivilizationType": "CIVILIZATION_ABBASID",
@@ -2074,6 +2126,40 @@
 {
 "ConstructibleType": "IMPROVEMENT_SAQIYA",
 "FeatureClassType": "FEATURE_CLASS_FLOODPLAIN"
+}
+],
+"Constructible_ValidBiomes": [
+{
+"ConstructibleType": "IMPROVEMENT_CARAVANSERAI",
+"BiomeType": "BIOME_DESERT"
+},
+{
+"ConstructibleType": "IMPROVEMENT_CARAVANSERAI",
+"BiomeType": "BIOME_PLAINS"
+},
+{
+"ConstructibleType": "IMPROVEMENT_LO_I_KALO",
+"BiomeType": "BIOME_GRASSLAND"
+},
+{
+"ConstructibleType": "IMPROVEMENT_LO_I_KALO",
+"BiomeType": "BIOME_TROPICAL"
+},
+{
+"ConstructibleType": "IMPROVEMENT_KASBAH",
+"BiomeType": "BIOME_DESERT"
+},
+{
+"ConstructibleType": "WONDER_MACHU_PIKCHU",
+"BiomeType": "BIOME_GRASSLAND"
+},
+{
+"ConstructibleType": "WONDER_MACHU_PIKCHU",
+"BiomeType": "BIOME_TROPICAL"
+},
+{
+"ConstructibleType": "WONDER_TOMB_OF_ASKIA",
+"BiomeType": "BIOME_DESERT"
 }
 ],
 "Constructible_ValidDistricts": [

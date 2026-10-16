@@ -78,6 +78,15 @@ test("fair mode: tiles, turns, statuses and race labels", () => {
     void fake;
 });
 
+test("each wonder shows its tier and the game's own description (research/27 §4)", () => {
+    const w = runWonderPlanner({ ...DEFAULT_SETTINGS });
+    assert.equal(row(w, "WONDER_HANGING_GARDENS").tier, "S");
+    assert.equal(row(w, "WONDER_PYRAMIDS").tier, "B");
+    assert.equal(row(w, "WONDER_COLOSSEUM").tier, "C");
+    assert.equal(row(w, "WONDER_ORACLE").tier, "S", "locked ones too");
+    assert.equal(row(w, "WONDER_COLOSSEUM").description, GameInfo.Constructibles.lookup("WONDER_COLOSSEUM").Description);
+});
+
 test("omniscient mode reads rivals' queues", () => {
     const w = runWonderPlanner({ ...DEFAULT_SETTINGS, wonders: { omniscient: true } });
     const pyramids = row(w, "WONDER_PYRAMIDS");

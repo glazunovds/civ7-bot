@@ -8,7 +8,7 @@ import { installFakeEngine } from "./fakes/fake-engine.mjs";
 const centres = [[6, 6], [16, 6], [26, 6]];
 const built = new Map(); // "x,y" -> constructible types built since the start
 const near = (x, y) => centres.some(([cx, cy]) => Math.abs(x - cx) <= 2 && Math.abs(y - cy) <= 2);
-installFakeEngine({
+const world = {
     width: 34, height: 14, wrapX: false,
     tiles: (x, y) => ({ terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2, YIELD_PRODUCTION: 1 }, owner: near(x, y) ? 0 : -1 }),
     structures: (x, y) => {
@@ -18,7 +18,8 @@ installFakeEngine({
     },
     players: [{ id: 0 }],
     cities: centres.map(([x, y], i) => ({ owner: 0, x, y, name: `City${i}`, pop: 6, prod: 10 })),
-});
+};
+installFakeEngine(world);
 // Count the game queries the planner makes.
 let queries = 0;
 const canStart = Game.CityOperations.canStart;
@@ -64,14 +65,33 @@ test("a building completed in one city: only that city is re-solved", async () =
     for (const sid of ["c:16-6", "c:26-6"]) assert.deepEqual(layoutOf(after, sid), layoutOf(before, sid), `${sid} keeps its layout`);
 });
 
-test("changed settings, ten turns later, or the option off: a full plan", async () => {
+test("a new settlement: only it is solved, the others keep their layouts (a founding re-planned every settlement)", async () => {
+    const before = await plan();
+    centres.push([16, 12]);
+    world.cities.push({ owner: 0, x: 16, y: 12, name: "City3", pop: 3, prod: 6 });
+    try {
+        const after = await plan();
+        assert.deepEqual(after.incremental, { changed: 1, of: 4 });
+        assert.ok(after.placements.some((p) => p.sid === "c:16-12"), "the new city has its plan");
+        for (const m of before.members) assert.deepEqual(layoutOf(after, m.key), layoutOf(before, m.key), `${m.key} keeps its layout`);
+    } finally {
+        centres.pop();
+        world.cities.pop();
+    }
+});
+
+test("changed settings, ten turns later, or the option off: a full plan, and the log says why", async () => {
     const fewer = { ...settings, buildings: { ...settings.buildings, selected: selected.slice(0, 3) } };
-    assert.equal((await plan(fewer)).incremental, null);
+    const changed = await plan(fewer);
+    assert.equal(changed.incremental, null);
+    assert.equal(changed.fullWhy, "inputs: bs, selected");
     assert.notEqual((await plan(fewer)).incremental, null, "same settings again: incremental");
     Game.turn += 10;
-    assert.equal((await plan(fewer)).incremental, null);
+    const later = await plan(fewer);
+    assert.equal(later.incremental, null);
+    assert.equal(later.fullWhy, "10 turns");
     const off = { ...fewer, buildings: { ...fewer.buildings, incremental: false } };
-    assert.equal((await plan(off)).incremental, null);
+    assert.equal((await plan(off)).fullWhy, "option off");
 });
 
 test("a changed priority balance (the Autopilot tab's sliders): a full plan", async () => {

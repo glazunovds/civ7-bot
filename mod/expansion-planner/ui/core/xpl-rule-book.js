@@ -121,6 +121,7 @@ export function buildRuleBook(info, age, isActivated = () => false, player = {})
     const validFeatures = groupBy(info.Constructible_ValidFeatures, "ConstructibleType", (r) => r.FeatureType);
     const requiredFeatureClasses = groupBy(info.Constructible_RequiredFeatureClasses, "ConstructibleType", (r) => r.FeatureClassType);
     const validDistricts = groupBy(info.Constructible_ValidDistricts, "ConstructibleType", (r) => r.DistrictType);
+    const validBiomes = groupBy(info.Constructible_ValidBiomes, "ConstructibleType", (r) => r.BiomeType); // wonders: Petra on desert...
     const slots = new Map();
     each(info.Districts, (row) => slots.set(row.DistrictType, Number(row.MaxConstructibles) || 1));
 
@@ -155,6 +156,8 @@ export function buildRuleBook(info, age, isActivated = () => false, player = {})
             validFeatures: new Set(validFeatures.get(type) ?? []),
             requiredFeatureClasses: new Set(requiredFeatureClasses.get(type) ?? []),
             validDistricts: new Set(validDistricts.get(type) ?? []),
+            validBiomes: new Set(validBiomes.get(type) ?? []),
+            adjacentDistrict: def.AdjacentDistrict ?? null, // a wonder that must touch an urban district
             riverPlacement: def.RiverPlacement ?? null,
             adjacentRiver: truthy(def.AdjacentRiver),
             adjacentLake: truthy(def.AdjacentLake),

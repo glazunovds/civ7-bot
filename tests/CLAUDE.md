@@ -40,3 +40,15 @@ Use `npm test`, which runs `node --test "tests/**/*.test.mjs"` (Node ≥ 22; no 
 - **Time-aware plans:** tests that don't care about build order should pass `timeAware: false` (it is on by default) to keep expectations simple.
 - **Same-turn cache and fast recalculation.** The planner caches the game's per-city answers for the turn and re-solves only changed settlements. A test that edits the fake world between two plans in the same turn must call `clearEngineCache()` (`ui/data/xpl-engine-cache.js`) or `engine.trigger(...)` the event the game would fire; to force a full plan pass `buildings.incremental: false`.
 - **Speed:** `node tools/bench-plan.mjs` plans every building for 8 fake cities and prints CPU per phase and the work counters (gains, tile values, views).
+- **Random cities (research/27):** `fakes/random-city.mjs`, used by `placement-anneal.test.mjs` and `tools/bench-optimality.mjs`:
+  - `makeRandomCity(seed)`: a Palace at (10,8), resources, mountains, hills, coast, a river, maybe a wonder or a natural wonder;
+  - `randomCityState(map, book, {profile, horizon, settlement})`: owns ring 1, plans to ring 3;
+  - `planValue(state)`: every planned building re-placed from an empty plan, so the exact deltas add up to the plan's value;
+  - `placeAll`, `layoutOf`.
+- **Older solver behaviour in tests:** pass `{ annealSteps: 0 }` to `solveLayout`. PlanState tests without `specialists` keep the flat `adjMult`, and `nextAge` defaults to 0.
+- **Wonders (research/27 §6–7):**
+  - `world.wonders` is read on every call (a test may add a built wonder mid-file).
+  - Wonder anchors in a job test need tiles the city may plan: the fake city owns only ring 1, and tiles owned by us but not that city are left out of the plan's area.
+  - `world.canBuild` answers `Plots` for an available wonder.
+  - The fixtures now include `Constructible_ValidBiomes` and `CivilizationFavoredWonders` (Greece: the Oracle).
+  - Lost races: an omniscient wonder planner (`wonders: {omniscient: true}`) reads a rival city's `queue {type, turns}`; `steps.cashOutLostWonders()` reads `state.results.wonders`, so run `runWonderPlanner(settings)` first.

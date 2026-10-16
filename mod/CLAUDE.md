@@ -37,14 +37,16 @@ See the root `CLAUDE.md` first (commands, game loop, gotchas). The mod is `mod/e
   6. **Solve:** `core/xpl-placement-solver.js` `solveLayout`:
      - greedy by gain, or gain per build turn when time-aware;
      - local moves and pairwise swaps;
-     - a repair pass for buildings left without any tile.
+     - a repair pass for buildings left without any tile;
+     - annealing in the settlements being solved (root gotcha 48; option `annealSteps`, 0 = none).
+     Wonder anchors (root gotcha 52) are planned items of their city's selection (`wonderPlots`, `fixedEta`, `ANCHOR_VALUE`), returned as `plans.anchors` and tacked with the plan.
      Warehouses compete in the greedy like any other building.
   7. **Results** go to `state.results.plans`, with rows per settlement, `bestNow` (the game's best tile when it beats ours), an ETA or "after the age" flag, `upkeep` (the game's `city.Constructibles.getMaintenance`, else `Constructible_Maintenances`) and `net` (value per turn after upkeep, by the profile; upkeep does not change *where* a building goes, so the solver ignores it). Tacks via `placePlanTacks` (replaces our previous ones near the plan's centres). The «Обновлять булавки сами» option re-places them after each recalculation.
   8. **Actions** (`data/xpl-city-actions.js`, always from a click): «В очередь» queues a city's next 3 planned buildings at their tiles (BUILD with X, Y appends to the queue); the gold box ranks buyable planned buildings by value per gold (`core/xpl-purchase-advisor.js`: net per turn × turns gained; a town gains the rest of the age) and «Купить» sends PURCHASE at the tile; buildings with `net < 0` are listed, with «Снять отметку» only for a type that loses everywhere.
 - **Towns:** `data/xpl-town-job.js` collects facts per town.
   - **Convert advice:** `core/xpl-town-advisor.js` (convert / consider / wait / keep / blocked; production versus the gold cost, age pace).
   - **Focus advice:** `core/xpl-town-focus.js`. «Выбрать» sets a Focus with the game's own CHANGE_GROWTH_MODE command (`applyTownFocus`); only for Focuses offered now and towns at population 7+. It counts the town's farms/pastures/plantations/fishing boats, woodcutters/camps/clay pits/mines/quarries, appealing tiles, quarters, buildings and resource tiles, plus `getConnectedCities()` and the Focus list the game offers now (`CityCommands.canStart(CHANGE_GROWTH_MODE, {Type: PROJECT}).Projects`).
-- **Wonders:** `data/xpl-wonder-job.js`, Wonder-Alert-style. Our cities' `canStart` gives tiles and turns; completed wonders come from `player.Constructibles.getWonders()` and `Constructibles.getByComponentID`. Rival sites count only if visible on our map, unless the opt-in "omniscient" mode reads rivals' build queues. `core/xpl-wonder-race.js` labels the race. The tile boost counts neighbours' "+1 per adjacent wonder" rules.
+- **Wonders:** `data/xpl-wonder-job.js`, Wonder-Alert-style. Each row carries a `tier` (`core/xpl-wonder-tiers.js`, root gotcha 51) and the game's `description`; a plot that is the building plan's anchor for it comes first (`anchor`, root gotcha 52); the result carries `computedTurn` (the building job reuses it within the turn). The autopilot cashes out lost races and keeps a big building behind every wonder (root gotcha 53). Our cities' `canStart` gives tiles and turns; completed wonders come from `player.Constructibles.getWonders()` and `Constructibles.getByComponentID`. Rival sites count only if visible on our map, unless the opt-in "omniscient" mode reads rivals' build queues. `core/xpl-wonder-race.js` labels the race. The tile boost counts neighbours' "+1 per adjacent wonder" rules.
 - **Empire:** `data/xpl-empire-job.js` `runEmpireOverview` (reuses `runTownAdvisor` for the recommended Focus and `state.results.plans` for what is left). `foodNetwork()` applies the game's food rule (a town with a Focus that is not a unit project sends `getSentFoodPerCity()` to *each* connected city; `getConnectedCities()` lists towns too). "Strongest in" = the yield where a city is ≥ 15% above the average city. The food lens draws the same network.
 - **Growth hints:** `hud/xpl-growth-advisor.js` listens for the window event `interface-mode-changed` with `newMode === "INTERFACEMODE_ACQUIRE_TILE"` (params `{CityID}`), and draws marks only. `data/xpl-growth-job.js` ranks the game's EXPAND plots by the profile (+ a share of the value of buildings the plan needs there; an owned tile where the plan builds counts only until that building's turn) and the specialist tiles by `Workers.GetAllPlacementInfo()` (Next − Current yields, minus the added upkeep), on one scale; `choice` names the overall winner.
 - **Food and happiness costs** (`core/xpl-scarcity.js`): a specialist's or a building's food/happiness upkeep is weighted by what the settlement keeps after paying it (`city.Yields.getNetYield`): plenty left → down to ×0.3, nothing left → ×1, would go below zero → ×2. Used by the growth hints, the upkeep warnings (`net`) and the gold advice. Gains the same way round (`gainValue`, `gainMultiplier`: net ≤ 0 → ×1, 20 → ×0.65, 140 → ×0.39): the growth advice values a tile's food by what the city already has (research/26 §3.2; root gotcha 45).
@@ -62,9 +64,11 @@ See the root `CLAUDE.md` first (commands, game loop, gotchas). The mod is `mod/e
 - **Tiles:** tiles are assigned to settlements; slots come from `Districts.MaxConstructibles` (urban and city centre: 2). Urban growth must touch the settlement's urban tiles or centre (`isConnected(sid)`). The plan allows one of each building per settlement (unless `MultiplePerCity`), and never puts a building on a wonder tile.
 - **`tileValue`:**
   - planned items' base yields + `extraValue`;
-  - adjacency (timed: a neighbour counts from when it exists), × `adjMult` (specialists);
+  - adjacency (timed: a neighbour counts from when it exists);
+  - specialists: `specialistGain(settlement.specialists, adjacency, share of the age)` = slots × max(0, adjacency − cost) (root gotcha 49); without `specialists`, the old flat `adjMult`;
   - the engine adjacency correction;
-  - the unique-quarter bonus.
+  - the unique-quarter bonus;
+  - `nextAgeValue`: the share `nextAge` of the adjacency the tile's ageless buildings keep next age (root gotcha 50).
   Weights are the profile's yield weights.
 - **Time-aware:** `wt(t) = max(0.05, (H − t) / H)`, where H = turns left in the age (`ageOutlook()`, 150 in the final age). ETAs come from cost / production; planned sites start late; locked buildings get `LOCK_DELAY`. Items finishing after the age keep 5% weight and are flagged.
 - **Future tiles** (not owned yet) count at ×0.85, and time-aware no earlier than turn 10. So a tile usable today wins ties.
@@ -77,11 +81,21 @@ See the root `CLAUDE.md` first (commands, game loop, gotchas). The mod is `mod/e
 - **Constants:** tuning lives in `core/xpl-tuning.js` (sites, towns) and at the top of `data/xpl-building-job.js` (plan timing, region, warehouses).
 
 ## Speed (building plans)
-Measured in the log line `buildings timing:` (game queries, setup, seed, greedy, search with rounds, repair, describe, results; work counters). `node tools/bench-plan.mjs` runs the same on a fake map.
+Measured in the log line `buildings timing:`:
+- the kind of plan: `incremental N/M`, or `full (why)`;
+- game queries, setup, seed, greedy, search with rounds, repair, anneal (+gain), describe, results;
+- work counters.
+
+`node tools/bench-plan.mjs` runs the same on a fake map. `node tools/bench-optimality.mjs` measures how far layouts are from the best a long search finds (root gotcha 48).
 - **Memo in `PlanState`:** a tile's view depends only on that tile; its value on it and its neighbours. `touch(idx)` (called by place/undo/lift/restore) drops exactly those; `delta()` puts the before-values back after its undo. Tiles edited any other way need `invalidateAll()`.
 - **Solver:** the delta cache is indexed settlement → tile → building and drops only tiles within 2 of a placement (time-aware: also that settlement, whose queue got longer). Local-search rounds after the first revisit only settlements near something the previous round changed.
 - **Game queries** (`canStart` per building per city, `calculateAllBuildingsPlacements`) run one city per frame and are cached for the turn (`data/xpl-engine-cache.js`): an entry is valid for the same turn, owned tiles and queue, and no event since among buildings/tiles/queue/purchases/population/specialists/unlocks.
-- **Incremental recalculation** (`buildings.incremental`, on): the same target with the same `inputSignature` (settings, members and roles, selected and locked buildings, age/civ/unique quarters) within 10 turns re-solves only settlements whose `settlementSignature` (tiles, districts, buildings, tacks, owned tiles) or `engineFingerprint` (what the game said about that city) changed. The others are seeded from `plans.seed` in their old build order.
+- **Incremental recalculation** (`buildings.incremental`, on; root gotcha 16): the same target with the same `inputSignature` (profile, balance, building options, age/civ/unique quarters, selected buildings; locked ones only when they are left out of the plan) within 10 turns re-solves only settlements whose fingerprint changed, or new ones. The fingerprint is:
+  - `settlementSignature`: tiles, districts, buildings, tacks, owned tiles;
+  - `engineFingerprint`: the tiles the game allows, and its adjacency per building and tile, not its yield totals;
+  - `memberSignature`: role, specialist limit, wonder anchors.
+
+  The others are seeded from `plans.seed` in their old build order. `plans.fullWhy` says why a plan was a full one.
 - **CPU per frame:** 6 ms by default; the Buildings tab asks for 12 ms while the panel is open (`runJob` takes a budget function, read every frame).
 - **Rules:** `data/xpl-rules-loader.js` `getRules()` rebuilds the rule book (about 10 ms) when the age, civ, turn or unlocked unique quarters change. Plans store `uniqueQuartersSig`; `hud/xpl-recalc-watch.js` suggests «Пересчитать» (reason UNIQUES) when it no longer matches.
 

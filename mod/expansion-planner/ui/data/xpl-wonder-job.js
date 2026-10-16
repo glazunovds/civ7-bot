@@ -12,6 +12,7 @@
  * Constructibles.getByComponentID, MapConstructibles.getHiddenFilteredConstructibles.
  */
 import { RACE_ORDER, raceLabel, wonderBoost } from '../core/xpl-wonder-race.js';
+import { wonderTier } from '../core/xpl-wonder-tiers.js';
 import { profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex, zeroYields } from '../core/xpl-yields.js';
 import { getEngineMap } from './xpl-engine-map.js';
@@ -172,6 +173,7 @@ function scorePlots(plots, ctx) {
         }
         const isActive = (t) => rules.isActive(t);
         const now = wonderBoost(built, rules.rulesByType, isActive);
+        const anchor = !!ctx.anchors?.has(`${wonderType}:${idx}`);
         const later = wonderBoost(planned, rules.rulesByType, isActive);
         const f = facts.structures(idx);
         const urban = f?.district === "DISTRICT_URBAN" || f?.district === "DISTRICT_CITY_CENTER";
@@ -179,9 +181,10 @@ function scorePlots(plots, ctx) {
         const byYield = now.byYield.map((v, i) => v + later.byYield[i]);
         const value = dot(weights, byYield) + open * OPEN_NEIGHBOUR_VALUE - loss;
         const { x, y } = engineMap.location(idx);
-        scored.push({ idx, x, y, value, byYield, buildings: now.buildings, planned: later.buildings, open, loss, tacked: here.includes(wonderType) });
+        scored.push({ idx, x, y, value, byYield, buildings: now.buildings, planned: later.buildings, open, loss, tacked: here.includes(wonderType), anchor });
     }
-    scored.sort((a, b) => b.value - a.value || a.idx - b.idx);
+    // The building plan's tile for it first: the plan placed the buildings around it (research/27 P1).
+    scored.sort((a, b) => Number(b.anchor) - Number(a.anchor) || b.value - a.value || a.idx - b.idx);
     return scored;
 }
 
@@ -203,6 +206,7 @@ export function runWonderPlanner(settings) {
     const queued = ourQueues(cities);
     const tacks = tacksByPlot(engineMap);
     const base = wonderBaseYields();
+    const anchors = new Set((state.get().results.plans?.anchors ?? []).map((a) => `${a.type}:${a.idx}`));
 
     const rows = [];
     for (const def of currentAgeWonders(rules.age)) {
@@ -230,7 +234,7 @@ export function runWonderPlanner(settings) {
                     cityName: compose(city.name),
                     turns,
                     cost,
-                    plots: scorePlots(plots, { engineMap, facts, rules, weights, tacks, wonderType: type, localId }),
+                    plots: scorePlots(plots, { engineMap, facts, rules, weights, tacks, wonderType: type, localId, anchors }),
                 });
             }
             options.sort((a, b) => a.turns - b.turns || (b.plots[0]?.value ?? -Infinity) - (a.plots[0]?.value ?? -Infinity));
@@ -257,6 +261,8 @@ export function runWonderPlanner(settings) {
                 race,
                 baseYields,
                 baseValue: dot(weights, baseYields),
+                tier: wonderTier(type), // what its effect is worth beyond its yields (research/27 §4)
+                description: def.Description ?? null,
                 turns: Number.isFinite(fastest) ? fastest : null,
                 inQueue,
                 site: known.oursSite,
@@ -276,7 +282,7 @@ export function runWonderPlanner(settings) {
         || a.name.localeCompare(b.name));
     assignTiles(rows);
 
-    const wonders = { rows, omniscient, ageTurnsLeft, isFinalAge: !!outlook?.isFinalAge, ageFrac: outlook?.ageFrac ?? 0, elapsedMs: Date.now() - started };
+    const wonders = { rows, omniscient, ageTurnsLeft, isFinalAge: !!outlook?.isFinalAge, ageFrac: outlook?.ageFrac ?? 0, elapsedMs: Date.now() - started, computedTurn: Game.turn };
     state.set({ results: { ...state.get().results, wonders }, stale: { ...state.get().stale, wonders: false } });
     log.info(`wonder planner: ${rows.length} wonders (${rows.filter((r) => r.status === "AVAILABLE").length} available), ${cities.length} cities, ${omniscient ? "omniscient" : "fair"}, ${wonders.elapsedMs} ms`);
     return wonders;

@@ -2,11 +2,15 @@
 
 A Civilization VII **UI mod** (mod id `expansion-planner`, in `mod/expansion-planner/`) plus Node tests and dev tools. It is a planner panel opened from a top-left toolbar button (or F8). It has six tabs:
 - **Settlements:** sites for future cities or feeder towns.
-- **Buildings:** an adjacency layout per settlement, or for all settlements at once, placed as Detailed Map Tacks. One-click actions: queue a city's next planned buildings, buy the best-value ones with gold, upkeep warnings.
+- **Buildings:** an adjacency layout per settlement, or for all settlements at once, placed as Detailed Map Tacks.
+  - Whole layouts are searched, connector buildings toward far good tiles included (gotcha 48).
+  - Specialists are valued where a tile's adjacency pays for them (gotcha 49), and ageless quarters for the next age too (gotcha 50).
+  - The tiles of the wonders we will build are kept, with quarters around them (gotcha 52).
+  - One-click actions: queue a city's next planned buildings, buy the best-value ones with gold, upkeep warnings.
 - **Towns:** convert a town to a city or keep it, and which Town Focus to pick (with a «Выбрать» button that sets it).
-- **Wonders:** where to build each wonder, and the race against rivals.
+- **Wonders:** where to build each wonder, its tier (what its effect is worth), and the race against rivals.
 - **Empire:** every settlement on one page (city strengths, town Focus, food sent/received, plan left), plus the «Сеть еды» food-network map lens.
-- **Autopilot:** for stepping away (online turn timers): each turn it chooses research and civics (game advisor), makes the choices that hold the turn (policies valued by Policy Yield Previews when installed, celebrations, story events, pantheon, government, city-state bonuses), fills empty production queues (a wonder it can win, the plan, else the advisor), places new citizens, sets town Focus, buys planned buildings above a gold reserve (one budget a pass; gold saved for a town conversion or the victory path's next building before small purchases; a gold line in the tab and UI.log), recalculates the plan, optionally skips idle units and ends the turn (not while a choice holds it). Units move only with their own opt-in options: scouts explore (2 trained first), settlers are trained and found on the Settlements tab's sites (searched by itself; cities and towns 1 to 1 as a floor, then towns converted by their yields), idle military shoots or fortifies or explores (one garrison per city stays; hurt units escape onto shallow water from land melee raiders), merchants take the best trade route. Also befriends independents, spends leader attribute points, promotes commanders (Bastion first, commendations spent; with «Оборона» they stand in the most threatened or unhappiest settlement and lead Focus Fire / Coordinated Attack on raiders), places the plan's map tacks, puts archived great works on display, assigns resources, and (opt-in) explorers dig artifacts, a victory focus steers toward the closest legacy path, by phases (Growth, Build-up, Final push: «Стратегия по фазам») (with its triumphs; research, buildings, growth, merchants and resources serve the science or economic path of each age; the government suits the focus; the Autopilot tab shows each victory's points and countdown and which victories are off), melee soldiers strike raiders when the game's own attack preview says it pays, defence against independents (no site near their villages, befriending one at a time, melee defenders bought where raiders are, empty villages dispersed, Fort Town walls), and diplomacy (counter-spy, reconciliation, initiatives). Off at every load, and switched off when anyone wins or we are defeated. Plus an experimental single-player «ИИ играет N ходов» (the game's own Autoplay).
+- **Autopilot:** for stepping away (online turn timers): each turn it chooses research and civics (game advisor), makes the choices that hold the turn (policies valued by Policy Yield Previews when installed, celebrations, story events, pantheon, government, city-state bonuses), fills empty production queues (a wonder it can win, by tier and value per turn, on the plan's tile; else the plan; else the advisor; a wonder race it will lose is cashed out into a building, and a big building stands behind every wonder), places new citizens, sets town Focus, buys planned buildings above a gold reserve (one budget a pass; gold saved for a town conversion or the victory path's next building before small purchases; a gold line in the tab and UI.log), recalculates the plan, optionally skips idle units and ends the turn (not while a choice holds it). Units move only with their own opt-in options: scouts explore (2 trained first), settlers are trained and found on the Settlements tab's sites (searched by itself; cities and towns 1 to 1 as a floor, then towns converted by their yields), idle military shoots or fortifies or explores (one garrison per city stays; hurt units escape onto shallow water from land melee raiders), merchants take the best trade route. Also befriends independents, spends leader attribute points, promotes commanders (Bastion first, commendations spent; with «Оборона» they stand in the most threatened or unhappiest settlement and lead Focus Fire / Coordinated Attack on raiders), places the plan's map tacks, puts archived great works on display, assigns resources, and (opt-in) explorers dig artifacts, a victory focus steers toward the closest legacy path, by phases (Growth, Build-up, Final push: «Стратегия по фазам») (with its triumphs; research, buildings, growth, merchants and resources serve the science or economic path of each age; the government suits the focus; the Autopilot tab shows each victory's points and countdown and which victories are off), melee soldiers strike raiders when the game's own attack preview says it pays, defence against independents (no site near their villages, befriending one at a time, melee defenders bought where raiders are, empty villages dispersed, Fort Town walls), and diplomacy (counter-spy, reconciliation, initiatives). Off at every load, and switched off when anyone wins or we are defeated. Plus an experimental single-player «ИИ играет N ходов» (the game's own Autoplay).
 
 There are also tack pills in the city production menu and growth hints (map marks while the game asks where a new citizen goes). The user plays in **ru_RU**: every string ships in English and Russian.
 
@@ -34,6 +38,7 @@ Numbers 1–6 on the memento selection screen: the best mementos for the chosen 
 | Regenerate `<ImportFiles>` after adding/renaming a UI file | `python -I tools/sync-modinfo.py` (refuses files without the `xpl-` prefix) |
 | Re-extract game data for tests | `python -I tools/extract-fixtures.py antiquity` |
 | Planner speed on a fake 8-city map (CPU per phase) | `node tools/bench-plan.mjs` (`nomemo` to compare without the tile memo) |
+| Layout quality: our solver against the best layout a long search finds, on random cities | `node tools/bench-optimality.mjs [maps] [steps] [antiquity/exploration/modern] [timed] [show=N]` |
 | Follow the game's UI log | `powershell -File tools/tail-ui-log.ps1` |
 
 Run all four checks before handing anything to the user: tests, imports, syntax, and XML (the last is covered by check-syntax).
@@ -96,7 +101,12 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
 16. **Planner speed rules** (see `mod/CLAUDE.md` "Speed").
     - `PlanState` memoises tile views and values. Edit tiles only through `place/undo/lift/restore`, or call `invalidateAll()` afterwards (the building job does after applying tacks).
     - The game's per-city answers are cached per turn (`data/xpl-engine-cache.js`); game events drop the cache. **A test that changes the fake world mid-turn must call `clearEngineCache()`**, like the game would fire an event.
-    - A recalculation of the same plan is incremental: settlements whose fingerprint (tiles, buildings, tacks, queue, the game's numbers) is unchanged keep their layout. New inputs a plan depends on must go into `settlementSignature`, `engineFingerprint` or `inputSignature`, or they will be ignored by fast recalculation.
+    - A recalculation of the same plan is incremental: settlements whose fingerprint is unchanged keep their layout. The fingerprint holds the tiles, buildings and tacks, the game's valid tiles and adjacency (`engineFingerprint`), and the settlement's role, specialist limit and wonder anchors (`memberSignature`).
+    - A new settlement (a founding, a town turned city, a new site) is solved alone; others are re-solved only when their tiles changed.
+    - A full plan comes only from the whole plan's inputs (`inputSignature`: profile, balance, options, age, civilization, selection), every 10 turns, or every settlement changed. `plans.fullWhy` and UI.log's `buildings timing: full (…)` say which.
+    - **Not in the fingerprint:** the settlement's yield totals the game reports per tile. They move with every citizen, and in game 20 they marked most cities changed on every recalculation (584 settlements re-solved in 166 incremental plans).
+    - **Not in the inputs:** the settlement list. In game 20, 40 of 76 full plans (125 of 217 s) came from foundings and conversions.
+    - **New inputs:** a new input a plan depends on goes into one of these three, or fast recalculation ignores it.
 17. **The game's `Autoplay` is made for its benchmarks.** An age change while it runs rebuilds the next age with the human slot saved as AI (`GameCore.log` «SlotStatus - AI»): the game then plays that civ by itself for good, picks its next civilizations, and it keeps playing after a victory. Our «ИИ играет» therefore stops one turn before the age ends (`Game.AgeProgressManager.ageCountdownStarted` and max − current points ≤ 1), on `GameAgeEnded`, `TeamVictory` and the player's `PlayerDefeat`; «Вернуть управление» runs one Autoplay turn with `setReturnAsPlayer` to hand a lost slot back (untested in game).
 18. **Scrollbars and log noise.**
     - The UI engine scrolls `overflow-y: auto` but draws no scrollbar. Every scrolling list sits in the game's `<fxs-scrollable attached-scrollbar="true">` (`.xpl-scroll`, `.xpl-scroll--fill`): the wrapper takes the list's place in the layout, and the list inside no longer scrolls. Never `innerHTML` the fxs-scrollable itself (it holds its track and thumb); refill the list div inside. The panel frame needs a fixed `height` (not only `max-height`): with a content-sized frame the scrollables fed back into its height, which jumped up and down and then stopped short of the free space.
@@ -214,6 +224,59 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **Memory:** the focus is kept in the save (GameTutorial `_XPL_OBJ_FOCUS`, `savedFocus` / `saveFocus` in data/xpl-victory.js) and is the `previous` of a new age.
     - **Leaning:** the leader's leaning picks a first focus but never makes a switch (`lean`, left out of the switch margin).
     - **The final age** keeps the focus unless our own countdown is within reach in another victory (its CHANCE in the victory watch, `chooseFocus(…, {chances})`).
+48. **The building solver anneals** (research/27 §2).
+    - **The problem:** a far tile takes a building only once a chain of urban tiles reaches it, and each link alone loses value. Greedy and local search therefore kept whole quarters around the Palace at +0 while +3/+4 tiles two rings out stayed empty. `tools/bench-optimality.mjs` measured our layouts 4.5% below the best layout of the same model on average, 16.5% at worst (time-aware Antiquity).
+    - **The fix:** step 4 of `solveLayout`, in each settlement being solved:
+      - `ANNEAL_STEPS_PER_ITEM` 120 random moves and swaps per planned building (max 2400 a settlement, `ANNEAL_MAX_TOTAL_STEPS` 40,000 a recalculation);
+      - a worse layout is taken now and then while the temperature falls (2 → 0.01 weighted yields);
+      - the best layout seen is kept (`restoreLayout`).
+
+      Now 1.3% below on average, 4.5% at worst, ~130 ms a city instead of ~40.
+    - **Deterministic:** seeded by the settlement id, so the same input gives the same layout. Settlements a recalculation keeps are not annealed, and tacked buildings (fixed items) never move. UI.log's `buildings timing:` shows `anneal N (+gain)`.
+    - **Tried and dropped** (research/27 §8):
+      - Moves drawn only from tiles a building could take: worse time-aware (1.67% against 1.36% on 30 maps).
+      - A warm start from the previous layout: 9% worse time-aware, because it keeps the old build order and annealing never changes order.
+      - Neighbour swaps in the build order: +1.1% Antiquity, +0.1% Exploration.
+49. **Specialists are valued per tile, only where they pay** (game 1.4.0; research/27).
+    - **The rule:** each specialist repeats 100% of all its tile's adjacency and costs 2/4/6 Food and Happiness by age. The limit per tile is the city's own (`city.Workers.getCityWorkerCap()`): 1 at first in Antiquity and Exploration, 3 in Modern.
+    - **The model** (`specialistGain`, `specialistCost` in core/xpl-placement-model.js): a tile is worth `slots × max(0, its weighted adjacency − cost × its share of the age)` more.
+      - `cost` = (Food + Happiness weights) × the age's upkeep + 2 yields of the rural tile the citizen would work instead.
+      - `slots` = the setting «Специалисты на хороших клетках» (`buildings.specialists`: 0 / 0.5 default / 1) × the city's limit (the capital's for a planned site; towns 0).
+      - The limits are in `inputSignature`, so a new limit is a full plan.
+    - **Before:** a flat ×1.5 on every adjacency, so adjacency gathered on one tile was worth no more than the same spread over two. That multiplier (`adjMult`) is still shown with each building and used by callers without `specialists`.
+50. **Only ageless quarters last** (research/27).
+    - **The rule** (Civilopedia): at an age change every building that is not ageless loses its adjacency and stops making quarters. Warehouses, unique buildings and wonders are ageless. So the Palace's +1 Science +1 Culture per adjacent quarter lasts only from quarters of ageless buildings.
+    - **The model:** `PlanState` option `nextAge` counts that share of the next age for the adjacency an ageless building keeps (`nextAgeValue`; `lastingView` keeps only ageless buildings, improvements and lasting quarters). The building job passes `NEXT_AGE_SHARE` 0.5, or 0 in the final age (`plans.nextAge`).
+    - **The effect:** warehouses now take the tiles next to the Palace, as the video advises.
+51. **Wonders have tiers** (research/27 §3.7).
+    - **The problem:** the autopilot ranked the wonders it can win by, per turn:
+      - their yields and the adjacency their tile gives;
+      - 4 for the legacy path, 12 more for Innovation wonders under a science focus.
+
+      Effects counted for nothing: Oxford's two technologies, attribute points, a settlement limit, +10% growth.
+    - **The fix:** `core/xpl-wonder-tiers.js` grades all 71 wonders (base game and DLCs) S/A/B/C/D from their text: S 10, A 6, B 3, C 1, D 0 weighted yields, unknown ones C. `chooseWonders` adds it to the value.
+    - **The Wonders tab** shows the tier, and the game's description when a row is opened.
+52. **Wonder anchors: the plan keeps the tiles of the wonders we will build** (research/27 §7).
+    - **Which wonders** (`wonderAnchors` in data/xpl-building-job.js; the wonder planner's answer of this turn, never asked twice in a turn):
+      - our civilization's own wonder (`CivilizationFavoredWonders`) first;
+      - the wonders the autopilot would start: race HIGH or MEDIUM, done 2 turns before the age ends, by value per turn, at most `MAX_ANCHORS` 2;
+      - each in its fastest city, on the tiles the game allows there (`wonderPlots`).
+      - Our own wonder while still locked goes in our best producing city, on the tiles its rules allow (`canPlaceWonder`).
+    - **In the plan:** an anchor is one more planned item (`ANCHOR_VALUE` 10 wherever it stands, its completion turn the planner's).
+      - It takes a whole tile and becomes a wonder district, so the buildings next to it get its +1.
+      - Its tile rules: not urban; `Constructible_ValidBiomes`, terrain, river, lake, coast; `AdjacentDistrict` (an *existing* urban district or the centre). No contiguity is needed.
+    - **Results:** `plans.anchors`, kept out of `placements` (never queued or bought by the plan), tacked with the plan.
+    - **The wonder planner and the autopilot** put an anchored tile first (`anchor`, the Wonders tab's «клетка из плана застройки»).
+    - **Simulated:** a wonder planned with the buildings left the plan 3.6% better than placed after them on its best tile, in 30 of 40 random cities.
+53. **Lost wonder races: cash out, and a big building behind every wonder** (research/27 §6).
+    - **The refund rule:** a lost wonder pours half its progress plus that turn's production into the next item, up to that item's cost.
+      - Game 20, Petra: Mexico started it 2 turns after us at twice our production and won on the turn we were 14 short. Our 173 became 105 in a 90-cost Pagoda.
+      - The Weiyang Palace's 162 became 97 in 40-cost walls.
+    - **The guard** (`guardWonderRefund`): the item right behind a wonder in production can hold that refund. A bigger building is moved there (the queue's, else the plan's next for that city, else the costliest).
+    - **Cash-out** (`cashOutLostWonders`, every pass after `chooseWonders`): a wonder in production that a rival building it now finishes first (omniscient: its queue), or that cannot be done before the age ends (`raceLost`).
+      - The building that keeps the most is moved ahead of it, and takes all its progress up to its cost (gotcha 20). Log WONDER_CASHED_OUT; WONDER_ABSORBER_QUEUED when one must be queued first.
+      - A lost wonder with no progress leaves the queue (`RemoveAt`, WONDER_DROPPED).
+      - Fair mode cannot see a rival's progress: there only the age's end counts.
 
 ## Conventions
 - **Layering:**

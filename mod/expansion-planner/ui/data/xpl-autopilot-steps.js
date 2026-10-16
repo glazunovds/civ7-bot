@@ -16,6 +16,8 @@
 import { applyTownFocus, buyPlanned, goldBalance, purchaseAdvice, queueNextBuildings } from './xpl-city-actions.js';
 import { growthAdvice } from './xpl-growth-job.js';
 import { runWonderPlanner } from './xpl-wonder-job.js';
+import { tierValue } from '../core/xpl-wonder-tiers.js';
+import { bestAbsorber, raceLost } from '../core/xpl-wonder-race.js';
 import { ageOutlook, productionToGoldRatio, runTownAdvisor } from './xpl-town-job.js';
 import { getRules } from './xpl-rules-loader.js';
 import { FOCUS_POPULATION } from '../core/xpl-town-focus.js';
@@ -2057,23 +2059,105 @@ function holdsFront(city, def) {
  */
 function guardWonderRefund(city) {
     const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
-    if (queue.length < 2) return;
-    const first = safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[0])), null);
-    if (first?.ConstructibleClass !== "WONDER" || !queueUnitDef(queue[1])) return;
+    const first = queue.length > 0 ? safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[0])), null) : null;
+    if (first?.ConstructibleClass !== "WONDER") return;
+    // A lost wonder pours half its progress and that turn's production into the next item, up to that item's
+    // cost (game 20: Petra's 105 into a 90-cost Pagoda, the Weiyang Palace's 97 into 40-cost walls).
+    const prod = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+    const refund = (currentProgress(city) ?? 0) / 2 + prod;
+    const next = queue[1] ? safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[1])), null) : null;
+    const nextKeeps = next?.ConstructibleClass === "BUILDING" ? Math.min(costIn(city, next.ConstructibleType), refund) : 0;
+    if (nextKeeps >= refund - 0.5) return;
     const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
-    const j = queue.findIndex((q, k) => k >= 2 && safe(() => GameInfo.Constructibles.lookup(queueItemType(q))?.ConstructibleClass, null) === "BUILDING");
-    if (j >= 2 && MoveTo !== undefined) {
-        const args = { InsertMode: MoveTo, QueueSourceLocation: j, QueueDestinationLocation: 1 };
+    const further = bestAbsorber(absorberCandidates(city).filter((c) => c.index >= 2), refund);
+    if (further && further.keeps > nextKeeps + 0.5 && MoveTo !== undefined) {
+        const args = { InsertMode: MoveTo, QueueSourceLocation: further.index, QueueDestinationLocation: 1 };
         if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
-        log.info(`queue: ${nameOf(city)}: a building moved behind ${first.ConstructibleType} (a lost wonder's refund goes to the next item)`);
+        log.info(`queue: ${nameOf(city)}: ${further.type} moved behind ${first.ConstructibleType}: it keeps ${Math.round(further.keeps)} of the ${Math.round(refund)} a lost wonder pours into the next item`);
         return;
     }
-    if (j >= 2) return;
-    const big = costliestBuilding(city);
-    if (!big) return;
-    Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, big.args);
-    log.info(`queue: ${nameOf(city)}: ${big.type} queued to stand behind ${first.ConstructibleType}`);
+    const outside = bestAbsorber(plannedAbsorbers(city), refund) ?? bestAbsorber([costliestBuilding(city)].filter(Boolean), refund);
+    if (!outside || outside.keeps <= Math.max(nextKeeps, further?.keeps ?? 0) + 0.5) return;
+    Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, outside.args);
+    log.info(`queue: ${nameOf(city)}: ${outside.type} queued to stand behind ${first.ConstructibleType} (keeps ${Math.round(outside.keeps)} of a ${Math.round(refund)} refund)`);
+}
+
+const costIn = (city, type) => Number(safe(() => city.Production.getConstructibleProductionCost(type), 0)) || Number(safe(() => GameInfo.Constructibles.lookup(type)?.Cost, 0)) || 0;
+
+/** Buildings in this city's queue behind the item in production: [{ index, type, cost }]. */
+function absorberCandidates(city) {
+    const out = [];
+    (safe(() => city.BuildQueue.getQueue(), []) ?? []).forEach((q, index) => {
+        const def = index > 0 ? safe(() => GameInfo.Constructibles.lookup(queueItemType(q)), null) : null;
+        if (def?.ConstructibleClass === "BUILDING") out.push({ index, type: def.ConstructibleType, cost: costIn(city, def.ConstructibleType) });
+    });
+    return out;
+}
+
+/** The plan's buildings for this city not queued yet that it can place now on their tile: [{ type, cost, args }]. */
+function plannedAbsorbers(city) {
+    const sid = sidOf(city);
+    const queued = new Set((safe(() => city.BuildQueue.getQueue(), []) ?? []).map((q) => typeNameOf(queueItemType(q))));
+    const out = [];
+    for (const p of state.get().results.plans?.placements ?? []) {
+        if (p.sid !== sid || p.locked || queued.has(p.type)) continue;
+        const def = safe(() => GameInfo.Constructibles.lookup(p.type), null);
+        if (def?.ConstructibleClass !== "BUILDING") continue;
+        const args = { ConstructibleType: def.$hash, X: p.x, Y: p.y };
+        if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+        out.push({ type: p.type, cost: costIn(city, p.type), args });
+    }
+    return out;
+}
+
+/**
+ * Wonder races already lost (research/27 §6): a wonder in production that a rival building it now will finish
+ * first (omniscient mode: the rival's own queue), or that cannot be done before the age ends. A building moved
+ * ahead of it takes all its progress, up to that building's cost (the game gives a preempted item's progress to
+ * whatever takes its place: root gotcha 20), instead of the half a lost wonder refunds. Game 20: Mexico started
+ * Petra 2 turns after us at twice our production and won it on the turn we were 14 short, our 173 became 105 in a
+ * 90-cost Pagoda; the Weiyang Palace's 162 became 97 in 40-cost walls. The best building is the one that keeps the
+ * most (queued, else the plan's next one for that city, queued now and moved ahead next pass). A lost wonder with no
+ * progress leaves the queue, so no more production goes into it.
+ * @returns log entries
+ */
+export function cashOutLostWonders() {
+    const out = [];
+    const w = state.get().results.wonders;
+    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
+    const RemoveAt = globalThis.CityOperationsParametersValues?.RemoveAt;
+    for (const r of w?.rows ?? []) {
+        if (r.status !== "IN_PROGRESS" || !r.inQueue) continue;
+        const lost = raceLost({ ourTurns: r.inQueue.turns, rivalTurns: r.rivalTurns, ageTurnsLeft: w.ageTurnsLeft });
+        if (!lost) continue;
+        const city = ownSettlements().find((c) => sidOf(c) === r.inQueue.cityKey);
+        const queue = city ? safe(() => city.BuildQueue.getQueue(), []) ?? [] : [];
+        const at = queue.findIndex((q) => typeNameOf(queueItemType(q)) === r.type);
+        if (at < 0) continue;
+        const why = Locale.compose(lost === "AGE_ENDS" ? "LOC_XPL_AP_WONDER_LOST_AGE" : "LOC_XPL_AP_WONDER_LOST_RIVAL", Math.min(...(r.rivalTurns ?? [0])), r.inQueue.turns);
+        const progress = at === 0 ? currentProgress(city) ?? 0 : null; // behind a unit: wait until it is in production again
+        if (at === 0 && progress > 0) {
+            const queued = bestAbsorber(absorberCandidates(city), progress);
+            const outside = bestAbsorber(plannedAbsorbers(city), progress) ?? bestAbsorber([costliestBuilding(city)].filter(Boolean), progress);
+            if (queued && MoveTo !== undefined && (!outside || queued.keeps >= outside.keeps - 0.5)) {
+                const args = { InsertMode: MoveTo, QueueSourceLocation: queued.index, QueueDestinationLocation: 0 };
+                if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+                log.warn(`wonders: ${nameOf(city)} cashed out ${r.type} (${lost}: rivals ${JSON.stringify(r.rivalTurns ?? [])} turns, ours ${r.inQueue.turns}): ${queued.type} takes ${Math.round(queued.keeps)} of ${Math.round(progress)}`);
+                out.push({ key: "WONDER_CASHED_OUT", args: [nameOf(city), r.name, Math.round(progress), Locale.compose(GameInfo.Constructibles.lookup(queued.type)?.Name ?? queued.type), Math.round(queued.keeps), why] });
+            } else if (outside) {
+                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, outside.args);
+                out.push({ key: "WONDER_ABSORBER_QUEUED", args: [nameOf(city), r.name, Locale.compose(GameInfo.Constructibles.lookup(outside.type)?.Name ?? outside.type), why] });
+            }
+        } else if (progress === 0 && RemoveAt !== undefined) {
+            const args = { InsertMode: RemoveAt, QueueLocation: at };
+            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+            Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+            out.push({ key: "WONDER_DROPPED", args: [nameOf(city), r.name, why] });
+        }
+    }
+    return out;
 }
 
 /** The costliest building (not a wonder) this city can place now, as BUILD args. */
@@ -2520,7 +2604,8 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
             // A rival near a culture win: each wonder we build is one it cannot (the strategy's denyWonders).
             const legacy = WONDER_LEGACY_VALUE * (settings?.strategy?.denyWonders ? 2 : 1);
             const bonus = science && innovation.has(r.type) ? INNOVATION_WONDER_VALUE : 0;
-            const value = (r.baseValue + (plot.value ?? 0) + legacy + bonus) * factor;
+            // Its effect (free technologies, attribute points, a settlement limit...) by its tier (research/27 §4).
+            const value = (r.baseValue + (plot.value ?? 0) + legacy + bonus + tierValue(r.type)) * factor;
             pairs.push({ score: value / o.turns, type: r.type, name: r.name, cityKey: o.cityKey, plots: o.plots, race: r.race.label, innov: innovation.has(r.type) });
         }
     }

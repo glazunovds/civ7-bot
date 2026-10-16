@@ -63,6 +63,33 @@ function rawRaceLabel(input, k) {
     return { label: input.ourTurns <= k.QUICK_TURNS ? "HIGH" : "MEDIUM", reasons };
 }
 
+/**
+ * A race already lost while we build the wonder (research/27 §6): a rival building it now finishes before us (its
+ * turns left: omniscient mode), or it cannot be done before the age ends.
+ * @returns "RIVAL_AHEAD" | "AGE_ENDS" | null
+ */
+export function raceLost({ ourTurns, rivalTurns, ageTurnsLeft }) {
+    if (!Number.isFinite(ourTurns)) return null;
+    if (ageTurnsLeft != null && ourTurns > ageTurnsLeft) return "AGE_ENDS";
+    if (rivalTurns?.length && Math.min(...rivalTurns) < ourTurns) return "RIVAL_AHEAD";
+    return null;
+}
+
+/**
+ * Which building should take production that would otherwise be lost (all of it up to its cost): the one that
+ * keeps the most, the earlier on ties (the plan's order). Used for a lost wonder's progress (moved ahead of it)
+ * and for its refund (standing right behind it).
+ * @param candidates [{ cost, ... }]  @returns the best candidate with `keeps`, or null
+ */
+export function bestAbsorber(candidates, amount) {
+    let best = null;
+    for (const c of candidates) {
+        const keeps = Math.min(Number(c.cost) || 0, amount);
+        if (keeps > 0 && (!best || keeps > best.keeps + 0.5)) best = { ...c, keeps };
+    }
+    return best;
+}
+
 /** How much a wonder on a tile boosts neighbouring buildings (their "+1 per adjacent wonder" rules). */
 export function wonderBoost(neighbourBuildings, rulesByType, isActive) {
     const byYield = [0, 0, 0, 0, 0, 0, 0];

@@ -500,6 +500,8 @@ export async function runTurn(force = false) {
             // Launch Pad cities keep out of wonders only once Rocketry is near (research/22 B5).
             const excludeCities = steps.padExclusion(s.strategy);
             const wonders = o.wonders !== false ? steps.chooseWonders(s, maxWonders, { settlers: !!o.settlers, excludeCities }) : new Map();
+            // A race we can see we lose: a building takes the wonder's progress (research/27 §6).
+            if (o.wonders !== false) record(steps.cashOutLostWonders());
             record(steps.fillProduction(wonders, { ...unitOptions, queued: victoryQueued }));
             record(steps.frontLoadUnits(unitOptions));
             await wait(STEP_PAUSE_MS);

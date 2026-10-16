@@ -392,19 +392,19 @@
       <Text>Planned site ({1_X}, {2_Y})</Text>
     </Row>
     <Row Tag="LOC_XPL_SPECIALISTS">
-      <Text>Specialists per urban tile</Text>
+      <Text>Specialists on good tiles</Text>
     </Row>
     <Row Tag="LOC_XPL_SPECIALISTS_TT">
-      <Text>Each specialist on a tile repeats that tile's adjacency bonuses. Higher values favour stacking buildings on your best tiles. Towns have no specialists.</Text>
+      <Text>Each specialist repeats all the adjacency bonuses of its tile and costs Food and Happiness (more each age), so specialists only go where a tile's adjacency pays for them. The plan counts on this share of each city's specialist limit on such tiles, so it gathers buildings with high adjacency on the same tiles. Towns have no specialists.</Text>
     </Row>
     <Row Tag="LOC_XPL_SPECIALISTS_0">
       <Text>None</Text>
     </Row>
     <Row Tag="LOC_XPL_SPECIALISTS_0_5">
-      <Text>About half the tiles</Text>
+      <Text>Half the limit</Text>
     </Row>
     <Row Tag="LOC_XPL_SPECIALISTS_1">
-      <Text>One per tile</Text>
+      <Text>The full limit</Text>
     </Row>
     <Row Tag="LOC_XPL_FUTURE_TILES">
       <Text>Future tiles</Text>
@@ -594,6 +594,30 @@
     </Row>
     <Row Tag="LOC_XPL_WONDER_NO_PLOT">
       <Text>No free valid tile left: the others are suggested for wonders higher in the list.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WONDER_CASHED_OUT">
+      <Text>{1_City}: {2_Wonder} is lost ({6_Why}); {4_Building} took {5_Kept} of its {3_Progress} production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED">
+      <Text>{1_City}: {2_Wonder} is lost ({4_Why}); {3_Building} queued to take its production</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WONDER_DROPPED">
+      <Text>{1_City}: {2_Wonder} removed from the queue ({3_Why})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WONDER_LOST_RIVAL">
+      <Text>a rival finishes it in {1_Turns} turns, we in {2_Ours}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WONDER_LOST_AGE">
+      <Text>the age ends before it is done</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_ANCHOR">
+      <Text>the building plan's tile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_TIER">
+      <Text>Tier {1_Tier}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_WONDER_TIER_TT">
+      <Text>Tier: what the wonder's effect is worth beyond its yields. S: free technologies, attribute points, a settlement limit, growth in every city; A: specialist limit, resource capacity, great works, celebrations; B: yields that depend on the map; C: small local bonuses; D: units and fortifications. The autopilot counts it when choosing among the wonders it can win.</Text>
     </Row>
     <Row Tag="LOC_XPL_WONDER_OPEN">
       <Text>Free neighbouring tiles for future buildings: {1_Num}.</Text>

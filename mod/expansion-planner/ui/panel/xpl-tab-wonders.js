@@ -199,6 +199,11 @@ export class WondersTab {
         }
         line.appendChild(el("div", "xpl-wonder-name", w.name));
         line.appendChild(el("div", "xpl-wonder-where", this.where(w)));
+        if (w.tier) {
+            const tier = el("div", `xpl-wonder-tier xpl-wonder-tier--${w.tier.toLowerCase()}`, compose("LOC_XPL_WONDER_TIER", w.tier));
+            tier.setAttribute("data-tooltip-content", compose("LOC_XPL_WONDER_TIER_TT"));
+            line.appendChild(tier);
+        }
         line.appendChild(el("div", "xpl-wonder-race", this.badge(w)));
         row.appendChild(line);
 
@@ -213,6 +218,7 @@ export class WondersTab {
                 parts.push(compose("LOC_XPL_WONDER_NO_BOOST"));
             }
             if (w.best.tacked) parts.push(compose("LOC_XPL_TAG_TACKED"));
+            if (w.best.anchor) parts.push(compose("LOC_XPL_WONDER_ANCHOR"));
         }
         if (parts.length) row.appendChild(rich("div", "xpl-site-yields", parts.join("  ")));
 
@@ -242,6 +248,7 @@ export class WondersTab {
 
     renderDetails(w) {
         const box = el("div", "xpl-site-reasons");
+        if (w.description) box.appendChild(rich("div", "xpl-reason", compose(w.description)));
         for (const r of w.race.reasons ?? []) box.appendChild(el("div", "xpl-reason xpl-reason--warn", compose(r.key, ...r.args)));
         if (w.status === "LOCKED" && w.failure) box.appendChild(el("div", "xpl-reason xpl-reason--neg", compose(w.failure)));
         if (w.best?.noPlot) box.appendChild(el("div", "xpl-reason xpl-reason--warn", compose("LOC_XPL_WONDER_NO_PLOT")));

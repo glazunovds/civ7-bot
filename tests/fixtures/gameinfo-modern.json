@@ -870,6 +870,58 @@
 "TraitType": "TRAIT_QING"
 }
 ],
+"CivilizationFavoredWonders": [
+{
+"CivilizationType": "CIVILIZATION_AMERICA",
+"FavoredWonderType": "WONDER_STATUE_OF_LIBERTY",
+"FavoredWonderName": "LOC_WONDER_STATUE_OF_LIBERTY_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_BUGANDA",
+"FavoredWonderType": "WONDER_MUZIBU_AZAALA_MPANGA",
+"FavoredWonderName": "LOC_WONDER_MUZIBU_AZAALA_MPANGA_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_FRENCH_EMPIRE",
+"FavoredWonderType": "WONDER_EIFFEL_TOWER",
+"FavoredWonderName": "LOC_WONDER_EIFFEL_TOWER_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MEIJI",
+"FavoredWonderType": "WONDER_DOGO_ONSEN",
+"FavoredWonderName": "LOC_WONDER_DOGO_ONSEN_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MEXICO",
+"FavoredWonderType": "WONDER_PALACIO_DE_BELLAS_ARTES",
+"FavoredWonderName": "LOC_WONDER_PALACIO_DE_BELLAS_ARTES_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_MUGHAL",
+"FavoredWonderType": "WONDER_RED_FORT",
+"FavoredWonderName": "LOC_WONDER_RED_FORT_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_PRUSSIA",
+"FavoredWonderType": "WONDER_BRANDENBURG_GATE",
+"FavoredWonderName": "LOC_WONDER_BRANDENBURG_GATE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_QING",
+"FavoredWonderType": "WONDER_CHENGDE_MOUNTAIN_RESORT",
+"FavoredWonderName": "LOC_WONDER_CHENGDE_MOUNTAIN_RESORT_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_RUSSIA",
+"FavoredWonderType": "WONDER_HERMITAGE",
+"FavoredWonderName": "LOC_WONDER_HERMITAGE_NAME"
+},
+{
+"CivilizationType": "CIVILIZATION_SIAM",
+"FavoredWonderType": "WONDER_DOI_SUTHEP",
+"FavoredWonderName": "LOC_WONDER_DOI_SUTHEP_NAME"
+}
+],
 "CivilizationTraits": [
 {
 "CivilizationType": "CIVILIZATION_AMERICA",
@@ -2149,6 +2201,16 @@
 }
 ],
 "Constructible_RequiredFeatureClasses": [],
+"Constructible_ValidBiomes": [
+{
+"ConstructibleType": "WONDER_HERMITAGE",
+"BiomeType": "BIOME_TUNDRA"
+},
+{
+"ConstructibleType": "WONDER_TAJ_MAHAL",
+"BiomeType": "BIOME_PLAINS"
+}
+],
 "Constructible_ValidDistricts": [
 {
 "ConstructibleType": "BUILDING_PALACE",

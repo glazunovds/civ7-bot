@@ -15,14 +15,28 @@
  * 3. Repair: a building left without any valid tile (often a warehouse that needs a
  *    river or water tile another building took) may take a tile if the building there
  *    can move elsewhere and the plan gains overall.
+ * 4. Annealing: random moves and swaps in each settlement being solved, a worse layout taken
+ *    now and then while the "temperature" falls, the best layout seen kept. Greedy and local
+ *    search cannot build a chain of connector buildings toward far tiles (a tile must touch the
+ *    urban area, and each link alone loses value), so they kept everything around the Palace at
+ *    +0 while +3/+4 tiles two rings out stayed empty (tools/bench-optimality.mjs: our layouts
+ *    were 4.3% below the best found on average, 16.7% at worst; 2000 steps leave 1.5%, 3.9%).
+ *    Seeded by the settlement id: the same input gives the same layout.
  * Warehouses take part in the greedy like any building: their value is settlement-wide
  * (PlanState.extraValue), so a Mill can win the river tile it needs.
  */
 import { dot } from './xpl-yields.js';
+import { hashString } from './xpl-placement-model.js';
 
 const MAX_SEARCH_ROUNDS = 6;
 const SLICE_EVERY = 12; // best-tile searches between yields in the greedy step
 const EPSILON = 1e-6;
+export const ANNEAL_STEPS_PER_ITEM = 120; // ~2000 steps for a city's 17 buildings (~150 ms)
+const ANNEAL_MAX_STEPS = 2400;
+const ANNEAL_MAX_TOTAL_STEPS = 40000; // per recalculation (~3 s of CPU in slices): a late game with dozens of settlements
+const ANNEAL_T0 = 2; // weighted yields: at first a move losing ~2 is often taken
+const ANNEAL_T1 = 0.01;
+const ANNEAL_SLICE = 40; // steps between yields (~3 ms)
 
 /**
  * Delta cache: settlement -> tile -> building -> { check, g }. A placement changes the
@@ -174,6 +188,141 @@ function repairOne(state, sid, type) {
     return false;
 }
 
+/** Seeded random numbers in [0, 1) (mulberry32). */
+function seededRandom(seed) {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/** Moves a planned building to another tile of its settlement if `accept(change in plan value)`. */
+function annealMove(state, sid, type, to, accept) {
+    const lifted = state.lift(type, sid);
+    if (!lifted) return null;
+    if (lifted.idx === to) {
+        state.restore(lifted);
+        return null;
+    }
+    const t = lifted.item.t;
+    const here = state.canPlace(type, lifted.idx);
+    const there = state.canPlace(type, to);
+    if (here.ok && there.ok) {
+        const d = state.delta(type, to, there, t) - state.delta(type, lifted.idx, here, t);
+        if (accept(d)) {
+            state.placeLifted(lifted, to, there);
+            if (state.isConnected(sid)) return d;
+            state.lift(type, sid);
+        }
+    }
+    state.restore(lifted);
+    return null;
+}
+
+/** Swaps two planned buildings of a settlement if `accept(change in plan value)`. */
+function annealSwap(state, sid, a, b, accept) {
+    const la = state.lift(a, sid);
+    if (!la) return null;
+    const lb = state.lift(b, sid);
+    if (!lb || la.idx === lb.idx) {
+        if (lb) state.restore(lb);
+        state.restore(la);
+        return null;
+    }
+    const tokens = [];
+    // Plan value of `a` on ia and `b` on ib (both placed, kept in tokens), or null if not allowed.
+    const value = (ia, ib) => {
+        const ca = state.canPlace(a, ia);
+        if (!ca.ok || ca.overbuild) return null;
+        const ga = state.delta(a, ia, ca, la.item.t);
+        tokens.push(state.place(a, ia, ca, la.item.t));
+        const cb = state.canPlace(b, ib);
+        if (!cb.ok || cb.overbuild) return null;
+        const gb = state.delta(b, ib, cb, lb.item.t);
+        tokens.push(state.place(b, ib, cb, lb.item.t));
+        return ga + gb;
+    };
+    const unwind = () => {
+        for (const tk of tokens.splice(0).reverse()) state.undo(tk);
+    };
+    const before = value(la.idx, lb.idx);
+    unwind();
+    if (before !== null) {
+        const after = value(lb.idx, la.idx);
+        if (after !== null && state.isConnected(sid)) {
+            const d = after - before;
+            if (accept(d)) return d;
+        }
+        unwind();
+    }
+    state.restore(lb);
+    state.restore(la);
+    return null;
+}
+
+/** Puts a settlement's planned buildings back on the tiles of `layout` ([type, idx]), keeping their completion turns. */
+function restoreLayout(state, sid, layout) {
+    const lifted = new Map();
+    for (const [type] of layout) {
+        const l = state.lift(type, sid);
+        if (l) lifted.set(type, l);
+    }
+    let left = layout.filter(([type]) => lifted.has(type));
+    while (left.length > 0) {
+        const next = [];
+        for (const [type, idx] of left) {
+            const check = state.canPlace(type, idx);
+            if (check.ok) state.placeLifted(lifted.get(type), idx, check);
+            else next.push([type, idx]);
+        }
+        if (next.length === left.length) {
+            // Cannot happen for a layout that was valid; never lose a building over it.
+            for (const [type] of next) state.restore(lifted.get(type));
+            return false;
+        }
+        left = next;
+    }
+    return true;
+}
+
+/**
+ * Simulated annealing over one settlement's planned buildings (step 4 in the header).
+ * @returns the plan value gained
+ */
+function* annealSettlement(state, sid, steps, pause) {
+    const s = state.settlements.get(sid);
+    const types = state.plannedItems().filter((p) => p.sid === sid).map((p) => p.type);
+    const tiles = state.tilesOf(sid);
+    if (types.length < 2 || tiles.length < 2 || steps <= 0) return 0;
+    const rand = seededRandom(parseInt(hashString(String(sid)), 36));
+    const layout = () => types.map((type) => [type, s.planned.get(type)]);
+    let current = 0;
+    let best = 0;
+    let bestLayout = layout();
+    for (let k = 0; k < steps; k++) {
+        const temperature = ANNEAL_T0 * Math.pow(ANNEAL_T1 / ANNEAL_T0, k / steps);
+        const accept = (d) => d > EPSILON || rand() < Math.exp(d / temperature);
+        const type = types[Math.floor(rand() * types.length)];
+        const d = rand() < 0.6
+            ? annealMove(state, sid, type, tiles[Math.floor(rand() * tiles.length)].idx, accept)
+            : annealSwap(state, sid, type, types[Math.floor(rand() * types.length)], accept);
+        if (d !== null) {
+            current += d;
+            if (current > best + EPSILON) {
+                best = current;
+                bestLayout = layout();
+            }
+        }
+        if ((k + 1) % ANNEAL_SLICE === 0) yield* pause();
+    }
+    if (current < best - EPSILON && !restoreLayout(state, sid, bestLayout)) return current;
+    return best;
+}
+
 /**
  * @param state      PlanState
  * @param selection  building types to place in every settlement (adjacency buildings)
@@ -182,6 +331,7 @@ function repairOne(state, sid, type) {
  *                     dirty: Set<sid> | null  settlements to (re)solve; null = all,
  *                     seed: [{ sid, type, idx }] in build order: the previous layout, kept
  *                           for settlements not in `dirty` (incremental recalculation),
+ *                     annealSteps: steps per planned building (default ANNEAL_STEPS_PER_ITEM; 0 = none),
  *                     clock() -> ms (phase timings) }
  * @returns { placements, fillers, unplaced, total, seed, timings }
  */
@@ -336,6 +486,19 @@ export function* solveLayout(state, selection, warehouses = [], options = {}) {
     }
     yield* pause(0.95);
     phase("repair");
+
+    // 4. Annealing, in the settlements being solved only (the others keep their layout).
+    const perItem = options.annealSteps ?? ANNEAL_STEPS_PER_ITEM;
+    let annealLeft = ANNEAL_MAX_TOTAL_STEPS;
+    timings.annealGain = 0;
+    for (const sid of dirty0) {
+        const items = state.plannedItems().filter((p) => p.sid === sid).length;
+        const steps = Math.min(ANNEAL_MAX_STEPS, perItem * items, annealLeft);
+        annealLeft -= steps;
+        const gained = yield* annealSettlement(state, sid, steps, () => pause(0.96));
+        timings.annealGain = Math.round((timings.annealGain + gained) * 10) / 10;
+    }
+    phase("anneal");
 
     const warehouseSet = new Set(warehouses);
     const fillers = state.plannedItems().filter((p) => warehouseSet.has(p.type)).map(({ sid, type, idx, item }) => ({ sid, type, idx, eta: Math.round(item.t ?? 0) }));

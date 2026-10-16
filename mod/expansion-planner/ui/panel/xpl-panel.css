@@ -487,6 +487,17 @@
     font-size: 0.98rem;
     color: #d8c593;
 }
+/* The wonder's tier (core/xpl-wonder-tiers.js): S best. */
+.xpl-wonder-tier {
+    flex: 0 0 auto;
+    margin-right: 0.5rem;
+    font-size: 0.94rem;
+    font-weight: bold;
+    color: #c8c0a8;
+}
+.xpl-wonder-tier--s { color: #f08080; }
+.xpl-wonder-tier--a { color: #f0a050; }
+.xpl-wonder-tier--b { color: #e8d070; }
 
 /* "The game's best tile now is elsewhere" note under a plan row. */
 .xpl-plan-note {

@@ -132,7 +132,9 @@ test("the pass with «Поселенцы» below the cap: no wonder ordered", as
 test("science: an Innovation wonder (the Great Library) is chosen over a quicker Pyramids; Innovation only when the strategy says so (research/21 D7)", () => {
     const canBuild = world.canBuild;
     const costOf = world.costOf;
-    world.canBuild = (type, id, args) => (type === "WONDER_GREAT_LIBRARY" ? canBuild("WONDER_PYRAMIDS", id, args) : canBuild(type, id, args));
+    // The Pyramids (tier B) only: the Hanging Gardens' tier S would win on their own (research/27 §4).
+    world.canBuild = (type, id, args) => (type === "WONDER_GREAT_LIBRARY" ? canBuild("WONDER_PYRAMIDS", id, args)
+        : type === "WONDER_HANGING_GARDENS" ? { Success: false, Plots: [], FailureReasons: ["LOC_LOCKED"] } : canBuild(type, id, args));
     // 14 turns against the Pyramids' 10 (a wonder over 15 turns is not started: research/24 P5): only its Innovation tips it.
     world.costOf = (type) => (type === "WONDER_GREAT_LIBRARY" ? 420 : costOf(type));
     const first = (s) => [...steps.chooseWonders(s, 1).values()][0]?.type;
@@ -147,6 +149,17 @@ test("science: an Innovation wonder (the Great Library) is chosen over a quicker
             "no Innovation wonder to start: any we can win (research/23 S2: none built in game 8)");
     } finally {
         world.canBuild = canBuild;
+        world.costOf = costOf;
+    }
+});
+
+test("a wonder's tier counts: the Hanging Gardens (S: growth everywhere, an attribute point) before quicker Pyramids (B) (research/27 §4)", () => {
+    const costOf = world.costOf;
+    world.costOf = (type) => (type === "WONDER_PYRAMIDS" ? 270 : costOf(type)); // 9 turns against 10
+    try {
+        const pick = [...steps.chooseWonders(DEFAULT_SETTINGS, 1).values()][0];
+        assert.equal(pick?.type, "WONDER_HANGING_GARDENS");
+    } finally {
         world.costOf = costOf;
     }
 });
