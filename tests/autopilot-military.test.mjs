@@ -26,10 +26,10 @@ test("the military room: only in the final age; the cap's room; Operation Ivy wh
     world.settlementCap = 6;
     try {
         world.canBuild = (type) => (type === "PROJECT_OPERATION_IVY" ? { Success: false } : undefined);
-        assert.deepEqual(steps.militaryRoom(), { room: 4, ivy: false }, "2 of 6: 4 to found; no Manhattan Project");
+        assert.deepEqual(steps.militaryRoom(), { room: 4, over: 0, ivy: false }, "2 of 6: 4 to found; no Manhattan Project");
         world.canBuild = (type) => (type === "PROJECT_OPERATION_IVY" ? { Success: true } : undefined);
         world.costOf = (t) => (t === "PROJECT_OPERATION_IVY" ? 500 : 100);
-        assert.deepEqual(steps.militaryRoom(), { room: 4, ivy: true }, "Athens runs it in 5 turns");
+        assert.deepEqual(steps.militaryRoom(), { room: 4, over: 0, ivy: true }, "Athens runs it in 5 turns");
         world.costOf = (t) => (t === "PROJECT_OPERATION_IVY" ? 100000 : 100);
         assert.equal(steps.militaryRoom().ivy, false, "it would not finish before the game ends");
     } finally {
@@ -73,5 +73,53 @@ test("Operation Ivy is queued for the lever only when it is needed, in the best 
         delete world.agePoints;
         delete world.canBuild;
         delete world.costOf;
+    }
+});
+
+test("past the cap: up to 2 more settlements while the Happiness a turn pays for them, 5 in every settlement each (research/30 §1: game 23 lost the score by 10, 2-4 settlements short with room for 1-2)", () => {
+    world.finalAge = true;
+    world.agePoints = 50;
+    world.settlementCap = 2; // Athens and Sparta: at the cap
+    try {
+        world.happiness = 0;
+        assert.deepEqual([steps.militaryRoom().room, steps.militaryRoom().over], [0, 0], "no Happiness to spare");
+        world.happiness = 15; // one over: 5 × 3 settlements
+        assert.equal(steps.militaryRoom().over, 1);
+        world.happiness = 40; // two over: 5 × 2 × 4
+        assert.equal(steps.militaryRoom().over, 2);
+        world.happiness = 1000;
+        assert.equal(steps.militaryRoom().over, 2, "at most 2");
+        world.agePoints = 95; // too late to train a settler: none past the cap
+        assert.equal(steps.militaryRoom().over, 0);
+    } finally {
+        for (const k of ["finalAge", "agePoints", "settlementCap", "happiness"]) delete world[k];
+    }
+});
+
+test("the lever's settlers past the cap: trained and bought while the strategy's pastCap allows (research/30 §1)", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const { createBudget } = await import("../mod/expansion-planner/ui/core/xpl-savings.js");
+    const sites = state.get().results.sites;
+    state.set({ results: { ...state.get().results, sites: { picks: [{ x: 8, y: 12 }, { x: 16, y: 12 }], computedTurn: Game.turn } } });
+    world.finalAge = true;
+    world.agePoints = 50;
+    world.settlementCap = 2; // Athens and Sparta: at the cap
+    const settlers = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType === GameInfo.Units.lookup("UNIT_SETTLER").$hash).length;
+    const lever = { phase: "COMMIT", militaryLever: true, pastCap: 2 };
+    try {
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { settlers: true, trainSettlers: true, strategy: { ...lever, pastCap: 0 } });
+        assert.equal(settlers(), 0, "at the cap");
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { settlers: true, trainSettlers: true, strategy: lever });
+        assert.equal(settlers(), 2, "two past the cap for our countdown");
+        world.canBuy = (type) => (type === "UNIT_SETTLER" ? { Success: true, Cost: 300 } : { Success: false });
+        world.gold = 1000;
+        fake.sent.length = 0;
+        assert.deepEqual(steps.buySettlers(createBudget({ gold: 1000 }), [], { fill: true }), [], "at the cap: none bought");
+        assert.equal(steps.buySettlers(createBudget({ gold: 1000 }), [], { fill: true, past: 2 })[0]?.key, "SETTLER_BOUGHT");
+    } finally {
+        state.set({ results: { ...state.get().results, sites } });
+        for (const k of ["finalAge", "agePoints", "settlementCap", "canBuy", "gold"]) delete world[k];
     }
 });

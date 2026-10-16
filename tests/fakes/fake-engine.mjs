@@ -667,7 +667,8 @@ export function installFakeEngine(world, age = "antiquity") {
             get settlementCap() { return world.settlementCap ?? 4; },
         };
         p.Cities.getCityLimit = () => world.cityLimit ?? 0;
-        p.Stats.getNetYield = (y) => (y === g.YieldTypes.YIELD_GOLD ? world.goldIncome ?? 0 : 0);
+        // world.happiness: the empire's Happiness a turn (the top bar's player.Stats.getNetYield(YIELD_HAPPINESS))
+        p.Stats.getNetYield = (y) => (y === g.YieldTypes.YIELD_GOLD ? world.goldIncome ?? 0 : y === g.YieldTypes.YIELD_HAPPINESS ? world.happiness ?? 0 : 0);
         // world.techs = ["NODE_TECH_EX_SHIPBUILDING"] (researched nodes)
         // world.research.turns = { nodeType: turns } (default 5)
         const turnsFor = (n) => world.research?.turns?.[g.GameInfo.ProgressionTreeNodes?.lookup(n)?.ProgressionTreeNodeType ?? n] ?? 5;

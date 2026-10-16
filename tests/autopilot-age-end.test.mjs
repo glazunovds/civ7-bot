@@ -50,12 +50,15 @@ test("the item in production that is not done before the age ends gives way to t
         const out = steps.ageEndOrder();
         assert.deepEqual(moves(), [[2, 0]], "the Library");
         assert.equal(out[0]?.key, "AGE_END_FIRST");
-        // Mid-age, or in the final age (the game ends with it: nothing carries over): nothing.
-        for (const [left, final] of [[40, false], [8, true]]) {
-            ageLeft(left, { final });
-            fake.sent.length = 0;
-            assert.deepEqual(steps.ageEndOrder(), [], `${left} left, final ${final}`);
-        }
+        // Mid-age: nothing.
+        ageLeft(40);
+        fake.sent.length = 0;
+        assert.deepEqual(steps.ageEndOrder(), [], "40 left");
+        // The final age: the game ends with it, and the production with it (research/30 §3).
+        ageLeft(8, { final: true });
+        fake.sent.length = 0;
+        steps.ageEndOrder();
+        assert.deepEqual(moves(), [[2, 0]], "the final age: the Library too");
         // Its own progress counted: done in time, it stays.
         ageLeft(8);
         athens.queue = { type: "BUILDING_BATH", turns: 3, pct: 80 };
@@ -182,6 +185,88 @@ test("a unit is not moved ahead where it is done only after the age ends", () =>
         steps.frontLoadUnits({ explore: true });
         assert.deepEqual(moves(), [[1, 0]]);
     } finally {
+        reset();
+    }
+});
+
+test("the final age is timed all through: the game ends with it (research/30 §3: game 23 ended with six Launch Pads, a Laboratory and a Tank unfinished)", () => {
+    const prod = athens.prod;
+    try {
+        athens.prod = 10; // the Bath (313) takes 32 turns, the Library 9
+        plan(["BUILDING_BATH", "BUILDING_LIBRARY"]);
+        ageLeft(20, { final: true });
+        steps.fillProduction(new Map(), {});
+        assert.deepEqual(builds(), [C("BUILDING_LIBRARY")], "20 turns before the game ends: not the Bath");
+        // A non-final age is timed only in its last AGE_END_TURNS (12).
+        ageLeft(20);
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), {});
+        assert.deepEqual(builds(), [C("BUILDING_BATH"), C("BUILDING_LIBRARY")]);
+        // The Bath in production 20 turns before the game ends gives way to the Library.
+        plan([]);
+        athens.queue = { type: "BUILDING_BATH", turns: 32, pct: 0 };
+        athens.queued = ["BUILDING_LIBRARY"];
+        ageLeft(20, { final: true });
+        fake.sent.length = 0;
+        const out = steps.ageEndOrder();
+        assert.deepEqual(moves(), [[1, 0]]);
+        assert.equal(out[0]?.key, "GAME_END_FIRST", "in the game's own words");
+    } finally {
+        athens.prod = prod;
+        reset();
+    }
+});
+
+test("a non-final age's last turn: a building in production at least half done is bought, else its production is lost (research/30 §4: the capital's Bazaar ended Exploration 19 short)", () => {
+    const bought = () => fake.sent.filter((s) => s.kind === "command" && s.op === CityCommandTypes.PURCHASE).map((s) => [s.args.ConstructibleType, s.args.X, s.args.Y]);
+    world.canBuy = (type) => (type === "BUILDING_ACADEMY" ? { Success: true, InProgress: true, Plots: [GameplayMap.getIndexFromXY(7, 6)], Cost: 230 } : { Success: false });
+    const lastTurn = () => {
+        ageLeft(0);
+        world.agePoints = 100; // the age's points are full: its last turn
+    };
+    try {
+        world.gold = 800;
+        athens.queue = { type: "BUILDING_ACADEMY", turns: 3, pct: 77 };
+        lastTurn();
+        const out = steps.buyAgeEndItems();
+        assert.deepEqual(bought(), [[C("BUILDING_ACADEMY"), 7, 6]], "on the tile it is built on");
+        assert.equal(out[0]?.key, "AGE_END_BOUGHT");
+        // On the last turn one turn short is too late as well.
+        athens.queue = { type: "BUILDING_ACADEMY", turns: 1, pct: 90 };
+        fake.sent.length = 0;
+        steps.buyAgeEndItems();
+        assert.equal(bought().length, 1, "the last turn: one turn short");
+        // Less than half done (no bargain), mid-age, the final age (nothing carries over anyway), the gold short: none.
+        for (const [what, set] of [
+            ["40% done", () => (athens.queue = { type: "BUILDING_ACADEMY", turns: 6, pct: 40 })],
+            ["mid-age", () => ageLeft(40)],
+            ["the final age", () => (world.finalAge = true)],
+            ["100 gold", () => (world.gold = 100)],
+        ]) {
+            athens.queue = { type: "BUILDING_ACADEMY", turns: 3, pct: 77 };
+            world.gold = 800;
+            lastTurn();
+            set();
+            fake.sent.length = 0;
+            steps.buyAgeEndItems();
+            assert.deepEqual(bought(), [], what);
+            delete world.finalAge;
+        }
+        // The turn before the last: done next turn, it is not bought; three turns short, it is.
+        world.gold = 800;
+        athens.queue = { type: "BUILDING_ACADEMY", turns: 1, pct: 90 };
+        ageLeft(1);
+        fake.sent.length = 0;
+        steps.buyAgeEndItems();
+        assert.deepEqual(bought(), [], "one more turn does it");
+        athens.queue = { type: "BUILDING_ACADEMY", turns: 3, pct: 77 };
+        fake.sent.length = 0;
+        steps.buyAgeEndItems();
+        assert.equal(bought().length, 1);
+    } finally {
+        delete world.canBuy;
+        delete world.gold;
+        delete world.finalAge;
         reset();
     }
 });

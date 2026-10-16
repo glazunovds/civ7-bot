@@ -87,6 +87,19 @@ test("at the settlement cap a settler on its site waits (skips its turn), keeps 
     }
 });
 
+test("the military lever founds past the cap (research/30 §1): at the cap one settler founds with one allowed past it, the other waits", () => {
+    const n = Players.get(0).Stats.numSettlements;
+    try {
+        world.settlementCap = n; // at the cap
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5 }, { id: 3, type: "UNIT_SETTLER", x: 9, y: 10 }]);
+        const r = run({ settlers: true, pastCap: 1 });
+        assert.equal(orders().filter((s) => s.op === "UNITOPERATION_FOUND_CITY").length, 1, JSON.stringify(r.entries));
+        assert.ok(r.entries.some((e) => e.key === "SETTLER_AT_CAP"), "the second would be 2 past it");
+    } finally {
+        delete world.settlementCap;
+    }
+});
+
 test("a settler keeps its site while walking; a new settler does not take it", () => {
     fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
     run({ settlers: true });

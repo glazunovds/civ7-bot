@@ -70,8 +70,8 @@ to our 361). No city was lost.
   the save). The victory focus kept in the save (gotcha 47) could not have carried over either; the focus stayed Science
   by itself.
 - **Changed** (root gotcha 57): the settings remember the focus and the age's length for this game (its seed and our
-  leader). UI.log says when the memory gives the focus. Whether the seed is the same after an age change is the next
-  game's check (TESTING row 293); if it is not, the memory finds nothing, as before.
+  leader). UI.log says when the memory gives the focus. The seed stays the same after an age change (game 23, research/30 §5:
+  the memory answered at E1 and M1).
 
 ## 5. A unit moved ahead takes no progress; the item behind keeps its own (root gotcha 20)
 | City (key) | Moved ahead | Of | With | The unit got | The item resumed at |

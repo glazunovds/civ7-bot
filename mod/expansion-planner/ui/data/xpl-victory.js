@@ -143,6 +143,19 @@ export function victoryRaces() {
 
 const RACE_CLASSES = [...FOCUS_CLASSES, "MILITARY"];
 
+/**
+ * The score victory (VICTORY_SCORE, decided when the final age ends with no winner): every alive major's score, as the
+ * victories screen's score tab reads it (victories-screen-model.js calcScoreDetails: getPointsForVictoryType), sorted.
+ * @returns [{ id, points }] (empty: no such victory)
+ */
+export function scoreBoard() {
+    const v = GameInfo.VictoryTypes?.find((x) => x.VictoryType === "VICTORY_SCORE");
+    if (!v) return [];
+    const h = v.$hash ?? safe(() => Database.makeHash(v.VictoryType), null);
+    const majors = (safe(() => Players.getAlive(), []) ?? []).filter((p) => p?.isMajor);
+    return majors.map((p) => ({ id: p.id, points: Number(safe(() => p.Victories.getPointsForVictoryType(h), 0)) || 0 })).sort((a, b) => b.points - a.points);
+}
+
 /** The leader's preferred victory for this age (else its Modern one), as a focus class, or null. */
 const FOCUS_KEY = "_XPL_OBJ_FOCUS"; // GameTutorial property: the last focus, kept in the save within an age
 

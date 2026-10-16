@@ -617,3 +617,94 @@ test("the final push: a space city's empty queue takes no plan building but its 
         }
     });
 });
+
+test("the final age: a Launch Pad or an Airfield only where it and its project are done before the game ends (research/30 §3: game 23 ended with six Launch Pads unfinished, and an Airfield done with no time for its projects)", () => {
+    const SITES = ["BUILDING_LAUNCH_PAD", "BUILDING_AIRFIELD"];
+    const TURNS = { Paris: 8, Lyon: 9 };
+    world.turnsFor = (c) => TURNS[c.name] ?? -1;
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id) => (type === undefined ? { Success: true } : SITES.includes(type) ? { Success: true, Plots: [idx(id.id === 0 ? 4 : 11, 4)], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } }; // Trans-Oceanic Flight open: the Airfield is wanted
+    world.costOf = (t) => (t.startsWith("PROJECT_") ? 1000 : 900);
+    const city = (name) => Players.get(0).Cities.getCities().find((c) => c.name === name).id.id;
+    try {
+        world.finalAge = true;
+        world.agePoints = 50; // 60 turns left: Paris (30 production) a site in 8 turns and a project in 34; Lyon (10) in 9 and 100
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds(), [[city("Paris"), C("BUILDING_AIRFIELD")], [city("Paris"), C("BUILDING_LAUNCH_PAD")]], "not in Lyon");
+        world.agePoints = 75; // 30 left: none, not even the victory's first Launch Pad
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds(), []);
+        // One already queued that can no longer be done in time is not pushed ahead (the age-end step would move it back).
+        world.cities[0].queued = ["BUILDING_LAUNCH_PAD"];
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.ok(!fake.sent.some((s) => s.args.InsertMode === CityOperationsParametersValues.MoveTo), JSON.stringify(fake.sent));
+    } finally {
+        world.canBuild = canBuild;
+        delete world.cities[0].queued;
+        for (const k of ["turnsFor", "research", "costOf", "finalAge", "agePoints"]) delete world[k];
+    }
+});
+
+test("the final age: a Launch Pad is bought only where Launch Satellite is still done after it; no Airfield goal where its projects would not be (research/30 §3)", () => {
+    world.canBuy = (type, id) => (type === "BUILDING_LAUNCH_PAD" ? { Success: true, Plots: [idx(1 + id.id * 3, 6)], Cost: 1500 } : { Success: false });
+    world.costOf = (t) => (t.startsWith("PROJECT_") ? 1000 : 900);
+    const pads = () => fake.sent.filter((x) => x.kind === "command" && x.op === CityCommandTypes.PURCHASE && x.args.ConstructibleType === C("BUILDING_LAUNCH_PAD")).map((x) => x.id.id);
+    try {
+        world.goldIncome = 0;
+        world.gold = 10000;
+        world.finalAge = true;
+        world.agePoints = 50; // 60 left: Launch Satellite in 34 turns in Paris, 100 in Lyon
+        fake.sent.length = 0;
+        steps.buyVictoryWork("SCIENCE", 1, undefined, { pads: 5, commit: true });
+        assert.deepEqual(pads(), [0], "Paris only");
+        world.agePoints = 80; // 24 left: neither
+        fake.sent.length = 0;
+        steps.buyVictoryWork("SCIENCE", 1, undefined, { pads: 5, commit: true });
+        assert.deepEqual(pads(), []);
+        // The Airfield goal: Trans-Oceanic Flight takes Paris 34 turns.
+        const canBuild = world.canBuild;
+        world.canBuild = (type, id) => (type === "BUILDING_AIRFIELD" ? { Success: true, Plots: [idx(id.id === 0 ? 4 : 11, 4)], ExpandUrbanPlots: [] } : canBuild(type, id));
+        world.canBuy = (type, id) => (type === "BUILDING_AIRFIELD" && id.id === 0 ? { Success: false, InsufficientFunds: true, Plots: [idx(4, 4)], Cost: 1100 } : { Success: false });
+        world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } };
+        world.goldIncome = 100;
+        world.gold = 100;
+        const s = { ...DEFAULT_SETTINGS, strategy: { goals: ["AIRFIELD"], phase: "COMMIT" } };
+        try {
+            world.agePoints = 50;
+            steps.resetGoldPlan();
+            assert.equal(steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal?.kind, "AIRFIELD", "60 left");
+            world.agePoints = 80;
+            steps.resetGoldPlan();
+            assert.equal(steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal, null, "24 left");
+        } finally {
+            world.canBuild = canBuild;
+        }
+    } finally {
+        steps.resetGoldPlan();
+        for (const k of ["canBuy", "costOf", "gold", "goldIncome", "finalAge", "agePoints", "research"]) delete world[k];
+    }
+});
+
+test("the final age: Crewed Space Flight Preparation only where a run is done before the game ends (research/30 §3)", () => {
+    withPad(() => {
+        world.costOf = (t) => (t === "PROJECT_CREWED_SPACE_FLIGHT_PREP" ? 600 : 900); // 20 turns in Paris
+        const preps = () => fake.sent.filter((s) => s.kind === "operation" && s.args.ProjectType === P("PROJECT_CREWED_SPACE_FLIGHT_PREP")).length;
+        try {
+            world.finalAge = true;
+            world.agePoints = 50; // 60 left
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE");
+            assert.equal(preps(), 1);
+            world.agePoints = 85; // 18 left
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE");
+            assert.equal(preps(), 0);
+        } finally {
+            for (const k of ["costOf", "finalAge", "agePoints"]) delete world[k];
+        }
+    });
+});

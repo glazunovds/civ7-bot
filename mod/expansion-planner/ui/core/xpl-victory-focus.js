@@ -123,10 +123,12 @@ export function nextDominanceMultiple(age, ageFrac) {
  * ⌊multiple × the best other⌋; judged at the next step's multiple when it is lower (a settler takes turns to
  * found; the multiple only falls). Rivals' own growth is not foreseen.
  * @param race the MILITARY victoryRaces entry (board sorted, the game's goal) @param me our player id
- * @param { age, ageFrac, room: settlements we may still found, ivy: Operation Ivy can still be ours in time }
- * @returns { ours, top, multiple, goal, need, needIvy, room, reachable, withIvy } or null (no race yet)
+ * @param { age, ageFrac, room: settlements we may still found, over: more past the cap (research/30 §1), ivy: Operation
+ * Ivy can still be ours in time }
+ * @returns { ours, top, multiple, goal, need, needIvy, room, over, reachable, withIvy, pastCap: settlements it takes past
+ * the cap } or null (no race yet)
  */
-export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, ivy = false } = {}) {
+export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, over = 0, ivy = false } = {}) {
     const board = race?.board ?? [];
     const ours = Number(board.find((b) => b.id === me)?.points) || 0;
     const top = Number(board.filter((b) => b.id !== me)[0]?.points) || 0;
@@ -141,18 +143,43 @@ export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, i
     const need = Math.ceil(short / SETTLEMENT_MILITARY_POINTS);
     const needIvy = ivy ? Math.ceil(Math.max(0, short - IVY_MILITARY_POINTS) / SETTLEMENT_MILITARY_POINTS) : need;
     const free = Math.max(0, Number(room) || 0);
-    return {
-        ours, top, multiple: Math.round(multiple * 100) / 100, goal, need, needIvy, room: free,
-        reachable: need <= free || needIvy <= free, withIvy: !!ivy && need > free && needIvy <= free,
-    };
+    const past = Math.max(0, Number(over) || 0);
+    // Under the cap first, then with Operation Ivy, then past the cap (Happiness everywhere), then both.
+    let reachable = true;
+    let withIvy = false;
+    let pastCap = 0;
+    if (need <= free) withIvy = false;
+    else if (ivy && needIvy <= free) withIvy = true;
+    else if (need <= free + past) pastCap = need - free;
+    else if (ivy && needIvy <= free + past) [withIvy, pastCap] = [true, needIvy - free];
+    else reachable = false;
+    return { ours, top, multiple: Math.round(multiple * 100) / 100, goal, need, needIvy, room: free, over: past, reachable, withIvy, pastCap };
 }
 
 /** The watch entry of a reachable military lever: our own CHANCE, with the settlements it takes. */
 function leverEntry(o) {
     return {
         cls: "MILITARY", own: true, ours: o.ours, goal: o.goal, share: Math.round((o.ours / o.goal) * 100) / 100, need: o.goal - o.ours,
-        settlements: o.withIvy ? o.needIvy : o.need, withIvy: o.withIvy, level: "CHANCE", multiple: o.multiple,
+        settlements: o.withIvy ? o.needIvy : o.need, withIvy: o.withIvy, pastCap: o.pastCap ?? 0, level: "CHANCE", multiple: o.multiple,
     };
+}
+
+/**
+ * Our place in each race the score counts (the ones switched on: 1000 − 10 × the sum of our places, plus 1000 a turn of
+ * any countdown and 1 a major triumph; research/30 §1), and the points that would share the next place up (the nearest
+ * score above ours). Ties share a place (everyone has 970 on the first turn of a game with three races).
+ * @param races victoryRaces (each with its board) @param me our player id @returns [{ cls, place, of, gap: null when first }]
+ */
+export function scorePlaces(races, me) {
+    const out = [];
+    for (const r of races ?? []) {
+        if (r.enabled === false) continue;
+        const board = r.board ?? [];
+        const ours = Number(board.find((b) => b.id === me)?.points) || 0;
+        const above = board.filter((b) => b.id !== me && (Number(b.points) || 0) > ours).map((b) => Number(b.points) || 0);
+        out.push({ cls: r.cls, place: above.length + 1, of: board.length, gap: above.length > 0 ? Math.min(...above) - ours : null });
+    }
+    return out;
 }
 
 // The player's choice of target («Цель победы»): AUTO = the path chosen here.

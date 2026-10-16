@@ -6,7 +6,7 @@ import { applyStrategy, padsWanted, phaseOf, planStrategy, strategyLines } from 
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { conversionRule } from "../mod/expansion-planner/ui/core/xpl-savings.js";
 import { focusOfProfile } from "../mod/expansion-planner/ui/core/xpl-effect-value.js";
-import { dominanceMultiple, militaryOutlook, nextDominanceMultiple, victoryWatch } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
+import { dominanceMultiple, militaryOutlook, nextDominanceMultiple, scorePlaces, victoryWatch } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
 
 const facts = (o) => ({ age: "AGE_ANTIQUITY", ageFrac: 0.1, finalAge: false, settlements: 2, cap: 5, cities: 1, towns: 1, ...o });
 
@@ -221,4 +221,37 @@ test("the military lever: settlers first (the first savings goal), Operation Ivy
     const s = applyStrategy({ autopilot: { settlers: true } }, plan);
     assert.deepEqual([s.strategy.militaryLever, s.strategy.ivy, s.strategy.goals[0]], [true, false, "SETTLER"]);
     assert.equal(planStrategy(f, "SCIENCE", { watch: [] }).militaryLever, undefined, "no lever without it");
+});
+
+test("past the cap: the lever founds settlements past it when its room falls short (research/30 §1: one countdown turn is 1000 score)", () => {
+    const late = { age: "AGE_MODERN", ageFrac: 0.85 };
+    let o = militaryOutlook(MIL({}), 0, { ...late, room: 3, over: 2 });
+    assert.deepEqual([o.need, o.reachable, o.pastCap, o.withIvy], [5, true, 2, false], "5 needed: 3 under the cap, 2 past it");
+    o = militaryOutlook(MIL({}), 0, { ...late, room: 2, over: 2 });
+    assert.deepEqual([o.reachable, o.pastCap], [false, 0], "4 at most");
+    o = militaryOutlook(MIL({}), 0, { ...late, room: 4, over: 2, ivy: true });
+    assert.deepEqual([o.reachable, o.withIvy, o.pastCap], [true, true, 0], "Operation Ivy under the cap first");
+    const w = victoryWatch([MIL({})], 0, { ...late, military: { room: 3, over: 2, ivy: false } }).find((x) => x.own);
+    assert.deepEqual([w?.settlements, w?.pastCap], [5, 2]);
+    const f = facts({ age: "AGE_MODERN", finalAge: true, ageFrac: 0.85, cities: 5, towns: 6, settlements: 13, cap: 16, gate: { open: true, progress: 1 } });
+    const plan = planStrategy(f, "SCIENCE", { watch: [w] });
+    assert.deepEqual([plan.militaryLever, plan.pastCap], [true, 2]);
+    assert.ok(strategyLines(plan).some((l) => l.key === "LOC_XPL_AP_STRATEGY_TT_PAST_CAP" && l.args[0] === 2));
+    assert.equal(applyStrategy({ autopilot: { settlers: true } }, plan).strategy.pastCap, 2);
+});
+
+test("the score's places: 1 + those strictly ahead in each race switched on, and the points that share the next place (research/30 §1: 923 = 1000 − 10 × (1 + 1 + 6) + 3)", () => {
+    const race = (cls, board, enabled = true) => ({ cls, enabled, board: board.map(([id, points]) => ({ id, points })) });
+    assert.deepEqual(scorePlaces([
+        race("MILITARY", [[0, 80], [2, 74], [1, 60]]),
+        race("ECONOMIC", [[1, 3992], [3, 3945], [4, 2000], [2, 1500], [5, 1440], [0, 1430]]),
+        race("SCIENCE", [[0, 61], [3, 23], [1, 23]]),
+        race("CULTURE", [[1, 500], [0, 10]], false),
+    ], 0), [
+        { cls: "MILITARY", place: 1, of: 3, gap: null },
+        { cls: "ECONOMIC", place: 6, of: 6, gap: 10 },
+        { cls: "SCIENCE", place: 1, of: 3, gap: null },
+    ]);
+    // Ties share a place (everyone has 970 on the first turn).
+    assert.deepEqual(scorePlaces([race("SCIENCE", [[1, 0], [0, 0]])], 0), [{ cls: "SCIENCE", place: 1, of: 2, gap: null }]);
 });

@@ -601,6 +601,15 @@
     <Row Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED">
       <Text>{1_City}: {2_Wonder} is lost ({4_Why}); {3_Building} queued to go ahead of it</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_AGE_END_BOUGHT">
+      <Text>{1_City}: {2_Item} bought for {3_Gold} gold: nearly done, its production would be lost at the age change</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GAME_END_FIRST">
+      <Text>{1_City}: {2_Item} goes first: it is done before the game ends (about {4_Turns} turns left), {3_Other} is not</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GAME_END_QUEUED">
+      <Text>{1_City}: {2_Item} queued to go first: nothing in the queue is done before the game ends (about {3_Turns} turns left)</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_AGE_END_FIRST">
       <Text>{1_City}: {2_Item} goes first: it is done before the age ends (about {4_Turns} turns left), {3_Other} is not (its production would be lost at the age change)</Text>
     </Row>
@@ -2010,6 +2019,9 @@
     <Row Tag="LOC_XPL_AP_MILITARY_LEVER">
       <Text>{1_Num} more settlement(s) would start our own military countdown ({2_Points} of {3_Goal}): settlers first</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_MILITARY_PAST_CAP">
+      <Text>{1_Num} of them past the settlement cap: founded anyway (each costs 5 Happiness in every settlement; a countdown turn is 1000 score)</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_WATCH_LEVER">
       <Text>Our military win: {1_Num} more settlement(s) ({2_Points} of {3_Goal})</Text>
     </Row>
@@ -2018,6 +2030,9 @@
     </Row>
     <Row Tag="LOC_XPL_AP_STRATEGY_TT_MILITARY_LEVER">
       <Text>Settlers first: they start our own military countdown</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_PAST_CAP">
+      <Text>Up to {1_Num} settlement(s) past the cap for it</Text>
     </Row>
     <Row Tag="LOC_XPL_R_NATURAL_WONDER">
       <Text>Natural wonders: {1_Num} (culture victory points)</Text>

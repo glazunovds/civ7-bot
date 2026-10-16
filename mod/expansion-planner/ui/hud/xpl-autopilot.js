@@ -23,9 +23,9 @@ import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
 import { commandUnits, disbandSurplus, leadersNearExplorers, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
-import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
+import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
-import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, triumphs, victoryRaces } from '../data/xpl-victory.js';
+import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, triumphs, victoryRaces } from '../data/xpl-victory.js';
 import { applyStrategy, planStrategy, strategyLines } from '../core/xpl-strategy.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
@@ -269,7 +269,9 @@ function updateFocus(target = "AUTO") {
         log.warn(`victory races: ${races.filter((r) => r.enabled).map(race).join(", ") || "none known"}; off ${JSON.stringify([...disabled])}; focus ${pick.cls ?? "-"}`);
         const mil = military ? races.find((r) => r.enabled && r.cls === "MILITARY") : null;
         const o = mil ? militaryOutlook(mil, local(), { age: ageType(), ageFrac, ...military }) : null;
-        if (o) log.warn(`military: ours ${o.ours}, best other ${o.top}, our goal ${o.goal} at ×${o.multiple}; ${o.need} settlement(s) to our own countdown${military.ivy ? ` (${o.needIvy} with Operation Ivy)` : ""}; room ${o.room}${o.reachable ? ", within reach" : ""}`);
+        if (o) log.warn(`military: ours ${o.ours}, best other ${o.top}, our goal ${o.goal} at ×${o.multiple}; ${o.need} settlement(s) to our own countdown${military.ivy ? ` (${o.needIvy} with Operation Ivy)` : ""}; room ${o.room}, past the cap ${o.over}${o.reachable ? `, within reach${o.pastCap > 0 ? ` (${o.pastCap} past the cap)` : ""}` : ""}`);
+        // The final age: the score that decides a game nobody wins (research/30 §1: lost 923 to 933, last in the economy).
+        if (finalAge) logScore(races);
         if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours})` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
     }
     // Our countdown to a victory has just started: worth a line in the tab's log.
@@ -305,6 +307,21 @@ function noteStrategy(plan, facts) {
     return [{ key: "PHASE", args: [compose(`LOC_XPL_AP_PHASE_${plan.phase}`), compose(`LOC_XPL_FOCUS_${plan.focus}`)] }];
 }
 
+/**
+ * UI.log, once a turn in the final age: each major's score (the score victory decides a game nobody wins), ours and the
+ * best other's, and our place in each race the score counts with the points that would share the next place up.
+ */
+function logScore(races) {
+    const board = scoreBoard();
+    if (board.length === 0) return;
+    const me = local();
+    const ours = board.find((b) => b.id === me)?.points ?? 0;
+    const top = board.find((b) => b.id !== me);
+    const place = 1 + board.filter((b) => b.id !== me && b.points > ours).length;
+    const places = scorePlaces(races.filter((r) => r.enabled), me).map((p) => `${p.cls} ${p.place}${p.gap !== null ? ` (+${Math.round(p.gap)} for the next)` : ""}`);
+    log.warn(`score: ours ${ours} (place ${place} of ${board.length}${top ? `; best other ${top.points}, ${compose(Players.get(top.id)?.leaderName ?? "?")}` : ""}); places ${places.join(", ") || "-"}`);
+}
+
 const watchWarned = new Set(); // "<cls>:<leader>:DANGER|COUNTDOWN": each said once per session
 
 /** Log entries when a rival first gets near a victory, and when its countdown starts. */
@@ -319,6 +336,11 @@ function noteWatch(watch) {
                 watchWarned.add(key);
                 // Settlements to found for our military countdown (research/26 §3.3), else plain points.
                 out.push(w.settlements !== undefined ? { key: "MILITARY_LEVER", args: [w.settlements, w.ours, w.goal] } : { key: "OWN_CHANCE", args: [victory, w.ours, w.goal] });
+            }
+            // Settlements past the cap for it (research/30 §1), said once.
+            if (w.pastCap > 0 && !watchWarned.has(`${w.cls}:own:PAST_CAP`)) {
+                watchWarned.add(`${w.cls}:own:PAST_CAP`);
+                out.push({ key: "MILITARY_PAST_CAP", args: [w.pastCap] });
             }
             continue;
         }
@@ -430,6 +452,8 @@ export async function runTurn(force = false) {
                 explore: !!o.explore, settlers: !!o.settlers, defend: !!o.defend, merchants: !!o.merchants, roam: !!o.roam,
                 approach: unbefriendable(), leave: released, threats: o.defend || o.roam ? threats : [], riskOwners: steps.warState().risk,
                 settleNear: !!s.strategy?.settleNear,
+                // The military lever's settlements past the cap (research/30 §1).
+                pastCap: s.strategy?.militaryLever ? Number(s.strategy.pastCap) || 0 : 0,
                 victory: !!focus, distant: focus === "ECONOMIC",
             });
             record(r.entries);
@@ -539,10 +563,12 @@ export async function runTurn(force = false) {
                 // Towns buy the victory path's buildings first (Rail Station, Port, Factory); the
                 // plan's purchases then skip those and count their gold.
                 const purchases = budget ?? { bought: new Set(), spent: 0 };
+                // A non-final age's last turn: a building nearly done is bought, else its production is lost (research/30 §4).
+                if (budget) record(steps.buyAgeEndItems(budget));
                 // A goal no other step buys (a settler far below the cap, the GDP building), then a settler
-                // from the free gold while far below the cap.
+                // from the free gold while far below the cap (past it for the military lever).
                 if (budget) record(steps.buyGoal(budget));
-                if (budget && (o.trainSettlers ?? o.settlers)) record(steps.buySettlers(budget, threats, { fill: !!s.strategy?.fillCap }));
+                if (budget && (o.trainSettlers ?? o.settlers)) record(steps.buySettlers(budget, threats, { fill: !!s.strategy?.fillCap, past: s.strategy?.militaryLever ? Number(s.strategy.pastCap) || 0 : 0 }));
                 if (focus) record(steps.buyVictoryWork(focus, reserveTurns, purchases, { pads: s.strategy?.pads ?? null, commit: s.strategy?.phase === "COMMIT" }));
                 record(steps.buyBuildings(s, reserveTurns, purchases));
                 await wait(STEP_PAUSE_MS);

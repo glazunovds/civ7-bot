@@ -43,10 +43,12 @@ export const REPEATABLE_PROJECTS = new Set(["PROJECT_CREWED_SPACE_FLIGHT_PREP"])
  * and 2). `always`: that many are queued whatever it takes (the victory's Launch Pad); the rest
  * only in a city that finishes it within SITE_MAX_TURNS, else bought with gold (seen in game 5: a
  * Radio Station and an Airfield took a 46-production capital 28 turns, and no Launch Pad came).
+ * `projects` (else `needs`): the project the final age wants done after it, before the game ends (the
+ * cheapest it serves; research/30 §3).
  */
 export const SCIENCE_SITES = {
     AGE_MODERN: [
-        { type: LAUNCH_PAD, cities: 3, always: 1 },
+        { type: LAUNCH_PAD, cities: 3, always: 1, projects: ["PROJECT_LAUNCH_SATELLITE"] },
         // Only once its projects can start (Flight's and Aerodynamics' masteries; seen in game 6: an Airfield idle for most of the age).
         { type: "BUILDING_AIRFIELD", cities: 1, always: 0, needs: ["PROJECT_TRANS_OCEANIC_FLIGHT", "PROJECT_BREAK_SOUND_BARRIER"] },
     ],

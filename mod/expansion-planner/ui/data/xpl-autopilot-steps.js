@@ -170,19 +170,22 @@ export function resetWar() {
 const conversionKeep = () => (war.risk.length > 0 ? 2 * defenderPrice() : 0);
 
 /**
- * Our settlements a war or a war risk calls guards for: those within WAR_NEAR_DISTANCE of a settlement of a leader
- * at war with us or at risk, and the nearest one to each such leader (research/24 G3: a guard in every settlement,
- * upkeep 112-150 against an income of −38 to 77 in game 9's Modern age).
+ * Our settlements a war or a war risk calls guards for: with a war, those within WAR_NEAR_DISTANCE of a settlement of
+ * that leader, and the nearest one to each leader at war or at risk (research/24 G3: a guard in every settlement,
+ * upkeep 112-150 against an income of −38 to 77 in game 9's Modern age). A risk alone asks for that nearest one only
+ * (research/30 §2: on game 23's crowded map the ring held 14 to 18 of our 18 settlements; six Tanks, 1,380 production and
+ * 90 gold a turn, for a war that never came).
  */
 function guardedSettlements() {
     const ours = ownSettlements();
     const near = new Set();
+    const atWar = new Set(war.atWar);
     for (const id of [...war.atWar, ...war.risk]) {
         let best = null;
         for (const c of safe(() => Players.get(id).Cities.getCities(), []) ?? []) {
             for (const o of ours) {
                 const d = safe(() => GameplayMap.getPlotDistance(c.location.x, c.location.y, o.location.x, o.location.y), Infinity);
-                if (d <= WAR_NEAR_DISTANCE) near.add(sidOf(o));
+                if (atWar.has(id) && d <= WAR_NEAR_DISTANCE) near.add(sidOf(o));
                 if (!best || d < best.d) best = { o, d };
             }
         }
@@ -1006,13 +1009,14 @@ function noteProjectSlot(city, def, slot, why) {
 }
 
 /** Would this city build the site and then run its first project before the age (the game) ends? */
-function siteFitsAge(city, def, site) {
+function siteFitsAge(city, def, site, { bought = false } = {}) {
     const left = Number(safe(() => ageOutlook().turnsLeft, Infinity));
     const prod = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
     if (!(prod > 0)) return false;
-    const project = (site.needs ?? []).map((t) => safe(() => GameInfo.Projects.lookup(t), null)).find(Boolean);
+    // The project it is for (`projects`, else the ones it waits for: `needs`); `bought`: the site is there at once.
+    const project = (site.projects ?? site.needs ?? []).map((t) => safe(() => GameInfo.Projects.lookup(t), null)).find(Boolean);
     const cost = project ? Number(safe(() => city.Production.getProjectProductionCost(project.ProjectType), project.Cost ?? 0)) || 0 : 0;
-    return buildTurns(city, def) + cost / prod <= left - 1;
+    return (bought ? 0 : buildTurns(city, def)) + cost / prod <= left - 1;
 }
 
 /** Turns this city would take to build this (the game's estimate, else cost / production). */
@@ -1109,18 +1113,23 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
     if (factory && ownsScienceFactoryResource() && !cities.some((c) => cityHas(c, "BUILDING_FACTORY") || queueTypes(c).includes(factory.$hash))) {
         for (const c of cities) if (place(c, factory, { front: false })) break;
     }
+    // The final age ends the game: a site only where it and its project are done before then (research/30 §3: game 23
+    // ended with six Launch Pads unfinished, and an Airfield done with no time left for its projects).
+    const finalAge = !!safe(() => ageOutlook().isFinalAge, false);
     // The buildings projects need in their own city, least important first (each move puts it in front).
     for (const site of [...activeSites(pads)].reverse()) {
         const def = safe(() => GameInfo.Constructibles.lookup(site.type), null);
         if (!def) continue;
         const holders = cities.filter((c) => queueTypes(c).includes(def.$hash) || cityHas(c, site.type));
-        for (const c of holders) toFront(c, def.$hash);
+        // One queued that no longer fits is not pushed ahead (the age-end step would move it back: ageEndOrder).
+        for (const c of holders) if (!finalAge || cityHas(c, site.type) || siteFitsAge(c, def, site)) toFront(c, def.$hash);
         let n = holders.length;
         for (const c of cities) {
             if (n >= site.cities) break;
             if (holders.includes(c)) continue;
             // Past the ones always wanted: only where it is done soon (else bought: buyVictoryWork).
             if (n >= (site.always ?? site.cities) && buildTurns(c, def) > SITE_MAX_TURNS) continue;
+            if (finalAge && !siteFitsAge(c, def, site)) continue;
             if (place(c, def)) n++;
         }
         // None anywhere and no city builds it soon: the best producer anyway, when it and its project fit the age
@@ -1133,6 +1142,13 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
         }
     }
     // Then the projects, in front of everything (the one-offs ahead of the repeatable one).
+    const turnsLeft = Number(safe(() => ageOutlook().turnsLeft, Infinity));
+    // A repeatable one only where a run is done before the age ends (the final age's: research/30 §3).
+    const runInTime = (c, type, def) => {
+        const prod = production(c);
+        const cost = Number(safe(() => c.Production.getProjectProductionCost(type), def.Cost ?? 0)) || 0;
+        return prod > 0 && cost / prod <= turnsLeft - AGE_END_MARGIN;
+    };
     for (const type of SCIENCE_PROJECTS) {
         const def = safe(() => GameInfo.Projects.lookup(type), null);
         if (!def) continue;
@@ -1156,7 +1172,7 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
                 // Ahead of a plain building with progress too, like the one-off projects (game 11: Лянчжоу's
                 // Launch Pad overflow went into a Cannery, and Crewed Space Flight Preparation waited 9 turns behind it).
                 if (queueTypes(c).includes(def.$hash)) toFront(c, def.$hash, projectSlot(c, def));
-                else if (may(c)) start(c);
+                else if (may(c) && runInTime(c, type, def)) start(c);
             }
             continue;
         }
@@ -1231,12 +1247,17 @@ export function victoryPurchases(focus, { pads = null, sitesFirst = false } = {}
     // city that lacks one, after its lever buildings (pushVictoryWork queues only the ones done soon).
     const want = new Map(activeSites(pads).map((site) => [site.type, site.cities]));
     const have = (def) => all.filter((c) => !c.isTown && (queueTypes(c).includes(def.$hash) || cityHas(c, def.ConstructibleType))).length;
-    const missing = (city) => (city.isTown ? [] : sites.filter((d) => !queueTypes(city).includes(d.$hash) && !cityHas(city, d.ConstructibleType) && have(d) < (want.get(d.ConstructibleType) ?? 0)));
+    // The final age: a site only where its project is done before the game ends once the site is bought (research/30 §3).
+    const finalAge = !!safe(() => ageOutlook().isFinalAge, false);
+    const siteRows = new Map(activeSites(pads).map((site) => [site.type, site]));
+    const inTime = (city, d) => !finalAge || !siteRows.has(d.ConstructibleType) || siteFitsAge(city, d, siteRows.get(d.ConstructibleType), { bought: true });
+    const missing = (city) => (city.isTown ? [] : sites.filter((d) => !queueTypes(city).includes(d.$hash) && !cityHas(city, d.ConstructibleType) && have(d) < (want.get(d.ConstructibleType) ?? 0) && inTime(city, d)));
     for (const town of [...all.filter((c) => c.isTown), ...all.filter((c) => !c.isTown)]) {
         const producing = !town.isTown && frontSlot(town) ? safe(() => town.BuildQueue.currentProductionTypeHash, null) : null;
         const queued = queueTypes(town);
+        const queuedSites = sites.filter((d) => queued.includes(d.$hash) && inTime(town, d));
         // The final age (sitesFirst): the missing sites before the age's buildings.
-        const order = sitesFirst ? [...sites.filter((d) => queued.includes(d.$hash)), ...missing(town), ...levers] : [...sites.filter((d) => queued.includes(d.$hash)), ...levers, ...missing(town)];
+        const order = sitesFirst ? [...queuedSites, ...missing(town), ...levers] : [...queuedSites, ...levers, ...missing(town)];
         if (town.isTown) order.push(...forTowns);
         for (const def of order) {
             if (def.$hash === producing) continue;
@@ -1499,13 +1520,14 @@ export function sitesKnown() {
  * whose purchase the game offers (Success, or InsufficientFunds for a savings goal).
  * @returns { city, args, cost, name } or null
  */
-function settlerOffer(threats = [], { fill = false } = {}) {
+function settlerOffer(threats = [], { fill = false, past = 0 } = {}) {
     // None with a war at our door (research/24 X7: one bought at E51, four turns into the war, stood idle until the age ended).
-    // The final age fills the cap (`fill`, research/26 §3.3), else only far below it.
-    if (war.near || !(expansionDeficit() || (fill && belowSettlementCap())) || finalAgeTooLate(FINAL_SETTLER_BUY_TURNS) || !sitesKnown()) return null;
+    // The final age fills the cap (`fill`, research/26 §3.3), else only far below it; the military lever goes `past` it
+    // (research/30 §1).
+    if (war.near || !(expansionDeficit() || (fill && belowSettlementCap(past))) || finalAgeTooLate(FINAL_SETTLER_BUY_TURNS) || !sitesKnown()) return null;
     const stats = safe(() => Players.get(pid()).Stats, null);
     const n = Number(stats?.numSettlements) || 0;
-    const cap = Number(stats?.settlementCap) || 0;
+    const cap = (Number(stats?.settlementCap) || 0) + Math.max(0, Number(past) || 0);
     const want = settlersWanted(n, cap);
     // A settler waiting in a queue behind other items is not on its way (research/23 E4: game 8, at A13 one
     // waited behind a Library and the 235 gold bought a Brickyard): it is bought, and its entry dropped.
@@ -1575,8 +1597,8 @@ function settlersWanted(n, cap) {
 }
 
 /** Buys a settler from the free gold when one is wanted and the game sells it (settlerOffer). @returns log entries */
-export function buySettlers(budget, threats = [], { fill = false } = {}) {
-    const offer = settlerOffer(threats, { fill });
+export function buySettlers(budget, threats = [], { fill = false, past = 0 } = {}) {
+    const offer = settlerOffer(threats, { fill, past });
     if (!offer || !offer.ok || offer.cost > budget.free()) return [];
     Game.CityCommands.sendRequest(offer.city.id, CityCommandTypes.PURCHASE, offer.args);
     dropQueued(offer.drop);
@@ -1595,8 +1617,11 @@ export function expansionDeficit() {
     return Number.isFinite(n) && Number.isFinite(cap) && cap > 0 && n < cap - 1;
 }
 
-/** Settlers to found for our own military countdown (the strategy's military lever) while below the cap? */
-const leverSettlers = (unitOptions) => !!unitOptions?.strategy?.militaryLever && belowSettlementCap();
+/** Settlements the military lever founds past the cap this pass (the strategy's pastCap; research/30 §1), else 0. */
+const pastCapOf = (strategy) => (strategy?.militaryLever ? Math.max(0, Number(strategy.pastCap) || 0) : 0);
+
+/** Settlers to found for our own military countdown (the strategy's military lever) while below the cap (and past it)? */
+const leverSettlers = (unitOptions) => !!unitOptions?.strategy?.militaryLever && belowSettlementCap(pastCapOf(unitOptions.strategy));
 
 const OPERATION_IVY = "PROJECT_OPERATION_IVY";
 
@@ -1629,17 +1654,41 @@ function ivyCity(turnsLeft) {
 
 /**
  * What the final age still allows in the military race (research/26 §3.3): settlements we may found (the cap's room;
- * only settlers already on their way once it is too late to train one or with a war at our door) and Operation Ivy.
- * @returns { room, ivy } or null (not the final age)
+ * only settlers already on their way once it is too late to train one or with a war at our door), how many more past
+ * the cap the Happiness a turn pays for (`over`: pastCapRoom) and Operation Ivy.
+ * @returns { room, over, ivy } or null (not the final age)
  */
 export function militaryRoom() {
     const o = safe(() => ageOutlook(), null);
     if (!o?.isFinalAge) return null;
     const stats = safe(() => Players.get(pid()).Stats, null);
-    const free = Math.max(0, (Number(stats?.settlementCap) || 0) - (Number(stats?.numSettlements) || 0));
+    const n = Number(stats?.numSettlements) || 0;
+    const cap = Number(stats?.settlementCap) || 0;
+    const free = Math.max(0, cap - n);
     const blocked = war.near || finalAgeTooLate(FINAL_SETTLER_TRAIN_TURNS);
     const room = blocked ? Math.min(free, unitCount(isSettler)) : free;
-    return { room, ivy: !!safe(() => ivyCity(Number(o.turnsLeft) || 0), null) };
+    return { room, over: blocked ? 0 : pastCapRoom(n, cap), ivy: !!safe(() => ivyCity(Number(o.turnsLeft) || 0), null) };
+}
+
+// The military lever may found up to PAST_CAP_MAX settlements past the cap when they start our own countdown: a turn of
+// it is 1000 score (research/30 §1: game 23 lost the score by 10, 2-4 settlements short from M41 to the end, with room
+// for 1-2 under the cap). Each one over costs OVER_CAP_HAPPINESS in every settlement
+// (TRAIT_MOD_PENALTY_OVER_SETTLEMENT_CAP_SETTLEMENTS).
+export const PAST_CAP_MAX = 2;
+const OVER_CAP_HAPPINESS = 5;
+
+/** Settlements past the cap (at most PAST_CAP_MAX) whose cost our Happiness a turn still covers. */
+function pastCapRoom(n, cap) {
+    if (!(cap > 0)) return 0;
+    const happiness = Number(safe(() => Players.get(pid()).Stats.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0;
+    const now = OVER_CAP_HAPPINESS * Math.max(0, n - cap) * n; // already in the Happiness a turn
+    let k = 0;
+    while (k < PAST_CAP_MAX) {
+        const total = Math.max(n, cap) + k + 1;
+        if (happiness - (OVER_CAP_HAPPINESS * (total - cap) * total - now) < 0) break;
+        k++;
+    }
+    return k;
 }
 
 /**
@@ -1657,12 +1706,12 @@ export function pushOperationIvy(strategy) {
     return [{ key: "VICTORY_WORK", args: [nameOf(at.city), safe(() => Locale.compose(def.Name), OPERATION_IVY)] }];
 }
 
-/** Below the settlement cap (a settler would be wanted)? */
-export function belowSettlementCap() {
+/** Below the settlement cap (plus `extra` the military lever goes past it): a settler would be wanted? */
+export function belowSettlementCap(extra = 0) {
     const stats = safe(() => Players.get(pid()).Stats, null);
     const n = Number(stats?.numSettlements);
     const cap = Number(stats?.settlementCap);
-    return Number.isFinite(n) && Number.isFinite(cap) && cap > 0 && n < cap;
+    return Number.isFinite(n) && Number.isFinite(cap) && cap > 0 && n < cap + Math.max(0, Number(extra) || 0);
 }
 
 /** Settlers we have or are training. */
@@ -1703,8 +1752,9 @@ function settlerSupply(copies = settlerCopies()) {
  */
 function unitsWanted(unitOptions) {
     const out = [];
-    // A war at our door or a war risk (research/23 D3): a melee unit for every settlement, the strongest each
-    // city can train (with only a risk, while the gold income covers the upkeep).
+    // A war at our door or a war risk (research/23 D3): a melee unit for every settlement near the enemy, the strongest
+    // each city can train (with only a risk, while the gold income covers the upkeep, and one per risky leader:
+    // guardedSettlements).
     if (unitOptions.defend && (war.near || (war.risk.length > 0 && goldIncome() >= 0))) {
         const guard = (def) => meleeStrength(def) > 0;
         const want = guardedSettlements();
@@ -1750,7 +1800,8 @@ function unitsWanted(unitOptions) {
     if ((unitOptions.trainSettlers ?? unitOptions.settlers) && !war.near && !finalAgeTooLate(FINAL_SETTLER_TRAIN_TURNS) && sitesKnown()) {
         const stats = safe(() => Players.get(pid()).Stats, null);
         const settlements = Number(stats?.numSettlements ?? ownSettlements().length) || 0;
-        const cap = Number(stats?.settlementCap) || Infinity;
+        // The military lever may go past the cap (research/30 §1).
+        const cap = (Number(stats?.settlementCap) || Infinity) + pastCapOf(unitOptions.strategy);
         // Two at a time while few settlements or below the cap less one (research/22 A1, research/23 E3).
         const want = Math.min(settlersWanted(settlements, cap), Math.max(0, cap - settlements));
         // One training may give several (settlerCopies: Carthage's colonists come in pairs).
@@ -1916,7 +1967,7 @@ export function dropLeftoverDefenders(threats = []) {
 
 function trainDefenders(threats, used) {
     const out = [];
-    const left = ageEndTurns(); // a non-final age's last turns: only a defender done before it ends
+    const left = ageEndTurns(); // an age's last turns (the final age: all of it): only a defender done before it ends
     // Not in an infected city: the unit would appear on the plague (game 18).
     const cities = ownSettlements().filter((c) => !c.isTown && !infected(c));
     if (threats.length === 0) defenderTrainers.clear();
@@ -2007,7 +2058,7 @@ function trainWantedUnits(unitOptions) {
     // Units the overlays and options want (explorers, settlers, scouts, merchants) never come from a space city in the
     // final push (game 11: the capital built Antiquarians on turns 56-58 instead of science projects).
     const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE"]);
-    const left = ageEndTurns(); // a non-final age's last turns
+    const left = ageEndTurns(); // an age's last turns (the final age: all of it)
     for (const w of unitsWanted(unitOptions)) {
         let n = w.n;
         for (const city of cities) {
@@ -2018,8 +2069,8 @@ function trainWantedUnits(unitOptions) {
             if ((safe(() => city.BuildQueue.getQueue(), []) ?? []).some((q) => w.test(queueUnitDef(q)))) continue;
             const order = w.order ? w.order(city) : unitOrder(city, w.test);
             if (!order) continue;
-            // Not where it is done only after a non-final age ends: its production would be lost (game 22: a settler at
-            // 77 of 115 when Exploration ended).
+            // Not where it is done only after the age ends: its production would be lost (game 22: a settler at 77 of 115
+            // when Exploration ended; game 23: a Tank at 86 of 230 when the game ended).
             if (!doneInAge(city, order.args.UnitType, left, turnsUntilFree(city, ahead))) continue;
             // Soldiers only where they are done soon (game 18: 33 turns for a Landship).
             if (isMilitary(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
@@ -2039,7 +2090,7 @@ function trainWantedUnits(unitOptions) {
  */
 export function frontLoadUnits(unitOptions = {}) {
     const out = [];
-    const left = ageEndTurns(); // a non-final age's last turns
+    const left = ageEndTurns(); // an age's last turns (the final age: all of it)
     const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
     if (MoveTo === undefined) return out;
     const underThreat = (unitOptions.threats ?? []).length > 0;
@@ -2875,7 +2926,7 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
  */
 export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
     const plans = state.get().results.plans;
-    const left = ageEndTurns(); // a non-final age's last turns: only what is done before it ends
+    const left = ageEndTurns(); // an age's last turns (the final age: all of it): only what is done before it ends
     safe(() => dropLeftoverDefenders(unitOptions.threats ?? []), null);
     const trained = trainWantedUnits(unitOptions);
     const out = [...trained.entries];
@@ -2946,22 +2997,25 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
     return out;
 }
 
-// ---- a non-final age's last turns ---------------------------------------------------------------
+// ---- an age's last turns -------------------------------------------------------------------------
 
 // Production in progress is lost at an age change (research/23 E6). Game 22 lost 732 at the end of Exploration
 // (research/29 §3): Universities at 287 of 313 (two lancers had gone ahead of it), 258 of 266 and 109 of 313, and a
 // settler at 77 of 115 queued 7 turns before the end; 100 at the end of Antiquity. In a non-final age's last
 // AGE_END_TURNS turns an item is started only where it is done before the age ends (AGE_END_MARGIN turns early: the
 // turns left are an estimate), and an item in production that cannot be done gives way to one that can (ageEndOrder).
+// The final age ends the game, so there the whole age is timed (research/30 §3: game 23 ended with 3,212 production
+// in unfinished items, six Launch Pads among them).
 export const AGE_END_TURNS = 12;
 const AGE_END_MARGIN = 1;
 
-/** Turns left before a non-final age ends, while within AGE_END_TURNS; else null (nothing is timed). */
+/** Turns left before the age ends: a non-final age's while within AGE_END_TURNS, the final age's always; else null. */
 export function ageEndTurns() {
     const o = safe(() => ageOutlook(), null);
-    if (!o || o.isFinalAge) return null;
+    if (!o) return null;
     const left = Number(o.turnsLeft);
-    return Number.isFinite(left) && left <= AGE_END_TURNS ? left : null;
+    if (!Number.isFinite(left)) return null;
+    return o.isFinalAge || left <= AGE_END_TURNS ? left : null;
 }
 
 /** A building's, unit's or project's hash and this city's production cost of it (by hash or type name). */
@@ -2995,15 +3049,17 @@ function itemName(h) {
 }
 
 /**
- * A non-final age's last turns: where the item in production is not done before the age ends, the queued item that is
- * and costs the most goes first (one edit a pass); nothing queued is: the plan's costliest building that is (else the
- * costliest one the city can place that is) is queued, to go first next pass. A wonder (the cash-out's) or a project
- * (projectSlot) in production stays. @returns log entries
+ * An age's last turns (the final age: all of it, ageEndTurns): where the item in production is not done before the age
+ * ends, the queued item that is and costs the most goes first (one edit a pass); nothing queued is: the plan's costliest
+ * building that is (else the costliest one the city can place that is) is queued, to go first next pass. A wonder (the
+ * cash-out's) or a project (projectSlot) in production stays. @returns log entries
  */
 export function ageEndOrder() {
     const out = [];
     const left = ageEndTurns();
     if (left === null) return out;
+    // The final age's end is the game's (its own words in the log).
+    const end = safe(() => ageOutlook().isFinalAge, false) ? "GAME_END" : "AGE_END";
     for (const city of ownSettlements()) {
         if (city.isTown || editedThisPass(city)) continue;
         const types = queueTypes(city);
@@ -3018,7 +3074,7 @@ export function ageEndOrder() {
             if (!best || cost > best.cost) best = { i, h, cost };
         });
         if (best) {
-            if (moveInQueue(city, best.i, 0)) out.push({ key: "AGE_END_FIRST", args: [nameOf(city), itemName(best.h), itemName(head), left] });
+            if (moveInQueue(city, best.i, 0)) out.push({ key: `${end}_FIRST`, args: [nameOf(city), itemName(best.h), itemName(head), left] });
             continue;
         }
         const fits = (type) => doneInAge(city, type, left);
@@ -3027,7 +3083,52 @@ export function ageEndOrder() {
         if (!add) continue;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, add.args);
         noteBuilt(city, add.type);
-        out.push({ key: "AGE_END_QUEUED", args: [nameOf(city), itemName(add.type), left] });
+        out.push({ key: `${end}_QUEUED`, args: [nameOf(city), itemName(add.type), left] });
+    }
+    return out;
+}
+
+// A non-final age's last AGE_END_BUY_TURNS turns (the last one: 0): a building in production that would not be done
+// before the age ends and is at least AGE_END_BUY_SHARE done is bought (the game prices an item in progress by what it
+// lacks), the most production kept first, from the free gold (research/30 §4: the capital's Bazaar ended Exploration 19
+// production short, about 77 gold with 822 in the treasury).
+export const AGE_END_BUY_TURNS = 1;
+export const AGE_END_BUY_SHARE = 0.5;
+
+/** Buys the nearly done buildings a non-final age's end would take (above). @returns log entries */
+export function buyAgeEndItems(budget = null) {
+    const out = [];
+    const o = safe(() => ageOutlook(), null);
+    if (!o || o.isFinalAge) return out;
+    const apm = safe(() => Game.AgeProgressManager, null);
+    const points = Number(safe(() => apm.getCurrentAgeProgressionPoints(), 0)) || 0;
+    const max = Number(safe(() => apm.getMaxAgeProgressionPoints(), 0)) || 0;
+    // The age's last turn: nothing more is done (its points are full); else the estimate's turns left.
+    const left = max > 0 && points >= max ? 0 : Number(o.turnsLeft);
+    if (!Number.isFinite(left) || left > AGE_END_BUY_TURNS) return out;
+    const b = budget ?? createBudget({ gold: goldBalance() });
+    const items = [];
+    for (const city of ownSettlements()) {
+        if (city.isTown) continue;
+        const h = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+        const def = h === null || h === -1 ? null : safe(() => GameInfo.Constructibles.lookup(h), null);
+        if (!def || isWonderType(h)) continue; // a unit is bought new and a project not at all: only buildings
+        const pct = Math.min(100, Math.max(0, Number(safe(() => city.BuildQueue.getPercentComplete(h), 0)) || 0));
+        if (pct < AGE_END_BUY_SHARE * 100 || itemTurns(city, h) <= left) continue;
+        // As the game's production list buys an item in progress: on its tile (production-chooser-helpers.js Construct).
+        const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
+        if (!r?.Success || !r.InProgress || !(r.Plots?.length > 0)) continue;
+        const loc = safe(() => GameplayMap.getLocationFromIndex(r.Plots[0]), null);
+        const cost = Number(r.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
+        if (!loc || !Number.isFinite(cost) || cost <= 0) continue;
+        items.push({ city, args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, cost, kept: (itemCost(city, h).cost * pct) / 100, name: itemName(h) });
+    }
+    items.sort((a, b2) => b2.kept - a.kept);
+    for (const it of items) {
+        if (it.cost > b.free()) continue;
+        Game.CityCommands.sendRequest(it.city.id, CityCommandTypes.PURCHASE, it.args);
+        b.spend(it.cost, { kind: "AGE_END", label: `${it.name} (${nameOf(it.city)})` });
+        out.push({ key: "AGE_END_BOUGHT", args: [nameOf(it.city), it.name, Math.round(it.cost)] });
     }
     return out;
 }
@@ -3229,10 +3330,15 @@ const convertKey = (town) => `convert:${town.x},${town.y}`;
 // in a non-final age's last turns, unless the player expects to keep cities (the legacy card, the
 // Towns tab's «expect to keep cities»).
 export const LATE_CONVERSION_TURNS = 10;
+// Nor in the final age's last FINAL_CONVERSION_TURNS: a city that late builds little before the game ends (research/30
+// §3: game 23 paid 2,500 at M48 for a city that then built 46 of an Ironworks, while three settlers would have started
+// our military countdown).
+export const FINAL_CONVERSION_TURNS = 25;
 
 /** Towns that may become cities now (conversionRule, canConvert, calmEnough), best first (rankConversions). */
 function conversionsFrom(rows, focus, { minCities = 0, ctx = null } = {}) {
     if (ctx && !ctx.isFinalAge && !ctx.expectKeepCities && Number(ctx.ageTurnsLeft) <= LATE_CONVERSION_TURNS) return [];
+    if (ctx?.isFinalAge && Number(ctx.ageTurnsLeft) <= FINAL_CONVERSION_TURNS) return [];
     const stats = safe(() => Players.get(pid()).Stats, null);
     const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities });
     const ok = rows
@@ -3248,7 +3354,7 @@ function conversionsFrom(rows, focus, { minCities = 0, ctx = null } = {}) {
  * not a cap. While towns outnumber cities any town may (never BLOCKED); beyond that only a town the
  * Towns tab rates CONVERT on its yields, or one founded on a planned CITY site. Never one in unrest
  * (calmEnough), none in a non-final age's last LATE_CONVERSION_TURNS turns (cities revert at an age
- * change). Order (C1): a planned CITY site, the verdict, then for science and economy the most
+ * change) nor in the final age's last FINAL_CONVERSION_TURNS. Order (C1): a planned CITY site, the verdict, then for science and economy the most
  * production potential, else the cheapest. @returns the Towns tab's rows, best first
  */
 export function conversionCandidates(settings, focus = null) {
@@ -3361,7 +3467,7 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     // A war at our door: no savings goal, the gold stays free for defenders and upgrades (research/23 D5: game 8,
     // a conversion goal and then a University goal kept the free gold at 0 for the whole war).
     if (war.near) kinds.length = 0;
-    const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap }), null) : null;
+    const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap, past: pastCapOf(settings?.strategy) }), null) : null;
     const keep = kinds.includes("CONVERT") ? conversionKeep() : 0;
     const candidates = {
         SETTLER: offer ? [{ key: "settler", label: composeOr("LOC_XPL_AP_GOAL_SETTLER", nameOf(offer.city)), cost: offer.cost, purchase: { city: offer.city, args: offer.args, name: composeOr(offer.name), drop: offer.drop } }] : [],
@@ -3433,6 +3539,7 @@ function codexGoals() {
  */
 function siteGoals(pads) {
     const out = [];
+    const finalAge = !!safe(() => ageOutlook().isFinalAge, false);
     const production = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
     const cities = ownSettlements().filter((c) => !c.isTown).sort((a, b) => production(b) - production(a));
     for (const site of activeSites(pads)) {
@@ -3443,6 +3550,8 @@ function siteGoals(pads) {
         if (have >= site.cities) continue;
         for (const city of cities) {
             if (cityHas(city, site.type)) continue;
+            // The final age: only where its project is done before the game ends once it is bought (research/30 §3).
+            if (finalAge && !siteFitsAge(city, def, site, { bought: true })) continue;
             const probe = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             if ((!probe?.Success && !probe?.InsufficientFunds) || plots.length === 0) continue;

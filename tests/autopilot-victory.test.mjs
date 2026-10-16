@@ -246,3 +246,12 @@ test("victory races carry every major's points, sorted (the victories screen's l
         delete world.countdowns;
     }
 });
+
+test("the score victory: every major's score, sorted, as the victory screen's score tab reads it (research/30 §1)", () => {
+    world.victoryPoints = { VICTORY_SCORE: { 0: 923, 1: 933, 2: 913 } };
+    try {
+        assert.deepEqual(victory.scoreBoard(), [{ id: 1, points: 933 }, { id: 0, points: 923 }, { id: 2, points: 913 }]);
+    } finally {
+        delete world.victoryPoints;
+    }
+});

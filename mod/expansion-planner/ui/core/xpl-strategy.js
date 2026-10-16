@@ -123,7 +123,8 @@ function withOverlay(plan, focus, watch, finalAge = false) {
     // first (the first savings goal, ahead in the queues), Operation Ivy when it closes the gap.
     const lever = danger.find((w) => w.own && w.cls === "MILITARY" && w.settlements !== undefined);
     if (lever) {
-        Object.assign(out, { militaryLever: true, ivy: !!lever.withIvy, fillCap: true });
+        // Past the cap when its room falls short (research/30 §1: one countdown turn is 1000 score).
+        Object.assign(out, { militaryLever: true, ivy: !!lever.withIvy, fillCap: true, pastCap: Math.max(0, Number(lever.pastCap) || 0) });
         out.goals = ["SETTLER", ...(out.goals ?? []).filter((g) => g !== "SETTLER")];
     }
     return out;
@@ -201,6 +202,7 @@ export function applyStrategy(settings, plan) {
             townFocusBias: plan.townFocusBias, pads: plan.pads, minCities: plan.minCities, gate: plan.gate ?? null,
             noFutureTech: !!plan.noFutureTech, denyWonders: !!plan.denyWonders, overlay: plan.overlay ?? [], gateLate: !!plan.gateLate,
             settleNear: !!plan.settleNear, fillCap: !!plan.fillCap, militaryLever: !!plan.militaryLever, ivy: !!plan.ivy,
+            pastCap: Number(plan.pastCap) || 0,
         },
     };
 }
@@ -217,6 +219,7 @@ export function strategyLines(plan) {
     if (!plan.trainSettlers) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_NO_SETTLERS", args: [] });
     else if (plan.fillCap) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_FILL_CAP", args: [] });
     if (plan.militaryLever) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_MILITARY_LEVER", args: [] });
+    if (plan.militaryLever && plan.pastCap > 0) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_PAST_CAP", args: [plan.pastCap] });
     if (plan.upgrades === "THREAT") out.push({ key: "LOC_XPL_AP_STRATEGY_TT_UPGRADES_THREAT", args: [] });
     if (!plan.advisorSoldiers) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_PEACE_ARMY", args: [] });
     if (plan.planBuys === "CITIES") out.push({ key: "LOC_XPL_AP_STRATEGY_TT_CITIES_ONLY", args: [] });

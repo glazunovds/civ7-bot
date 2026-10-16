@@ -165,7 +165,26 @@ test("past 1:1 a town rated CONVERT on its yields still becomes a city; a KEEP o
     }
 });
 
-test("no conversion in a non-final age's last 10 turns: cities become towns again at an age change (probe P6, game 6)", () => {
+test("the pass: on a non-final age's last turn the purchase step buys a nearly done building first (research/30 §4)", async () => {
+    const buy = world.canBuy;
+    world.canBuy = (type, id, args) => (type === "BUILDING_LIBRARY" ? { Success: true, InProgress: true, Plots: [idx(A.x + 1, A.y + 1)], Cost: 120 } : buy(type, id, args));
+    world.cities[0].queue = { type: "BUILDING_LIBRARY", turns: 2, pct: 80 };
+    world.agePoints = 100; // the age's last turn
+    steps.resetGoldPlan();
+    try {
+        await pass(2000);
+        assert.ok(keys().includes("AGE_END_BOUGHT"), JSON.stringify(keys()));
+        const library = purchases().find((s) => s.args.ConstructibleType === C("BUILDING_LIBRARY"));
+        assert.deepEqual([library?.args.X, library?.args.Y], [A.x + 1, A.y + 1]);
+    } finally {
+        world.canBuy = buy;
+        delete world.cities[0].queue;
+        delete world.agePoints;
+        steps.resetGoldPlan();
+    }
+});
+
+test("no conversion in a non-final age's last 10 turns (cities become towns again at an age change: probe P6, game 6), nor in the final age's last 25 (research/30 §3)", () => {
     steps.resetGoldPlan();
     try {
         world.gold = 2000;
@@ -173,10 +192,19 @@ test("no conversion in a non-final age's last 10 turns: cities become towns agai
         fake.sent.length = 0;
         steps.convertTowns(settings.get(), 0);
         assert.deepEqual(converted(), [], "the age is ending");
+        // The final age: cities stay, but in its last 25 turns a city builds too little before the game ends.
         world.finalAge = true;
         fake.sent.length = 0;
         steps.convertTowns(settings.get(), 0);
-        assert.deepEqual(converted(), [1], "the final age: cities stay");
+        assert.deepEqual(converted(), [], "the final age, about 6 turns left");
+        world.agePoints = 85; // about 18 left
+        fake.sent.length = 0;
+        steps.convertTowns(settings.get(), 0);
+        assert.deepEqual(converted(), [], "18 turns before the game ends");
+        world.agePoints = 50; // 60 left
+        fake.sent.length = 0;
+        steps.convertTowns(settings.get(), 0);
+        assert.deepEqual(converted(), [1], "the final age, 60 turns left: cities stay");
     } finally {
         delete world.agePoints;
         delete world.finalAge;

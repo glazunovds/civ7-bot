@@ -601,6 +601,15 @@
     <Replace Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED" Language="ru_RU">
       <Text>{1_City}: {2_Wonder} не выиграть ({4_Why}); {3_Building} в очереди, чтобы встать перед ним</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_AGE_END_BOUGHT" Language="ru_RU">
+      <Text>{1_City}: {2_Item} куплено за {3_Gold} зол.: почти готово, иначе его производство пропало бы при смене эпохи</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GAME_END_FIRST" Language="ru_RU">
+      <Text>{1_City}: {2_Item} строится первым: успеет до конца игры (осталось около {4_Turns} ход.), {3_Other} не успеет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GAME_END_QUEUED" Language="ru_RU">
+      <Text>{1_City}: {2_Item} в очереди, чтобы строиться первым: из очереди ничего не успеет до конца игры (осталось около {3_Turns} ход.)</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_AGE_END_FIRST" Language="ru_RU">
       <Text>{1_City}: {2_Item} строится первым: успеет до конца эпохи (осталось около {4_Turns} ход.), {3_Other} не успеет (его производство пропадёт при смене эпохи)</Text>
     </Replace>
@@ -2010,6 +2019,9 @@
     <Replace Tag="LOC_XPL_AP_MILITARY_LEVER" Language="ru_RU">
       <Text>ещё поселений: {1_Num} — и начнётся наш военный отсчёт ({2_Points} из {3_Goal}): сначала поселенцы</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_MILITARY_PAST_CAP" Language="ru_RU">
+      <Text>из них сверх лимита поселений: {1_Num} — основываем всё равно (каждое отнимает 5 довольства в каждом поселении; ход отсчёта — 1000 очков)</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_WATCH_LEVER" Language="ru_RU">
       <Text>Наша военная победа: ещё поселений {1_Num} ({2_Points} из {3_Goal})</Text>
     </Replace>
@@ -2018,6 +2030,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_STRATEGY_TT_MILITARY_LEVER" Language="ru_RU">
       <Text>Сначала поселенцы: с ними начнётся наш военный отсчёт</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRATEGY_TT_PAST_CAP" Language="ru_RU">
+      <Text>Ради него до {1_Num} поселений сверх лимита</Text>
     </Replace>
     <Replace Tag="LOC_XPL_R_NATURAL_WONDER" Language="ru_RU">
       <Text>Природные чудеса: {1_Num} (очки культурной победы)</Text>

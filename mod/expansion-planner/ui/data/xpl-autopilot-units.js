@@ -1052,11 +1052,12 @@ function noteFoundingNearVillage(goal) {
 /**
  * At the cap a settler on its site does not found (seen in game: a settler trained below the cap
  * founded the 6th settlement of 5 after a story event had added one): it waits there, skipping
- * its turn, until the cap rises (civics, the next age). @returns a log entry, or null to found
+ * its turn, until the cap rises (civics, the next age), unless the military lever founds `past` it
+ * (research/30 §1). @returns a log entry, or null to found
  */
-function waitAtCap(u, def, goal) {
+function waitAtCap(u, def, goal, past = 0) {
     const c = settlementCount();
-    if (!c || c.n < c.cap) return null;
+    if (!c || c.n < c.cap + Math.max(0, Number(past) || 0)) return null;
     operate(u, "UNITOPERATION_SKIP_TURN");
     return { key: "SETTLER_AT_CAP", args: [nameOf(def), goal.x, goal.y, c.n, c.cap] };
 }
@@ -1073,7 +1074,7 @@ function settle(u, def, taken, ctx) {
     let goal = goals.get(k);
     // On its site: found at once (a settlement is safer than a settler).
     if (goal && same(u.location, goal) && siteStillFree(goal) && !tooCloseToForeign(goal, ctx)) {
-        const wait = waitAtCap(u, def, goal);
+        const wait = waitAtCap(u, def, goal, ctx.pastCap);
         if (wait) return wait;
         goals.delete(k);
         if (!operate(u, "UNITOPERATION_FOUND_CITY")) return null;
@@ -1156,7 +1157,7 @@ function settle(u, def, taken, ctx) {
     if (before && !same(before, goal)) walk.retargets++;
     taken.add(`${goal.x},${goal.y}`);
     if (same(u.location, goal)) {
-        const wait = waitAtCap(u, def, goal);
+        const wait = waitAtCap(u, def, goal, ctx.pastCap);
         if (wait) {
             goals.set(k, goal);
             return wait;
@@ -2789,6 +2790,8 @@ export function commandUnits(settings, options) {
             return !!R && safe(() => Players.get(pid()).Diplomacy.getRelationshipEnum(id), null) === R.PLAYER_RELATIONSHIP_HOSTILE;
         })),
         settleNear: !!options.settleNear,
+        // Settlements the military lever founds past the cap (research/30 §1).
+        pastCap: Math.max(0, Number(options.pastCap) || 0),
         // Independents a unit is already walking to (one at a time).
         approached: new Set([...goals.values()].filter((g) => g.approach !== undefined).map((g) => g.approach)),
         // Villages a soldier walks to, to disperse them (one each).

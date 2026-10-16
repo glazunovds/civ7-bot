@@ -73,9 +73,8 @@ test("war: a major at war with a settlement near ours is at our door; an Unfrien
     assert.equal(w.near, true, "its units at York");
 });
 
-test("war risk: a guard for every settlement, the strongest melee unit a city can train (research/23 D3)", () => {
+test("war risk: a guard for our settlement nearest to the risky leader, the strongest melee unit a city can train (research/23 D3)", () => {
     reset({ relations: { 1: "UNFRIENDLY" }, canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
-    world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }]; // the strong melee unit already kept
     steps.assessWar([]);
     const out = steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), ["UNIT_SPEARMAN"], JSON.stringify(out));
@@ -364,7 +363,7 @@ test("a war risk's conversion goal needs the town's cost and two defenders' pric
     assert.equal(steps.goldPlan(DEFAULT_SETTINGS, { reserveTurns: 0 }).budget.goal?.cost, 300, "no risk: the town's cost");
 });
 
-test("guards only near the risky leader: a far conqueror calls one, for our settlement nearest to it (research/24 G3: upkeep 112-150 in game 9's Modern age)", () => {
+test("guards only near the enemy: a far conqueror calls one, for our settlement nearest to it; a risk alone one per leader; a war every settlement near it (research/24 G3; research/30 §2: game 23's ring held 14-18 of 18 settlements, six Tanks for a war that never came)", () => {
     reset({ canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
     world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
     steps.assessWar([], { watch: [{ cls: "MILITARY", level: "DANGER", leader: 2 }] });
@@ -374,7 +373,12 @@ test("guards only near the risky leader: a far conqueror calls one, for our sett
     world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
     steps.assessWar([]);
     steps.fillProduction(new Map(), { defend: true });
-    assert.deepEqual(trained(), ["UNIT_SPEARMAN"], "Prussia is 10 tiles from London and York: two guards");
+    assert.deepEqual(trained(), [], "Prussia, Unfriendly 10 tiles from London and York: one guard, for London: the Spearman");
+    reset({ wars: [1], canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
+    world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
+    steps.assessWar([]);
+    steps.fillProduction(new Map(), { defend: true });
+    assert.deepEqual(trained(), ["UNIT_SPEARMAN"], "at war with Prussia: London and York, two guards");
 });
 
 test("no savings goal the gold cannot cover before the age (here the game) ends (research/24 G2)", () => {
