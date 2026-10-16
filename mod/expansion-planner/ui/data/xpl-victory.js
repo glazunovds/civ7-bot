@@ -12,6 +12,8 @@
  *  - the leader's preferred victory: GameInfo.LeaderTraits TRAIT_<AQ|EX|MO>_<path>_VICTORY.
  */
 import { FOCUS_CLASSES } from '../core/xpl-victory-focus.js';
+import { gameKey, settings } from '../services/xpl-settings.js';
+import { log } from '../services/xpl-log.js';
 
 function safe(fn, fallback) {
     try {
@@ -142,10 +144,10 @@ export function victoryRaces() {
 const RACE_CLASSES = [...FOCUS_CLASSES, "MILITARY"];
 
 /** The leader's preferred victory for this age (else its Modern one), as a focus class, or null. */
-const FOCUS_KEY = "_XPL_OBJ_FOCUS"; // GameTutorial property: the last focus, kept in the save across age changes
+const FOCUS_KEY = "_XPL_OBJ_FOCUS"; // GameTutorial property: the last focus, kept in the save within an age
 
-/** The focus last chosen in this game (kept in the save: the autopilot's state starts afresh with each age). */
-export function savedFocus() {
+/** The focus kept in the save, or null. */
+function focusInSave() {
     try {
         const raw = GameTutorial.getProperty(Database.makeHash(FOCUS_KEY));
         const data = typeof raw === "string" && raw ? JSON.parse(raw) : null;
@@ -155,13 +157,33 @@ export function savedFocus() {
     }
 }
 
-/** Keeps the focus in the save (only when it changes). */
+let memoryLogged = false;
+
+/**
+ * The focus last chosen in this game. The autopilot's state starts afresh with each age, and so do the save's
+ * properties (game 22: our tacks and the age's samples were gone at E1 and M1), so the settings remember it too.
+ */
+export function savedFocus() {
+    const kept = focusInSave();
+    if (kept) return kept;
+    const cls = settings.recall(gameKey(), "focus");
+    if (!FOCUS_CLASSES.includes(cls)) return null;
+    if (!memoryLogged) {
+        memoryLogged = true;
+        log.warn(`victory focus: ${cls} remembered from the last age (the settings: the save's properties do not outlive an age change)`);
+    }
+    return cls;
+}
+
+/** Keeps the focus in the save and in the settings' memory of this game (only when it changes). */
 export function saveFocus(cls) {
-    if (!FOCUS_CLASSES.includes(cls) || savedFocus() === cls) return;
+    if (!FOCUS_CLASSES.includes(cls)) return;
+    settings.remember(gameKey(), { focus: cls });
+    if (focusInSave() === cls) return;
     try {
         GameTutorial.setProperty(Database.makeHash(FOCUS_KEY), JSON.stringify({ cls }));
     } catch (_e) {
-        // no save: the focus is chosen afresh next age
+        // no save: the settings still remember it
     }
 }
 

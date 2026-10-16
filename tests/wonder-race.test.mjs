@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { raceLabel, wonderBoost } from "../mod/expansion-planner/ui/core/xpl-wonder-race.js";
+import { raceLabel, raceLost, wonderBoost } from "../mod/expansion-planner/ui/core/xpl-wonder-race.js";
 import { loadGameInfo } from "./fakes/fake-engine.mjs";
 import { buildRuleBook } from "../mod/expansion-planner/ui/core/xpl-rule-book.js";
 
@@ -24,6 +24,13 @@ test("omniscient mode compares with rivals' queues", () => {
     assert.equal(raceLabel({ ...base, rivalTurns: [30, 40] }).label, "HIGH");
     assert.equal(raceLabel({ ...base, ourTurns: 9, rivalTurns: [] }).label, "HIGH");
     assert.deepEqual([12, 25].map((t) => raceLabel({ ...base, ourTurns: t, rivalTurns: [] }).label), ["MEDIUM", "LOW"], "no rival: capped by our turns (research/24 P5)");
+});
+
+test("a race is lost on a tie: a rival's production of a turn comes after our pass (game 22: the Shwedagon Pagoda, 3 turns each at our T37; America finished it at T39)", () => {
+    assert.equal(raceLost({ ourTurns: 3, rivalTurns: [3], ageTurnsLeft: 50 }), "RIVAL_AHEAD");
+    assert.equal(raceLost({ ourTurns: 3, rivalTurns: [2, 6], ageTurnsLeft: 50 }), "RIVAL_AHEAD");
+    assert.equal(raceLost({ ourTurns: 3, rivalTurns: [4], ageTurnsLeft: 50 }), null);
+    assert.equal(raceLost({ ourTurns: 3, rivalTurns: [], ageTurnsLeft: 50 }), null);
 });
 
 test("wonder boost counts every adjacent yield building's +1 per wonder", () => {

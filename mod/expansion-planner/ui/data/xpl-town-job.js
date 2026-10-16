@@ -12,6 +12,7 @@ import { getEngineMap } from './xpl-engine-map.js';
 import { getRules } from './xpl-rules-loader.js';
 import { FactsCache } from './xpl-map-facts.js';
 import { state } from '../services/xpl-state.js';
+import { gameKey, settings } from '../services/xpl-settings.js';
 import { log } from '../services/xpl-log.js';
 
 const AGE_SAMPLES_KEY = "_XPL_OBJ_AGE_SAMPLES";
@@ -54,8 +55,9 @@ function sampleAgeProgress(ageType, points) {
         let data = typeof raw === "string" && raw ? JSON.parse(raw) : null;
         if (!data || data.age !== ageType) {
             // A new age: remember how long the last one took, for this one's first turns (research/24 F3: at E1 the
-            // estimate said 118 turns, the age had 70).
-            data = { age: ageType, samples: [], lastTurns: ageLength(data?.samples) ?? data?.lastTurns ?? null };
+            // estimate said 118 turns, the age had 70). The save's properties do not outlive the age change (game 22:
+            // 118 again at E1 and M1): the settings remember the last age's length (rememberAge).
+            data = { age: ageType, samples: [], lastTurns: ageLength(data?.samples) ?? data?.lastTurns ?? rememberedAgeTurns(ageType) };
         }
         lastAgeTurns = data.lastTurns ?? null;
         const turn = Game.turn;
@@ -72,6 +74,24 @@ function sampleAgeProgress(ageType, points) {
     }
 }
 
+/** The last age's length the settings remember for this game (rememberAge), or null. */
+function rememberedAgeTurns(ageType) {
+    const key = gameKey();
+    const age = settings.recall(key, "age");
+    const turns = Number(settings.recall(key, "ageTurns"));
+    return age && age !== ageType && turns > 0 ? turns : null;
+}
+
+let ageRemembered = null; // `${age}|${turn}` last remembered
+
+/** Remembers this age's length (the turn plus the turns left, from two samples on) once a turn, for the next age. */
+function rememberAge(ageType, turnsLeft, samples) {
+    const k = `${ageType}|${Game.turn}`;
+    if (ageRemembered === k || samples < 2 || !Number.isFinite(turnsLeft)) return;
+    ageRemembered = k;
+    settings.remember(gameKey(), { age: ageType, ageTurns: Game.turn + turnsLeft });
+}
+
 /** Turns left in this age, from the age-progress samples (also used by building timing). */
 export function ageOutlook() {
     const rules = getRules();
@@ -80,7 +100,9 @@ export function ageOutlook() {
     const max = Number(safe(() => apm.getMaxAgeProgressionPoints(), 0));
     const isFinalAge = !!safe(() => apm.isFinalAge, false);
     const samples = sampleAgeProgress(rules.age, points);
-    return { turnsLeft: estimateAgeTurnsLeft(samples, points, max, lastAgeTurns ?? undefined), isFinalAge, ageFrac: max > 0 ? points / max : 0 };
+    const turnsLeft = estimateAgeTurnsLeft(samples, points, max, lastAgeTurns ?? undefined);
+    rememberAge(rules.age, turnsLeft, samples.length);
+    return { turnsLeft, isFinalAge, ageFrac: max > 0 ? points / max : 0 };
 }
 
 /** Median of (gold purchase cost / production cost) for current-age buildings in a real city. */

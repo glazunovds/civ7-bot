@@ -186,6 +186,25 @@ test("the path's buildings only where built within 12 turns, and in the final ag
     }
 });
 
+test("a non-final age's last turns: no path building that is done only after the age ends (game 22: three Universities lost when Exploration ended)", () => {
+    const offered = new Set(["BUILDING_LIBRARY", "BUILDING_ACADEMY"]);
+    world.canBuild = (type, id) => (type === undefined ? { Success: true } : offered.has(type) ? { Success: true, Plots: [GameplayMap.getIndexFromXY(id.id === 0 ? 9 : 15, 9)], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    world.costOf = () => 60; // Athens (12) 5 turns, Sparta (6) 10 turns
+    const samples = Database.makeHash("_XPL_OBJ_AGE_SAMPLES");
+    try {
+        GameTutorial.setProperty(samples, null);
+        world.agePoints = 95; // about 6 turns left
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(builds().map(([id]) => id), [0, 0], "Athens only: Sparta's would be done after the age ends");
+    } finally {
+        delete world.canBuild;
+        delete world.costOf;
+        delete world.agePoints;
+        GameTutorial.setProperty(samples, null);
+    }
+});
+
 test("growth, economy: a tile with a resource beats a slightly richer one", () => {
     world.expand = () => ({ Success: true, Plots: [idx(PLAIN), idx(WINE)], ConstructibleTypes: [] });
     try {

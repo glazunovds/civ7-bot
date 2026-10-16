@@ -796,6 +796,8 @@ function advisorOrder(city, unitOptions = {}) {
             name = def.Name;
         }
         if (!args) continue;
+        // `fits`: what the caller takes (fillProduction: done before a non-final age ends).
+        if (unitOptions.fits && !unitOptions.fits(args.ConstructibleType ?? args.ProjectType ?? args.UnitType)) continue;
         const ok = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null);
         if (ok?.Success) return { args, name };
     }
@@ -1032,6 +1034,9 @@ const LEVER_PAYBACK_TURNS = 10;
 function leverSoon(city, def) {
     const t = buildTurns(city, def);
     if (!(t <= LEVER_MAX_TURNS)) return false;
+    // A non-final age: done before it ends (its progress is lost at the age change: game 22, three Universities).
+    const left = ageEndTurns();
+    if (left !== null && t > left - AGE_END_MARGIN) return false;
     const o = safe(() => ageOutlook(), null);
     return !(o?.isFinalAge && t > Number(o.turnsLeft) - LEVER_PAYBACK_TURNS);
 }
@@ -1911,6 +1916,7 @@ export function dropLeftoverDefenders(threats = []) {
 
 function trainDefenders(threats, used) {
     const out = [];
+    const left = ageEndTurns(); // a non-final age's last turns: only a defender done before it ends
     // Not in an infected city: the unit would appear on the plague (game 18).
     const cities = ownSettlements().filter((c) => !c.isTown && !infected(c));
     if (threats.length === 0) defenderTrainers.clear();
@@ -1931,7 +1937,7 @@ function trainDefenders(threats, used) {
             // A melee unit (it holds the centre, and the centres' defence follows it), else the strongest; against ships
             // the strongest ranged unit.
             const o = need === "RANGED" ? bestRangedOrder(c) ?? bestMilitaryOrder(c) : bestDefenderOrder(c) ?? bestMilitaryOrder(c);
-            if (!o || unitTurns(c, o.args.UnitType) > MILITARY_MAX_TURNS) continue;
+            if (!o || unitTurns(c, o.args.UnitType) > MILITARY_MAX_TURNS || !doneInAge(c, o.args.UnitType, left)) continue;
             city = c;
             order = o;
             break;
@@ -2001,6 +2007,7 @@ function trainWantedUnits(unitOptions) {
     // Units the overlays and options want (explorers, settlers, scouts, merchants) never come from a space city in the
     // final push (game 11: the capital built Antiquarians on turns 56-58 instead of science projects).
     const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE"]);
+    const left = ageEndTurns(); // a non-final age's last turns
     for (const w of unitsWanted(unitOptions)) {
         let n = w.n;
         for (const city of cities) {
@@ -2011,6 +2018,9 @@ function trainWantedUnits(unitOptions) {
             if ((safe(() => city.BuildQueue.getQueue(), []) ?? []).some((q) => w.test(queueUnitDef(q)))) continue;
             const order = w.order ? w.order(city) : unitOrder(city, w.test);
             if (!order) continue;
+            // Not where it is done only after a non-final age ends: its production would be lost (game 22: a settler at
+            // 77 of 115 when Exploration ended).
+            if (!doneInAge(city, order.args.UnitType, left, turnsUntilFree(city, ahead))) continue;
             // Soldiers only where they are done soon (game 18: 33 turns for a Landship).
             if (isMilitary(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
@@ -2029,6 +2039,7 @@ function trainWantedUnits(unitOptions) {
  */
 export function frontLoadUnits(unitOptions = {}) {
     const out = [];
+    const left = ageEndTurns(); // a non-final age's last turns
     const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
     if (MoveTo === undefined) return out;
     const underThreat = (unitOptions.threats ?? []).length > 0;
@@ -2063,7 +2074,9 @@ export function frontLoadUnits(unitOptions = {}) {
             // a war risk ahead of the Heliocentric Model, lost by 51; a Landship ahead of the Red Fort).
             return s === 0 && !urgent(def) && safe(() => holdsFront(city, def), false) ? 1 : s;
         };
-        const i = queue.findIndex((q, j) => wanted(queueUnitDef(q)) && j > slotOf(queueUnitDef(q)));
+        // Not a unit done only after a non-final age ends: its production is lost (ageEndOrder would move it back).
+        const wait = (def) => (slotOf(def) > 0 ? Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0 : 0);
+        const i = queue.findIndex((q, j) => wanted(queueUnitDef(q)) && j > slotOf(queueUnitDef(q)) && doneInAge(city, queueUnitDef(q).$hash, left, wait(queueUnitDef(q))));
         if (i < 0) continue;
         const to = slotOf(queueUnitDef(queue[i]));
         if (i <= to) continue;
@@ -2243,13 +2256,13 @@ export function cashOutLostWonders() {
     return out;
 }
 
-/** The costliest building (not a wonder) this city can place now, as BUILD args. */
-function costliestBuilding(city) {
+/** The costliest building (not a wonder) this city can place now (of those `accept` takes), as BUILD args. */
+function costliestBuilding(city, accept = null) {
     let best = null;
     for (const def of GameInfo.Constructibles ?? []) {
         if (def.ConstructibleClass !== "BUILDING") continue;
         const cost = Number(safe(() => city.Production.getConstructibleProductionCost(def.ConstructibleType), def.Cost ?? 0)) || 0;
-        if (best && best.cost >= cost) continue;
+        if ((best && best.cost >= cost) || (accept && !accept(def.ConstructibleType))) continue;
         const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
         const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
         if (!probe?.Success || probe.InQueue || plots.length === 0 || builtThisPass(city).has(def.ConstructibleType)) continue;
@@ -2792,17 +2805,18 @@ export function padExclusion(strategy) {
 
 export function chooseWonders(settings, maxWonders, { settlers = false, excludeCities = null } = {}) {
     const picks = new Map();
-    if (expandingFirst(settlers)) return picks;
+    // The planner and the watch over our orders every pass, whether a wonder may start or not: the cash-out reads the
+    // planner's rows of this pass (game 22: during a war at our door the Shwedagon Pagoda's loss was logged 26 turns late).
+    const w = safe(() => runWonderPlanner(settings), null);
+    safe(() => logProductionNotices(), null);
+    // This turn's orders the game's queue does not show yet count as started (research/28 §1).
+    const pending = w ? watchWonderOrders(w) : null;
+    if (!w || expandingFirst(settlers)) return picks;
     if (war.near) return picks; // a war at our door: production goes to defence (research/23 D3)
     // Science (the profile's focus): Innovation wonders count more; the strategy may allow only them.
     const innovation = innovationWonders();
     const science = focusOfProfile(settings?.profile) === "SCIENCE";
     const onlyInnovation = settings?.strategy?.wonderKind === "INNOVATION";
-    const w = safe(() => runWonderPlanner(settings), null);
-    if (!w) return picks;
-    safe(() => logProductionNotices(), null);
-    // This turn's orders the game's queue does not show yet count as started (research/28 §1).
-    const pending = watchWonderOrders(w);
     const building = w.rows.filter((r) => r.status === "IN_PROGRESS").length + pending.types.size;
     let room = Math.max(0, maxWonders - building);
     const busyCities = new Set([...w.rows.filter((r) => r.inQueue).map((r) => r.inQueue.cityKey), ...pending.cities]);
@@ -2861,6 +2875,7 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
  */
 export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
     const plans = state.get().results.plans;
+    const left = ageEndTurns(); // a non-final age's last turns: only what is done before it ends
     safe(() => dropLeftoverDefenders(unitOptions.threats ?? []), null);
     const trained = trainWantedUnits(unitOptions);
     const out = [...trained.entries];
@@ -2907,7 +2922,8 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         const space = spaceCity(city, unitOptions);
         const military = skipsMilitaryBuildings(unitOptions) ? isMilitaryBuilding : null;
         const sites = space ? new Set(scienceSites(currentAge(), { pads: unitOptions.strategy?.pads ?? null }).map((x) => x.type)) : null;
-        const skip = space ? (t) => !sites.has(t) : military;
+        const inAge = (t) => doneInAge(city, t, left);
+        const skip = (t) => (space ? !sites.has(t) : !!military?.(t)) || !inAge(t);
         if (plans) {
             const r = queueNextBuildings(plans, sidOf(city), 2, { skip });
             if (r.queued.length > 0) {
@@ -2915,7 +2931,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
                 continue;
             }
         }
-        const order = advisorOrder(city, space ? { ...unitOptions, onlyProjects: true } : unitOptions);
+        const order = advisorOrder(city, { ...unitOptions, onlyProjects: space, fits: inAge });
         const fallback = order ? null : cheapestBuilding(city, { skip }) ?? lastResort(city);
         if (order) {
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
@@ -2926,6 +2942,92 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         } else {
             out.push({ key: "QUEUE_NOTHING", args: [nameOf(city)] });
         }
+    }
+    return out;
+}
+
+// ---- a non-final age's last turns ---------------------------------------------------------------
+
+// Production in progress is lost at an age change (research/23 E6). Game 22 lost 732 at the end of Exploration
+// (research/29 §3): Universities at 287 of 313 (two lancers had gone ahead of it), 258 of 266 and 109 of 313, and a
+// settler at 77 of 115 queued 7 turns before the end; 100 at the end of Antiquity. In a non-final age's last
+// AGE_END_TURNS turns an item is started only where it is done before the age ends (AGE_END_MARGIN turns early: the
+// turns left are an estimate), and an item in production that cannot be done gives way to one that can (ageEndOrder).
+export const AGE_END_TURNS = 12;
+const AGE_END_MARGIN = 1;
+
+/** Turns left before a non-final age ends, while within AGE_END_TURNS; else null (nothing is timed). */
+export function ageEndTurns() {
+    const o = safe(() => ageOutlook(), null);
+    if (!o || o.isFinalAge) return null;
+    const left = Number(o.turnsLeft);
+    return Number.isFinite(left) && left <= AGE_END_TURNS ? left : null;
+}
+
+/** A building's, unit's or project's hash and this city's production cost of it (by hash or type name). */
+function itemCost(city, h) {
+    const P = city.Production;
+    const c = safe(() => GameInfo.Constructibles.lookup(h), null);
+    if (c) return { hash: c.$hash, cost: costIn(city, c.ConstructibleType) };
+    const u = safe(() => GameInfo.Units.lookup(h), null);
+    if (u) return { hash: u.$hash, cost: Number(safe(() => P.getUnitProductionCost(u.UnitType), u.Cost ?? 0)) || 0 };
+    const p = safe(() => GameInfo.Projects.lookup(h), null);
+    if (p) return { hash: p.$hash, cost: Number(safe(() => P.getProjectProductionCost(p.ProjectType), p.Cost ?? 0)) || 0 };
+    return { hash: h, cost: 0 };
+}
+
+/** Turns this city needs for an item, its own progress counted (an item moved back keeps it: root gotcha 20). */
+function itemTurns(city, h) {
+    const prod = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+    if (!(prod > 0)) return Infinity;
+    const { hash, cost } = itemCost(city, h);
+    const pct = Math.min(100, Math.max(0, Number(safe(() => city.BuildQueue.getPercentComplete(hash), 0)) || 0));
+    return Math.ceil((cost * (1 - pct / 100)) / prod);
+}
+
+/** Is the item done before the age ends (`left`: ageEndTurns(); null: no end near), when started after `wait` turns? */
+const doneInAge = (city, h, left, wait = 0) => left === null || wait + itemTurns(city, h) <= left - AGE_END_MARGIN;
+
+/** A building's, unit's or project's name, for the log. */
+function itemName(h) {
+    const d = safe(() => GameInfo.Constructibles.lookup(h) ?? GameInfo.Units.lookup(h) ?? GameInfo.Projects.lookup(h), null);
+    return d ? Locale.compose(d.Name) : String(h);
+}
+
+/**
+ * A non-final age's last turns: where the item in production is not done before the age ends, the queued item that is
+ * and costs the most goes first (one edit a pass); nothing queued is: the plan's costliest building that is (else the
+ * costliest one the city can place that is) is queued, to go first next pass. A wonder (the cash-out's) or a project
+ * (projectSlot) in production stays. @returns log entries
+ */
+export function ageEndOrder() {
+    const out = [];
+    const left = ageEndTurns();
+    if (left === null) return out;
+    for (const city of ownSettlements()) {
+        if (city.isTown || editedThisPass(city)) continue;
+        const types = queueTypes(city);
+        const head = types[0];
+        if (head === undefined || isWonderType(head) || safe(() => GameInfo.Projects.lookup(head), null) || doneInAge(city, head, left)) continue;
+        // A repair stays: repairBuildings moves it to the front every pass.
+        if (damagedOf(city).some((d) => d.def.$hash === head)) continue;
+        let best = null;
+        types.forEach((h, i) => {
+            if (i === 0 || isWonderType(h) || !doneInAge(city, h, left)) return;
+            const { cost } = itemCost(city, h);
+            if (!best || cost > best.cost) best = { i, h, cost };
+        });
+        if (best) {
+            if (moveInQueue(city, best.i, 0)) out.push({ key: "AGE_END_FIRST", args: [nameOf(city), itemName(best.h), itemName(head), left] });
+            continue;
+        }
+        const fits = (type) => doneInAge(city, type, left);
+        const planned = plannedAbsorbers(city).filter((p) => fits(p.type));
+        const add = planned.length > 0 ? planned.reduce((a, b) => (b.cost > a.cost ? b : a)) : costliestBuilding(city, fits);
+        if (!add) continue;
+        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, add.args);
+        noteBuilt(city, add.type);
+        out.push({ key: "AGE_END_QUEUED", args: [nameOf(city), itemName(add.type), left] });
     }
     return out;
 }

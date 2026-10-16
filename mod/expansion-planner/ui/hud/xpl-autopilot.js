@@ -505,6 +505,8 @@ export async function runTurn(force = false) {
             // A race we can see we lose: a building takes the wonder's progress (research/27 §6).
             if (o.wonders !== false) record(steps.cashOutLostWonders());
             record(steps.fillProduction(wonders, { ...unitOptions, queued: victoryQueued }));
+            // A non-final age's last turns: what is not done before the age ends gives way (game 22: 732 production lost).
+            record(steps.ageEndOrder());
             record(steps.frontLoadUnits(unitOptions));
             await wait(STEP_PAUSE_MS);
         };

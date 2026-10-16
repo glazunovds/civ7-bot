@@ -42,6 +42,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     towns: { expectKeepCities: false },
     wonders: { omniscient: false },
     debug: false,
+    // What must outlive an age change for this game (`remember`): the save's GameTutorial properties do not (game 22).
+    memory: { game: "", values: {} },
 });
 
 function clone(value) {
@@ -89,8 +91,36 @@ function sanitize(raw) {
     s.autopilot.replanEvery = clampInt(s.autopilot.replanEvery, 0, 20, DEFAULT_SETTINGS.autopilot.replanEvery);
     s.autopilot.aiTurns = clampInt(s.autopilot.aiTurns, 1, 50, DEFAULT_SETTINGS.autopilot.aiTurns);
     s.autopilot.lastHumanPlayer = clampInt(s.autopilot.lastHumanPlayer, -1, 63, -1);
+    s.memory = sanitizeMemory(s.memory);
     s.v = SCHEMA_VERSION;
     return s;
+}
+
+const MEMORY_VALUES = 20;
+
+/** The game memory: { game, values } with at most MEMORY_VALUES plain values (strings, finite numbers, null). */
+function sanitizeMemory(m) {
+    const values = {};
+    const raw = m?.values && typeof m.values === "object" ? m.values : {};
+    for (const [k, v] of Object.entries(raw).slice(0, MEMORY_VALUES)) {
+        if (v === null || typeof v === "string" || (typeof v === "number" && Number.isFinite(v))) values[k] = v;
+    }
+    return { game: typeof m?.game === "string" ? m.game : "", values };
+}
+
+/**
+ * This game's identity for `remember`: its seed and our leader, which an age change keeps (our civilization changes).
+ * "" when unknown: nothing is remembered.
+ */
+export function gameKey() {
+    try {
+        const seed = Configuration.getGame()?.gameSeed;
+        if (seed === undefined || seed === null) return "";
+        const leader = Players.get(GameContext.localPlayerID)?.leaderType;
+        return `${seed}|${leader ?? ""}`;
+    } catch (_e) {
+        return "";
+    }
 }
 
 function clampInt(value, min, max, fallback) {
@@ -204,6 +234,26 @@ class SettingsStore {
         }
         this.scheduleSave();
         return this.data;
+    }
+
+    /** A value remembered for this game (`remember`), or null. */
+    recall(game, name) {
+        const m = this.get().memory;
+        return game && m.game === game ? m.values[name] ?? null : null;
+    }
+
+    /**
+     * Remembers values for this game where an age change cannot wipe them: the save's GameTutorial properties do not
+     * survive one (game 22: our tacks and the age's samples were gone at Exploration's and Modern's first turn).
+     * Another game's values are dropped. Saved like a setting, without telling the listeners: nothing on screen shows it.
+     */
+    remember(game, values) {
+        if (!game) return;
+        const m = this.get().memory;
+        const kept = m.game === game ? m.values : {};
+        if (Object.entries(values).every(([k, v]) => kept[k] === v)) return;
+        this.data = { ...this.get(), memory: sanitizeMemory({ game, values: { ...kept, ...values } }) };
+        this.scheduleSave();
     }
 
     subscribe(listener) {

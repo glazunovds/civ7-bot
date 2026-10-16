@@ -47,6 +47,7 @@ have enough happiness?" Evidence: `net_message_debug.log` (every request we sent
     Dungeon had 23, then 45.9 (its own production); the wonder kept its 29.7 and was lost at T28 with
     7% complete, 14 returned (half).
 - **Game 3** (research/13) saw the opposite once: the Pyramids' 136 went into a Market. Not resolved.
+- **Game 22** (research/29 §5): six more cases, units ahead of buildings with progress, and none took it.
 - **What we do:** nothing that loses production under either rule. A wonder moved ahead of a building
   absorbs its progress if the game hands it over; the cash-out picks the building that would keep the
   most. The cash-out still pays: Chicago put 5 turns of production into its Dungeon instead of a race

@@ -307,6 +307,9 @@ The mod is linked into the game with a folder junction:
 | 288 | One queue edit a pass | In `net_message_debug.log`, a city gets at most one MoveTo/RemoveAt per turn's pass; the settler and the wonder never swap places in one turn. |
 | 289 | Lost race stays stopped | With «Всеведение» on and a lost race: the building goes ahead once (WONDER_CASHED_OUT «… строится первым, в чудо больше не вкладываем»), and the wonder is not moved back to the front; one absorber building is queued, not two. |
 | 290 | Cap within a pass | When the settlement cap rises by one with several settlers waiting at the cap, only one founds that turn (UI.log: one SETTLE_FOUND, the others SETTLER_AT_CAP). With Carthage, one queued settler counts as two: no second one is trained for the same free places. |
+| 291 | Tied wonder races | With «Всеведение» on: a wonder a rival finishes in as many turns as we do is cashed out (WONDER_CASHED_OUT «… соперник достроит за N ход., мы за N (при равенстве чудо достаётся сопернику)»). |
+| 292 | The age's last turns | In the last ~12 turns of Antiquity and Exploration: «… строится первым: успеет до конца эпохи …» (AGE_END_FIRST) and «… в очереди, чтобы строиться первым …» (AGE_END_QUEUED); no settler or scout is queued that cannot be done in time. `CityBuildQueue.csv` on the age's last turn: little production in unfinished items (game 22: 732 in Exploration). |
+| 293 | Memory across the age change | At Exploration's and Modern's first turn: UI.log `victory focus: X remembered from the last age …` (when the focus carried over), and the first turn's `age turns left` near the last age's length, not 118. |
 
 ## Memento Advisor (second mod, `mod/memento-advisor`)
 Restart the game once: new mod. Check it is enabled in Add-Ons («Советник по памятным вещам»).

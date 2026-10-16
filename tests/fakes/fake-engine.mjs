@@ -139,7 +139,8 @@ export function installFakeEngine(world, age = "antiquity") {
         whenReady: Promise.resolve(),
     };
     g.Loading = { runWhenLoaded: (fn) => setImmediate(fn) };
-    g.Configuration = { getGame: () => ({ isNetworkMultiplayer: !!world.networkMP }) };
+    // world.gameSeed: the game's seed (the game memory's key, with our leader).
+    g.Configuration = { getGame: () => ({ isNetworkMultiplayer: !!world.networkMP, gameSeed: world.gameSeed ?? 1234 }) };
     const props = new Map();
     g.Database = { makeHash: (s) => hash(s) };
     g.GameTutorial = { getProperty: (h) => props.get(h), setProperty: (h, v) => props.set(h, v), _props: props };
@@ -261,7 +262,9 @@ export function installFakeEngine(world, age = "antiquity") {
         currentProductionTypeHash: c.queue ? current(c).type : -1,
         currentTurnsLeft: c.queue?.turns ?? 0,
         getTurnsLeft: (type) => (c.queue && c.queue.type === type ? c.queue.turns : world.turnsFor?.(c, type) ?? -1),
-        getPercentComplete: () => c.queue?.pct ?? 0,
+        // The item in production: queue.pct; another (an item moved back keeps its progress): progress[type].
+        getPercentComplete: (h) => (h === undefined || (c.queue && current(c).type === h) ? c.queue?.pct ?? 0
+            : c.progress?.[info.Constructibles.lookup(h)?.ConstructibleType ?? info.Units.lookup(h)?.UnitType ?? info.Projects.lookup(h)?.ProjectType] ?? 0),
         getQueue: () => [
             ...(c.queue ? [current(c)] : []),
             ...(c.queued ?? []).map(entry),

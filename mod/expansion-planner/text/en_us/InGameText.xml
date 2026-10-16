@@ -601,11 +601,17 @@
     <Row Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED">
       <Text>{1_City}: {2_Wonder} is lost ({4_Why}); {3_Building} queued to go ahead of it</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_AGE_END_FIRST">
+      <Text>{1_City}: {2_Item} goes first: it is done before the age ends (about {4_Turns} turns left), {3_Other} is not (its production would be lost at the age change)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AGE_END_QUEUED">
+      <Text>{1_City}: {2_Item} queued to go first: nothing in the queue is done before the age ends (about {3_Turns} turns left)</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_WONDER_DROPPED">
       <Text>{1_City}: {2_Wonder} removed from the queue ({3_Why})</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_WONDER_LOST_RIVAL">
-      <Text>a rival finishes it in {1_Turns} turns, we in {2_Ours}</Text>
+      <Text>a rival finishes it in {1_Turns} turns, we in {2_Ours} (a tie goes to the rival)</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_WONDER_LOST_AGE">
       <Text>the age ends before it is done</Text>

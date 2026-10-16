@@ -393,7 +393,7 @@ function rememberOurTack(x, y, t) {
 ---
 
 ## Open questions
-1. Do `GameTutorial` properties **survive age transitions**? (Probably not, which would mean tacks reset each age.) Test in game.
+1. Do `GameTutorial` properties **survive age transitions**? **No** (game 22, research/29 §4): our tack registry and our other properties were empty at each new age's first turn, so tacks very likely reset each age. What must last goes into the settings' memory (root CLAUDE.md gotcha 57).
 2. Multiplayer: are `GameTutorial` properties per client, host-synced, or desynced? DMT is not per player.
 3. Is `engine.trigger` → JS `engine.on` handler delivery **synchronous** in this Coherent build? It matters if we read the store right after a trigger. Treat it as async-safe by listening for `MapTackUIUpdated` if needed.
 4. Does founding a town create a `BUILDING_CITY_HALL` constructible, which would auto-clear the city-center tack through `ConstructibleAddedToMap`, or do our settlement tacks linger? (DMT only removes a tack whose `type` equals the built constructible.)

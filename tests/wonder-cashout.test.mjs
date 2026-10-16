@@ -54,6 +54,16 @@ test("fair mode cannot see a rival's progress: the wonder goes on; a rival slowe
     }
 });
 
+test("a tie is cashed out too: the rival's production of a turn comes after our pass (game 22: the Shwedagon Pagoda, 79% done, lost to America by a turn)", () => {
+    world.cities[1].queue.turns = 5; // ours 5 too
+    try {
+        const out = run(OMNISCIENT);
+        assert.equal(out[0]?.key, "WONDER_CASHED_OUT", JSON.stringify(out));
+    } finally {
+        world.cities[1].queue.turns = 2;
+    }
+});
+
 test("a lost wonder with nothing in it leaves the queue, so no more production goes into it", () => {
     world.cities[0].queue.pct = 0;
     try {

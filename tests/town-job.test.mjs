@@ -30,6 +30,25 @@ test("a new age's first turns: the age length is the last age's, not 120 turns (
     }
 });
 
+test("the last age's length outlives the age change in the settings (game 22: the save's properties were gone at E1, the estimate said 118 turns again)", async () => {
+    const { ageOutlook } = await import("../mod/expansion-planner/ui/data/xpl-town-job.js");
+    const { gameKey, settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+    const { getRules } = await import("../mod/expansion-planner/ui/data/xpl-rules-loader.js");
+    const key = Database.makeHash("_XPL_OBJ_AGE_SAMPLES");
+    const before = GameTutorial.getProperty(key);
+    try {
+        settings.remember(gameKey(), { age: "AGE_OLD", ageTurns: 70 });
+        GameTutorial.setProperty(key, null); // the age change wiped the save's properties
+        assert.equal(ageOutlook().turnsLeft, 56, "80% of a 70-turn age left");
+        // This age's length is remembered as it goes: the turn plus the turns left, from two samples on.
+        GameTutorial.setProperty(key, JSON.stringify({ age: getRules().age, samples: [{ turn: Game.turn - 9, points: 0 }] }));
+        const left = ageOutlook().turnsLeft;
+        assert.deepEqual([settings.recall(gameKey(), "age"), settings.recall(gameKey(), "ageTurns")], [getRules().age, Game.turn + left]);
+    } finally {
+        GameTutorial.setProperty(key, before);
+    }
+});
+
 test("advisor ranks the productive town above the farming town", () => {
     const towns = runTownAdvisor(DEFAULT_SETTINGS);
     assert.equal(towns.rows.length, 2);

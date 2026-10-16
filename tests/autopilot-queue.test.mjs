@@ -407,13 +407,19 @@ test("units keep behind a wonder in a race, and behind a science project that wo
         steps.frontLoadUnits({ settlers: true, strategy: { unitsAheadOfWonders: false, phase: "COMMIT" } });
         assert.deepEqual(moves(), [[0, 2, 1]], "Commit");
         delete world.settlementCap;
-        // A science project with 5 turns left in an age with about 5: a scout would make it miss the end.
+        // A science project with 5 turns left in the final age with about 5: a scout would make it miss the end.
         athens.queue = { type: "PROJECT_CHART_THE_STARS", turns: 5, pct: 40 };
         athens.trains = "UNIT_SCOUT";
         world.agePoints = 96;
+        world.finalAge = true;
         fake.sent.length = 0;
         steps.frontLoadUnits({ explore: true });
         assert.deepEqual(moves(), [[0, 2, 1]]);
+        // Before an age change: behind the project the scout would be done only after the age ends, so it stays (game 22).
+        world.finalAge = false;
+        fake.sent.length = 0;
+        steps.frontLoadUnits({ explore: true });
+        assert.deepEqual(moves(), [], "its production would be lost at the age change");
         world.agePoints = 20;
         fake.sent.length = 0;
         steps.frontLoadUnits({ explore: true });
@@ -422,6 +428,7 @@ test("units keep behind a wonder in a race, and behind a science project that wo
         state.set({ results: { ...state.get().results, wonders } });
         delete world.settlementCap;
         delete world.agePoints;
+        delete world.finalAge;
         reset();
     }
 });

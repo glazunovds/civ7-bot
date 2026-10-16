@@ -65,13 +65,16 @@ function rawRaceLabel(input, k) {
 
 /**
  * A race already lost while we build the wonder (research/27 §6): a rival building it now finishes before us (its
- * turns left: omniscient mode), or it cannot be done before the age ends.
+ * turns left: omniscient mode), or it cannot be done before the age ends. A tie is lost, as `raceLabel` says (LOW): a
+ * rival that moves after us makes its production of a turn after our pass of that turn, so with the same turns left
+ * it finishes a turn earlier, and one that moves before us finishes that turn before us (game 22: the Shwedagon
+ * Pagoda, 3 turns left each at our T37; America finished it at T39, we would have at T40).
  * @returns "RIVAL_AHEAD" | "AGE_ENDS" | null
  */
 export function raceLost({ ourTurns, rivalTurns, ageTurnsLeft }) {
     if (!Number.isFinite(ourTurns)) return null;
     if (ageTurnsLeft != null && ourTurns > ageTurnsLeft) return "AGE_ENDS";
-    if (rivalTurns?.length && Math.min(...rivalTurns) < ourTurns) return "RIVAL_AHEAD";
+    if (rivalTurns?.length && Math.min(...rivalTurns) <= ourTurns) return "RIVAL_AHEAD";
     return null;
 }
 

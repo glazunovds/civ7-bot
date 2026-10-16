@@ -601,11 +601,17 @@
     <Replace Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED" Language="ru_RU">
       <Text>{1_City}: {2_Wonder} не выиграть ({4_Why}); {3_Building} в очереди, чтобы встать перед ним</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_AGE_END_FIRST" Language="ru_RU">
+      <Text>{1_City}: {2_Item} строится первым: успеет до конца эпохи (осталось около {4_Turns} ход.), {3_Other} не успеет (его производство пропадёт при смене эпохи)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AGE_END_QUEUED" Language="ru_RU">
+      <Text>{1_City}: {2_Item} в очереди, чтобы строиться первым: из очереди ничего не успеет до конца эпохи (осталось около {3_Turns} ход.)</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_DROPPED" Language="ru_RU">
       <Text>{1_City}: {2_Wonder} убрано из очереди ({3_Why})</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_LOST_RIVAL" Language="ru_RU">
-      <Text>соперник достроит за {1_Turns} ход., мы за {2_Ours}</Text>
+      <Text>соперник достроит за {1_Turns} ход., мы за {2_Ours} (при равенстве чудо достаётся сопернику)</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_LOST_AGE" Language="ru_RU">
       <Text>эпоха закончится раньше</Text>

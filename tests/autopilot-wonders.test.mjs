@@ -311,6 +311,38 @@ test("the game refuses the chosen tile: the wonder's next tile is ordered; with 
     }
 });
 
+test("our orders are watched and the planner's rows refreshed while no wonder may start (game 22: during a war at our door the Shwedagon Pagoda's loss was logged 26 turns late)", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued, cap: world.settlementCap };
+    const turn = Game.turn;
+    try {
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 4, pct: 0 };
+        fake.sent.length = 0;
+        steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        const ordered = GameInfo.Constructibles.lookup(wonderOrders()[0].args.ConstructibleType).ConstructibleType;
+        Game.turn = turn + 1;
+        athens.queued = [ordered];
+        steps.chooseWonders(DEFAULT_SETTINGS, 1);
+        // The turn after: gone unbuilt, while a settler trains below the cap (expansion first: no wonder may start).
+        Game.turn = turn + 2;
+        athens.queued = [];
+        world.settlementCap = 4;
+        sitesKnown(true);
+        world.cities[1].trains = "UNIT_SETTLER";
+        assert.equal(steps.expandingFirst(true), true);
+        const lines = capture(() => assert.equal(steps.chooseWonders(DEFAULT_SETTINGS, 1, { settlers: true }).size, 0));
+        assert.ok(lines.some((l) => l.includes(`${ordered} left Athens's queue unbuilt`)), lines.join("\n"));
+        assert.equal(state.get().results.wonders.computedTurn, Game.turn, "the cash-out reads this pass's rows");
+    } finally {
+        Game.turn = turn;
+        world.settlementCap = keep.cap;
+        delete world.cities[1].trains;
+        sitesKnown(false);
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+    }
+});
+
 test("a wonder that leaves the queue unbuilt goes to UI.log with the game's notices (game 21: the Emile Bell three times, the Mausoleum of Theodoric once)", () => {
     const athens = world.cities[0];
     const keep = { queue: athens.queue, queued: athens.queued };
