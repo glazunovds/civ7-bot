@@ -814,3 +814,42 @@ test("at peace again, the guards the autopilot queued and not started are droppe
         steps.resetWar();
     }
 });
+
+test("a trait that gives two settlers for one (Carthage's colonists): a queued settler counts twice, so no second one is trained (game 21: six settlers walked toward two places)", () => {
+    reset();
+    const settler = GameInfo.Units.lookup("UNIT_SETTLER").$hash;
+    const me = Players.get(0);
+    const civ = me.civilizationType;
+    const names = ["CivilizationTraits", "TraitModifiers", "Modifiers", "DynamicModifiers", "ModifierArguments"];
+    const tables = Object.fromEntries(names.map((t) => [t, GameInfo[t]]));
+    world.cities.push({ owner: 0, x: 2, y: 2, name: "Bath", pop: 2 });
+    world.cities[0].trains = "UNIT_SETTLER";
+    world.settlementCap = 8; // 4 of 8: two wanted
+    const trained = () => {
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { settlers: true });
+        return fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType === settler).length;
+    };
+    try {
+        assert.equal(steps.settlerCopies(), 1);
+        assert.equal(trained(), 1, "one in London's queue, Bath trains the second");
+        me.civilizationType = GameInfo.Civilizations.lookup("CIVILIZATION_ROME").$hash;
+        GameInfo.CivilizationTraits = [{ CivilizationType: "CIVILIZATION_ROME", TraitType: "TRAIT_TEST_COLONISTS" }];
+        GameInfo.TraitModifiers = [{ TraitType: "TRAIT_TEST_COLONISTS", ModifierId: "MOD_TEST_DOUBLE_COLONISTS" }];
+        GameInfo.Modifiers = [{ ModifierId: "MOD_TEST_DOUBLE_COLONISTS", ModifierType: "MT_TEST_DOUBLE_COLONISTS" }];
+        GameInfo.DynamicModifiers = [{ ModifierType: "MT_TEST_DOUBLE_COLONISTS", EffectType: "EFFECT_PLAYER_ADJUST_UNIT_EXTRA_COPY" }];
+        GameInfo.ModifierArguments = [
+            { ModifierId: "MOD_TEST_DOUBLE_COLONISTS", Name: "Tag", Value: "UNIT_CLASS_CREATE_TOWN" },
+            { ModifierId: "MOD_TEST_DOUBLE_COLONISTS", Name: "Amount", Value: "1" },
+            { ModifierId: "MOD_TEST_DOUBLE_COLONISTS", Name: "PurchaseValid", Value: "true" },
+        ];
+        assert.equal(steps.settlerCopies(), 2);
+        assert.equal(trained(), 0, "London's one gives two");
+    } finally {
+        me.civilizationType = civ;
+        for (const t of names) GameInfo[t] = tables[t];
+        world.cities.pop();
+        delete world.cities[0].trains;
+        delete world.settlementCap;
+    }
+});

@@ -302,6 +302,11 @@ The mod is linked into the game with a folder junction:
 | 283 | Lost race cashed out | With «Всеведение» on, when a rival building the same wonder will finish first: the autopilot log shows «… не выиграть (соперник достроит за N ход., мы за M); X забирает K из P его производства». In CityBuildQueue.csv, X gets the wonder's progress the next turn. A lost wonder with nothing in it is removed from the queue. |
 | 284 | Refund guard | While a wonder is in production, the item right behind it is a building that costs at least half the wonder's progress plus a turn's production (UI.log `queue: … moved behind WONDER_X: it keeps …`). |
 | 285 | Fewer full plans | UI.log `buildings timing: full (…)` gives the reason (inputs: …, 10 turns, first plan). A founding or a town turned city is `incremental 1/N` (plus the neighbours whose tiles changed), not a full plan. |
+| 286 | Wonders to the front | When the autopilot orders a wonder in a busy city, the next pass moves it to the very front, ahead of a building with progress (not ahead of a wonder in production or an item done this turn). The building keeps its progress (`CityBuildQueue.csv`). |
+| 287 | Wonder orders watched | UI.log `wonders: X left <city>'s queue unbuilt …` and `game notice: …` lines appear if the game drops a queued wonder (send them over if they do), and `wonders: … could not order …` if no tile is taken. A wonder is ordered once a turn (`net_message_debug.log`: one BUILD per wonder per turn). |
+| 288 | One queue edit a pass | In `net_message_debug.log`, a city gets at most one MoveTo/RemoveAt per turn's pass; the settler and the wonder never swap places in one turn. |
+| 289 | Lost race stays stopped | With «Всеведение» on and a lost race: the building goes ahead once (WONDER_CASHED_OUT «… строится первым, в чудо больше не вкладываем»), and the wonder is not moved back to the front; one absorber building is queued, not two. |
+| 290 | Cap within a pass | When the settlement cap rises by one with several settlers waiting at the cap, only one founds that turn (UI.log: one SETTLE_FOUND, the others SETTLER_AT_CAP). With Carthage, one queued settler counts as two: no second one is trained for the same free places. |
 
 ## Memento Advisor (second mod, `mod/memento-advisor`)
 Restart the game once: new mod. Check it is enabled in Add-Ons («Советник по памятным вещам»).

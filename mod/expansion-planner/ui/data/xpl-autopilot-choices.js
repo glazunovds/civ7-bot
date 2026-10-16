@@ -131,7 +131,7 @@ function leverValue(modifierIds, weights, levers) {
 // Policy Yield Previews' value plus the effects it cannot see; unknown stays unknown unless those count.
 const withLevers = (value, extra) => (value === null ? (extra !== 0 ? extra : null) : value + extra);
 
-let perCardCache = null;
+let traitCache = null;
 
 /**
  * What our civilization and leader gain or lose for every card slotted, by kind (their traits'
@@ -142,21 +142,30 @@ let perCardCache = null;
  * civilization and leader. @returns [{ yieldType, amount, civUnique, invert }]
  */
 function perCardYields() {
+    const truthy = (v) => v === true || v === 1 || v === "true" || v === "1";
+    return traitEffects()
+        .filter((e) => e.effect === "EFFECT_PLAYER_ADJUST_YIELD_PER_ACTIVE_TRADITION")
+        .map((e) => ({ yieldType: e.args.YieldType, amount: Number(e.args.Amount) || 0, civUnique: truthy(e.args.CivUnique), invert: truthy(e.args.Invert) }));
+}
+
+/**
+ * The effects of our civilization's and leader's trait modifiers (effectsOf), resolved once per civilization,
+ * leader and set of tables. @returns [{ effect, args }]
+ */
+export function traitEffects() {
     const me = safe(() => Players.get(pid()), null);
     const civ = safe(() => GameInfo.Civilizations.lookup(me.civilizationType)?.CivilizationType, null);
     const leader = safe(() => GameInfo.Leaders.lookup(me.leaderType)?.LeaderType, null);
     const key = `${civ}|${leader}`;
-    if (perCardCache && perCardCache.key === key && perCardCache.source === GameInfo.Modifiers) return perCardCache.list;
+    const tables = [GameInfo.Modifiers, GameInfo.TraitModifiers, GameInfo.CivilizationTraits, GameInfo.LeaderTraits];
+    if (traitCache && traitCache.key === key && traitCache.tables.every((t, i) => t === tables[i])) return traitCache.list;
     const traits = new Set();
     for (const r of GameInfo.CivilizationTraits ?? []) if (civ && r.CivilizationType === civ) traits.add(r.TraitType);
     for (const r of GameInfo.LeaderTraits ?? []) if (leader && r.LeaderType === leader) traits.add(r.TraitType);
     const ids = [];
     for (const r of GameInfo.TraitModifiers ?? []) if (traits.has(r.TraitType)) ids.push(r.ModifierId ?? r.ModifierID);
-    const truthy = (v) => v === true || v === 1 || v === "true" || v === "1";
-    const list = safe(() => effectsOf(ids), [])
-        .filter((e) => e.effect === "EFFECT_PLAYER_ADJUST_YIELD_PER_ACTIVE_TRADITION")
-        .map((e) => ({ yieldType: e.args.YieldType, amount: Number(e.args.Amount) || 0, civUnique: truthy(e.args.CivUnique), invert: truthy(e.args.Invert) }));
-    perCardCache = { key, source: GameInfo.Modifiers, list };
+    const list = safe(() => effectsOf(ids), []) ?? [];
+    traitCache = { key, tables, list };
     return list;
 }
 

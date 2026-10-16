@@ -596,10 +596,10 @@
       <Text>No free valid tile left: the others are suggested for wonders higher in the list.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_WONDER_CASHED_OUT">
-      <Text>{1_City}: {2_Wonder} is lost ({6_Why}); {4_Building} took {5_Kept} of its {3_Progress} production</Text>
+      <Text>{1_City}: {2_Wonder} is lost ({6_Why}); {4_Building} goes ahead of it, so no more production goes into it ({3_Progress} stays in it)</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED">
-      <Text>{1_City}: {2_Wonder} is lost ({4_Why}); {3_Building} queued to take its production</Text>
+      <Text>{1_City}: {2_Wonder} is lost ({4_Why}); {3_Building} queued to go ahead of it</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_WONDER_DROPPED">
       <Text>{1_City}: {2_Wonder} removed from the queue ({3_Why})</Text>

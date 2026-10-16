@@ -1296,3 +1296,16 @@ test("plague: no order sends a unit onto an infected tile (a settler takes its o
         delete world.plotEffects;
     }
 });
+
+test("foundings ordered in a pass count toward the cap: one below it, one settler founds and the other waits (game 21 E23: three founded at once, 11 of 9)", () => {
+    const n = Players.get(0).Stats.numSettlements;
+    try {
+        world.settlementCap = n + 1;
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5 }, { id: 3, type: "UNIT_SETTLER", x: 9, y: 10 }]);
+        const r = run({ settlers: true });
+        assert.equal(orders().filter((s) => s.op === "UNITOPERATION_FOUND_CITY").length, 1, JSON.stringify(r.entries));
+        assert.ok(r.entries.some((e) => e.key === "SETTLER_AT_CAP"), JSON.stringify(r.entries));
+    } finally {
+        delete world.settlementCap;
+    }
+});

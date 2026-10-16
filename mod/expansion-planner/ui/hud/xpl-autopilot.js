@@ -370,6 +370,8 @@ export async function runTurn(force = false) {
     if (running || (!force && !isAutopilotOn())) return;
     running = true;
     setAp({ running: true });
+    // Each city's queue is edited once a pass: the game's queue does not show earlier edits yet (research/28 §2).
+    steps.beginQueuePass();
     // The game activates our turn again after an automated explorer moves (seen in game 7: 24 turns had
     // two full passes): the repeat only orders units, makes waiting choices, places citizens and ends the
     // turn; nothing is bought, queued or proposed twice (research/22 B9).
@@ -628,6 +630,7 @@ export async function runTurn(force = false) {
         log.error("autopilot pass failed", error);
         record([{ key: "ERROR", args: [String(error?.message ?? error)] }]);
     } finally {
+        steps.endQueuePass();
         running = false;
         setAp({ running: false });
     }

@@ -222,7 +222,8 @@ Two Antiquity wonders were lost (`CityBuildQueue.csv`):
 - **Changed** (root gotcha 53):
   - A building moved ahead of a wonder takes all its progress up to its cost (the same rule that once
     cost us the Pyramids), so a race we can see we lose is cashed out into the building that keeps the
-    most.
+    most. Game 21 saw the wonder keep its progress (research/28 §3): what the cash-out saves is the
+    production that would still go into the race.
   - A big building always stands right behind a wonder, so a refund is not wasted.
 
 ## 7. Wonder anchors (P1, done)

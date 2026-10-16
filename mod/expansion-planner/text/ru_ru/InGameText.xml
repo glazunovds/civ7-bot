@@ -596,10 +596,10 @@
       <Text>Свободных подходящих клеток нет: остальные предложены для чудес выше в списке.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_CASHED_OUT" Language="ru_RU">
-      <Text>{1_City}: {2_Wonder} не выиграть ({6_Why}); {4_Building} забирает {5_Kept} из {3_Progress} его производства</Text>
+      <Text>{1_City}: {2_Wonder} не выиграть ({6_Why}); {4_Building} строится первым, в чудо больше не вкладываем ({3_Progress} остаётся в нём)</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED" Language="ru_RU">
-      <Text>{1_City}: {2_Wonder} не выиграть ({4_Why}); {3_Building} в очереди, чтобы забрать его производство</Text>
+      <Text>{1_City}: {2_Wonder} не выиграть ({4_Why}); {3_Building} в очереди, чтобы встать перед ним</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_DROPPED" Language="ru_RU">
       <Text>{1_City}: {2_Wonder} убрано из очереди ({3_Why})</Text>

@@ -31,7 +31,7 @@ import { allowedOperations, artifactSites, guardsFor, guardsWanted, isIdle, isRa
 import { villagesOf } from './xpl-player-facts.js';
 import { TUNING } from '../core/xpl-tuning.js';
 import { focusOfProfile } from '../core/xpl-effect-value.js';
-import { greatWorksWaiting, hostileActs } from './xpl-autopilot-choices.js';
+import { greatWorksWaiting, hostileActs, traitEffects } from './xpl-autopilot-choices.js';
 import { chooseGoal, conversionRule, createBudget, noteGoalBought, rankConversions, TOWN_SHARE } from '../core/xpl-savings.js';
 
 export const MAX_GROWTH_PER_CITY = 3;  // citizens placed per city and turn
@@ -815,6 +815,59 @@ const queueItemType = (q) => [q?.type, q?.constructibleType, q?.projectType, q?.
 const queueTypes = (city) => (safe(() => city.BuildQueue.getQueue(), []) ?? []).map(queueItemType);
 
 /**
+ * Queue edits within a pass (research/28 §2). The queue a step reads does not show a move or a removal sent earlier in
+ * the same pass, so a second edit's positions point at other items. Seen in game 21 (T44): the wonder step moved the
+ * Mausoleum of Theodoric from 3 to the front, then the settler step moved "2" to the front, the settler in its own
+ * reading and the Library in the game's, and the Library went ahead of the wonder. So within a pass a city's queue is
+ * edited (moved, or removed from) once. Types queued in the pass are remembered too, so two steps do not queue the
+ * same building (game 21: the cash-out and the refund guard both queued Chicago's Dungeon). The hud opens and closes
+ * the pass; tests open their own.
+ */
+const queuePass = { open: false, edited: new Set(), built: new Map() };
+export function beginQueuePass() {
+    queuePass.open = true;
+    queuePass.edited.clear();
+    queuePass.built.clear();
+}
+export function endQueuePass() {
+    queuePass.open = false;
+    queuePass.edited.clear();
+    queuePass.built.clear();
+}
+const editedThisPass = (city) => queuePass.open && queuePass.edited.has(sidOf(city));
+const noteEdited = (city) => queuePass.open && queuePass.edited.add(sidOf(city));
+/** Types queued in this city in this pass (the game's queue does not show them yet). */
+const builtThisPass = (city) => (queuePass.open ? queuePass.built.get(sidOf(city)) : null) ?? new Set();
+function noteBuilt(city, type) {
+    if (!queuePass.open) return;
+    const k = sidOf(city);
+    if (!queuePass.built.has(k)) queuePass.built.set(k, new Set());
+    queuePass.built.get(k).add(type);
+}
+
+/** Moves a queue item (CityOperationsParametersValues.MoveTo), once a pass per city. @returns true when sent */
+function moveInQueue(city, from, to) {
+    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
+    if (MoveTo === undefined || from === to || editedThisPass(city)) return false;
+    const args = { InsertMode: MoveTo, QueueSourceLocation: from, QueueDestinationLocation: to };
+    if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return false;
+    Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+    noteEdited(city);
+    return true;
+}
+
+/** Removes a queue item (RemoveAt), not after another edit of that city's queue in this pass. @returns true when sent */
+function removeFromQueue(city, index) {
+    const RemoveAt = globalThis.CityOperationsParametersValues?.RemoveAt;
+    if (RemoveAt === undefined || editedThisPass(city)) return false;
+    const args = { InsertMode: RemoveAt, QueueLocation: index };
+    if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return false;
+    Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+    noteEdited(city);
+    return true;
+}
+
+/**
  * The first queue position an item may be moved to: behind the item in production when that one
  * has progress. The game gives a preempted item's progress to whatever takes its place, drops
  * what exceeds that item's cost, and the preempted item starts over (seen in game,
@@ -898,19 +951,17 @@ function leverSlot(city) {
  * there (repairs come first, repairBuildings).
  */
 function toFront(city, hash, slot = null, { behind = null } = {}) {
-    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
     const types = queueTypes(city);
     const i = types.findIndex((t) => t === hash);
-    if (MoveTo === undefined || i <= 0) return;
+    if (i <= 0) return false;
     const repairs = new Set(damagedOf(city).map((d) => d.def.$hash));
     let to = slot ?? frontSlot(city);
     // Behind repairs, never ahead of a queued unit (H1: a wanted settler or defender moved there), nor of
     // what `behind` names (a lever: a queued wonder or project).
     const isUnit = (h) => !!safe(() => GameInfo.Units.lookup(h), null);
     while (to < i && (repairs.has(types[to]) || isUnit(types[to]) || !!behind?.(types[to]))) to++;
-    if (to >= i) return;
-    const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: to };
-    if (safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+    if (to >= i) return false;
+    return moveInQueue(city, i, to);
 }
 
 /**
@@ -1289,7 +1340,6 @@ function damagedOf(city) {
 export function repairBuildings({ buy = true, queue = true, budget = null } = {}) {
     const out = [];
     const b = budget ?? createBudget({ gold: goldBalance() });
-    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
     for (const city of ownSettlements()) {
         const damaged = damagedOf(city);
         for (const d of damaged) {
@@ -1316,15 +1366,12 @@ export function repairBuildings({ buy = true, queue = true, budget = null } = {}
             }
         }
         // A repair waiting behind other items goes to the front (behind an item with progress: frontSlot).
-        if (!queue || city.isTown || MoveTo === undefined) continue;
+        if (!queue || city.isTown) continue;
         const repairs = new Set(damaged.filter((d) => d.inQueue).map((d) => d.def.$hash));
         const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
         const to = frontSlot(city);
         const i = items.findIndex((q, j) => j > to && repairs.has(queueItemType(q)));
-        if (i <= to) continue;
-        const move = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: to };
-        if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, move, false), null)?.Success) continue;
-        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, move);
+        if (i <= to || !moveInQueue(city, i, to)) continue;
         out.push({ key: "REPAIR_FIRST", args: [nameOf(city)] });
     }
     return out;
@@ -1458,7 +1505,9 @@ function settlerOffer(threats = [], { fill = false } = {}) {
     // A settler waiting in a queue behind other items is not on its way (research/23 E4: game 8, at A13 one
     // waited behind a Library and the 235 gold bought a Brickyard): it is bought, and its entry dropped.
     const late = lateQueuedSettlers();
-    if (unitCount(isSettler) - late.length >= want) return null;
+    // A late queued settler is bought in its place (it gives as many as the queue would: settlerCopies).
+    const copies = settlerCopies();
+    if (settlerSupply(copies) - late.length * copies >= want) return null;
     // Every unit that founds a settlement and may be bought (not the turn-1 Founder: CanPurchase false); a
     // civilization's own settler comes through the game's answer.
     const defs = GameInfo.Units?.filter((d) => isSettler(d) && d.CanPurchase !== false && d.CanPurchase !== "false" && d.CanTrain !== false && d.CanTrain !== "false") ?? [];
@@ -1508,10 +1557,7 @@ function lateQueuedSettlers() {
 
 /** Drops a late settler's queue entry once we bought one in its place (the queue screen's cancel: RemoveAt). */
 function dropQueued(drop) {
-    const RemoveAt = globalThis.CityOperationsParametersValues?.RemoveAt;
-    if (!drop || RemoveAt === undefined) return;
-    const args = { InsertMode: RemoveAt, QueueLocation: drop.index };
-    if (safe(() => Game.CityOperations.canStart(drop.city.id, CityOperationTypes.BUILD, args, false), null)?.Success) Game.CityOperations.sendRequest(drop.city.id, CityOperationTypes.BUILD, args);
+    if (drop) removeFromQueue(drop.city, drop.index);
 }
 
 /**
@@ -1620,6 +1666,32 @@ export function settlersInFlight() {
 }
 
 /**
+ * Settlers one training or purchase gives (research/28 §4): one, plus our traits' extra copies of the units that found
+ * settlements (EFFECT_PLAYER_ADJUST_UNIT_EXTRA_COPY on UNIT_CLASS_CREATE_TOWN: Carthage's colonists come in pairs).
+ * Game 21: the two settlers wanted at the end of Antiquity were four, and with the new age's two free ones six walked
+ * toward two free places.
+ */
+export function settlerCopies() {
+    let extra = 0;
+    for (const e of safe(() => traitEffects(), []) ?? []) {
+        if (e.effect === "EFFECT_PLAYER_ADJUST_UNIT_EXTRA_COPY" && e.args?.Tag === "UNIT_CLASS_CREATE_TOWN") extra += Number(e.args.Amount) || 0;
+    }
+    return 1 + Math.max(0, extra);
+}
+
+/** Settlers we have, and those our queues will give (settlerCopies each). */
+function settlerSupply(copies = settlerCopies()) {
+    let n = 0;
+    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+        if (isSettler(safe(() => GameInfo.Units.lookup(u.type), null))) n++;
+    }
+    for (const city of ownSettlements()) {
+        for (const q of safe(() => city.BuildQueue.getQueue(), []) ?? []) if (isSettler(queueUnitDef(q))) n += copies;
+    }
+    return n;
+}
+
+/**
  * Units the autopilot wants trained now, in order: scouts (exploring) up to SCOUTS_WANTED,
  * then settlers (settling): two in flight while we have fewer than EARLY_SETTLEMENTS
  * settlements, then one at a time, never past the settlement cap.
@@ -1676,7 +1748,9 @@ function unitsWanted(unitOptions) {
         const cap = Number(stats?.settlementCap) || Infinity;
         // Two at a time while few settlements or below the cap less one (research/22 A1, research/23 E3).
         const want = Math.min(settlersWanted(settlements, cap), Math.max(0, cap - settlements));
-        const n = want - unitCount(isSettler);
+        // One training may give several (settlerCopies: Carthage's colonists come in pairs).
+        const copies = settlerCopies();
+        const n = Math.ceil((want - settlerSupply(copies)) / copies);
         if (n > 0) out.push({ test: isSettler, n, key: "QUEUED_SETTLER", target: want });
     }
     return out;
@@ -1817,17 +1891,20 @@ export function dropLeftoverDefenders(threats = []) {
     if (RemoveAt === undefined) return;
     for (const city of ownSettlements()) {
         const mine = guardOrders.get(sidOf(city));
-        if (!mine) continue;
+        if (!mine || editedThisPass(city)) continue;
         const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
         // From the back, so the positions still to remove stay right.
+        let removed = false;
         for (let i = queue.length - 1; i >= 1; i--) {
             const def = queueUnitDef(queue[i]);
             if (!def || !mine.has(def.$hash)) continue;
             const args = { InsertMode: RemoveAt, QueueLocation: i };
             if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+            removed = true;
             log.info(`queue: ${nameOf(city)}: ${def.UnitType} dropped, the war is over`);
         }
+        if (removed) noteEdited(city);
     }
     guardOrders.clear();
 }
@@ -1996,15 +2073,14 @@ export function frontLoadUnits(unitOptions = {}) {
         // declaration kept Кайруан's defender back for 7 turns).
         const unit = queueUnitDef(queue[i]);
         if (queue.slice(to, i).some((q) => wanted(queueUnitDef(q)) && !(urgent(unit) && !urgent(queueUnitDef(q))))) continue;
-        const args = { InsertMode: MoveTo, QueueSourceLocation: i, QueueDestinationLocation: to };
-        if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
-        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+        if (!moveInQueue(city, i, to)) continue;
         moved.add(sidOf(city));
         if (to === 0 && frontSlot(city) === 1) log.warn(`queue: ${nameOf(city)}: ${queueUnitDef(queue[i])?.UnitType} moved ahead of ${typeNameOf(safe(() => city.BuildQueue.currentProductionTypeHash, null))} with ${Math.round(currentProgress(city) ?? 0)} production in it (probe: does the unit take it? CityBuildQueue.csv)`);
         out.push({ key: "FRONT_LOADED", args: [nameOf(city), Locale.compose(queueUnitDef(queue[i])?.Name ?? "?")] });
     }
     // P4: never a unit right behind a wonder in production.
-    for (const city of ownSettlements()) if (!city.isTown && !moved.has(sidOf(city))) safe(() => guardWonderRefund(city), null);
+    const lost = lostWonderRows();
+    for (const city of ownSettlements()) if (!city.isTown && !moved.has(sidOf(city))) safe(() => guardWonderRefund(city, lost), null);
     return out;
 }
 
@@ -2057,10 +2133,12 @@ function holdsFront(city, def) {
  * in production: a building already queued moves there, else the costliest building the city can place is queued
  * (it moves there next pass). UI.log says so.
  */
-function guardWonderRefund(city) {
+function guardWonderRefund(city, lost = lostWonderRows()) {
     const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
     const first = queue.length > 0 ? safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[0])), null) : null;
     if (first?.ConstructibleClass !== "WONDER") return;
+    // A race we lose is the cash-out's (cashOutLostWonders): it puts a building ahead of the wonder, not behind it.
+    if (lost.has(first.ConstructibleType)) return;
     // A lost wonder pours half its progress and that turn's production into the next item, up to that item's
     // cost (game 20: Petra's 105 into a 90-cost Pagoda, the Weiyang Palace's 97 into 40-cost walls).
     const prod = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
@@ -2068,18 +2146,16 @@ function guardWonderRefund(city) {
     const next = queue[1] ? safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[1])), null) : null;
     const nextKeeps = next?.ConstructibleClass === "BUILDING" ? Math.min(costIn(city, next.ConstructibleType), refund) : 0;
     if (nextKeeps >= refund - 0.5) return;
-    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
     const further = bestAbsorber(absorberCandidates(city).filter((c) => c.index >= 2), refund);
-    if (further && further.keeps > nextKeeps + 0.5 && MoveTo !== undefined) {
-        const args = { InsertMode: MoveTo, QueueSourceLocation: further.index, QueueDestinationLocation: 1 };
-        if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return;
-        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+    if (further && further.keeps > nextKeeps + 0.5) {
+        if (!moveInQueue(city, further.index, 1)) return;
         log.info(`queue: ${nameOf(city)}: ${further.type} moved behind ${first.ConstructibleType}: it keeps ${Math.round(further.keeps)} of the ${Math.round(refund)} a lost wonder pours into the next item`);
         return;
     }
     const outside = bestAbsorber(plannedAbsorbers(city), refund) ?? bestAbsorber([costliestBuilding(city)].filter(Boolean), refund);
     if (!outside || outside.keeps <= Math.max(nextKeeps, further?.keeps ?? 0) + 0.5) return;
     Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, outside.args);
+    noteBuilt(city, outside.type);
     log.info(`queue: ${nameOf(city)}: ${outside.type} queued to stand behind ${first.ConstructibleType} (keeps ${Math.round(outside.keeps)} of a ${Math.round(refund)} refund)`);
 }
 
@@ -2098,7 +2174,7 @@ function absorberCandidates(city) {
 /** The plan's buildings for this city not queued yet that it can place now on their tile: [{ type, cost, args }]. */
 function plannedAbsorbers(city) {
     const sid = sidOf(city);
-    const queued = new Set((safe(() => city.BuildQueue.getQueue(), []) ?? []).map((q) => typeNameOf(queueItemType(q))));
+    const queued = new Set([...(safe(() => city.BuildQueue.getQueue(), []) ?? []).map((q) => typeNameOf(queueItemType(q))), ...builtThisPass(city)]);
     const out = [];
     for (const p of state.get().results.plans?.placements ?? []) {
         if (p.sid !== sid || p.locked || queued.has(p.type)) continue;
@@ -2111,25 +2187,36 @@ function plannedAbsorbers(city) {
     return out;
 }
 
+/** Our queued wonders whose race is lost (research/27 §6): type -> "RIVAL_AHEAD" | "AGE_ENDS". */
+function lostWonderRows() {
+    const w = state.get().results.wonders;
+    const out = new Map();
+    for (const r of w?.rows ?? []) {
+        if (r.status !== "IN_PROGRESS" || !r.inQueue) continue;
+        const lost = raceLost({ ourTurns: r.inQueue.turns, rivalTurns: r.rivalTurns, ageTurnsLeft: w.ageTurnsLeft });
+        if (lost) out.set(r.type, lost);
+    }
+    return out;
+}
+
 /**
  * Wonder races already lost (research/27 §6): a wonder in production that a rival building it now will finish
- * first (omniscient mode: the rival's own queue), or that cannot be done before the age ends. A building moved
- * ahead of it takes all its progress, up to that building's cost (the game gives a preempted item's progress to
- * whatever takes its place: root gotcha 20), instead of the half a lost wonder refunds. Game 20: Mexico started
- * Petra 2 turns after us at twice our production and won it on the turn we were 14 short, our 173 became 105 in a
- * 90-cost Pagoda; the Weiyang Palace's 162 became 97 in 40-cost walls. The best building is the one that keeps the
- * most (queued, else the plan's next one for that city, queued now and moved ahead next pass). A lost wonder with no
- * progress leaves the queue, so no more production goes into it.
+ * first (omniscient mode: the rival's own queue), or that cannot be done before the age ends. A building goes ahead
+ * of it, so no more production goes into the race: a lost wonder gives back only half its progress. Game 20: Mexico
+ * started Petra 2 turns after us at twice our production and won it on the turn we were 14 short, our 173 became 105
+ * in a 90-cost Pagoda; the Weiyang Palace's 162 became 97 in 40-cost walls. Game 21 (research/28 §3): the building
+ * did not take the wonder's progress (Chicago's Dungeon got its own 23; the Serpent Mound kept its 30 and returned 14
+ * when the Normans finished it), though game 3 once saw it taken (root gotcha 20). So the building chosen is the one
+ * that would keep the most if it were (queued, else the plan's next one for that city, queued now and moved ahead next
+ * pass). A lost wonder with no progress leaves the queue.
  * @returns log entries
  */
 export function cashOutLostWonders() {
     const out = [];
     const w = state.get().results.wonders;
-    const MoveTo = globalThis.CityOperationsParametersValues?.MoveTo;
-    const RemoveAt = globalThis.CityOperationsParametersValues?.RemoveAt;
+    const lostRows = lostWonderRows();
     for (const r of w?.rows ?? []) {
-        if (r.status !== "IN_PROGRESS" || !r.inQueue) continue;
-        const lost = raceLost({ ourTurns: r.inQueue.turns, rivalTurns: r.rivalTurns, ageTurnsLeft: w.ageTurnsLeft });
+        const lost = lostRows.get(r.type);
         if (!lost) continue;
         const city = ownSettlements().find((c) => sidOf(c) === r.inQueue.cityKey);
         const queue = city ? safe(() => city.BuildQueue.getQueue(), []) ?? [] : [];
@@ -2140,20 +2227,16 @@ export function cashOutLostWonders() {
         if (at === 0 && progress > 0) {
             const queued = bestAbsorber(absorberCandidates(city), progress);
             const outside = bestAbsorber(plannedAbsorbers(city), progress) ?? bestAbsorber([costliestBuilding(city)].filter(Boolean), progress);
-            if (queued && MoveTo !== undefined && (!outside || queued.keeps >= outside.keeps - 0.5)) {
-                const args = { InsertMode: MoveTo, QueueSourceLocation: queued.index, QueueDestinationLocation: 0 };
-                if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
-                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
-                log.warn(`wonders: ${nameOf(city)} cashed out ${r.type} (${lost}: rivals ${JSON.stringify(r.rivalTurns ?? [])} turns, ours ${r.inQueue.turns}): ${queued.type} takes ${Math.round(queued.keeps)} of ${Math.round(progress)}`);
+            if (queued && (!outside || queued.keeps >= outside.keeps - 0.5)) {
+                if (!moveInQueue(city, queued.index, 0)) continue;
+                log.warn(`wonders: ${nameOf(city)} stopped ${r.type} (${lost}: rivals ${JSON.stringify(r.rivalTurns ?? [])} turns, ours ${r.inQueue.turns}): ${queued.type} goes ahead of its ${Math.round(progress)} production (game 21: the wonder kept it; CityBuildQueue.csv shows which)`);
                 out.push({ key: "WONDER_CASHED_OUT", args: [nameOf(city), r.name, Math.round(progress), Locale.compose(GameInfo.Constructibles.lookup(queued.type)?.Name ?? queued.type), Math.round(queued.keeps), why] });
-            } else if (outside) {
+            } else if (outside && !builtThisPass(city).has(outside.type)) {
                 Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, outside.args);
+                noteBuilt(city, outside.type);
                 out.push({ key: "WONDER_ABSORBER_QUEUED", args: [nameOf(city), r.name, Locale.compose(GameInfo.Constructibles.lookup(outside.type)?.Name ?? outside.type), why] });
             }
-        } else if (progress === 0 && RemoveAt !== undefined) {
-            const args = { InsertMode: RemoveAt, QueueLocation: at };
-            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
-            Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+        } else if (progress === 0 && removeFromQueue(city, at)) {
             out.push({ key: "WONDER_DROPPED", args: [nameOf(city), r.name, why] });
         }
     }
@@ -2169,7 +2252,7 @@ function costliestBuilding(city) {
         if (best && best.cost >= cost) continue;
         const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
         const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
-        if (!probe?.Success || probe.InQueue || plots.length === 0) continue;
+        if (!probe?.Success || probe.InQueue || plots.length === 0 || builtThisPass(city).has(def.ConstructibleType)) continue;
         const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
         if (!loc) continue;
         best = { args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, type: def.ConstructibleType, cost };
@@ -2534,6 +2617,137 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
  */
 let wondersLoggedTurn = -1; // UI.log says why no wonder was started, once a turn
 
+// Tiles of a chosen wonder tried in turn when the game refuses the first (research/28 §1).
+const WONDER_TILE_TRIES = 6;
+
+/**
+ * Wonders we ordered (research/28 §1): `${cityKey}|${type}` -> { type, cityKey, cityName, x, y, turn, seen }. Game 21:
+ * the Emile Bell left Carthage's queue unbuilt three times while it waited behind other items (T32-T35), and the
+ * Mausoleum of Theodoric once (T46), each with nothing in it (the game's notice: 0 production returned); and the end-
+ * of-turn retry, three seconds after the order, did not see it in the queue and ordered the Emile Bell again. An order
+ * of this turn counts as started until the game's queue shows it; one gone from the queue unbuilt goes to UI.log with
+ * what the game says about it.
+ */
+const wonderOrders = new Map();
+export function resetWonderOrders() {
+    wonderOrders.clear();
+    noticesLogged.clear();
+}
+
+function noteWonderOrder(city, type, tile) {
+    wonderOrders.set(`${sidOf(city)}|${type}`, { type, cityKey: sidOf(city), cityName: nameOf(city), x: tile.x, y: tile.y, turn: Game.turn, seen: null });
+}
+
+// The game's notices about production it took away (expire at the turn's end): written to UI.log once each.
+const PRODUCTION_NOTICES = ["NOTIFICATION_WONDER_FAILED", "NOTIFICATION_PRODUCTION_INVALIDATED"];
+const noticesLogged = new Set();
+
+/** The game's current notices of PRODUCTION_NOTICES types, as "TYPE: summary". */
+function productionNotices() {
+    const out = [];
+    for (const id of safe(() => Game.Notifications.getIdsForPlayer(pid()), []) ?? []) {
+        const n = safe(() => Game.Notifications.find(id), null);
+        const type = n ? safe(() => Game.Notifications.getTypeName(n.Type), null) : null;
+        if (!PRODUCTION_NOTICES.includes(type)) continue;
+        const summary = safe(() => Game.Notifications.getSummary(id), null);
+        out.push({ id: `${id?.owner ?? ""}:${id?.id ?? id}`, text: `${type}: ${summary ? safe(() => Locale.compose(summary), summary) : "?"}` });
+    }
+    return out;
+}
+
+/** Writes the game's new production notices to UI.log. */
+function logProductionNotices() {
+    for (const n of productionNotices()) {
+        if (noticesLogged.has(n.id)) continue;
+        noticesLogged.add(n.id);
+        log.warn(`game notice: ${n.text}`);
+    }
+}
+
+/** A city's queue as type names, for UI.log. */
+function queueNames(city) {
+    return city ? queueTypes(city).map(typeNameOf).join(", ") : "?";
+}
+
+/**
+ * Checks our wonder orders against the planner's rows: built (ours or a rival's) or still queued, they are done with;
+ * gone from the queue unbuilt, UI.log says so with the queue, the game's answer for that tile now and its notices.
+ * @returns { cities, types } of this turn's orders the game's queue does not show yet (they count as started)
+ */
+function watchWonderOrders(w) {
+    const cities = new Set();
+    const types = new Set();
+    for (const [key, o] of wonderOrders) {
+        const row = w.rows.find((r) => r.type === o.type);
+        if (!row || row.status === "OURS") {
+            wonderOrders.delete(key);
+            continue;
+        }
+        if (row.status === "BUILT") {
+            log.warn(`wonders: ${o.type} was finished by a rival while in ${o.cityName}'s queue (ordered T${o.turn})`);
+            wonderOrders.delete(key);
+            continue;
+        }
+        if (row.inQueue?.cityKey === o.cityKey) {
+            o.seen = Game.turn;
+            continue;
+        }
+        if (o.turn === Game.turn) {
+            cities.add(o.cityKey);
+            types.add(o.type);
+            continue;
+        }
+        const city = ownSettlements().find((c) => sidOf(c) === o.cityKey) ?? null;
+        const def = safe(() => GameInfo.Constructibles.lookup(o.type), null);
+        const r = city && def ? safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash, X: o.x, Y: o.y }, false), null) : null;
+        const answer = r?.Success ? "accepted" : (r?.FailureReasons ?? []).map((f) => safe(() => Locale.compose(f), f)).join("; ") || "refused";
+        log.warn(`wonders: ${o.type} left ${o.cityName}'s queue unbuilt (ordered T${o.turn} at ${o.x},${o.y}, last seen ${o.seen === null ? "never" : `T${o.seen}`}); queue now [${queueNames(city)}]; that tile now: ${answer}; game notices: ${productionNotices().map((n) => n.text).join(" | ") || "none"}`);
+        wonderOrders.delete(key);
+    }
+    return { cities, types };
+}
+
+/**
+ * Orders a chosen wonder in this city on the first of its tiles the game accepts (research/28 §1: nothing said why a
+ * pick was not ordered). Remembered as ordered this turn. @returns a log entry, or null
+ */
+function orderWonder(city, wonder) {
+    const def = safe(() => GameInfo.Constructibles.lookup(wonder.type), null);
+    if (!def) return null;
+    const tiles = [{ x: wonder.x, y: wonder.y }, ...(wonder.plots ?? [])]
+        .filter((p, i, all) => all.findIndex((q) => q.x === p.x && q.y === p.y) === i).slice(0, WONDER_TILE_TRIES);
+    const refused = [];
+    for (const t of tiles) {
+        const args = { ConstructibleType: def.$hash, X: t.x, Y: t.y };
+        const r = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null);
+        if (!r?.Success) {
+            refused.push(...(r?.FailureReasons ?? []).map((f) => safe(() => Locale.compose(f), f)));
+            continue;
+        }
+        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+        noteBuilt(city, wonder.type);
+        noteWonderOrder(city, wonder.type, t);
+        return { key: "QUEUED_WONDER", args: [nameOf(city), wonder.name, wonder.race === "HIGH" ? Locale.compose("LOC_XPL_RACE_HIGH") : Locale.compose("LOC_XPL_RACE_MEDIUM")] };
+    }
+    log.warn(`wonders: ${nameOf(city)} could not order ${wonder.type} on ${tiles.map((t) => `${t.x},${t.y}`).join(" ")}: ${[...new Set(refused)].join("; ") || "no reason given"}`);
+    return null;
+}
+
+const isWonderType = (h) => safe(() => GameInfo.Constructibles.lookup(h)?.ConstructibleClass, null) === "WONDER";
+
+/**
+ * Where a wonder waiting in a queue goes (research/28 §1): the very front, ahead of a building with progress, so it
+ * starts at once. Game 21: moving an item ahead left every item its own progress (the Emile Bell ahead of a Library with
+ * 30; a Dungeon ahead of the Serpent Mound), and a wonder would absorb a building's progress if the game handed it over
+ * (root gotcha 20), so nothing is lost either way; and the wonders that waited behind other items left the queue unbuilt
+ * four times. Behind a wonder in production (never two wonders taking turns), and behind an item done this turn.
+ */
+function wonderSlot(city) {
+    if (isWonderType(safe(() => city.BuildQueue.currentProductionTypeHash, null))) return 1;
+    const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+    return left > 0 && left <= 1 ? 1 : 0;
+}
+
 // A wonder option taking longer than this is not started (research/24 P5).
 export const WONDER_MAX_TURNS = 15;
 
@@ -2586,9 +2800,12 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
     const onlyInnovation = settings?.strategy?.wonderKind === "INNOVATION";
     const w = safe(() => runWonderPlanner(settings), null);
     if (!w) return picks;
-    const building = w.rows.filter((r) => r.status === "IN_PROGRESS").length;
+    safe(() => logProductionNotices(), null);
+    // This turn's orders the game's queue does not show yet count as started (research/28 §1).
+    const pending = watchWonderOrders(w);
+    const building = w.rows.filter((r) => r.status === "IN_PROGRESS").length + pending.types.size;
     let room = Math.max(0, maxWonders - building);
-    const busyCities = new Set(w.rows.filter((r) => r.inQueue).map((r) => r.inQueue.cityKey));
+    const busyCities = new Set([...w.rows.filter((r) => r.inQueue).map((r) => r.inQueue.cityKey), ...pending.cities]);
     // Every (wonder, city) pair: the second wonder can go to the second-fastest city.
     let pairs = [];
     for (const r of w.rows) {
@@ -2619,7 +2836,7 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
         const available = w.rows.filter((r) => r.status === "AVAILABLE");
         log.warn(`wonders: none to start (room ${room}): ${available.length} available [${available.slice(0, 6).map((r) => `${r.type} ${r.race?.label ?? "?"}`).join(", ")}], ${available.filter((r) => !RACE_FACTOR[r.race?.label]).length} races not ours, ${excludeCities?.size ?? 0} cities kept for Launch Pads, age turns left ${w.ageTurnsLeft ?? "?"}`);
     }
-    const startedTypes = new Set();
+    const startedTypes = new Set(pending.types);
     const claimed = new Set();
     for (const p of pairs) {
         if (room <= 0) break;
@@ -2628,7 +2845,9 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
         if (!plot) continue;
         claimed.add(plot.idx);
         startedTypes.add(p.type);
-        picks.set(p.cityKey, { type: p.type, name: p.name, x: plot.x, y: plot.y, cityKey: p.cityKey, race: p.race, score: p.score });
+        // The other tiles, in the planner's order, in case the game refuses this one (orderWonder).
+        const plots = p.plots.filter((q) => q.idx !== plot.idx).map((q) => ({ x: q.x, y: q.y }));
+        picks.set(p.cityKey, { type: p.type, name: p.name, x: plot.x, y: plot.y, plots, cityKey: p.cityKey, race: p.race, score: p.score });
         room--;
     }
     return picks;
@@ -2645,6 +2864,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
     safe(() => dropLeftoverDefenders(unitOptions.threats ?? []), null);
     const trained = trainWantedUnits(unitOptions);
     const out = [...trained.entries];
+    const lost = lostWonderRows();
     // A chosen wonder goes into a busy queue too, and a wonder waiting in a queue moves to the front
     // (behind an item with progress; the levers then stay behind it: leverSlot). Research/22 B5: with the
     // science levers every queue stayed busy, and no wonder was built all game.
@@ -2653,19 +2873,20 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         const wonder = wonderPicks.get(sidOf(city));
         const busy = !safe(() => city.BuildQueue.isEmpty, false) || unitOptions.queued?.get(sidOf(city))?.size > 0;
         if (wonder && busy) {
-            const def = GameInfo.Constructibles.lookup(wonder.type);
-            const args = def ? { ConstructibleType: def.$hash, X: wonder.x, Y: wonder.y } : null;
-            if (args && safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) {
-                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
-                out.push({ key: "QUEUED_WONDER", args: [nameOf(city), wonder.name, wonder.race === "HIGH" ? Locale.compose("LOC_XPL_RACE_HIGH") : Locale.compose("LOC_XPL_RACE_MEDIUM")] });
+            const entry = orderWonder(city, wonder);
+            if (entry) {
+                out.push(entry);
                 continue;
             }
         }
+        // A wonder waiting in the queue goes to the very front (wonderSlot), unless its race is lost (the cash-out
+        // put a building ahead of it: game 21, Chicago's Serpent Mound went back and forth).
         const types = queueTypes(city);
-        const i = types.findIndex((t, j) => j > frontSlot(city) && safe(() => GameInfo.Constructibles.lookup(t)?.ConstructibleClass, null) === "WONDER");
+        const slot = wonderSlot(city);
+        const i = types.findIndex((t, j) => j > slot && isWonderType(t) && !lost.has(typeNameOf(t)));
         if (i <= 0) continue;
         // Never ahead of a project (a science project is the path's own work).
-        let to = frontSlot(city);
+        let to = slot;
         while (to < i && safe(() => GameInfo.Projects.lookup(types[to]), null)) to++;
         toFront(city, types[i], to);
     }
@@ -2675,12 +2896,9 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         if (unitOptions.queued?.get(sidOf(city))?.size > 0) continue;
         const wonder = wonderPicks.get(sidOf(city)); // the wonder job keys cities "c:x-y" too
         if (wonder) {
-            const def = GameInfo.Constructibles.lookup(wonder.type);
-            const args = def ? { ConstructibleType: def.$hash, X: wonder.x, Y: wonder.y } : null;
-            const ok = args ? safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null) : null;
-            if (ok?.Success) {
-                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
-                out.push({ key: "QUEUED_WONDER", args: [nameOf(city), wonder.name, wonder.race === "HIGH" ? Locale.compose("LOC_XPL_RACE_HIGH") : Locale.compose("LOC_XPL_RACE_MEDIUM")] });
+            const entry = orderWonder(city, wonder);
+            if (entry) {
+                out.push(entry);
                 continue;
             }
         }

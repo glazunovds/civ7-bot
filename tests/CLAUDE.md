@@ -51,4 +51,8 @@ Use `npm test`, which runs `node --test "tests/**/*.test.mjs"` (Node ≥ 22; no 
   - Wonder anchors in a job test need tiles the city may plan: the fake city owns only ring 1, and tiles owned by us but not that city are left out of the plan's area.
   - `world.canBuild` answers `Plots` for an available wonder.
   - The fixtures now include `Constructible_ValidBiomes` and `CivilizationFavoredWonders` (Greece: the Oracle).
-  - Lost races: an omniscient wonder planner (`wonders: {omniscient: true}`) reads a rival city's `queue {type, turns}`; `steps.cashOutLostWonders()` reads `state.results.wonders`, so run `runWonderPlanner(settings)` first.
+  - Lost races: an omniscient wonder planner (`wonders: {omniscient: true}`) reads a rival city's `queue {type, turns}`; `steps.cashOutLostWonders()` reads `state.results.wonders`, so run `runWonderPlanner(settings)` first. The refund guard and the wonder step read it too: refresh it after changing a rival's queue.
+  - Wonder orders (research/28 §1): an order of this turn counts as started until the queue shows it, and the fake's queue never changes on a request, so a file whose tests each order wonders resets them: `beforeEach(() => steps.resetWonderOrders())`. A later turn: assign `Game.turn`.
+  - Queue passes (root gotcha 54): `steps.beginQueuePass()` / `endQueuePass()` hold each city's queue to one edit; the hud opens one per pass, a test opens its own (none open: no limit).
+  - Notices: `world.notifications[i].summary` is what `Game.Notifications.getSummary` answers.
+- **Traits (research/28 §4):** a civilization ability for a test: set `Players.get(0).civilizationType` to a fixture civilization's hash and replace `GameInfo.CivilizationTraits`, `TraitModifiers`, `Modifiers`, `DynamicModifiers` and `ModifierArguments` (restore them after); `traitEffects()` is cached on those tables.

@@ -1,7 +1,7 @@
 // Autopilot wonders: an empty queue starts the wonder the Wonders tab rates best (a race
 // we can win, finishing this age, best value per production turn) on its best tile; only
 // `maxWonders` at once; a wonder a rival is about to finish is not started.
-import { test } from "node:test";
+import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeEngine } from "./fakes/fake-engine.mjs";
 import { HexGrid } from "../mod/expansion-planner/ui/core/xpl-hex.js";
@@ -40,6 +40,19 @@ const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.j
 const sitesKnown = (on) => state.set({ results: { ...state.get().results, sites: on ? { picks: [{ x: 1, y: 1 }], computedTurn: Game.turn } : null } });
 
 const wonderOrders = () => fake.sent.filter((s) => s.kind === "operation" && GameInfo.Constructibles.lookup(s.args.ConstructibleType)?.ConstructibleClass === "WONDER");
+// Every test starts a new turn for the wonders we ordered (an order of this turn counts as started: research/28 §1).
+beforeEach(() => steps.resetWonderOrders());
+const capture = (fn) => {
+    const lines = [];
+    const warn = console.warn;
+    console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        fn();
+    } finally {
+        console.warn = warn;
+    }
+    return lines;
+};
 
 test("the final age ends the game too: no wonder that cannot finish before it (research/24 F3: Dogo Onsen, Ubudiah)", () => {
     try {
@@ -222,5 +235,106 @@ test("a wonder is not started where it takes over 15 turns, though a faster city
         assert.equal(steps.chooseWonders(DEFAULT_SETTINGS, 1).size, 1, "Athens: 14 turns");
     } finally {
         world.costOf = costOf;
+    }
+});
+
+// Game 21 (research/28 §1): wonders that waited behind other items left the queue unbuilt, each with nothing in it
+// (the Emile Bell three times, the Mausoleum of Theodoric once), and the end-of-turn retry ordered the Emile Bell twice.
+test("a wonder waiting in a queue goes to the very front, ahead of a building with progress; not ahead of a wonder in production nor of an item done this turn (research/28 §1)", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === undefined ? { Success: true } : canBuild(type, id, args)); // queue moves
+    const move = () => {
+        fake.sent.length = 0;
+        steps.fillProduction(new Map());
+        const m = fake.sent.find((s) => s.args.InsertMode === CityOperationsParametersValues.MoveTo);
+        return m ? [m.args.QueueSourceLocation, m.args.QueueDestinationLocation] : null;
+    };
+    try {
+        athens.queued = ["BUILDING_GRANARY", "WONDER_PYRAMIDS"];
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 3, pct: 60 }; // 60 of 100: more than a turn's 30
+        assert.deepEqual(move(), [2, 0], "ahead of the Monument with progress (game 21: each item kept its own)");
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 1, pct: 80 };
+        assert.deepEqual(move(), [2, 1], "the Monument is done this turn");
+        athens.queue = { type: "WONDER_HANGING_GARDENS", turns: 6, pct: 30 };
+        assert.deepEqual(move(), [2, 1], "behind the wonder in production");
+    } finally {
+        world.canBuild = canBuild;
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+    }
+});
+
+test("a wonder ordered this turn is not ordered again in the end-of-turn retry, though the game's queue does not show it yet (game 21: the Emile Bell twice in one turn)", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    try {
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 4, pct: 0 };
+        fake.sent.length = 0;
+        steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        assert.equal(wonderOrders().length, 1);
+        // The retry a moment later: like the game's then, the fake's queue does not show the order.
+        fake.sent.length = 0;
+        const again = steps.chooseWonders(DEFAULT_SETTINGS, 1);
+        steps.fillProduction(again);
+        assert.equal(wonderOrders().length, 0, `ordered twice: ${JSON.stringify([...again])}`);
+    } finally {
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+    }
+});
+
+test("the game refuses the chosen tile: the wonder's next tile is ordered; with every tile refused UI.log says why (research/28 §1)", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    const canBuild = world.canBuild;
+    try {
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 4, pct: 0 };
+        const picks = steps.chooseWonders(DEFAULT_SETTINGS, 1);
+        const pick = picks.get(`c:${A.x}-${A.y}`);
+        world.canBuild = (type, id, args) => (args?.X === pick.x && args?.Y === pick.y ? { Success: false, FailureReasons: ["LOC_TEST_TILE_TAKEN"] } : canBuild(type, id, args));
+        fake.sent.length = 0;
+        steps.fillProduction(picks);
+        const order = wonderOrders()[0];
+        assert.ok(order && !(order.args.X === pick.x && order.args.Y === pick.y), `the other tile: ${JSON.stringify(order?.args)}`);
+        world.canBuild = (type, id, args) => (type?.startsWith("WONDER_") && args?.X !== undefined ? { Success: false, FailureReasons: ["LOC_TEST_TILE_TAKEN"] } : canBuild(type, id, args));
+        steps.resetWonderOrders();
+        fake.sent.length = 0;
+        const lines = capture(() => steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1)));
+        assert.equal(wonderOrders().length, 0);
+        assert.ok(lines.some((l) => l.includes("could not order") && l.includes("LOC_TEST_TILE_TAKEN")), lines.join("\n"));
+    } finally {
+        world.canBuild = canBuild;
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+    }
+});
+
+test("a wonder that leaves the queue unbuilt goes to UI.log with the game's notices (game 21: the Emile Bell three times, the Mausoleum of Theodoric once)", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    const turn = Game.turn;
+    try {
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 4, pct: 0 };
+        fake.sent.length = 0;
+        steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        const ordered = GameInfo.Constructibles.lookup(wonderOrders()[0].args.ConstructibleType).ConstructibleType;
+        // Next turn the game shows it in the queue; the turn after it is gone, not built, and the game says so.
+        Game.turn = turn + 1;
+        athens.queued = [ordered];
+        assert.deepEqual(capture(() => steps.chooseWonders(DEFAULT_SETTINGS, 1)).filter((l) => l.includes("left")), []);
+        Game.turn = turn + 2;
+        athens.queued = [];
+        world.notifications = [{ name: "NOTIFICATION_PRODUCTION_INVALIDATED", player: 0, summary: "LOC_TEST_CANCELLED" }];
+        const lines = capture(() => steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        assert.ok(lines.some((l) => l.includes(`${ordered} left Athens's queue unbuilt`) && l.includes(`last seen T${turn + 1}`) && l.includes("NOTIFICATION_PRODUCTION_INVALIDATED: LOC_TEST_CANCELLED")), lines.join("\n"));
+        assert.ok(lines.some((l) => l.includes("game notice: NOTIFICATION_PRODUCTION_INVALIDATED: LOC_TEST_CANCELLED")), lines.join("\n"));
+        assert.deepEqual(capture(() => steps.chooseWonders(DEFAULT_SETTINGS, 1)).filter((l) => l.includes("game notice") || l.includes("left")), [], "once");
+    } finally {
+        Game.turn = turn;
+        delete world.notifications;
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
     }
 });

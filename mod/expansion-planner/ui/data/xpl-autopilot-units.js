@@ -130,6 +130,7 @@ export function resetUnitGoals() {
     walks.clear();
     bankDone.clear();
     bankTried.clear();
+    foundings.length = 0;
 }
 
 /**
@@ -885,6 +886,7 @@ function unstick(u, def, taken, ctx) {
     const cap = settlementCount();
     if ((!cap || cap.n < cap.cap) && siteStillFree(u.location) && !tooCloseToForeign(u.location, ctx) && operate(u, "UNITOPERATION_FOUND_CITY")) {
         goals.delete(k);
+        noteFounding(u.location);
         noteFoundingNearVillage(u.location);
         return { key: "SETTLE_FOUND_HERE", args: [nameOf(def), u.location.x, u.location.y, goal?.x, goal?.y] };
     }
@@ -1002,13 +1004,29 @@ function settlerAtRisk(u, ctx) {
 
 /**
  * Settlements and the settlement cap (player.Stats, as the game's top bar reads them), or null.
- * Each settlement over the cap costs happiness everywhere.
+ * Each settlement over the cap costs happiness everywhere. Foundings ordered this turn that the game
+ * has not made a settlement yet count too (pendingFoundings).
  */
 function settlementCount() {
     const stats = safe(() => Players.get(pid()).Stats, null);
     const n = Number(stats?.numSettlements);
     const cap = Number(stats?.settlementCap);
-    return Number.isFinite(n) && Number.isFinite(cap) && cap > 0 ? { n, cap } : null;
+    return Number.isFinite(n) && Number.isFinite(cap) && cap > 0 ? { n: n + pendingFoundings(), cap } : null;
+}
+
+/**
+ * Foundings we ordered (research/28 §4): the game's count of settlements does not change until it handles them,
+ * so every settler of a pass read the same number. Game 21 (E23): the cap rose from 8 to 9 and the three settlers
+ * waiting at the cap all founded in one pass, 11 of 9, -5 Happiness in every settlement for each one over.
+ */
+const foundings = []; // { turn, x, y }
+function noteFounding(loc) {
+    while (foundings.length > 0 && foundings[0].turn !== Game.turn) foundings.shift();
+    foundings.push({ turn: Game.turn, x: loc.x, y: loc.y });
+}
+/** This turn's foundings the game has not made a settlement of yet. */
+function pendingFoundings() {
+    return foundings.filter((f) => f.turn === Game.turn && !settlementAt(f)).length;
 }
 
 /**
@@ -1059,6 +1077,7 @@ function settle(u, def, taken, ctx) {
         if (wait) return wait;
         goals.delete(k);
         if (!operate(u, "UNITOPERATION_FOUND_CITY")) return null;
+        noteFounding(goal);
         if (goal.role) foundedRoles.set(`${goal.x},${goal.y}`, goal.role);
         noteFoundingNearVillage(goal);
         return { key: "SETTLE_FOUND", args: [nameOf(def), goal.x, goal.y] };
@@ -1144,6 +1163,7 @@ function settle(u, def, taken, ctx) {
         }
         goals.delete(k);
         if (!operate(u, "UNITOPERATION_FOUND_CITY")) return null;
+        noteFounding(goal);
         if (goal.role) foundedRoles.set(`${goal.x},${goal.y}`, goal.role);
         noteFoundingNearVillage(goal);
         return { key: "SETTLE_FOUND", args: [nameOf(def), goal.x, goal.y] };

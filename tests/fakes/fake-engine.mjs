@@ -607,6 +607,8 @@ export function installFakeEngine(world, age = "antiquity") {
             sent.push({ kind: "dismiss", id });
         },
         activate: (id) => sent.push({ kind: "activate", id }),
+        // world.notifications[i].summary: the notice's text (a LOC key), as the notification train shows it.
+        getSummary: (id) => (id?.type === 2 ? notes()[id.id]?.summary ?? null : null),
     };
     g.GameContext.hasSentTurnComplete = () => !!world.turnSent;
     g.GameContext.sendTurnComplete = () => {
