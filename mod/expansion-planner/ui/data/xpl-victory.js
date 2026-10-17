@@ -148,6 +148,15 @@ const RACE_CLASSES = [...FOCUS_CLASSES, "MILITARY"];
  * victories screen's score tab reads it (victories-screen-model.js calcScoreDetails: getPointsForVictoryType), sorted.
  * @returns [{ id, points }] (empty: no such victory)
  */
+/** Is the score victory on (the game ends with the final age and the score decides it)? Unknown: yes. */
+export function scoreVictoryOn() {
+    try {
+        return Game.VictoryManager.isScoreVictoryEnabled() !== false;
+    } catch (_e) {
+        return true;
+    }
+}
+
 export function scoreBoard() {
     const v = GameInfo.VictoryTypes?.find((x) => x.VictoryType === "VICTORY_SCORE");
     if (!v) return [];

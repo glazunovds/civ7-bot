@@ -125,7 +125,7 @@ test("Focus Fire: two ranged units in the commander's radius that can shoot the 
     assert.ok(r.ordered.has("0:2") && r.ordered.has("0:3"), "the archers took part: no other order");
     fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, archers[1]], { wars: [1], enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
     await units.strikeRaiders();
-    assert.deepEqual(orders(), [], "one archer: it shoots on its own");
+    assert.deepEqual(orders().map((s) => [s.id.id, s.op]), [[3, "UNITOPERATION_RANGE_ATTACK"]], "one archer: it shoots on its own (game 27: shootRaiders)");
     // Not a hostile unit (no war): nothing.
     fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], { enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
     await units.strikeRaiders();

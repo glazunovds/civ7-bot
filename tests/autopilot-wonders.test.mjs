@@ -259,6 +259,9 @@ test("a wonder waiting in a queue goes to the very front, ahead of a building wi
         assert.deepEqual(move(), [2, 1], "the Monument is done this turn");
         athens.queue = { type: "WONDER_HANGING_GARDENS", turns: 6, pct: 30 };
         assert.deepEqual(move(), [2, 1], "behind the wonder in production");
+        // A threatened settlement's walls, just moved to the front (game 27): nothing passes them.
+        athens.queue = { type: "BUILDING_ANCIENT_WALLS", turns: 3, pct: 0 };
+        assert.deepEqual(move(), [2, 1], "behind the walls");
     } finally {
         world.canBuild = canBuild;
         athens.queue = keep.queue;
@@ -368,5 +371,74 @@ test("a wonder that leaves the queue unbuilt goes to UI.log with the game's noti
         delete world.notifications;
         athens.queue = keep.queue;
         athens.queued = keep.queued;
+    }
+});
+
+test("the queue probe: a queue holding a wonder, and an item that stays at 100% on a later turn, go to UI.log with each entry's progress and the purchases there, once a turn (research/31 §5: Carthage's Altar at 290 of 49)", () => {
+    const athens = world.cities[0];
+    const sparta = world.cities[1];
+    const keep = { a: athens.queue, aq: athens.queued, s: sparta.queue };
+    const turn = Game.turn;
+    try {
+        Game.turn = turn + 1;
+        athens.queue = { type: "WONDER_PYRAMIDS", turns: 10, pct: 20 };
+        athens.queued = ["BUILDING_MONUMENT"];
+        sparta.queue = { type: "BUILDING_MONUMENT", turns: 1, pct: 100 };
+        engine.trigger("CityMadePurchase", { cityID: Players.get(0).Cities.getCities()[0].id });
+        let lines = capture(() => steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        const probe = (l, city) => l.filter((x) => x.includes(`queue probe: ${city}`));
+        assert.equal(probe(lines, "Athens").length, 1, lines.join("\n"));
+        assert.ok(probe(lines, "Athens")[0].includes("WONDER_PYRAMIDS 20%*, BUILDING_MONUMENT 0%"), probe(lines, "Athens")[0]);
+        assert.ok(probe(lines, "Athens")[0].includes(`bought here T${turn + 1}`));
+        assert.deepEqual(probe(lines, "Sparta"), [], "100% for the first time: not yet stuck");
+        lines = capture(() => steps.probeQueues());
+        assert.deepEqual(probe(lines, "Athens"), [], "once a turn");
+        // A turn later Sparta's Monument still stands at 100%.
+        Game.turn = turn + 2;
+        lines = capture(() => steps.probeQueues());
+        assert.ok(probe(lines, "Sparta")[0]?.includes(`BUILDING_MONUMENT at 100% since T${turn + 1}`), lines.join("\n"));
+    } finally {
+        Game.turn = turn;
+        athens.queue = keep.a;
+        athens.queued = keep.aq;
+        sparta.queue = keep.s;
+    }
+});
+
+test("no building is bought in a city where a wonder was ordered this turn, nor while one waits in its queue: a repair is queued instead (research/32 §6: game 27's Serpent Mound left the queue after a Harbor was bought in the same pass)", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    const canBuild = world.canBuild;
+    const turn = Game.turn;
+    const LIBRARY = GameInfo.Constructibles.lookup("BUILDING_LIBRARY").$hash;
+    const tile = grid.index(A.x, A.y + 1);
+    const repairs = (kind) => fake.sent.filter((s) => s.kind === kind && s.args.ConstructibleType === LIBRARY).map((s) => s.id.id);
+    try {
+        fake.sent.length = 0;
+        steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        assert.ok(wonderOrders().some((s) => s.id.id === 0), "a wonder ordered in Athens");
+        // A damaged Library in Athens, gold enough to buy its repair.
+        world.canBuild = (type, id, args) => (type === "BUILDING_LIBRARY" && id.id === 0 ? { Success: true, RepairDamaged: true, Plots: [tile] } : canBuild(type, id, args));
+        world.canBuy = () => ({ Success: true, Cost: 50 });
+        world.gold = 1000;
+        fake.sent.length = 0;
+        steps.repairBuildings();
+        assert.deepEqual([repairs("command"), repairs("operation")], [[], [0]], "queued, not bought");
+        // The next turn: no order of this turn, no wonder in the queue: bought.
+        Game.turn = turn + 1;
+        fake.sent.length = 0;
+        steps.repairBuildings();
+        assert.deepEqual(repairs("command"), [0]);
+        // A wonder waiting in its queue: queued again.
+        athens.queued = ["WONDER_PYRAMIDS"];
+        fake.sent.length = 0;
+        steps.repairBuildings();
+        assert.deepEqual(repairs("command"), []);
+    } finally {
+        Game.turn = turn;
+        world.canBuild = canBuild;
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+        for (const k of ["canBuy", "gold"]) delete world[k];
     }
 });

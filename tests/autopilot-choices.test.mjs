@@ -859,3 +859,41 @@ test("story options with no icons are valued by their rewards' yields: +Happines
         world.cities = [];
     }
 });
+
+test("syncretism: its own civilization when that brings a culture slot, else the infrastructure with a unique quarter; only while the game asks, once (research/31 §5: game 26 held at M84)", async () => {
+    reset();
+    const unlocks = Game.Unlocks;
+    const identity = Players.get(0).Identity;
+    const civ = (t) => GameInfo.Civilizations.lookup(t).$hash;
+    const T = SyncreticChoiceTypes;
+    Game.Unlocks = {
+        getSyncreticCivUnlocksForChoice: (_p, flag) => (flag === T.SYNCRETIC_CHOICE_SELF ? [civ("CIVILIZATION_GREECE")] : flag === T.SYNCRETIC_CHOICE_INFRASTRUCTURE ? [civ("CIVILIZATION_ROME"), civ("CIVILIZATION_EGYPT")] : [civ("CIVILIZATION_PERSIA")]),
+        getSelfChoiceSyncreticUnlocks: () => [{ kind: "KIND_TRADITION", typeHash: 1 }, { kind: "KIND_CULTURE_SLOT", typeHash: 2 }],
+        getInfrastructureChoiceSyncreticUnlocks: (t) => (t === "CIVILIZATION_EGYPT" ? [{ kind: "KIND_QUARTER", typeHash: 3 }] : [{ kind: "KIND_CONSTRUCTIBLE", typeHash: 4 }, { kind: "KIND_CONSTRUCTIBLE", typeHash: 5 }]),
+    };
+    Players.get(0).Identity = { ...identity, getSyncreticCivType: () => null };
+    const ops = [PlayerOperationTypes.CHOOSE_SYNCRETISM_UNITS, PlayerOperationTypes.CHOOSE_SYNCRETISM_INFRASTRUCTURE, PlayerOperationTypes.CHOOSE_SYNCRETISM_SELF];
+    const picked = () => fake.sent.filter((s) => ops.includes(s.op)).map((s) => [s.op, s.args.CivilizationType]);
+    try {
+        assert.deepEqual(choices.chooseSyncretism(), [], "not asked");
+        world.notifications = [{ name: "NOTIFICATION_CHOOSE_SYNCRETISM" }];
+        fake.sent.length = 0;
+        const out = await choices.makeChoices(DEFAULT_SETTINGS);
+        assert.deepEqual(picked(), [[PlayerOperationTypes.CHOOSE_SYNCRETISM_SELF, civ("CIVILIZATION_GREECE")]], "the choices pass answers it");
+        assert.ok(out.some((e) => e.key === "SYNCRETISM"));
+        // Its own without a culture slot: the infrastructure with a unique quarter (Egypt over Rome's two buildings).
+        Game.Unlocks.getSelfChoiceSyncreticUnlocks = () => [{ kind: "KIND_TRADITION", typeHash: 1 }];
+        fake.sent.length = 0;
+        choices.chooseSyncretism();
+        assert.deepEqual(picked(), [[PlayerOperationTypes.CHOOSE_SYNCRETISM_INFRASTRUCTURE, civ("CIVILIZATION_EGYPT")]]);
+        // Chosen already: nothing more.
+        Players.get(0).Identity = { ...identity, getSyncreticCivType: () => civ("CIVILIZATION_EGYPT") };
+        fake.sent.length = 0;
+        assert.deepEqual(choices.chooseSyncretism(), []);
+    } finally {
+        Game.Unlocks = unlocks;
+        if (identity === undefined) delete Players.get(0).Identity;
+        else Players.get(0).Identity = identity;
+        delete world.notifications;
+    }
+});

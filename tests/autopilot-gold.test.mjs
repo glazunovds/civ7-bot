@@ -227,7 +227,12 @@ test("a rival near an economic win (the strategy's GDP goal): the cheapest gold 
         p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
         assert.equal(steps.buyGoal(p.budget)[0]?.key, "GOAL_BOUGHT");
         assert.deepEqual(purchases().map((x) => x.args.ConstructibleType), [C("BUILDING_MARKET")]);
+        // A wonder queued in Athens: no gold building saved for there (research/32 §6).
+        world.cities[0].queued = ["WONDER_PYRAMIDS"];
+        steps.resetGoldPlan();
+        assert.notEqual(steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal?.kind, "GDP");
     } finally {
+        delete world.cities[0].queued;
         world.canConvert = (id) => id.id === 1;
         world.canBuy = (_type, _id, args) => ({ Success: args.X !== undefined, Cost: 250 });
     }
@@ -244,6 +249,22 @@ test("a codex in the archive with every slot full: the Academy is saved for, the
         fake.sent.length = 0;
         let p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
         assert.equal(p.budget.goal?.kind, "CODEX");
+        // A wonder queued in Athens since the goal was chosen: the goal is not bought there, and the next plan saves for
+        // nothing there (research/32 §6).
+        world.gold = 1000;
+        const rich = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
+        assert.equal(rich.budget.goal?.kind, "CODEX");
+        world.cities[0].queued = ["WONDER_PYRAMIDS"];
+        try {
+            assert.deepEqual(steps.buyGoal(rich.budget), []);
+            steps.resetGoldPlan();
+            assert.notEqual(steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal?.kind, "CODEX");
+        } finally {
+            delete world.cities[0].queued;
+            world.gold = 250;
+            steps.resetGoldPlan();
+        }
+        p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
         steps.buyGoal(p.budget);
         steps.buyBuildings(s, 0, p.budget);
         assert.deepEqual(purchases(), [], "250 of 300: the plan's 250 building waits");
@@ -423,5 +444,23 @@ test("codices waiting: an Academy already queued may be bought (research/23 S8: 
         world.gold = 600;
         world.canConvert = (id) => id.id === 1;
         world.canBuy = (_type, _id, args) => ({ Success: args.X !== undefined, Cost: 250 });
+    }
+});
+
+test("the final age with the score victory off has no last turns: conversions go on (research/31 §1: game 26 went 52 turns past Modern's 100%)", () => {
+    steps.resetGoldPlan();
+    const vm = Game.VictoryManager;
+    try {
+        world.gold = 2000;
+        world.finalAge = true;
+        world.agePoints = 95; // the estimate says about 6 turns left
+        Game.VictoryManager = { isScoreVictoryEnabled: () => false };
+        fake.sent.length = 0;
+        steps.convertTowns(settings.get(), 0);
+        assert.deepEqual(converted(), [1], "the game does not end with the age");
+    } finally {
+        Game.VictoryManager = vm;
+        delete world.agePoints;
+        delete world.finalAge;
     }
 });

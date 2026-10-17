@@ -192,7 +192,12 @@ export function installFakeEngine(world, age = "antiquity") {
             location: { x: c.x, y: c.y },
             getPurchasedPlots: () => grid.radius(grid.index(c.x, c.y), 1).map((p) => p.idx),
             Yields: {
-                getNetYield: (y) => (y === g.YieldTypes.YIELD_PRODUCTION ? c.prod ?? 5 : y === g.YieldTypes.YIELD_FOOD ? c.food ?? 3 : y === g.YieldTypes.YIELD_HAPPINESS ? c.happy ?? 1 : 1),
+                // world.cities[i].nets = { YIELD_SCIENCE: 40, … }: its other net yields (default 1)
+                getNetYield: (y) => {
+                    const key = Object.keys(g.YieldTypes).find((k) => g.YieldTypes[k] === y);
+                    if (c.nets && key in c.nets) return c.nets[key];
+                    return y === g.YieldTypes.YIELD_PRODUCTION ? c.prod ?? 5 : y === g.YieldTypes.YIELD_FOOD ? c.food ?? 3 : y === g.YieldTypes.YIELD_HAPPINESS ? c.happy ?? 1 : 1;
+                },
                 getYield: (y) => (y === g.YieldTypes.YIELD_PRODUCTION ? c.prod ?? 5 : 1),
                 // world.placements(city) -> { buildings: [{ constructibleType, placements: [{ plotID, yieldChanges, changeDetails }] }] }
                 calculateAllBuildingsPlacements: () => world.placements?.(c) ?? null,
@@ -370,7 +375,8 @@ export function installFakeEngine(world, age = "antiquity") {
     g.YieldTypes = { YIELD_FOOD: 0, YIELD_PRODUCTION: 1, YIELD_GOLD: 2, YIELD_SCIENCE: 3, YIELD_CULTURE: 4, YIELD_HAPPINESS: 5, YIELD_DIPLOMACY: 6 };
     g.GrowthTypes = { EXPAND: 0, PROJECT: 1 };
     g.CityCommandTypes = { PURCHASE: 1, CHANGE_GROWTH_MODE: 2, EXPAND: 3 };
-    g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17, MOVE_GREAT_WORK: 40, ASSIGN_RESOURCE: 41, DECLARE_WAR: 42, CANCEL_ALLIANCE: 43, BUY_ATTRIBUTE_TREE_NODE: 44 };
+    g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17, MOVE_GREAT_WORK: 40, ASSIGN_RESOURCE: 41, DECLARE_WAR: 42, CANCEL_ALLIANCE: 43, BUY_ATTRIBUTE_TREE_NODE: 44, CHOOSE_SYNCRETISM_UNITS: 45, CHOOSE_SYNCRETISM_INFRASTRUCTURE: 46, CHOOSE_SYNCRETISM_SELF: 47 };
+    g.SyncreticChoiceTypes = { SYNCRETIC_CHOICE_UNITS: 0, SYNCRETIC_CHOICE_INFRASTRUCTURE: 1, SYNCRETIC_CHOICE_SELF: 2 };
     g.PlayerOperationParameters = { Activate: 1, Deactivate: 2 };
     g.CultureSlotTypes = { TRADITION_CULTURE_SLOT: 1, POLICY_CULTURE_SLOT: 2, CRISIS_CULTURE_SLOT: 3 };
     g.AdvisorySubjectTypes = { CHOOSE_TECH: 1, CHOOSE_CULTURE: 2, PRODUCTION: 3 };
@@ -483,6 +489,8 @@ export function installFakeEngine(world, age = "antiquity") {
             if (world.readyLag) setTimeout(() => world.readyUnits?.shift(), world.readyLag);
             else world.readyUnits?.shift();
             if (op === g.UnitOperationTypes.MOVE_TO && args?.Modifiers & g.UnitOperationMoveModifiers.ATTACK) setImmediate(() => g.engine.trigger("Combat", {}));
+            // A ranged attack fights too.
+            if (op === g.UnitOperationTypes.RANGE_ATTACK && args?.X !== undefined) setImmediate(() => g.engine.trigger("Combat", {}));
         },
     };
     // Combat: world.combat(unitId, {x, y}) -> { dealt, taken } (the predicted damage to the defender
@@ -649,9 +657,11 @@ export function installFakeEngine(world, age = "antiquity") {
     };
     // world.greatWorks = { [index]: "GREATWORK_TYPE" }
     g.Game.Culture = { getGreatWorkType: (i) => (world.greatWorks?.[i] ? hash(world.greatWorks[i]) : -1) };
-    // world.finalAge (isFinalAge), world.ageCountdown (ageCountdownStarted), world.agePoints (of 100)
+    // world.finalAge (isFinalAge), world.ageCountdown (ageCountdownStarted), world.agePoints (of world.ageMax, default 100;
+    // 0: no age timer), world.extendedGame (isExtendedGame: played on past the game's end)
     g.Game.AgeProgressManager = {
-        getCurrentAgeProgressionPoints: () => world.agePoints ?? 20, getMaxAgeProgressionPoints: () => 100,
+        getCurrentAgeProgressionPoints: () => world.agePoints ?? 20, getMaxAgeProgressionPoints: () => world.ageMax ?? 100,
+        get isExtendedGame() { return !!world.extendedGame; },
         get isFinalAge() { return !!world.finalAge; },
         set isFinalAge(v) { world.finalAge = !!v; },
         get ageCountdownStarted() { return !!world.ageCountdown; },

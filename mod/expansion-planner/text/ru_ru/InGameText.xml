@@ -601,6 +601,15 @@
     <Replace Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED" Language="ru_RU">
       <Text>{1_City}: {2_Wonder} не выиграть ({4_Why}); {3_Building} в очереди, чтобы встать перед ним</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_PRODUCTION_FIRST" Language="ru_RU">
+      <Text>{1_City}: сначала {2_Building}: +{3_Production} к производству окупится до конца космических работ города ({4_Work} производства)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLE_ANYWHERE" Language="ru_RU">
+      <Text>{1_Unit}: места нет, основывает поселение на {2_X},{3_Y} ({4_Turns} ход.), где позволяет игра: каждое поселение даёт 4 военных очка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SYNCRETISM" Language="ru_RU">
+      <Text>Синкретизм: {1_Civ} ({2_Kind})</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_AGE_END_BOUGHT" Language="ru_RU">
       <Text>{1_City}: {2_Item} куплено за {3_Gold} зол.: почти готово, иначе его производство пропало бы при смене эпохи</Text>
     </Replace>

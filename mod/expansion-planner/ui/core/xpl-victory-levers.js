@@ -30,6 +30,10 @@ export const SCIENCE_PROJECTS = [
     // Not Crewed Space Flight Research: 5 Innovation for a Radio Station (643 production in game 5's
     // capital) plus 1200, and Radio's mastery; Crewed Space Flight Preparation gives 15 for 2000.
 ];
+// Innovation projects run only where their building already stands: never built for, never researched for (research/31
+// §2.6). The Radio Telescope (Crewed Space Flight Research: 5 Innovation for 1200 production) once a Radio Station stands
+// there; not in SCIENCE_PROJECTS, since building a Radio Station for it is a poor deal (research/14).
+export const STANDING_SITE_PROJECTS = ["PROJECT_CREWED_SPACE_FLIGHT_RESEARCH"];
 export const LAUNCH_PAD = "BUILDING_LAUNCH_PAD"; // the science victory needs one, undamaged
 // Projects done again and again (no MaxPlayerInstances): every city that may start one keeps one going.
 export const REPEATABLE_PROJECTS = new Set(["PROJECT_CREWED_SPACE_FLIGHT_PREP"]);

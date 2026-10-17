@@ -376,6 +376,29 @@ test("purchases: the plan's purchases skip what the victory step bought this pas
     }
 });
 
+test("purchases: the plan buys no building in a city whose queue holds a wonder (research/32 §6)", async () => {
+    const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
+    const bought = () => fake.sent.filter((s) => s.kind === "command" && s.op === CityCommandTypes.PURCHASE).map((s) => s.id.id);
+    const gold = world.gold;
+    try {
+        world.gold = 5000;
+        fake.sent.length = 0;
+        steps.buyBuildings(settings.get(), 0);
+        const cities = Players.get(0).Cities.getCities();
+        const id = bought().find((i) => !cities[i].isTown);
+        assert.ok(id !== undefined, JSON.stringify(bought()));
+        const city = world.cities[id];
+        const queued = city.queued;
+        city.queued = [...(queued ?? []), "WONDER_PYRAMIDS"];
+        fake.sent.length = 0;
+        steps.buyBuildings(settings.get(), 0);
+        city.queued = queued;
+        assert.ok(!bought().includes(id), JSON.stringify(bought()));
+    } finally {
+        world.gold = gold;
+    }
+});
+
 test("diplomacy option: the pass starts a counter-spy against a caught spy's leader", async () => {
     settings.patch({ autopilot: { diplomacy: true, focus: false, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
     world.notifications = [{ name: "NOTIFICATION_DIPLOMATIC_ACTION_ESPIONAGE", target: { id: 71 } }];
@@ -587,5 +610,36 @@ test("the game's second turn activation in the same turn only orders units and e
     } finally {
         autopilot.setAutopilot(false);
         world.gold = gold;
+    }
+});
+
+test("the final age's score line only while the score victory is on (research/31 §1: game 26 printed «score: ours 0» every turn)", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "SCIENCE", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 8 : 1) };
+    const vm = Game.VictoryManager;
+    const turn = Game.turn;
+    world.finalAge = true;
+    world.victoryPoints = { VICTORY_SCORE: { 0: 900, 5: 910 } };
+    const lines = [];
+    const warn = console.warn;
+    const scored = () => lines.filter((l) => l.includes("score: ours")).length;
+    try {
+        console.warn = (...a) => lines.push(a.join(" "));
+        Game.VictoryManager = { isCountdownVictoryEnabled: () => true, isScoreVictoryEnabled: () => false };
+        Game.turn = turn + 1; // the races are logged once a turn
+        await autopilot.runTurn(true);
+        assert.equal(scored(), 0, "the score victory off");
+        Game.VictoryManager = { isCountdownVictoryEnabled: () => true, isScoreVictoryEnabled: () => true };
+        Game.turn = turn + 2;
+        await autopilot.runTurn(true);
+        assert.equal(scored(), 1);
+    } finally {
+        console.warn = warn;
+        Game.VictoryManager = vm;
+        Game.turn = turn;
+        delete world.finalAge;
+        delete world.victoryPoints;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+        delete Players.get(0).LegacyPaths;
     }
 });

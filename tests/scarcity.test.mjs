@@ -4,7 +4,7 @@
 // happiness, B adds +7 / +6 for -3 / -4; the best new tile gives +1 food +4 production.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { costMultiplier, costValue, gainMultiplier, gainValue, SCARCITY } from "../mod/expansion-planner/ui/core/xpl-scarcity.js";
+import { costMultiplier, costValue, gainMultiplier, gainValue, SCARCITY, UNHAPPINESS, unhappinessDelta, unhappinessShare } from "../mod/expansion-planner/ui/core/xpl-scarcity.js";
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { dot } from "../mod/expansion-planner/ui/core/xpl-yields.js";
 
@@ -56,4 +56,41 @@ test("gains: food (and happiness) a settlement already has plenty of is worth le
     assert.equal(gainValue(w, [0, 0, 0, 3, 0, 0, 0], nets(200, 200)), w[3] * 3, "science keeps its weight");
     assert.ok(gainValue(w, [4, 0, 0, 0, 0, 0, 0], nets(60, 0)) < w[0] * 4 * 0.5, "a 4-food tile in a city with 60 food");
     assert.equal(gainValue(w, [4, 0, 0, 0, 0, 0, 0], null), w[0] * 4, "no nets: plain weights");
+});
+
+test("below zero Happiness the game takes 5% of the settlement's other yields a point, at most 80% (research/31 §8: game 27's Лоян)", () => {
+    assert.equal(unhappinessShare(3), 0);
+    assert.equal(unhappinessShare(0), 0);
+    assert.ok(Math.abs(unhappinessShare(-4) - 0.2) < 1e-9);
+    assert.equal(unhappinessShare(-16), UNHAPPINESS.MAX);
+    assert.equal(unhappinessShare(-30), UNHAPPINESS.MAX, "capped");
+    assert.equal(unhappinessShare(NaN), 0);
+    const w = [1, 1, 1, 1, 1, 1, 1];
+    // Production 30, gold 10, science 40, culture 20: 100 a turn before any penalty (food and happiness are not taken).
+    const rich = [50, 30, 10, 40, 20, 2, 0];
+    assert.ok(Math.abs(unhappinessDelta(w, rich, 2, -4) - 20) < 1e-9, "2 → −4: 20% of 100");
+    assert.equal(unhappinessDelta(w, rich, 8, 2), 0, "above zero: nothing");
+    // Already at −4 (its yields shown reduced by 20%: 80 of 100): to −10 takes 30% more of the 100.
+    const hurt = [50, 24, 8, 32, 16, -4, 0];
+    assert.ok(Math.abs(unhappinessDelta(w, hurt, -4, -10) - 30) < 1e-9);
+    assert.ok(Math.abs(unhappinessDelta(w, hurt, -4, 0) + 20) < 1e-9, "back to zero wins the 20% back");
+    assert.equal(unhappinessDelta(w, [50, NaN, NaN, NaN, NaN, 2, NaN], 2, -4), 0, "other yields unknown: nothing to count");
+});
+
+test("a happiness cost that crosses zero costs the penalty on the other yields; a gain back above zero wins it back", () => {
+    const w = getProfile("BALANCE").y;
+    const yields = [50, 30, 10, 40, 20, 2, 0];
+    // 6 Happiness (a Modern specialist) in a settlement with 2: −4, the game takes 20% of the rest.
+    const crossing = costValue(w, [0, 0, 0, 0, 0, 6, 0], yields);
+    const penalty = 0.2 * (w[1] * 30 + w[2] * 10 + w[3] * 40 + w[4] * 20);
+    assert.ok(Math.abs(crossing - (w[5] * 6 + penalty)) < 1e-9, `${crossing} vs ${w[5] * 6 + penalty}`);
+    // With plenty left the cost is the scarcity curve's, no penalty.
+    const calm = costValue(w, [0, 0, 0, 0, 0, 6, 0], [50, 30, 10, 40, 20, 40, 0]);
+    assert.ok(calm < w[5] * 6 && calm > 0);
+    // Other yields unknown: the old SHORTAGE weight stands in.
+    assert.equal(costValue(w, [0, 0, 0, 0, 0, 6, 0], nets(50, 2)), w[5] * 6 * SCARCITY.SHORTAGE);
+    // At −4 (yields shown reduced), 4 Happiness back wins the 20% back on top of the happiness itself.
+    const hurt = [50, 24, 8, 32, 16, -4, 0];
+    const won = gainValue(w, [0, 0, 0, 0, 0, 4, 0], hurt);
+    assert.ok(Math.abs(won - (w[5] * 4 + 0.2 * (w[1] * 30 + w[2] * 10 + w[3] * 40 + w[4] * 20))) < 1e-9, String(won));
 });

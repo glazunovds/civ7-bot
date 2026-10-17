@@ -14,7 +14,7 @@
  * (core/xpl-scarcity.js): plenty left -> cheap, running short -> expensive.
  */
 import { profileFor } from '../core/xpl-profiles.js';
-import { dot, yieldIndex, F, G, H } from '../core/xpl-yields.js';
+import { dot, yieldIndex, YIELD_KEYS, F, G, H } from '../core/xpl-yields.js';
 import { improvementKind } from '../core/xpl-town-focus.js';
 import { costValue, gainValue } from '../core/xpl-scarcity.js';
 import { highYieldBonus, highYieldTarget, RESOURCE_TILE_VALUE } from '../core/xpl-victory-levers.js';
@@ -97,10 +97,9 @@ export function growthAdvice(cityID, settings, { focusKind = null, victory = nul
     const centre = safe(() => GameplayMap.getIndexFromXY(city.location.x, city.location.y), -1);
     const planned = plannedTiles();
     const owned = new Set(safe(() => city.getPurchasedPlots(), []) ?? []);
-    // What the city has per turn of the two yields specialists cost (their weight depends on it).
-    const nets = [NaN, NaN, NaN, NaN, NaN, NaN, NaN];
-    nets[F] = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_FOOD), NaN));
-    nets[H] = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), NaN));
+    // What the city has per turn: the food and happiness specialists cost weigh by it, and below zero happiness the game
+    // takes a share of its other yields (core/xpl-scarcity.js unhappinessDelta; research/31 §8).
+    const nets = YIELD_KEYS.map((k) => Number(safe(() => city.Yields.getNetYield(YieldTypes[k]), NaN)));
 
     const offer = safe(() => Game.CityCommands.canStart(cityID, CityCommandTypes.EXPAND, {}, false), null);
     const expand = [];

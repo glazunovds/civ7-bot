@@ -712,6 +712,8 @@ function wayIsSafe(u, path, radius, ctx) {
  * of any, within 6 of one not friendly to us)? Also checks the game's own site suggestions.
  */
 function tooCloseToForeign(loc, ctx) {
+    // A site taken anywhere the game allows (anySite) keeps only off a village's doorstep.
+    if (loc?.any) return villageDoorstep(loc, ctx);
     // A site from the relaxed search (sites ran out far below the cap) uses its looser distances.
     const T = siteTuning(!!loc?.relaxed);
     ctx.foreignCentres ??= (safe(() => Players.getAlive(), []) ?? [])
@@ -721,6 +723,45 @@ function tooCloseToForeign(loc, ctx) {
     if (ctx.foreignCentres.some((c) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, c.x, c.y), Infinity) < T.FOREIGN_MIN_DISTANCE)) return true;
     ctx.villages ??= safe(() => villagesOf(pid()), []) ?? [];
     return ctx.villages.some((v) => angersVillage(safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, v.x, v.y), Infinity), v.friendly, T));
+}
+
+// A settlement anywhere the game allows (research/31 §3): settlements are military points, so with a countdown to block or
+// to start (the strategy's settleAnywhere) a settler with no site for ANYWHERE_IDLE_TURNS takes the nearest tile within
+// ANYWHERE_RADIUS where the game accepts a settlement (isValidLandClaimLocation), our own spacing aside: never next to a
+// village (it turns hostile at once within ANYWHERE_VILLAGE: root gotcha 27), never into danger, never a war.
+const ANYWHERE_IDLE_TURNS = 3;
+const ANYWHERE_RADIUS = 8;
+const ANYWHERE_PATHS = 12; // ways looked at, the nearest tiles first
+const ANYWHERE_VILLAGE = 3;
+
+/** Is a village within ANYWHERE_VILLAGE of this tile? */
+function villageDoorstep(loc, ctx) {
+    ctx.villages ??= safe(() => villagesOf(pid()), []) ?? [];
+    return ctx.villages.some((v) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, v.x, v.y), Infinity) <= ANYWHERE_VILLAGE);
+}
+
+/** The nearest tile this settler reaches safely where the game accepts a settlement, or null. */
+function anySite(u, taken, ctx) {
+    const here = u.location;
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, ANYWHERE_RADIUS), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || taken.has(`${loc.x},${loc.y}`) || safe(() => GameplayMap.isWater(loc.x, loc.y), false)) continue;
+        if (safe(() => GameplayMap.getRevealedState(pid(), loc.x, loc.y), RevealedStates.HIDDEN) === RevealedStates.HIDDEN) continue;
+        tiles.push({ x: loc.x, y: loc.y, d: safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), Infinity) });
+    }
+    tiles.sort((a, b) => a.d - b.d);
+    let paths = 0;
+    for (const t of tiles) {
+        const loc = { x: t.x, y: t.y, any: true };
+        if (!siteStillFree(loc) || hazardAt(loc) > 0 || dangerNear(loc, DANGER_RADIUS, ctx) || villageDoorstep(loc, ctx) || startsWar(u, loc)) continue;
+        if (same(here, loc)) return { ...loc, turns: 0, source: "ANY", role: null };
+        if (++paths > ANYWHERE_PATHS) break;
+        const p = pathTo(u, loc);
+        if (!p || p.turns > SETTLE_MAX_TURNS || !wayIsSafe(u, p, PATH_DANGER, ctx)) continue;
+        return { ...loc, turns: p.turns, source: "ANY", role: null };
+    }
+    return null;
 }
 
 /** A site a settler may go for now: no hostile unit near it, not too close to another player. */
@@ -844,7 +885,8 @@ function noteNoSite(u, ctx, taken = new Set(), limit = siteLimit()) {
     const picks = state.get().results.sites?.picks ?? [];
     const why = {};
     for (const p of picks) {
-        const v = siteVerdict(u, { x: p.x, y: p.y }, taken, ctx, PATH_DANGER, limit);
+        // A relaxed pick by the relaxed rules, as pickSite judges it (research/31 §3: game 25 reported them FOREIGN).
+        const v = siteVerdict(u, { x: p.x, y: p.y, relaxed: !!p.relaxed }, taken, ctx, PATH_DANGER, limit);
         const r = v.reason ?? "OK";
         why[r] = (why[r] ?? 0) + 1;
     }
@@ -1147,6 +1189,12 @@ function settle(u, def, taken, ctx) {
     const idle = settlerIdle.get(k);
     const starved = !!idle && idle.count >= SETTLER_IDLE_TURNS && Game.turn - idle.lastTurn <= 1;
     if (!goal && starved) goal = pickSite(u, taken, ctx, PATH_DANGER, { maxTurns: SETTLE_MAX_TURNS });
+    // A countdown to block or to start (settlements are military points) and still no site: anywhere the game allows.
+    let anywhere = null;
+    if (!goal && ctx.anywhere && !!idle && idle.count >= ANYWHERE_IDLE_TURNS && Game.turn - idle.lastTurn <= 1) {
+        goal = anySite(u, taken, ctx);
+        if (goal) anywhere = { key: "SETTLE_ANYWHERE", args: [nameOf(def), goal.x, goal.y, goal.turns ?? "?"] };
+    }
     if (!goal) {
         goals.delete(k);
         noteNoSite(u, ctx, taken, starved ? SETTLE_MAX_TURNS : siteLimit());
@@ -1180,7 +1228,7 @@ function settle(u, def, taken, ctx) {
     if (!moveTo(u, goal)) return null;
     // The way left now: the watchdog's first measure (settlerStuck).
     if (settlerProgress.get(k)?.goal !== `${goal.x},${goal.y}`) settlerProgress.set(k, { turn: Game.turn, turns: pathTurns(u, goal) ?? Infinity, goal: `${goal.x},${goal.y}`, stuck: 0 });
-    return gaveUp ?? { key: "SETTLE_MOVE", args: [nameOf(def), goal.x, goal.y, pathTurns(u, goal) ?? goal.turns ?? "?"] };
+    return anywhere ?? gaveUp ?? { key: "SETTLE_MOVE", args: [nameOf(def), goal.x, goal.y, pathTurns(u, goal) ?? goal.turns ?? "?"] };
 }
 
 /** Sites settlers are walking to, with the role planned there (for map tacks). */
@@ -1205,9 +1253,9 @@ const RANGED_GUARD_RADIUS = 2; // a soldier this close to one of our settlements
  * of our settlements (it is attacking it), then at any military unit, then at anything else, the
  * most damaged first; never at a tile with no unit (a village or a district: no effect). Seen in
  * game 5: crossbowmen shot scouts and an empty village tile (strength 5) while a swordsman took
- * the town next to them.
+ * the town next to them. `hostileOnly`: only at a soldier we are at war with (a guard woken to shoot).
  */
-function rangedAttack(u, def) {
+function rangedAttack(u, def, { hostileOnly = false } = {}) {
     if (u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return null;
     const op = globalThis.UnitOperationTypes?.RANGE_ATTACK ?? "UNITOPERATION_RANGE_ATTACK";
     const r = safe(() => Game.UnitOperations.canStart(u.id, op, {}, false), null);
@@ -1220,7 +1268,7 @@ function rangedAttack(u, def) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(r.Plots[i]), null);
         if (!loc || startsWar(u, loc)) continue;
         const there = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).filter(Boolean);
-        if (there.length === 0) continue;
+        if (there.length === 0 || (hostileOnly && !there.some((t) => hostileOwner(t)))) continue;
         const military = there.some((t) => safe(() => GameInfo.Units.lookup(t.type)?.CoreClass, null) === "CORE_CLASS_MILITARY");
         const attacking = military && ours.some((c) => safe(() => GameplayMap.getPlotDistance(c.x, c.y, loc.x, loc.y), Infinity) <= RANGED_GUARD_RADIUS);
         const dmg = (attacking ? 2000 : 0) + (military ? 1000 : 0) + damageAt(loc);
@@ -2361,10 +2409,47 @@ function raidersNear() {
     return out;
 }
 
+const SHOTS_MAX = 8; // ranged shots a pass (each waits for its Combat event)
+
+/** A unit that attacks from afar: a ranged or bombard strength (GameInfo.Unit_Stats). */
+function shootsFromAfar(def) {
+    const s = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
+    return Number(s?.RangedCombat) > 0 || Number(s?.Bombard) > 0;
+}
+
+/**
+ * Ranged soldiers shoot the hostile soldiers they reach, those on guard too (game 27: a Field Gun on alert in
+ * Ханькоу's centre, at full health, never fired while two Dreadnoughts next to it shelled the centre from 200 to 0
+ * in 7 turns, T71-T77). A unit on alert, fortified, asleep or resting is busy: `defend`, where ranged units shot,
+ * orders only idle ones, and the game wakes a unit only when it is attacked itself. The guards counted as enough
+ * (no `defenders: none for Ханькоу` line), so no other defender came either. Every ranged soldier with an attack left,
+ * not on its way (a move order) nor in danger off a centre (it gets out of reach: escape), shoots at a soldier we
+ * are at war with only, one after another, each after the last one's Combat event so the next sees the damage
+ * (rangedAttack: the one attacking our settlement first, then the most damaged). @returns log entries
+ */
+async function shootRaiders(ordered) {
+    const out = [];
+    const A = globalThis.UnitActivityTypes;
+    const centres = new Set((safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => `${c.location.x},${c.location.y}`));
+    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+        if (out.length >= SHOTS_MAX) break;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!isSoldier(def) || u.isCommanderUnit || u.isOnMap === false || ordered.has(unitKey(u.id)) || !shootsFromAfar(def)) continue;
+        if (!(Number(u.Combat?.attacksRemaining) > 0) || (A && u.activityType === A.OPERATION)) continue;
+        if (def.Domain === "DOMAIN_LAND" && !centres.has(`${u.location?.x},${u.location?.y}`) && inDanger(u, def)) continue;
+        const e = rangedAttack(u, def, { hostileOnly: true });
+        if (!e) continue;
+        ordered.add(unitKey(u.id));
+        out.push(e);
+        await untilEvent("Combat", COMBAT_WAIT_MS);
+    }
+    return out;
+}
+
 /**
  * Melee soldiers strike raiders next to them (with «Оборона»): seen in game, an independent's
  * raiders stayed around the capital for a whole age, pillaging (47 repairs bought) while our
- * soldiers only fortified; ranged ones already shoot (rangedAttack). Every military unit with
+ * soldiers only fortified; ranged ones shoot first (shootRaiders). Every military unit with
  * an attack left (fortified ones too: attacking wakes them; not commanders, not ranged ones)
  * attacks a raider on a neighbouring tile near our settlements (raidersNear) when the game's
  * own prediction (simulateAttack) says it is worth it (strikeWorthIt); the kill first, else
@@ -2376,16 +2461,22 @@ export async function strikeRaiders() {
     const entries = [];
     const ordered = new Set();
     const M = globalThis.UnitOperationMoveModifiers;
-    if (M?.ATTACK === undefined || typeof safe(() => Game.Combat.simulateAttackAsync, null) !== "function") return { entries, ordered };
-    const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
+    const strikes = M?.ATTACK !== undefined && typeof safe(() => Game.Combat.simulateAttackAsync, null) === "function";
     // Commanders' focused attacks first (their units then have no attack left for single strikes).
-    const focused = await commanderAttacks(safe(() => Players.get(pid()).Units.getUnits(), []) ?? [], M);
-    entries.push(...focused.entries);
-    for (const k of focused.ordered) ordered.add(k);
+    if (strikes) {
+        const focused = await commanderAttacks(safe(() => Players.get(pid()).Units.getUnits(), []) ?? [], M);
+        entries.push(...focused.entries);
+        for (const k of focused.ordered) ordered.add(k);
+    }
+    // Ranged soldiers next, those on guard too (game 27): their damage may make a melee strike worth it.
+    const shots = await shootRaiders(ordered);
+    entries.push(...shots);
+    if (!strikes) return { entries, ordered };
+    const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
     // Why nothing struck, for UI.log (seen in game: no strike in a whole game, cause unknown).
     const seen = { pairs: 0, noAnswer: 0, impossible: 0, poor: 0 };
     for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
-        if (entries.length >= STRIKE_MAX) break;
+        if (entries.length - shots.length >= STRIKE_MAX) break;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         if (def?.CoreClass !== "CORE_CLASS_MILITARY" || u.isCommanderUnit || u.isOnMap === false || u.canMove === false || ordered.has(unitKey(u.id))) continue;
         const c = u.Combat;
@@ -2790,6 +2881,8 @@ export function commandUnits(settings, options) {
             return !!R && safe(() => Players.get(pid()).Diplomacy.getRelationshipEnum(id), null) === R.PLAYER_RELATIONSHIP_HOSTILE;
         })),
         settleNear: !!options.settleNear,
+        // A settler with no site founds wherever the game allows (the strategy's settleAnywhere: research/31 §3).
+        anywhere: !!options.anywhere,
         // Settlements the military lever founds past the cap (research/30 §1).
         pastCap: Math.max(0, Number(options.pastCap) || 0),
         // Independents a unit is already walking to (one at a time).

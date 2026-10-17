@@ -25,7 +25,7 @@ import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeCh
 import { commandUnits, disbandSurplus, leadersNearExplorers, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
-import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, triumphs, victoryRaces } from '../data/xpl-victory.js';
+import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryRaces } from '../data/xpl-victory.js';
 import { applyStrategy, planStrategy, strategyLines } from '../core/xpl-strategy.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
@@ -270,9 +270,10 @@ function updateFocus(target = "AUTO") {
         const mil = military ? races.find((r) => r.enabled && r.cls === "MILITARY") : null;
         const o = mil ? militaryOutlook(mil, local(), { age: ageType(), ageFrac, ...military }) : null;
         if (o) log.warn(`military: ours ${o.ours}, best other ${o.top}, our goal ${o.goal} at ×${o.multiple}; ${o.need} settlement(s) to our own countdown${military.ivy ? ` (${o.needIvy} with Operation Ivy)` : ""}; room ${o.room}, past the cap ${o.over}${o.reachable ? `, within reach${o.pastCap > 0 ? ` (${o.pastCap} past the cap)` : ""}` : ""}`);
-        // The final age: the score that decides a game nobody wins (research/30 §1: lost 923 to 933, last in the economy).
-        if (finalAge) logScore(races);
-        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours})` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
+        // The final age: the score that decides a game nobody wins (research/30 §1: lost 923 to 933, last in the economy);
+        // not while the score victory is off (research/31 §1: game 26 printed «score: ours 0 …» every turn).
+        if (finalAge && scoreVictoryOn()) logScore(races);
+        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
     }
     // Our countdown to a victory has just started: worth a line in the tab's log.
     const out = noteWatch(watch);
@@ -452,6 +453,8 @@ export async function runTurn(force = false) {
                 explore: !!o.explore, settlers: !!o.settlers, defend: !!o.defend, merchants: !!o.merchants, roam: !!o.roam,
                 approach: unbefriendable(), leave: released, threats: o.defend || o.roam ? threats : [], riskOwners: steps.warState().risk,
                 settleNear: !!s.strategy?.settleNear,
+                // A countdown to block or to start: settlers with no site found wherever the game allows (research/31 §3).
+                anywhere: !!s.strategy?.settleAnywhere,
                 // The military lever's settlements past the cap (research/30 §1).
                 pastCap: s.strategy?.militaryLever ? Number(s.strategy.pastCap) || 0 : 0,
                 victory: !!focus, distant: focus === "ECONOMIC",
@@ -564,7 +567,7 @@ export async function runTurn(force = false) {
                 // plan's purchases then skip those and count their gold.
                 const purchases = budget ?? { bought: new Set(), spent: 0 };
                 // A non-final age's last turn: a building nearly done is bought, else its production is lost (research/30 §4).
-                if (budget) record(steps.buyAgeEndItems(budget));
+                if (budget) record(steps.buyAgeEndItems(budget, { threatened: threats.length > 0 }));
                 // A goal no other step buys (a settler far below the cap, the GDP building), then a settler
                 // from the free gold while far below the cap (past it for the military lever).
                 if (budget) record(steps.buyGoal(budget));

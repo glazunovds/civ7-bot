@@ -117,8 +117,10 @@ function withOverlay(plan, focus, watch, finalAge = false) {
         out.townFocusBias = { ...out.townFocusBias, RESORT: Math.max(out.townFocusBias?.RESORT ?? 0, 4) };
     }
     if (out.overlay.includes("ECONOMIC")) out.goals = [...out.goals, "GDP"];
-    // Military: settlements are points; the nearest safe site, founded soon (F1: the denial settler walked 7 turns).
-    if (out.overlay.includes("MILITARY")) Object.assign(out, { trainSettlers: true, settleNear: true });
+    // Military: settlements are points; the nearest safe site, founded soon (F1: the denial settler walked 7 turns); in the
+    // final age a settler with no site founds wherever the game allows (research/31 §3: game 25's settler stood idle 23
+    // turns while two more settlements would have stopped Ashoka's countdown). Our own lever is a MILITARY entry here too.
+    if (out.overlay.includes("MILITARY")) Object.assign(out, { trainSettlers: true, settleNear: true, settleAnywhere: finalAge });
     // Our own military countdown is within reach of the settlements we may still found (research/26 §3.3): settlers
     // first (the first savings goal, ahead in the queues), Operation Ivy when it closes the gap.
     const lever = danger.find((w) => w.own && w.cls === "MILITARY" && w.settlements !== undefined);
@@ -202,7 +204,7 @@ export function applyStrategy(settings, plan) {
             townFocusBias: plan.townFocusBias, pads: plan.pads, minCities: plan.minCities, gate: plan.gate ?? null,
             noFutureTech: !!plan.noFutureTech, denyWonders: !!plan.denyWonders, overlay: plan.overlay ?? [], gateLate: !!plan.gateLate,
             settleNear: !!plan.settleNear, fillCap: !!plan.fillCap, militaryLever: !!plan.militaryLever, ivy: !!plan.ivy,
-            pastCap: Number(plan.pastCap) || 0,
+            pastCap: Number(plan.pastCap) || 0, settleAnywhere: !!plan.settleAnywhere,
         },
     };
 }

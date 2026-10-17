@@ -117,3 +117,24 @@ test("toolbar dot: a Growing town reaching population 7, a specialized town with
     engine.trigger("CityGrowthModeChanged", { cityID: { owner: 0, id: 1 } });
     assert.deepEqual(adviceFor("towns"), ["FOCUS_READY", "NOT_CONNECTED"]);
 });
+
+test("a building's happiness upkeep that takes the city below zero costs the game's penalty on its other yields (research/31 §8)", async () => {
+    const city = world.cities[0];
+    const full = { ...settings, buildings: { ...settings.buildings, incremental: false } };
+    const libraryNet = async (happy) => {
+        city.happy = happy;
+        await startBuildingPlan(athens, full).promise;
+        return plans().placements.find((p) => p.type === "BUILDING_LIBRARY")?.net;
+    };
+    city.nets = { YIELD_SCIENCE: 200 };
+    try {
+        const calm = await libraryNet(30);
+        // 1 − 2 Happiness: the game would take 5% of the city's 200 science, 10 production and the rest.
+        const unhappy = await libraryNet(1);
+        assert.ok(calm - unhappy > 8, `calm ${calm} unhappy ${unhappy}`);
+    } finally {
+        delete city.nets;
+        delete city.happy;
+        await startBuildingPlan(athens, settings).promise;
+    }
+});

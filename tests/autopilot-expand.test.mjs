@@ -147,6 +147,13 @@ test("settlers go into the biggest city even with a busy queue, then to the fron
     const move = fake.sent.find((s) => s.kind === "operation" && s.args.InsertMode === CityOperationsParametersValues.MoveTo);
     assert.deepEqual([move?.args.QueueSourceLocation, move?.args.QueueDestinationLocation], [1, 0]);
     assert.equal(front[0].key, "FRONT_LOADED");
+    // Walls at the front (a threatened settlement's first: game 27): the settler waits behind them.
+    const monument = world.cities[0].queue;
+    world.cities[0].queue = { type: "BUILDING_ANCIENT_WALLS", turns: 5 };
+    reset();
+    steps.frontLoadUnits({ settlers: true });
+    world.cities[0].queue = monument;
+    assert.ok(!fake.sent.some((s) => s.kind === "operation" && s.args.InsertMode === CityOperationsParametersValues.MoveTo), "behind the walls");
     reset();
     world.cities.push({ owner: 0, x: 2, y: 2, name: "Bath", pop: 2 });
     world.settlementCap = 5; // 4 of 5: one at a time (two only below the cap less one: research/23 E3)
@@ -342,6 +349,69 @@ test("under threat: walls on the settlement's centre, bought when the gold cover
         assert.deepEqual([sent("operation"), move?.args.QueueSourceLocation, move?.args.QueueDestinationLocation], [[], 1, 0]);
     } finally {
         delete world.cities[0].queued;
+        delete world.canBuy;
+        delete world.canBuild;
+    }
+});
+
+test("a threatened settlement's walls go to the very front, ahead of an item with progress (the user, game 27: Ханькоу's walls waited 10 turns behind a Laboratory); not ahead of an item done this turn, nor, the centre undamaged, of a raced wonder", () => {
+    const london = world.cities[0];
+    const keep = { queue: london.queue, queued: london.queued };
+    const results = state.get().results;
+    const centre = GameplayMap.getIndexFromXY(LONDON.x, LONDON.y);
+    world.canBuild = (type) => (type === undefined ? { Success: true } : type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [centre], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    world.canBuy = () => ({ Success: false });
+    const move = (extra = {}) => {
+        reset();
+        steps.fortifyThreatened([{ settlement: { name: "London", x: LONDON.x, y: LONDON.y }, count: 3, land: 3, ...extra }]);
+        const m = fake.sent.find((s) => s.args.InsertMode === CityOperationsParametersValues.MoveTo);
+        return m ? [m.args.QueueSourceLocation, m.args.QueueDestinationLocation] : null;
+    };
+    steps.resetWar();
+    try {
+        london.queued = ["BUILDING_ANCIENT_WALLS"];
+        london.queue = { type: "BUILDING_MONUMENT", turns: 5, pct: 40 }; // more than a turn's 10 production in it
+        assert.deepEqual(move(), [1, 0], "ahead of the Monument with progress");
+        london.queue = { type: "BUILDING_MONUMENT", turns: 1, pct: 90 };
+        assert.equal(move(), null, "the Monument is done this turn");
+        // A wonder in a race (a rival seen building it) keeps the front, unless the centre is under fire.
+        state.set({ results: { ...results, wonders: { rows: [{ type: "WONDER_PYRAMIDS", rivalsSeen: 1 }] } } });
+        london.queue = { type: "WONDER_PYRAMIDS", turns: 8, pct: 30 };
+        assert.equal(move(), null, "behind a raced wonder");
+        assert.deepEqual(move({ damaged: true }), [1, 0], "the centre is damaged");
+        // Rivals' turns known (omniscient): the walls' own 10 turns count. A rival 12 turns away would win; 30, no.
+        state.set({ results: { ...results, wonders: { rows: [{ type: "WONDER_PYRAMIDS", rivalTurns: [12] }] } } });
+        assert.equal(move(), null, "8 turns left + 10 for the walls: the rival's 12 would win");
+        state.set({ results: { ...results, wonders: { rows: [{ type: "WONDER_PYRAMIDS", rivalTurns: [30] }] } } });
+        assert.deepEqual(move(), [1, 0], "a rival 30 turns away: the walls first");
+    } finally {
+        state.set({ results });
+        london.queue = keep.queue;
+        london.queued = keep.queued;
+        delete world.canBuild;
+        delete world.canBuy;
+    }
+});
+
+test("walls are bought where a wonder is queued only against a real attack, else queued (research/32 §6)", () => {
+    const centre = GameplayMap.getIndexFromXY(LONDON.x, LONDON.y);
+    const london = world.cities[0];
+    const keep = london.queued;
+    world.canBuy = (type) => (type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [centre], Cost: 120 } : { Success: false });
+    world.canBuild = (type) => (type === undefined ? { Success: true } : type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [centre], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    const keys = (extra) => {
+        reset();
+        return steps.fortifyThreatened([{ settlement: { name: "London", x: LONDON.x, y: LONDON.y }, count: 1, land: 1, ...extra }]).map((e) => e.key);
+    };
+    steps.resetWar();
+    try {
+        london.queued = ["WONDER_PYRAMIDS"];
+        assert.deepEqual(keys(), ["WALLS_QUEUED"], "one raider: queued");
+        assert.deepEqual(keys({ damaged: true }), ["WALLS_BOUGHT"], "the centre damaged: bought");
+        london.queued = keep;
+        assert.deepEqual(keys(), ["WALLS_BOUGHT"], "no wonder: bought");
+    } finally {
+        london.queued = keep;
         delete world.canBuy;
         delete world.canBuild;
     }

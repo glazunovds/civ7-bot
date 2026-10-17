@@ -255,3 +255,21 @@ test("the score's places: 1 + those strictly ahead in each race switched on, and
     // Ties share a place (everyone has 970 on the first turn).
     assert.deepEqual(scorePlaces([race("SCIENCE", [[1, 0], [0, 0]])], 0), [{ cls: "SCIENCE", place: 1, of: 2, gap: null }]);
 });
+
+test("blocking a military countdown: the settlements that would hold the score the block needs; the final age's overlay founds anywhere the game allows (research/31 §3: game 25)", () => {
+    // Ashoka 73 in his countdown; we are second with 55: his goal is ⌊1.24 × ours⌋.
+    const race = MIL({ board: [{ id: 3, points: 73, dominant: true, turns: 5 }, { id: 0, points: 55 }, { id: 4, points: 40 }] });
+    const w = victoryWatch([race], 0, { age: "AGE_MODERN", ageFrac: 0.85 }).find((x) => !x.own && x.cls === "MILITARY");
+    assert.deepEqual([w.need, w.block], [68, 4], "⌈73 × 1.15 ÷ (68/55)⌉ = 68: 13 short, 4 settlements");
+    const f = facts({ age: "AGE_MODERN", finalAge: true, ageFrac: 0.85, cities: 5, towns: 7, settlements: 12, cap: 16 });
+    const plan = planStrategy(f, "SCIENCE", { watch: [w] });
+    assert.equal(applyStrategy({ autopilot: { settlers: true } }, plan).strategy.settleAnywhere, true);
+    // Not before the final age.
+    const early = planStrategy(facts({ age: "AGE_EXPLORATION", ageFrac: 0.7, settlements: 8, cap: 10, cities: 4, towns: 4 }), "SCIENCE", { watch: [w] });
+    assert.equal(applyStrategy({ autopilot: { settlers: true } }, early).strategy.settleAnywhere, false);
+    // Our own military countdown within reach (the lever) founds anywhere too.
+    const lever = victoryWatch([MIL({})], 0, { age: "AGE_MODERN", ageFrac: 0.85, military: { room: 5, over: 0, ivy: false } }).find((x) => x.own);
+    assert.equal(applyStrategy({ autopilot: { settlers: true } }, planStrategy(f, "SCIENCE", { watch: [lever] })).strategy.settleAnywhere, true);
+    // Not a block: a culture or economic race has no settlements.
+    assert.equal(victoryWatch([{ ...race, cls: "CULTURE" }], 0, { age: "AGE_MODERN", ageFrac: 0.85 }).find((x) => !x.own)?.block, undefined);
+});

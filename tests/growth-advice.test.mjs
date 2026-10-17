@@ -9,6 +9,7 @@ const RICH = { x: 10, y: 8 };     // food 4, nothing planned
 const NEEDED = { x: 10, y: 9 };   // food 2, the plan's Library goes here, not owned yet
 const URBAN = { x: 9, y: 8 };     // food 3, owned, the plan's Market goes here
 let urbanScience = 6;             // what one more specialist adds on URBAN (the game's NextYields - CurrentYields)
+let urbanHappiness = 0;           // ...and the Happiness it costs (Modern: 6)
 const world = {
     width: 20, height: 16, wrapX: false,
     tiles: (x, y) => {
@@ -27,6 +28,7 @@ const world = {
     workers: () => {
         const sci = GameInfo.Yields.lookup("YIELD_SCIENCE").$index;
         const food = GameInfo.Yields.lookup("YIELD_FOOD").$index;
+        const happy = GameInfo.Yields.lookup("YIELD_HAPPINESS").$index;
         const arr = (pairs) => {
             const a = Array.from(GameInfo.Yields, () => 0);
             for (const [i, v] of pairs) a[i] = v;
@@ -34,7 +36,7 @@ const world = {
         };
         return [
             { PlotIndex: GameplayMap.getIndexFromXY(C.x, C.y), IsBlocked: false, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, 2]]), CurrentMaintenance: arr([]), NextMaintenance: arr([[food, 2]]) },
-            { PlotIndex: GameplayMap.getIndexFromXY(URBAN.x, URBAN.y), IsBlocked: false, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, urbanScience]]), CurrentMaintenance: arr([]), NextMaintenance: arr([[food, 2]]) },
+            { PlotIndex: GameplayMap.getIndexFromXY(URBAN.x, URBAN.y), IsBlocked: false, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, urbanScience]]), CurrentMaintenance: arr([]), NextMaintenance: arr([[food, 2], [happy, urbanHappiness]]) },
             { PlotIndex: GameplayMap.getIndexFromXY(7, 8), IsBlocked: true, NumWorkers: 0, MaxWorkers: 1, CurrentYields: arr([]), NextYields: arr([[sci, 20]]), CurrentMaintenance: arr([]), NextMaintenance: arr([]) },
         ];
     },
@@ -126,5 +128,24 @@ test("the player's balance tilts the choice: science ×2 sends the citizen to th
         assert.equal(a.choice, "TILE", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
     } finally {
         delete world.cities[0].food;
+    }
+});
+
+test("a specialist that would take the city below zero Happiness pays the game's penalty on its other yields: the tile wins (research/31 §8: game 27's Лоян, production 31 → 12)", () => {
+    const city = world.cities[0];
+    urbanScience = 20;
+    urbanHappiness = 6;
+    try {
+        Object.assign(city, { food: 40, prod: 30, nets: { YIELD_GOLD: 20, YIELD_SCIENCE: 40, YIELD_CULTURE: 10 } });
+        city.happy = 30; // 30 − 6: plenty left, the specialist's 20 science wins
+        let a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+        assert.equal(a.choice, "SPECIALIST", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+        city.happy = 0; // 0 − 6: the game would take 30% of 30 production, 40 science, 20 gold and 10 culture
+        a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+        assert.equal(a.choice, "TILE", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+    } finally {
+        for (const k of ["food", "prod", "nets", "happy"]) delete city[k];
+        urbanScience = 6;
+        urbanHappiness = 0;
     }
 });

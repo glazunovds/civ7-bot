@@ -601,6 +601,15 @@
     <Row Tag="LOC_XPL_AP_WONDER_ABSORBER_QUEUED">
       <Text>{1_City}: {2_Wonder} is lost ({4_Why}); {3_Building} queued to go ahead of it</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_PRODUCTION_FIRST">
+      <Text>{1_City}: {2_Building} first: its +{3_Production} production pays for itself before the city's space work ({4_Work} production) is done</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SETTLE_ANYWHERE">
+      <Text>{1_Unit}: no site, so it settles at {2_X},{3_Y} ({4_Turns} turns), where the game allows it: every settlement is 4 military points</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SYNCRETISM">
+      <Text>Syncretism: {1_Civ} ({2_Kind})</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_AGE_END_BOUGHT">
       <Text>{1_City}: {2_Item} bought for {3_Gold} gold: nearly done, its production would be lost at the age change</Text>
     </Row>

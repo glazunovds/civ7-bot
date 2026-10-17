@@ -152,7 +152,7 @@ export class WondersTab {
     render() {
         const wonders = state.get().results.wonders;
         if (!wonders || !this.rows) return;
-        const left = wonders.isFinalAge ? "-" : wonders.ageTurnsLeft ?? "-";
+        const left = wonders.isFinalAge || !Number.isFinite(wonders.ageTurnsLeft) ? "-" : wonders.ageTurnsLeft;
         this.header.textContent = compose("LOC_XPL_WONDER_HEADER", Math.round(wonders.ageFrac * 100), left)
             + (wonders.omniscient ? ` | ${compose("LOC_XPL_WONDER_OMNISCIENT_ON")}` : "");
         const placeable = new Set(wonders.rows.filter((r) => r.best?.idx != null && r.status === "AVAILABLE").map((r) => r.type));

@@ -92,7 +92,27 @@ function rememberAge(ageType, turnsLeft, samples) {
     settings.remember(gameKey(), { age: ageType, ageTurns: Game.turn + turnsLeft });
 }
 
-/** Turns left in this age, from the age-progress samples (also used by building timing). */
+/**
+ * Does this age end on its clock? A non-final age does (its points reach the maximum, then the next age begins). The final
+ * age ends the game only while the score victory is on: the game shows the final age's countdown only then
+ * (age-progression-warning-popup-manager.js, `!isFinalAge || scoreVictoryEnabled`). Nothing ends in a game played on past
+ * its end ("one more turn": `isExtendedGame`) or with no age timer (`getMaxAgeProgressionPoints() <= 0`; the victories
+ * screen's isOneMoreTurnMode). Game 26 (research/31 §1): only the science victory was on, Modern reached 100% at M70 and
+ * the game went on to M122, while our final-age deadline refused every space project from M65.
+ */
+export function ageHasEnd() {
+    const apm = safe(() => Game.AgeProgressManager, null);
+    if (!apm) return true;
+    if (safe(() => apm.isExtendedGame, false)) return false;
+    if (!(Number(safe(() => apm.getMaxAgeProgressionPoints(), 1)) > 0)) return false;
+    if (!safe(() => apm.isFinalAge, false)) return true;
+    return !!safe(() => Game.VictoryManager.isScoreVictoryEnabled(), true);
+}
+
+/**
+ * Turns left in this age, from the age-progress samples (also used by building timing). Unlimited (Infinity, `endless`)
+ * when the age has no end on its clock (ageHasEnd); the estimate is still remembered for the next age.
+ */
 export function ageOutlook() {
     const rules = getRules();
     const apm = Game.AgeProgressManager;
@@ -102,7 +122,8 @@ export function ageOutlook() {
     const samples = sampleAgeProgress(rules.age, points);
     const turnsLeft = estimateAgeTurnsLeft(samples, points, max, lastAgeTurns ?? undefined);
     rememberAge(rules.age, turnsLeft, samples.length);
-    return { turnsLeft, isFinalAge, ageFrac: max > 0 ? points / max : 0 };
+    const endless = !ageHasEnd();
+    return { turnsLeft: endless ? Infinity : turnsLeft, isFinalAge, endless, ageFrac: max > 0 ? points / max : 0 };
 }
 
 /** Median of (gold purchase cost / production cost) for current-age buildings in a real city. */
@@ -226,7 +247,8 @@ export function runTownAdvisor(settings) {
         agePoints,
         ageMax,
         isFinalAge,
-        ageTurnsLeft: estimateAgeTurnsLeft(samples, agePoints, ageMax, lastAgeTurns ?? undefined),
+        // No end on the clock (ageHasEnd): no late cut for conversions either (research/31 §1).
+        ageTurnsLeft: ageHasEnd() ? estimateAgeTurnsLeft(samples, agePoints, ageMax, lastAgeTurns ?? undefined) : Infinity,
         expectKeepCities: !!settings.towns?.expectKeepCities,
     };
 
@@ -265,6 +287,6 @@ export function runTownAdvisor(settings) {
     rows.sort(compareAdvice);
     const towns = { rows, ctx, ageFrac: ageMax > 0 ? agePoints / ageMax : 0, elapsedMs: Date.now() - started };
     state.set({ results: { ...state.get().results, towns }, stale: { ...state.get().stale, towns: false } });
-    log.info(`town advisor: ${rows.length} towns, prod->gold ${ctx.prodToGold}, age ${Math.round(towns.ageFrac * 100)}% (~${ctx.ageTurnsLeft} turns left), ${towns.elapsedMs} ms`);
+    log.info(`town advisor: ${rows.length} towns, prod->gold ${ctx.prodToGold}, age ${Math.round(towns.ageFrac * 100)}% (${Number.isFinite(ctx.ageTurnsLeft) ? `~${ctx.ageTurnsLeft} turns left` : "no end"}), ${towns.elapsedMs} ms`);
     return towns;
 }

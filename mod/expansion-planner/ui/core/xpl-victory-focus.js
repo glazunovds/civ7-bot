@@ -72,9 +72,13 @@ export function victoryWatch(races, me, { age = null, ageFrac = 0, military = nu
         }
         const share = leader.points / goal;
         const level = leader.dominant || share >= DANGER_SHARE ? "DANGER" : share >= WATCH_SHARE ? "WATCH" : null;
+        const need = Math.ceil((leader.points * BLOCK_MARGIN) / multiple);
         out.push({
             cls: r.cls, leader: leader.id, points: leader.points, goal, share: Math.round(share * 100) / 100,
-            multiple: Math.round(multiple * 100) / 100, ours, need: Math.ceil((leader.points * BLOCK_MARGIN) / multiple),
+            multiple: Math.round(multiple * 100) / 100, ours, need,
+            // Military points are settlements, 4 each: the settlements that would hold `need` (research/31 §3: game 25 was
+            // second, so its own settlements set Ashoka's goal; two more by M67 would have stopped his countdown).
+            ...(r.cls === "MILITARY" ? { block: Math.ceil(Math.max(0, need - ours) / SETTLEMENT_MILITARY_POINTS) } : {}),
             level, countdown: leader.dominant ? leader.turns : null,
         });
     }

@@ -20,6 +20,7 @@ const world = {
 const fake = installFakeEngine(world);
 const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
 const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+const { createBudget } = await import("../mod/expansion-planner/ui/core/xpl-savings.js");
 const athens = world.cities[0];
 const C = (t) => GameInfo.Constructibles.lookup(t).$hash;
 const { MoveTo } = CityOperationsParametersValues;
@@ -267,6 +268,93 @@ test("a non-final age's last turn: a building in production at least half done i
         delete world.canBuy;
         delete world.gold;
         delete world.finalAge;
+        reset();
+    }
+});
+
+test("no end on the clock, no deadline: the final age with the score victory off, a game played on past its end, an age with no timer (research/31 §1: game 26 went 52 turns past Modern's 100% and every space project was refused)", () => {
+    const vm = Game.VictoryManager;
+    const prod = athens.prod;
+    try {
+        athens.prod = 10; // the Bath (313) takes 32 turns, the Library 9
+        Game.VictoryManager = { isScoreVictoryEnabled: () => false };
+        ageLeft(20, { final: true });
+        assert.equal(steps.ageEndTurns(), null, "the score victory off: the game does not end with the age");
+        plan(["BUILDING_BATH", "BUILDING_LIBRARY"]);
+        steps.fillProduction(new Map(), {});
+        assert.deepEqual(builds(), [C("BUILDING_BATH"), C("BUILDING_LIBRARY")], "the Bath too");
+        // The age's points full and the game going on: nothing gives way.
+        plan([]);
+        world.agePoints = 100;
+        athens.queue = { type: "BUILDING_BATH", turns: 32, pct: 0 };
+        athens.queued = ["BUILDING_LIBRARY"];
+        fake.sent.length = 0;
+        assert.deepEqual(steps.ageEndOrder(), []);
+        assert.deepEqual(moves(), []);
+        // The score victory on: the game ends with the age (research/30 §3).
+        Game.VictoryManager = { isScoreVictoryEnabled: () => true };
+        assert.equal(steps.ageEndTurns(), 1);
+        // Played on after the game's end ("one more turn"): no end.
+        world.extendedGame = true;
+        assert.equal(steps.ageEndTurns(), null, "an extended game");
+        delete world.extendedGame;
+        // A non-final age with no timer: no end either.
+        ageLeft(5);
+        assert.equal(steps.ageEndTurns(), 5);
+        world.ageMax = 0;
+        assert.equal(steps.ageEndTurns(), null, "no age timer");
+    } finally {
+        Game.VictoryManager = vm;
+        athens.prod = prod;
+        for (const k of ["extendedGame", "ageMax"]) delete world[k];
+        reset();
+    }
+});
+
+test("an age with no end on its clock is never ending: upgrades are not held back (research/31 §1)", () => {
+    const vm = Game.VictoryManager;
+    try {
+        world.finalAge = true;
+        world.ageCountdown = true;
+        world.agePoints = 99; // a point left
+        Game.VictoryManager = { isScoreVictoryEnabled: () => true };
+        assert.equal(steps.ageEnding(), true);
+        Game.VictoryManager = { isScoreVictoryEnabled: () => false };
+        assert.equal(steps.ageEnding(), false);
+        // No age timer (a non-final age): never ending either.
+        Game.VictoryManager = vm;
+        world.finalAge = false;
+        world.ageMax = 0;
+        assert.equal(steps.ageEnding(), false, "no age timer");
+    } finally {
+        Game.VictoryManager = vm;
+        delete world.ageCountdown;
+        delete world.ageMax;
+        reset();
+    }
+});
+
+test("the age's last turn buys from the reserve too, not while a settlement is threatened (research/31 §5: game 25 lost an Academy at 94% for about 30 gold behind a reserve of 64)", () => {
+    const bought = () => fake.sent.filter((s) => s.kind === "command" && s.op === CityCommandTypes.PURCHASE).length;
+    world.canBuy = (type) => (type === "BUILDING_ACADEMY" ? { Success: true, InProgress: true, Plots: [GameplayMap.getIndexFromXY(7, 6)], Cost: 230 } : { Success: false });
+    try {
+        athens.queue = { type: "BUILDING_ACADEMY", turns: 3, pct: 77 };
+        ageLeft(0);
+        world.agePoints = 100; // the age's last turn
+        // 260 gold, 64 of it the reserve: 196 free, 260 in all.
+        const out = steps.buyAgeEndItems(createBudget({ gold: 260, reserve: 64 }));
+        assert.equal(bought(), 1, JSON.stringify(out));
+        fake.sent.length = 0;
+        steps.buyAgeEndItems(createBudget({ gold: 260, reserve: 64 }), { threatened: true });
+        assert.equal(bought(), 0, "threatened: the free gold only");
+        // Played on past the game's end: no age ends, nothing to buy for it.
+        world.extendedGame = true;
+        fake.sent.length = 0;
+        steps.buyAgeEndItems(createBudget({ gold: 1000 }));
+        assert.equal(bought(), 0, "an extended game");
+    } finally {
+        delete world.canBuy;
+        delete world.extendedGame;
         reset();
     }
 });

@@ -149,7 +149,7 @@ export class TownsTab {
         if (!towns || !this.rows) return;
         const c = towns.ctx;
         const limit = c.cityLimit > 0 ? c.cityLimit : "-";
-        this.header.textContent = compose("LOC_XPL_TOWN_HEADER", c.numCities, limit, c.numSettlements, c.settlementCap || "-", Math.round(towns.ageFrac * 100), c.isFinalAge ? "-" : c.ageTurnsLeft);
+        this.header.textContent = compose("LOC_XPL_TOWN_HEADER", c.numCities, limit, c.numSettlements, c.settlementCap || "-", Math.round(towns.ageFrac * 100), c.isFinalAge || !Number.isFinite(c.ageTurnsLeft) ? "-" : c.ageTurnsLeft);
         this.rows.innerHTML = "";
         this.messageLine = el("div", "xpl-status-line", this.message ?? "");
         this.rows.appendChild(this.messageLine);

@@ -57,4 +57,18 @@ Use `npm test`, which runs `node --test "tests/**/*.test.mjs"` (Node ≥ 22; no 
   - Notices: `world.notifications[i].summary` is what `Game.Notifications.getSummary` answers.
 - **Traits (research/28 §4):** a civilization ability for a test: set `Players.get(0).civilizationType` to a fixture civilization's hash and replace `GameInfo.CivilizationTraits`, `TraitModifiers`, `Modifiers`, `DynamicModifiers` and `ModifierArguments` (restore them after); `traitEffects()` is cached on those tables.
 - **Age changes (research/29 §4):** `GameTutorial._props.clear()` is an age change (the save's properties are gone); the settings' memory survives it (`settings.remember` / `recall(gameKey(), …)`; `gameKey()` is `1234|` with the fake's seed and no leader).
+- **Games 24–26 (research/31):**
+  - **No end on the clock:** the fake's `AgeProgressManager.isExtendedGame` reads `world.extendedGame`, and `getMaxAgeProgressionPoints()` reads `world.ageMax` (default 100; 0 means no age timer). The score victory is a test's own stub: `Game.VictoryManager = { isScoreVictoryEnabled: () => false }`; without one it counts as on.
+  - **Syncretism:** the fake has `SyncreticChoiceTypes` and `PlayerOperationTypes.CHOOSE_SYNCRETISM_*`; a test stubs `Game.Unlocks` and `Players.get(0).Identity`.
+  - **Production first:** reads `world.placements(city)` with production in `yieldChanges[GameInfo.Yields.lookup("YIELD_PRODUCTION").$index]`, so reset it between tests with `steps.resetProductionFirst()`.
+  - **The queue probe:** fire `engine.trigger("CityMadePurchase", {cityID})` for a purchase.
+  - **Building prices:** the fake prices any building at 250 gold unless `world.buyCost` says otherwise, which `buildRatherThanBuy` compares with the income.
+- **Game 27 (research/31 §8):**
+  - **Other net yields:** `cities[i].nets = { YIELD_SCIENCE: 40, … }` sets a city's other net yields (`city.Yields.getNetYield`), for the penalty below zero Happiness. Without it they are 1; production is `prod`, food `food`, happiness `happy`.
+  - **Ranged attacks:** `UNITOPERATION_RANGE_ATTACK` with `X` fires `Combat`, like a melee attack.
+  - **Units on guard:** use `activity: UnitActivityTypes.SLEEP`; the fake has no FORTIFY or ALERT activity.
+  - **Strikes:** `strikeRaiders` now shoots with ranged units. A test that expects no orders from it gives its ranged units no `rangeTargets`, or no war.
+- **Game 27's review (research/32):**
+  - **Queue passes:** the levers test's `passes(n, city, id)` runs `pushVictoryWork` in `n` queue passes and applies each pass's MoveTo to the fake's `queue`/`queued` (`applyMoves`). The fake's own queue never changes on a request.
+  - **Purchase tests and wonders:** no building is bought in a city whose queue holds a wonder, or where one was ordered this turn (`holdsWonder`). A purchase test keeps wonders out of that city's `queued`; a test that orders a wonder and then buys moves `Game.turn` on to buy there.
 - **The age's last turns (research/29 §3):** set the turns left with no pace known yet: clear `_XPL_OBJ_AGE_SAMPLES` and set `world.agePoints = 100 - left / 120 * 100` (`ageLeft` in autopilot-age-end.test.mjs). A test of a queue near an age's end that is not about it keeps `world.agePoints` low (the final age is timed all through, research/30 §3: `world.finalAge` no longer escapes it). An age's last turn: `world.agePoints = 100` (`buyAgeEndItems` counts it 0 turns left); buying an item in progress needs `canBuy` to answer `InProgress: true` with its `Plots`.

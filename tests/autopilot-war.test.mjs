@@ -300,18 +300,20 @@ test("walls research: 3 turns of the last 5 with a serious threat (a major's uni
     }
 });
 
-test("a war risk: research toward a melee unit stronger than any we train, when its node is one step away (research/24 W1: Coursers 40 against Knights 45)", () => {
+test("a war at our door: research toward a melee unit stronger than any we train, when its node is one step away; not for a war risk alone, nor a war far away (research/24 W1: Coursers 40 against Knights 45; research/32 §4: game 27's six Antiquity techs for a risk)", () => {
     const research = { tech: { available: [N("NODE_TECH_AQ_IRON_WORKING"), N("NODE_TECH_AQ_POTTERY")] }, culture: { available: [] }, turns: { NODE_TECH_AQ_IRON_WORKING: 8, NODE_TECH_AQ_POTTERY: 2 }, depth: { NODE_TECH_AQ_MILITARY_TRAINING: 1, NODE_TECH_AQ_MASONRY: 1 } };
     try {
-        reset({ relations: { 1: "UNFRIENDLY" }, research, canBuild: trains("UNIT_WARRIOR") });
+        reset({ wars: [1], research, canBuild: trains("UNIT_WARRIOR") });
         steps.assessWar([]);
         const r = steps.chooseResearch("tech", DEFAULT_SETTINGS, null);
         assert.deepEqual([r?.key, chosenNodes()], ["TECH_FOR_MELEE", [N("NODE_TECH_AQ_IRON_WORKING")]]);
         assert.equal(r.args[2], 35, "the Horseman");
-        reset({ research, canBuild: trains("UNIT_WARRIOR") });
-        steps.assessWar([]);
-        steps.chooseResearch("tech", DEFAULT_SETTINGS, null);
-        assert.deepEqual(chosenNodes(), [N("NODE_TECH_AQ_POTTERY")], "at peace: the quickest");
+        for (const [extra, why] of [[{ relations: { 1: "UNFRIENDLY" } }, "a war risk"], [{ wars: [2] }, "a war far away"], [{}, "at peace"]]) {
+            reset({ research, canBuild: trains("UNIT_WARRIOR"), ...extra });
+            steps.assessWar([]);
+            steps.chooseResearch("tech", DEFAULT_SETTINGS, null);
+            assert.deepEqual(chosenNodes(), [N("NODE_TECH_AQ_POTTERY")], `${why}: the quickest`);
+        }
     } finally {
         delete world.research;
     }

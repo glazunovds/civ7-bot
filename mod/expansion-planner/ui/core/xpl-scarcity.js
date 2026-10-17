@@ -11,11 +11,42 @@
  *    (left 0 -> 1.0, left 20 -> 0.65, left 140 -> 0.39)
  * Other yields (gold is the empire's, science and culture have no threshold) keep the
  * profile's weight.
+ *
+ * Below zero Happiness the game itself takes a share of the settlement's other yields
+ * (unhappinessDelta): a happiness cost that pushes it there costs that share too, and a
+ * happiness gain that lifts it wins it back. The settlement's other yields come in `nets`;
+ * where they are unknown, SHORTAGE stands in for it.
  */
-import { F, H } from './xpl-yields.js';
+import { C, F, G, H, I, P, S } from './xpl-yields.js';
 
 export const SCARCITY = Object.freeze({ REF: 20, MIN: 0.3, SHORTAGE: 2 });
 const LOCAL = [F, H];
+
+// The game's penalty below zero Happiness (Civilopedia, Concepts: Happiness): each point of a settlement's net local
+// unhappiness takes 5% of its other yields (food and happiness aside), at most 80%. Research/31 §8: game 27's Лоян took two
+// Modern specialists at 6 Happiness each, went to about −12, and its production fell from 31 to 12 a turn: its next
+// building, an Examination Hall, showed 49 turns.
+export const UNHAPPINESS = Object.freeze({ PER_POINT: 0.05, MAX: 0.8 });
+const PENALISED = [P, G, S, C, I];
+
+/** The share of a settlement's other yields the game takes at `net` Happiness (0 at or above zero). */
+export function unhappinessShare(net) {
+    return Number.isFinite(net) && net < 0 ? Math.min(UNHAPPINESS.MAX, -net * UNHAPPINESS.PER_POINT) : 0;
+}
+
+/**
+ * The weighted yields a settlement loses (positive) or wins back (negative) when its net Happiness goes from `from` to
+ * `to`: its other yields' weighted total before any penalty × the change in the penalty's share. `nets` holds its yields
+ * now (already reduced when below zero). 0 when they are not known.
+ */
+export function unhappinessDelta(weights, nets, from, to) {
+    if (!nets || !Number.isFinite(from) || !Number.isFinite(to)) return 0;
+    let total = 0;
+    for (const i of PENALISED) if (Number.isFinite(nets[i]) && nets[i] > 0) total += (weights[i] ?? 0) * nets[i];
+    if (!(total > 0)) return 0;
+    const now = unhappinessShare(from);
+    return (total / (1 - now)) * (unhappinessShare(to) - now);
+}
 
 /** Weight multiplier for paying `cost` of a yield the settlement has `net` per turn of. */
 export function costMultiplier(net, cost) {
@@ -45,7 +76,9 @@ export function gainValue(weights, gains, nets) {
     gains.forEach((g, i) => {
         if (!g) return;
         const m = nets && LOCAL.includes(i) && g > 0 ? gainMultiplier(nets[i]) : 1;
-        v += (weights[i] ?? 0) * g * m;
+        // Happiness in a settlement below zero also wins back the game's penalty on its other yields.
+        const won = nets && i === H && g > 0 ? -unhappinessDelta(weights, nets, nets[H], nets[H] + g) : 0;
+        v += (weights[i] ?? 0) * g * m + won;
     });
     return v;
 }
@@ -61,8 +94,12 @@ export function costValue(weights, costs, nets) {
     let v = 0;
     costs.forEach((c, i) => {
         if (!c) return;
-        const m = nets && LOCAL.includes(i) && c > 0 ? costMultiplier(nets[i], c) : 1;
-        v += (weights[i] ?? 0) * c * m;
+        const local = !!nets && LOCAL.includes(i) && c > 0;
+        // Happiness pushed below zero: the game's penalty on the settlement's other yields when they are known (the
+        // happiness itself then at full weight), else SHORTAGE.
+        const penalty = local && i === H ? unhappinessDelta(weights, nets, nets[H], nets[H] - c) : 0;
+        const m = !local ? 1 : penalty > 0 ? 1 : costMultiplier(nets[i], c);
+        v += (weights[i] ?? 0) * c * m + penalty;
     });
     return v;
 }

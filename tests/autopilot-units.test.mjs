@@ -678,6 +678,39 @@ test("raiders: a melee soldier strikes one next to it when the game's prediction
     delete world.wars;
 });
 
+test("raiders: ranged soldiers on guard shoot the hostile soldiers they reach (game 27: Ханькоу's Field Gun slept on alert while two Dreadnoughts shelled the centre)", async () => {
+    const shotOf = (id) => orderOf(id).find((s) => s.op === UnitOperationTypes.RANGE_ATTACK)?.args;
+    const ship = { x: 6, y: 6, owner: 1, type: "UNIT_GALLEY" }; // next to Athens (5,5)
+    const reach = (ids) => (id) => (ids.includes(id.id) ? [{ x: 6, y: 6 }] : []);
+    // On alert in Athens' centre (busy: commandUnits leaves it alone): it shoots, and the pass knows it has its order.
+    fresh([{ id: 4, type: "UNIT_ARCHER", x: 5, y: 5, activity: UnitActivityTypes.SLEEP }], { ...AT_WAR, enemies: [ship], rangeTargets: reach([4]) });
+    let r = await units.strikeRaiders();
+    assert.deepEqual([shotOf(4)?.X, shotOf(4)?.Y], [6, 6], JSON.stringify(orders()));
+    assert.deepEqual(r.entries.map((e) => e.key), ["RANGED"]);
+    assert.ok(r.ordered.has("0:4"));
+    // Two guards, one after the other; one resting hurt in the centre (a garrison holds its tile) shoots too.
+    fresh([
+        { id: 4, type: "UNIT_ARCHER", x: 5, y: 5, activity: UnitActivityTypes.HEAL, damage: 40 },
+        { id: 6, type: "UNIT_ARCHER", x: 4, y: 5, activity: UnitActivityTypes.SLEEP },
+    ], { ...AT_WAR, enemies: [ship], rangeTargets: reach([4, 6]) });
+    r = await units.strikeRaiders();
+    assert.ok(shotOf(4) && shotOf(6), JSON.stringify(orders()));
+    assert.deepEqual(r.entries.map((e) => e.key), ["RANGED", "RANGED"]);
+    // No shot: at a unit we are not at war with; from a unit on its way (a move order); from one hurt and resting off
+    // a centre with the enemy next to it (it gets out of reach: escape); with no attack left.
+    for (const [list, wars, why] of [
+        [[{ id: 4, type: "UNIT_ARCHER", x: 5, y: 5, activity: UnitActivityTypes.SLEEP }], [], "not at war"],
+        [[{ id: 4, type: "UNIT_ARCHER", x: 5, y: 5, activity: UnitActivityTypes.OPERATION }], [1], "on its way"],
+        [[{ id: 4, type: "UNIT_ARCHER", x: 6, y: 5, activity: UnitActivityTypes.HEAL, damage: 40 }], [1], "in danger off the centre"],
+        [[{ id: 4, type: "UNIT_ARCHER", x: 5, y: 5, activity: UnitActivityTypes.SLEEP, attacks: 0 }], [1], "no attack left"],
+    ]) {
+        fresh(list, { wars, enemies: [ship], rangeTargets: reach([4]) });
+        await units.strikeRaiders();
+        assert.deepEqual(orders(), [], why);
+    }
+    delete world.wars;
+});
+
 test("raiders: the trade rule", () => {
     const at = (o) => units.strikeWorthIt({ ourHealth: 100, ourMax: 100, theirHealth: 100, ...o });
     assert.equal(at({ dealt: 40, taken: 20 }), true);
@@ -1320,5 +1353,80 @@ test("foundings ordered in a pass count toward the cap: one below it, one settle
         assert.ok(r.entries.some((e) => e.key === "SETTLER_AT_CAP"), JSON.stringify(r.entries));
     } finally {
         delete world.settlementCap;
+    }
+});
+
+test("a countdown to block (the strategy's settleAnywhere) and no site for 3 turns: the settler founds on the nearest tile the game accepts, our spacing aside, never on a village's doorstep (research/31 §3: game 25's settler stood idle 23 turns)", () => {
+    const picks = state.get().results.sites;
+    const turn = Game.turn;
+    state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+    // Only 17,6 takes a settlement (3 tiles from Babylon: too close by our own rule, not by the game's).
+    const extra = { claimOk: (x, y) => x === 17 && y === 6 };
+    try {
+        let r = null;
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], extra);
+        for (let t = 1; t <= 4; t++) {
+            Game.turn = turn + t;
+            fake.sent.length = 0;
+            world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
+            r = run({ settlers: true, anywhere: true });
+            if (t < 4) assert.deepEqual(orderOf(2).filter((s) => s.op === UnitOperationTypes.MOVE_TO), [], `turn ${t}: it waits`);
+        }
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [17, 6], JSON.stringify(r.entries));
+        assert.ok(r.entries.some((e) => e.key === "SETTLE_ANYWHERE"));
+        // Without the strategy's word: it waits on.
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], extra);
+        for (let t = 1; t <= 4; t++) {
+            Game.turn = turn + 10 + t;
+            fake.sent.length = 0;
+            world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
+            run({ settlers: true });
+        }
+        assert.deepEqual(orderOf(2).filter((s) => s.op === UnitOperationTypes.MOVE_TO), [], "no countdown to block");
+        // A village 2 tiles from the only valid tile: it turns hostile at once, so not there.
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], { ...extra, villages: [{ owner: 9, x: 18, y: 7, type: "IMPROVEMENT_VILLAGE" }] });
+        for (let t = 1; t <= 4; t++) {
+            Game.turn = turn + 20 + t;
+            fake.sent.length = 0;
+            world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
+            run({ settlers: true, anywhere: true });
+        }
+        assert.deepEqual(orderOf(2).filter((s) => s.op === UnitOperationTypes.MOVE_TO), [], "a village's doorstep");
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], extra);
+        for (let t = 1; t <= 4; t++) {
+            Game.turn = turn + 30 + t;
+            fake.sent.length = 0;
+            world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
+            run({ settlers: true, anywhere: true });
+        }
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [17, 6], "again, for the arrival");
+        // Arrived: it founds there.
+        Game.turn += 1;
+        fake.sent.length = 0;
+        world.units = [{ id: 2, type: "UNIT_SETTLER", x: 17, y: 6 }];
+        run({ settlers: true, anywhere: true });
+        assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
+    } finally {
+        Game.turn = turn;
+        state.set({ results: { ...state.get().results, sites: picks } });
+    }
+});
+
+test("a settler's «no order» line judges a relaxed pick by the relaxed rules, as pickSite does (research/31 §3: game 25 reported them FOREIGN)", () => {
+    const picks = state.get().results.sites;
+    // 16,5 is 4 tiles from Babylon: too close by the strict rule (5), fine by the relaxed one; 6 turns away (FAR).
+    state.set({ results: { ...state.get().results, sites: { picks: [{ x: 16, y: 5, rank: 1, relaxed: true }] } } });
+    const lines = [];
+    const warn = console.warn;
+    try {
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+        console.warn = (...a) => lines.push(a.join(" "));
+        run({ settlers: true });
+        console.warn = warn;
+        const line = lines.find((l) => l.includes("settler: no order"));
+        assert.ok(line?.includes('"FAR":1') && !line.includes("FOREIGN"), line);
+    } finally {
+        console.warn = warn;
+        state.set({ results: { ...state.get().results, sites: picks } });
     }
 });

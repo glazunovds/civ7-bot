@@ -542,7 +542,8 @@ export function startBuildingPlan(target, settings, options = {}) {
         const timeAware = bs.timeAware !== false;
         const outlook = safe(() => ageOutlook(), null);
         let horizon;
-        if (timeAware) horizon = outlook ? (outlook.isFinalAge ? FINAL_AGE_HORIZON : outlook.turnsLeft) : undefined;
+        // An age with no end (ageHasEnd) plans over the final age's horizon (research/31 §1).
+        if (timeAware) horizon = outlook ? (outlook.isFinalAge || !Number.isFinite(outlook.turnsLeft) ? FINAL_AGE_HORIZON : outlook.turnsLeft) : undefined;
         const cities = safe(() => Players.get(playerId).Cities.getCities(), []);
         const prodToGold = safe(() => productionToGoldRatio(cities, rules), 2.5) || 2.5;
         const capital = cities.find((c) => !c.isTown) ?? null;
@@ -711,12 +712,14 @@ export function startBuildingPlan(target, settings, options = {}) {
             const cityBySid = new Map(members.map((m) => [m.key, m.city ?? null]));
             // Upkeep (the game's number for that city when it has one) and the value left after it.
             const upkeepOf = (sid, type) => upkeepIn(cityBySid.get(sid), type, rules);
-            // Food and happiness upkeep weigh less where the settlement has plenty to spare (core/xpl-scarcity.js).
+            // Food and happiness upkeep weigh less where the settlement has plenty to spare, and happiness pushed below zero
+            // costs the game's share of its other yields (core/xpl-scarcity.js; research/31 §8).
             const netsOf = (c) => {
                 if (!c) return null;
                 const out = [NaN, NaN, NaN, NaN, NaN, NaN, NaN];
-                out[yieldIndex("YIELD_FOOD")] = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_FOOD), NaN));
-                out[yieldIndex("YIELD_HAPPINESS")] = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), NaN));
+                for (const k of ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD", "YIELD_SCIENCE", "YIELD_CULTURE", "YIELD_HAPPINESS", "YIELD_DIPLOMACY"]) {
+                    out[yieldIndex(k)] = Number(safe(() => c.Yields.getNetYield(YieldTypes[k]), NaN));
+                }
                 return out;
             };
             const netsBySid = new Map(members.map((m) => [m.key, netsOf(m.city)]));

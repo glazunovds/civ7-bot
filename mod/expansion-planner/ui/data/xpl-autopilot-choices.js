@@ -663,6 +663,46 @@ export function chooseGovernment(settings = {}) {
 }
 
 /**
+ * Syncretism (research/31 §5): a Time-Tested civilization adopts another civilization's units or infrastructure, or keeps
+ * its own (traditions and a culture slot); NOTIFICATION_CHOOSE_SYNCRETISM holds the turn until it chooses (game 26, M84).
+ * Only while that notice waits and no choice is made (`Identity.getSyncreticCivType()`). The pick: its own when that brings
+ * a culture slot (one more policy card), else the infrastructure with a unique quarter, then the most buildings, else the
+ * first offered (units last). Sent like the screen's confirm (syncretism-screen-model.js syncretizeSelection):
+ * CHOOSE_SYNCRETISM_SELF / _INFRASTRUCTURE / _UNITS {CivilizationType}, after canStart.
+ */
+export function chooseSyncretism() {
+    if (!waiting("NOTIFICATION_CHOOSE_SYNCRETISM")) return [];
+    const T = globalThis.SyncreticChoiceTypes;
+    const ops = globalThis.PlayerOperationTypes;
+    if (!T || !ops) return [];
+    if (safe(() => Players.get(pid()).Identity.getSyncreticCivType(), null)) return []; // chosen already
+    const offered = (flag) => [...(safe(() => Game.Unlocks.getSyncreticCivUnlocksForChoice(pid(), flag), []) ?? [])];
+    const civType = (civ) => safe(() => GameInfo.LegacyCivilizationTraits.lookup(civ)?.CivilizationType, null) ?? safe(() => GameInfo.Civilizations.lookup(civ)?.CivilizationType, null) ?? "";
+    const kinds = (list, kind) => (list ?? []).filter((x) => x?.kind === kind).length;
+    const options = [];
+    for (const civ of offered(T.SYNCRETIC_CHOICE_SELF)) {
+        const slots = kinds(safe(() => Game.Unlocks.getSelfChoiceSyncreticUnlocks(civType(civ)), []), "KIND_CULTURE_SLOT");
+        options.push({ civ, flag: T.SYNCRETIC_CHOICE_SELF, op: ops.CHOOSE_SYNCRETISM_SELF, label: "LOC_UI_SYNCRETISM_SELF", score: slots > 0 ? 1000 + slots : 1 });
+    }
+    for (const civ of offered(T.SYNCRETIC_CHOICE_INFRASTRUCTURE)) {
+        const unlocks = safe(() => Game.Unlocks.getInfrastructureChoiceSyncreticUnlocks(civType(civ)), []);
+        options.push({ civ, flag: T.SYNCRETIC_CHOICE_INFRASTRUCTURE, op: ops.CHOOSE_SYNCRETISM_INFRASTRUCTURE, label: "LOC_UI_SYNCRETISM_INFRASTRUCTURE", score: 10 + 100 * kinds(unlocks, "KIND_QUARTER") + kinds(unlocks, "KIND_CONSTRUCTIBLE") });
+    }
+    for (const civ of offered(T.SYNCRETIC_CHOICE_UNITS)) options.push({ civ, flag: T.SYNCRETIC_CHOICE_UNITS, op: ops.CHOOSE_SYNCRETISM_UNITS, label: "LOC_UI_SYNCRETISM_UNITS", score: 0 });
+    // The best first; ties keep the game's order (sort is stable).
+    options.sort((a, b) => b.score - a.score);
+    for (const o of options) {
+        if (o.op === undefined) continue;
+        const args = { CivilizationType: o.civ };
+        if (!safe(() => Game.PlayerOperations.canStart(pid(), o.op, args, false), null)?.Success) continue;
+        Game.PlayerOperations.sendRequest(pid(), o.op, args);
+        const name = safe(() => Locale.compose(GameInfo.Civilizations.lookup(civType(o.civ))?.Name ?? civType(o.civ)), civType(o.civ));
+        return [{ key: "SYNCRETISM", args: [name, safe(() => Locale.compose(o.label), o.label)] }];
+    }
+    return [];
+}
+
+/**
  * A newly met leader waits for a greeting (NOTIFICATION_PLAYER_MET holds the turn): friendly
  * when the game allows it, else neutral, never hostile. Same operation as the game's
  * first-meet dialogue (panel-diplomacy-project-reaction.js).
@@ -1606,7 +1646,7 @@ export async function makeChoices(settings, { retry = false } = {}) {
         await sleep(STEP_WAIT_MS);
     }
     out.push(...await foundReligion(settings));
-    out.push(...choosePantheon(), ...chooseGovernment(settings), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals(), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
+    out.push(...choosePantheon(), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals(), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
     out.push(...await seekPeace());
     if (retry && turnBlocker()) out.push(...acknowledge(), ...considerTownProjects());
     return out;
