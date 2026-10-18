@@ -300,6 +300,13 @@ export class AutopilotTab {
                     : compose("LOC_XPL_AP_WATCH_OWN", compose(`LOC_XPL_FOCUS_${w.cls}`), w.ours, w.goal));
                 continue;
             }
+            // A fixed score (science): no multiple, nothing of ours holds it back; its countdown is the game's end.
+            if (w.fixed) {
+                line(w.countdown !== null && w.countdown !== undefined
+                    ? compose("LOC_XPL_AP_WATCH_FIXED_COUNTDOWN", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal, w.countdown)
+                    : compose(w.level === "DANGER" ? "LOC_XPL_AP_WATCH_FIXED_DANGER" : "LOC_XPL_AP_WATCH_FIXED", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal));
+                continue;
+            }
             line(compose(w.level === "DANGER" ? "LOC_XPL_AP_WATCH_DANGER" : "LOC_XPL_AP_WATCH", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal, w.multiple, w.need));
         }
         if (focus.innovation?.target) line(compose("LOC_XPL_AP_INNOVATION_TARGET", focus.innovation.points, focus.innovation.target));

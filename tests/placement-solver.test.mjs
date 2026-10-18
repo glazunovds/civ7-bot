@@ -129,6 +129,42 @@ test("engine validity overrides JS for owned tiles", () => {
     assert.equal(s2.canPlace("BUILDING_LIBRARY", c2).reason, "ENGINE");
 });
 
+// The game lists only tiles next to the urban area standing now (root gotcha 5): its no for an owned tile two rings out
+// is not final, a connector the plan puts between them opens it.
+test("the game's no for an owned tile beyond the urban area is not final: the plan's connector opens it", () => {
+    const { w, centre, area } = makeWorld();
+    const owned = new Set(w.grid.radius(centre, 2).map((p) => p.idx));
+    const ring1 = new Set(w.grid.neighbours(centre));
+    const refused = w.at(9, 9); // a tile next to the centre the game refuses for good
+    const state = new PlanState({
+        map: { neighbours: (i) => w.grid.neighbours(i), distance: (a, b) => w.grid.distance(a, b) },
+        facts: (i) => w.table[i], centre, area, owned, book, weights: getProfile("BALANCE").y, adjMult: 1.5,
+        adjOpts: { playerId: 0 },
+        engineValid: (type, idx) => idx !== refused && (idx === centre || ring1.has(idx)),
+    });
+    const land = (i) => !w.table[i].isWater && !w.table[i].isMountain && !w.table[i].resource && w.table[i].urbanizable !== false;
+    const a = w.at(10, 7);
+    const b = w.grid.neighbours(a).find((n) => w.grid.distance(n, centre) === 2 && land(n));
+    assert.equal(state.canPlace("BUILDING_LIBRARY", b).reason, "NOT_CONTIGUOUS", "no connector yet");
+    state.place("BUILDING_MONUMENT", a);
+    assert.equal(state.canPlace("BUILDING_LIBRARY", b).ok, true, "the Monument opens the tile behind it");
+    assert.equal(state.canPlace("BUILDING_LIBRARY", refused).reason, "ENGINE", "next to the urban area the game's no stands");
+});
+
+// Moves keep a building's completion turn, so a tile could keep the turn it turned urban from a building that came later
+// (adjacency to a district counts from that turn).
+test("a tile the plan makes urban turns urban with its first building done, also after a move", () => {
+    const { state, w } = newState("BALANCE", { horizon: 100 });
+    const x = w.at(10, 7);
+    state.place("BUILDING_LIBRARY", x, state.canPlace("BUILDING_LIBRARY", x), 10);
+    const tile = state.tiles.get(x);
+    assert.equal(tile.districtTime, 10);
+    state.place("BUILDING_MONUMENT", x, state.canPlace("BUILDING_MONUMENT", x), 5);
+    assert.equal(tile.districtTime, 5, "an earlier building there");
+    state.lift("BUILDING_MONUMENT");
+    assert.equal(tile.districtTime, 10, "it leaves: the Library's turn again");
+});
+
 test("Bath (RiverPlacement=RIVER) needs a river on the tile itself, not just water nearby", () => {
     const { state, w } = newState();
     const nextToRiver = w.at(11, 8);           // next to the centre, no river on the tile

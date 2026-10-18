@@ -72,6 +72,12 @@ const BORDER_RADIUS = 2;         // an explorer this close to a civilization's l
 const REINFORCE_RADIUS = 2;      // defenders of a threatened settlement stand this close to it...
 const REINFORCE_MAX_TURNS = 8;   // ...walking at most this many turns to get there
 const REINFORCE_TRIES = 6;       // free tiles tried there, nearest first
+const REINFORCE_REACH = 16;      // a free soldier this far from a settlement short of guards may be sent there...
+const REINFORCE_PICKS = 3;       // ...the nearest ones weighed by their way there, for each guard it lacks
+const FRONT_GUARDS = 1;          // a war front (a settlement near a leader at war with us or a war risk) wants this many melee guards
+const STAGE_RADIUS = 2;          // ...standing this close to it, on our own land
+const AIR_STRIKE_RADIUS = 6;     // our aircraft strike hostile soldiers this close to our settlements (defence, not conquest)
+const AIR_WATCH_RADIUS = 10;     // enemy aircraft seen this close to our settlements: interceptors wanted
 const MIGRANT_MAX_TURNS = 10;    // a migrant walks at most this far to join a city
 const ARTIFACT_MAX_TURNS = 15;   // an explorer walks at most this far to a dig or research site
 const ARTIFACT_TRIES = 8;        // nearest sites tried
@@ -113,6 +119,10 @@ const failedSites = new Map();
 // The role planned for settlements we founded ("x,y" -> "CITY" | "TOWN"): a "CITY" one is a
 // town the autopilot converts (they are all founded as towns).
 const foundedRoles = new Map();
+// Soldiers the autopilot fortified or put on alert (unit keys): a war front may wake them; the player's own stay put.
+const restedByUs = new Set();
+// Settlements whose defence UI.log described this turn ("x,y" -> turn).
+const defenceNoted = new Map();
 
 export function resetUnitGoals() {
     goals.clear();
@@ -131,6 +141,9 @@ export function resetUnitGoals() {
     bankDone.clear();
     bankTried.clear();
     foundings.length = 0;
+    restedByUs.clear();
+    defenceNoted.clear();
+    progressMemo.clear();
 }
 
 /**
@@ -1574,16 +1587,30 @@ function centreDamaged(loc) {
     return Number.isFinite(health) && Number.isFinite(max) && max > 0 && health < max;
 }
 
+/** A unit's fighting strength in GameInfo.Unit_Stats: the best of its melee, ranged and bombard strengths (0: unknown). */
+function unitStrength(def) {
+    const s = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
+    return Math.max(0, Number(s?.Combat) || 0, Number(s?.RangedCombat) || 0, Number(s?.Bombard) || 0);
+}
+
 /**
  * Our threatened settlements: THREAT_MIN or more hostile military units within THREAT_RADIUS, or
  * one within THREAT_CLOSE, or one within THREAT_RADIUS while the centre is damaged (it is being
- * attacked). Seen in game 5: single Line Infantry took three settlements, which were never (or
- * only on the turn they fell) counted as threatened, and one under attack dropped off the list at
- * 3 HP when only one rifleman was left.
- * @returns [{ settlement: { x, y, name }, count, owners: [{ id, independent }] }], most threatened first
+ * attacked), or one land raider within THREAT_RADIUS stronger than every melee guard of ours there (`strong`). Seen in game
+ * 5: single Line Infantry took three settlements, which were never (or only on the turn they fell) counted as
+ * threatened, and one under attack dropped off the list at 3 HP when only one rifleman was left.
+ * @returns [{ settlement: { x, y, name }, count, land, ships, air, close, damaged, strong, strongest,
+ *   owners: [{ id, independent }] }], most threatened first
  */
 export function threatenedSettlements() {
     const out = [];
+    // Our melee soldiers: where they stand, how strong they are.
+    const ours = [];
+    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (u.isCommanderUnit || !u.location || !isMeleeGuard(def)) continue;
+        ours.push({ at: u.location, s: unitStrength(def) });
+    }
     // An independent's units standing by their own village guard it (seen in game 6: a crisis
     // encampment 4 tiles from two towns kept its units at home all age and never attacked, yet both
     // towns stayed "threatened" for 20 turns): not counted unless next to the settlement or it is
@@ -1598,6 +1625,8 @@ export function threatenedSettlements() {
         let close = 0;
         let land = 0; // land units: what a land defender can fight (research/22 B7)
         let ships = 0; // naval units: only ranged units (and walls) hit them (game 10)
+        let air = 0;
+        let strongest = null; // the strongest land raider: { type, s }
         for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(c.location.x, c.location.y, THREAT_RADIUS), []) ?? []) {
             const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             if (!loc) continue;
@@ -1610,13 +1639,29 @@ export function threatenedSettlements() {
                 seen.add(k);
                 owners.set(h.id, h);
                 if (d <= THREAT_CLOSE) close++;
-                const domain = safe(() => GameInfo.Units.lookup(Units.get(id)?.type)?.Domain, null);
-                if (domain !== "DOMAIN_SEA" && domain !== "DOMAIN_AIR") land++;
-                else if (domain === "DOMAIN_SEA") ships++;
+                const kind = safe(() => GameInfo.Units.lookup(Units.get(id)?.type), null);
+                const domain = kind?.Domain ?? null;
+                if (domain !== "DOMAIN_SEA" && domain !== "DOMAIN_AIR") {
+                    land++;
+                    const s = kind ? unitStrength(kind) : 0;
+                    if (!strongest || s > strongest.s) strongest = { type: kind?.UnitType ?? "?", s };
+                } else if (domain === "DOMAIN_SEA") ships++;
+                else air++;
             }
         }
-        const threatened = seen.size >= THREAT_MIN || close > 0 || (seen.size > 0 && damaged);
-        if (threatened) out.push({ settlement: { x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?") }, count: seen.size, land, ships, damaged, owners: [...owners.values()] });
+        // A land raider stronger than every melee guard of ours there (none: any raider). Research/36 §3: game 29's
+        // Ollantaytambo, a town whose centre defended at 20, fell to one independent Line Infantry at 50 in two attacks.
+        // The centre's own strength is not read: it followed the strongest melee unit trained this age, not the one we had
+        // (a Line Infantry at 50 then).
+        const guard = Math.max(0, ...ours.filter((o) => safe(() => GameplayMap.getPlotDistance(o.at.x, o.at.y, c.location.x, c.location.y), Infinity) <= GUARD_RADIUS).map((o) => o.s));
+        const strong = !!strongest && strongest.s > guard;
+        const threatened = seen.size >= THREAT_MIN || close > 0 || (seen.size > 0 && damaged) || strong;
+        if (threatened) {
+            out.push({
+                settlement: { x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?") }, count: seen.size, land, ships, air, close,
+                damaged, strong, strongest: strongest?.type ?? null, owners: [...owners.values()],
+            });
+        }
     }
     return out.sort((a, b) => b.count - a.count);
 }
@@ -1684,24 +1729,67 @@ export function isRangedGuard(def) {
 /**
  * Ranged guards a threatened settlement wants against ships: one per ship, at most RANGED_GUARDS_MAX (game 10: two
  * galleys and quadriremes shot the southern town for 20 turns and only warriors were trained; ships are hit only by
- * ranged units).
+ * ranged units); and one behind the melee screen against a land army of RANGED_SUPPORT_LAND or more (`support`: moved
+ * and trained, not bought).
  */
 export const RANGED_GUARDS_MAX = 2;
-export const rangedWanted = (t) => Math.min(RANGED_GUARDS_MAX, Number(t?.ships) || 0);
+// A land army this big gets one ranged unit behind the melee screen (research/36 §5: game 29, four melee strikes and not
+// one shot in Russia's war).
+export const RANGED_SUPPORT_LAND = 2;
+export const rangedWanted = (t, { support = true } = {}) => Math.min(RANGED_GUARDS_MAX, (Number(t?.ships) || 0) + (support && (Number(t?.land) || 0) >= RANGED_SUPPORT_LAND ? 1 : 0));
 
 /**
  * Melee guards a threatened settlement wants: one per land raider, and one on its centre whatever the raiders
- * (ships too: research/24 W2, Нант fell to 2 Cogs and a Knight while a ranged unit held its centre).
+ * (ships too: research/24 W2, Нант fell to 2 Cogs and a Knight while a ranged unit held its centre); one more while a
+ * raider is stronger than every guard there (`strong`, research/36 §3).
  */
-export const guardsWanted = (t) => Math.max(Number(t?.land ?? t?.count) || 0, Number(t?.count) > 0 ? 1 : 0);
+export const guardsWanted = (t) => Math.max(Number(t?.land ?? t?.count) || 0, Number(t?.count) > 0 ? 1 : 0) + (t?.strong ? 1 : 0);
+
+const keyAt = (key) => {
+    const [x, y] = String(key).split(",").map(Number);
+    return { x, y };
+};
+
+const progressMemo = new Map(); // "unit|turn|x,y|activity|destination|goal|sent" -> guardProgress (it asks the game for a path)
 
 /**
- * Our melee soldiers guarding a threatened settlement: within GUARD_RADIUS of it, or on their way there (their
- * goal); each counted for one settlement only, its nearest threatened one (`threats`). Research/24 W2: ranged
- * units and units 3-4 tiles away counted, one unit for several settlements, and no defender was bought E47-E50
- * with 356-1,745 gold free. Defenders are trained and bought while fewer than guardsWanted.
+ * How a soldier with a guard goal stands toward it (research/36 §1): { turns: 0 } there (within GUARD_RADIUS of the
+ * settlement), { turns } on its way, or null when the goal no longer holds: healing, asleep or fortified elsewhere,
+ * stopped on an earlier turn, or walking somewhere else. Game 29: a Cuirassier sent to Ollantaytambo counted as its
+ * guard from the turn it set off, nine tiles away; no defender was bought there with 711-1,034 gold, and the town fell
+ * to one Line Infantry two turns later.
  */
-export function guardsFor(threat, units = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [], threats = null, { ranged = false } = {}) {
+function guardProgress(u, g) {
+    if (!u?.location) return null;
+    const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
+    const memo = `${unitKey(u.id)}|${Game.turn}|${u.location.x},${u.location.y}|${u.activityType}|${dest?.x},${dest?.y}|${g.guard}|${g.turn}`;
+    if (progressMemo.has(memo)) return progressMemo.get(memo);
+    if (progressMemo.size > 500) progressMemo.clear();
+    const p = guardProgressNow(u, g, dest);
+    progressMemo.set(memo, p);
+    return p;
+}
+
+function guardProgressNow(u, g, dest) {
+    const at = keyAt(g.guard);
+    const d = safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, at.x, at.y), Infinity);
+    if (d <= GUARD_RADIUS) return { turns: 0 };
+    const A = globalThis.UnitActivityTypes;
+    const fresh = g.turn === Game.turn; // sent this turn: the game may show the move a moment later
+    if (A && u.activityType === A.HEAL) return null;
+    if (A && u.activityType !== undefined && u.activityType !== A.OPERATION && !fresh) return null;
+    if (!fresh && dest && dest.x >= 0 && safe(() => GameplayMap.getPlotDistance(dest.x, dest.y, at.x, at.y), 0) > Math.max(REINFORCE_RADIUS, STAGE_RADIUS)) return null;
+    return { turns: pathTurns(u, g.tile ?? at) ?? Math.ceil(d / 2) };
+}
+
+/**
+ * Our soldiers of one role (melee guards, or ranged ones) for a threatened settlement: `present` within GUARD_RADIUS of
+ * it, each counted for its nearest threatened one (`threats`; the first listed on a tie), and `incoming` with the
+ * turns they need (a guard goal under way: guardProgress). A war front's guard (goal `front`) counts where it stands.
+ * Research/24 W2: ranged units and units 3-4 tiles away counted, one unit for several settlements, and no defender was
+ * bought E47-E50 with 356-1,745 gold free. @returns { present: [unit], incoming: [{ u, turns }] }
+ */
+export function guardDetail(threat, units = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [], threats = null, { ranged = false } = {}) {
     const s = threat.settlement;
     const key = `${s.x},${s.y}`;
     const dist = (u, at) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, at.x, at.y), Infinity);
@@ -1715,58 +1803,254 @@ export function guardsFor(threat, units = safe(() => Players.get(pid()).Units.ge
         }
         return !!best && best.d <= GUARD_RADIUS && same(best.at, s);
     };
+    const present = [];
+    const incoming = [];
+    for (const u of units ?? []) {
+        const kind = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (u.isCommanderUnit || !u.location || !(ranged ? isRangedGuard(kind) : isMeleeGuard(kind))) continue;
+        const g = goals.get(unitKey(u.id));
+        if (g?.guard !== undefined && !g.front) {
+            const p = safe(() => guardProgress(u, g), null);
+            if (p) {
+                if (g.guard === key) {
+                    if (p.turns === 0) present.push(u);
+                    else incoming.push({ u, turns: p.turns });
+                }
+                continue;
+            }
+        }
+        if (guards(u)) present.push(u);
+    }
+    return { present, incoming };
+}
+
+/**
+ * Our soldiers of one role guarding a threatened settlement: those there (guardDetail's `present`), and those on their
+ * way that arrive within `within` turns. Moving units count every one on its way (none is sent twice); a purchase counts
+ * only those in time (research/36 §1: one arriving after the town falls guards nothing). Defenders are trained and
+ * bought while fewer than guardsWanted.
+ */
+export function guardsFor(threat, units = undefined, threats = null, { ranged = false, within = Infinity } = {}) {
+    const { present, incoming } = guardDetail(threat, units, threats, { ranged });
+    return present.length + incoming.filter((x) => x.turns <= within).length;
+}
+
+/** The turns before a threatened settlement is hit: now (1) with its centre damaged or a raider within THREAT_CLOSE, else 2. */
+export const guardDeadline = (t) => (t?.damaged || Number(t?.close) > 0 ? 1 : 2);
+
+/**
+ * Threatened only by one land raider 3-4 tiles away that our guards there cannot match (`strong`): it calls for a guard,
+ * moved, bought or trained, not for walls ahead of the queue or a town's lasting Fort Town Focus (those wait until it
+ * comes within THREAT_CLOSE, a second one comes, or the centre is hit).
+ */
+export const earlyWarning = (t) => !!t?.strong && !(Number(t?.close) > 0) && !t?.damaged && (Number(t?.count) || 0) < THREAT_MIN;
+
+const guarding = (u, ctx, radius = THREAT_RADIUS) => ctx.threats.some((t) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, t.settlement.x, t.settlement.y), Infinity) <= radius);
+
+/** Wakes a soldier asleep, fortified or on alert (UNITCOMMAND_WAKE), so a move order takes. */
+function wakeUnit(u) {
+    const WAKE = "UNITCOMMAND_WAKE";
+    if (!isIdle(u) && safe(() => Game.UnitCommands.canStart(u.id, WAKE, NO_TARGET, false), null)?.Success) Game.UnitCommands.sendRequest(u.id, WAKE, { ...NO_TARGET });
+}
+
+/** Our melee soldiers at a war front: within STAGE_RADIUS, or sent there and still on their way. */
+function frontGuards(front, units) {
+    const s = front.settlement;
+    const key = `${s.x},${s.y}`;
     let n = 0;
     for (const u of units) {
-        const kind = safe(() => GameInfo.Units.lookup(u.type), null);
-        if (u.isCommanderUnit || !(ranged ? isRangedGuard(kind) : isMeleeGuard(kind))) continue;
-        const goal = goals.get(unitKey(u.id))?.guard;
-        if (goal !== undefined) {
-            if (goal === key) n++;
-            continue;
-        }
-        if (guards(u)) n++;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (u.isCommanderUnit || !u.location || !isMeleeGuard(def)) continue;
+        const g = goals.get(unitKey(u.id));
+        if (g?.front && g.guard === key && safe(() => guardProgress(u, g), null)) n++;
+        else if (!(g?.guard !== undefined && g.guard !== key) && safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, s.x, s.y), Infinity) <= STAGE_RADIUS) n++;
     }
     return n;
 }
 
-const guarding = (u, ctx, radius = THREAT_RADIUS) => ctx.threats.some((t) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, t.settlement.x, t.settlement.y), Infinity) <= radius);
+/**
+ * What each threatened settlement still lacks, most urgent first (a damaged centre, then no guard at all, then raiders
+ * close, then their number), melee and ranged; then the war fronts' (research/36 §2). Units on their way count.
+ * @returns [{ t, key, ranged, n, front }]
+ */
+function defenceDemands(ctx, units) {
+    const out = [];
+    for (const t of ctx.threats) {
+        const key = `${t.settlement.x},${t.settlement.y}`;
+        const melee = guardDetail(t, units, ctx.threats);
+        const have = melee.present.length + melee.incoming.length;
+        const rank = (t.damaged ? 0 : 4) + (have === 0 ? 0 : 2) + (Number(t.close) > 0 ? 0 : 1);
+        const n = guardsWanted(t) - have;
+        if (n > 0) out.push({ t, key, ranged: false, n, front: false, rank, count: t.count });
+        const r = guardDetail(t, units, ctx.threats, { ranged: true });
+        const rn = rangedWanted(t) - r.present.length - r.incoming.length;
+        if (rn > 0) out.push({ t, key, ranged: true, n: rn, front: false, rank: rank + 0.5, count: t.count });
+    }
+    out.sort((a, b) => a.rank - b.rank || b.count - a.count);
+    for (const f of ctx.fronts) {
+        const n = FRONT_GUARDS - frontGuards(f, units);
+        if (n > 0) out.push({ t: f, key: `${f.settlement.x},${f.settlement.y}`, ranged: false, n, front: true, rank: 10, count: 0 });
+    }
+    return out;
+}
 
 /**
- * A soldier away from every threatened settlement walks to one that has fewer of our soldiers
- * than hostile units (most threatened first): a free tile within REINFORCE_RADIUS of it, our
- * land or nobody's. Seen in game: defenders trained for a threatened town stayed around the
- * city that trained them, the town never counted them, and the city kept training more until
- * every tile around it held one (a new unit then had nowhere to stand).
+ * The soldiers free to go (research/36 §4): land melee or ranged guards, not a city's garrison, not hurt enough to
+ * withdraw, not on another errand, on land; idle ones, and asleep or fortified ones (woken: game 29's reserves slept
+ * while Cusco stood at 0 of 1 guards and then 0 of 4). A guard at a threatened settlement goes only when that settlement
+ * has more than it wants (the ones furthest from its centre first, never the one on it), and one on its way keeps its
+ * goal. Units 3-4 tiles from a threatened settlement are free too (before, they were neither counted nor sent).
+ * @returns [{ u, def, k, ranged, resting, stage, from, atFront }]
  */
-function reinforce(u, def, ctx) {
-    if (ctx.threats.length === 0 || ctx.garrison.has(unitKey(u.id)) || u.isCommanderUnit || def.Domain !== "DOMAIN_LAND") return null;
-    if (guarding(u, ctx, GUARD_RADIUS) || !isMeleeGuard(def)) return null;
+function defenceSupply(units, ctx) {
+    const A = globalThis.UnitActivityTypes;
+    const dist = (u, at) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, at.x, at.y), Infinity);
+    const spare = new Map(); // unit key -> the settlement it may leave
     for (const t of ctx.threats) {
-        const s = t.settlement;
-        const key = `${s.x},${s.y}`;
-        if ((ctx.need.get(key) ?? 0) <= 0) continue;
-        const tiles = [];
-        for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, REINFORCE_RADIUS), []) ?? []) {
-            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-            if (!loc || ctx.stepTo.has(`${loc.x},${loc.y}`) || !roomForSoldier(loc)) continue;
-            if (safe(() => GameplayMap.isWater(loc.x, loc.y), false) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
-            const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
-            if (owner !== -1 && owner !== null && owner !== pid()) continue;
-            const near = safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, s.x, s.y), 0);
-            const far = safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), 0);
-            tiles.push({ loc, score: near * 100 + far });
-        }
-        tiles.sort((a, b) => a.score - b.score);
-        for (const { loc } of tiles.slice(0, REINFORCE_TRIES)) {
-            const turns = pathTurns(u, loc);
-            if (turns === null || turns > REINFORCE_MAX_TURNS || !moveTo(u, loc)) continue;
-            ctx.stepTo.add(`${loc.x},${loc.y}`);
-            ctx.need.set(key, ctx.need.get(key) - 1);
-            goals.set(unitKey(u.id), { guard: key });
-            return { key: "REINFORCE", args: [nameOf(def), s.name] };
+        const key = `${t.settlement.x},${t.settlement.y}`;
+        for (const ranged of [false, true]) {
+            const { present } = guardDetail(t, units, ctx.threats, { ranged });
+            const keep = Math.max(1, ranged ? rangedWanted(t) : guardsWanted(t));
+            const leave = present.filter((u) => !ctx.garrison.has(unitKey(u.id)) && !same(u.location, t.settlement))
+                .sort((a, b) => dist(b, t.settlement) - dist(a, t.settlement)).slice(0, Math.max(0, present.length - keep));
+            for (const u of leave) spare.set(unitKey(u.id), key);
         }
     }
+    const out = [];
+    for (const u of units) {
+        const k = unitKey(u.id);
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || u.isCommanderUnit || def.Domain !== "DOMAIN_LAND" || ctx.garrison.has(k) || ctx.ordered.has(k)) continue;
+        const ranged = isRangedGuard(def);
+        if (!ranged && !isMeleeGuard(def)) continue;
+        if (u.isOnMap === false || u.canMove === false || u.hasMoved === true || !u.location || onWater(u.location)) continue;
+        if ((Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE) continue;
+        const act = u.activityType;
+        if (A && act !== undefined && (act === A.OPERATION || act === A.HEAL)) continue;
+        const resting = !!A && act !== undefined && act !== A.NONE && act !== A.AWAKE;
+        const g = goals.get(k);
+        if (g && g.guard === undefined) continue; // another errand: a village, a discovery, an independent
+        const posted = ctx.threats.some((t) => dist(u, t.settlement) <= GUARD_RADIUS) || (g?.guard !== undefined && !g.front && !!safe(() => guardProgress(u, g), null));
+        if (posted && !spare.has(k)) continue;
+        // A soldier at a war front (sent there, or standing there) stays for that front; a threat may still take it.
+        const near = g?.front ? null : ctx.fronts.find((f) => dist(u, f.settlement) <= STAGE_RADIUS);
+        const atFront = g?.front ? g.guard : near ? `${near.settlement.x},${near.settlement.y}` : undefined;
+        out.push({ u, def, k, ranged, resting, stage: !resting || restedByUs.has(k), from: spare.get(k), atFront });
+    }
+    return out;
+}
+
+/**
+ * The tile a soldier takes at a settlement (or a war front) and the turns it needs, or null: a free tile within
+ * REINFORCE_RADIUS (STAGE_RADIUS on our own land for a front), reached within REINFORCE_MAX_TURNS. Melee: the nearest to
+ * the settlement, then to the unit. Ranged: off the centre (a melee unit holds it: research/24 W2), behind the screen,
+ * as far from the raiders as the post allows.
+ */
+function postFor(u, s, ctx, { ranged = false, front = false } = {}) {
+    const radius = front ? STAGE_RADIUS : REINFORCE_RADIUS;
+    const raiders = ranged ? hostilesAround(s, THREAT_RADIUS + 1) : [];
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, radius), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || ctx.stepTo.has(`${loc.x},${loc.y}`) || !roomForSoldier(loc)) continue;
+        if (safe(() => GameplayMap.isWater(loc.x, loc.y), false) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
+        const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+        if (front ? owner !== pid() : owner !== -1 && owner !== null && owner !== pid()) continue;
+        const near = safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, s.x, s.y), 0);
+        const far = safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), 0);
+        const back = raiders.length > 0 ? Math.min(...raiders.map((h) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, h.at.x, h.at.y), 9))) : 0;
+        tiles.push({ loc, score: ranged ? (near === 0 ? 500 : 0) + near * 30 - back * 40 + far : near * 100 + far });
+    }
+    tiles.sort((a, b) => a.score - b.score);
+    for (const { loc } of tiles.slice(0, REINFORCE_TRIES)) {
+        const turns = pathTurns(u, loc);
+        if (turns === null || turns > REINFORCE_MAX_TURNS || startsWar(u, loc) || hazardAt(loc) > 0) continue;
+        return { loc, turns };
+    }
     return null;
+}
+
+/**
+ * Who goes where (research/36 §4): each settlement's lack, most urgent first, gets the free soldier of that role that
+ * reaches a post there soonest (of the REINFORCE_PICKS nearest); then the war fronts get an idle soldier, or one the
+ * autopilot itself fortified. Game 29 M52: a commander and four reinforcements went to Антавайлья, the first listed,
+ * while Куско stayed at 0 of 1 guards. Fills ctx.posts (unit key -> post) and reserves the tiles.
+ */
+function planDefence(units, ctx) {
+    ctx.posts = new Map();
+    if (ctx.threats.length === 0 && ctx.fronts.length === 0) return;
+    const demands = defenceDemands(ctx, units);
+    if (demands.length === 0) return;
+    const supply = ctx.supply ?? defenceSupply(units, ctx);
+    for (const d of demands) {
+        const s = d.t.settlement;
+        for (let n = d.n; n > 0; n--) {
+            const picks = supply.filter((c) => !ctx.posts.has(c.k) && c.ranged === d.ranged && c.from !== d.key && (!d.front || (c.stage && c.atFront === undefined)))
+                .map((c) => ({ c, d: safe(() => GameplayMap.getPlotDistance(c.u.location.x, c.u.location.y, s.x, s.y), Infinity) }))
+                .filter((x) => x.d <= REINFORCE_REACH && !(x.c.atFront === d.key))
+                .sort((a, b) => a.d - b.d).slice(0, REINFORCE_PICKS);
+            let best = null;
+            for (const { c } of picks) {
+                const post = postFor(c.u, s, ctx, { ranged: d.ranged, front: d.front });
+                if (post && (!best || post.turns < best.post.turns)) best = { c, post };
+            }
+            if (!best) break;
+            ctx.stepTo.add(`${best.post.loc.x},${best.post.loc.y}`);
+            ctx.posts.set(best.c.k, {
+                key: d.key, t: d.t, front: d.front, ranged: d.ranged, loc: best.post.loc, turns: best.post.turns, resting: best.c.resting,
+                unit: best.c.def.UnitType, at: { x: best.c.u.location.x, y: best.c.u.location.y }, from: best.c.from,
+            });
+        }
+    }
+}
+
+/**
+ * Sends a soldier to the post planDefence gave it (a free tile near a threatened settlement, or near a war front on our
+ * land), waking it first when it sleeps or is fortified. Seen in game: defenders trained for a threatened town stayed
+ * around the city that trained them, the town never counted them, and the city kept training more until every tile
+ * around it held one. @returns a log entry or null
+ */
+function reinforce(u, def, ctx) {
+    const post = ctx.posts?.get(unitKey(u.id));
+    if (!post) return null;
+    if (post.resting) wakeUnit(u);
+    if (!moveTo(u, post.loc)) return null;
+    goals.set(unitKey(u.id), { guard: post.key, tile: post.loc, turn: Game.turn, front: post.front });
+    restedByUs.delete(unitKey(u.id));
+    post.sent = true;
+    return { key: post.front ? "STAGED" : "REINFORCE", args: [nameOf(def), post.t.settlement.name] };
+}
+
+/**
+ * UI.log, once a turn for each threatened settlement and war front (research/36 §10): the raiders and the strongest of
+ * them, the centre's health, our guards there and on their way (with their turns), and who was sent from where.
+ */
+function logDefence(ctx, units) {
+    const districts = safe(() => Players.Districts.get(pid()), null);
+    const name = (u) => safe(() => GameInfo.Units.lookup(u.type)?.UnitType, "?");
+    const list = (d) => [...d.present.map((u) => name(u)), ...d.incoming.map((x) => `${name(x.u)} in ${x.turns}t`)].join(", ");
+    const free = (ctx.supply ?? []).filter((c) => !ctx.posts.has(c.k)).length;
+    for (const t of [...ctx.threats, ...ctx.fronts]) {
+        const s = t.settlement;
+        const key = `${s.x},${s.y}`;
+        if (defenceNoted.get(key) === Game.turn) continue;
+        defenceNoted.set(key, Game.turn);
+        const sent = [...ctx.posts.values()].filter((p) => p.key === key)
+            .map((p) => `${p.unit} from ${p.at.x},${p.at.y} in ${p.turns}t${p.resting ? " (woken)" : ""}${p.from ? ` (spare at ${p.from})` : ""}${p.sent ? "" : " NOT SENT"}`);
+        const parts = [];
+        if (ctx.threats.includes(t)) {
+            const m = guardDetail(t, units, ctx.threats);
+            const r = guardDetail(t, units, ctx.threats, { ranged: true });
+            const health = Number(safe(() => districts.getDistrictHealth(s), NaN));
+            const max = Number(safe(() => districts.getDistrictMaxHealth(s), NaN));
+            parts.push(`raiders ${t.count} (land ${t.land ?? "?"}, ships ${t.ships ?? 0}, air ${t.air ?? 0}, close ${t.close ?? "?"}${t.strongest ? `, strongest ${t.strongest}${t.strong ? " beats our guards there" : ""}` : ""})`);
+            parts.push(`centre ${Number.isFinite(health) ? health : "?"}/${Number.isFinite(max) ? max : "?"}`);
+            parts.push(`melee ${m.present.length} + ${m.incoming.length} coming of ${guardsWanted(t)} [${list(m)}]`);
+            parts.push(`ranged ${r.present.length} + ${r.incoming.length} of ${rangedWanted(t)} [${list(r)}]`);
+        } else parts.push(`war front (${t.leader ?? "?"}): melee ${frontGuards(t, units)} of ${FRONT_GUARDS}`);
+        parts.push(`sent [${sent.join("; ")}]`);
+        log.info(`defence: ${s.name}: ${parts.join("; ")}; ${free} free soldier(s) left`);
+    }
 }
 
 /**
@@ -1961,10 +2245,18 @@ async function commanderAttacks(units, M) {
     for (const cmdr of units) {
         const def = safe(() => GameInfo.Units.lookup(cmdr.type), null);
         if (!cmdr.isCommanderUnit || !isLandCommander(def) || cmdr.isOnMap === false) continue;
+        // Its radius as the game draws it (Units.getCommandRadiusPlots: support-unit-map-decoration.js; research/36 §6), else
+        // 1, +1 with Merit.
+        const plots = safe(() => Units.getCommandRadiusPlots(cmdr.id), null);
+        const radiusPlots = Array.isArray(plots) && plots.length > 0
+            ? new Set(plots.map((p) => (typeof p === "number" ? p : safe(() => GameplayMap.getIndexFromLocation(p), -1))))
+            : null;
         const merit = safe(() => cmdr.Experience?.hasPromotion("DISCIPLINE_ARMY_COMMENDATION_MERIT", "PROMOTION_COMMENDATION_ARMY_MERIT"), false);
         const radius = 1 + (merit ? 1 : 0);
-        const near = units.filter((x) => !x.isCommanderUnit && !ordered.has(unitKey(x.id)) && Number(x.Combat?.attacksRemaining) > 0
-            && safe(() => GameplayMap.getPlotDistance(x.location.x, x.location.y, cmdr.location.x, cmdr.location.y), 9) <= radius);
+        const inRadius = (x) => (radiusPlots
+            ? radiusPlots.has(safe(() => GameplayMap.getIndexFromXY(x.location.x, x.location.y), -2))
+            : safe(() => GameplayMap.getPlotDistance(x.location.x, x.location.y, cmdr.location.x, cmdr.location.y), 9) <= radius);
+        const near = units.filter((x) => !x.isCommanderUnit && !ordered.has(unitKey(x.id)) && Number(x.Combat?.attacksRemaining) > 0 && !!x.location && inRadius(x));
         for (const [cmd, ranged] of [["UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED", true], ["UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE", false]]) {
             const plots = safe(() => Game.UnitCommands.canStart(cmdr.id, cmd, {}, false), null)?.Plots ?? [];
             let best = null;
@@ -2194,10 +2486,7 @@ function waterRefuge(u, def, ctx) {
  */
 function escape(u, def, ctx) {
     if (onWater(u.location) || ctx.garrison.has(unitKey(u.id)) || !inDanger(u, def)) return null;
-    const wake = () => {
-        const WAKE = "UNITCOMMAND_WAKE";
-        if (!isIdle(u) && safe(() => Game.UnitCommands.canStart(u.id, WAKE, NO_TARGET, false), null)?.Success) Game.UnitCommands.sendRequest(u.id, WAKE, { ...NO_TARGET });
-    };
+    const wake = () => wakeUnit(u);
     const water = waterRefuge(u, def, ctx);
     if (water) {
         wake();
@@ -2235,6 +2524,8 @@ function stayAtSea(u, def) {
 
 function defend(u, def, ctx) {
     if (def.CoreClass !== "CORE_CLASS_MILITARY") return null;
+    // An aircraft strikes a raider near our settlements, else waits at its base.
+    if (def.Domain === "DOMAIN_AIR") return airAttack(u, def);
     const here = disperseHere(u, def, ctx);
     if (here) return here;
     const shot = rangedAttack(u, def);
@@ -2250,16 +2541,20 @@ function defend(u, def, ctx) {
     }
     const camp = goDisperse(u, def, ctx);
     if (camp) return camp;
-    const sent = reinforce(u, def, ctx);
-    if (sent) return sent;
     // A threatening independent we cannot befriend yet: one unit walks toward it (not a garrison).
     if (ctx.approach.length > 0 && !ctx.garrison.has(unitKey(u.id))) {
         const e = approach(u, def, ctx);
         if (e) return e;
     }
-    if (operate(u, "UNITOPERATION_FORTIFY")) return { key: "FORTIFY", args: [nameOf(def)] };
+    if (operate(u, "UNITOPERATION_FORTIFY")) {
+        restedByUs.add(unitKey(u.id));
+        return { key: "FORTIFY", args: [nameOf(def)] };
+    }
     // The game may refuse to fortify (seen in a new capital): stand guard, woken by enemies.
-    if (operate(u, "UNITOPERATION_ALERT")) return { key: "ALERT", args: [nameOf(def)] };
+    if (operate(u, "UNITOPERATION_ALERT")) {
+        restedByUs.add(unitKey(u.id));
+        return { key: "ALERT", args: [nameOf(def)] };
+    }
     return stepAside(u, def, ctx);
 }
 
@@ -2411,6 +2706,56 @@ function raidersNear() {
 
 const SHOTS_MAX = 8; // ranged shots a pass (each waits for its Combat event)
 
+/**
+ * An air strike (research/36 §7: game 29 had no aircraft; Russia's Bomber hit our centres M60-M65): at a hostile
+ * soldier within AIR_STRIKE_RADIUS of one of our settlements, the one attacking a settlement (RANGED_GUARD_RADIUS) first,
+ * then the most damaged. Sent as the game's air attack mode sends it: `UNITOPERATION_AIR_ATTACK` canStart with no target
+ * gives the Plots, then {X, Y} (interface-mode-air-attack.js). @returns a log entry or null
+ */
+function airAttack(u, def) {
+    if (u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return null;
+    const OP = "UNITOPERATION_AIR_ATTACK";
+    const r = safe(() => Game.UnitOperations.canStart(u.id, OP, {}, false), null);
+    if (!r?.Plots?.length) return null;
+    const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    let best = null;
+    for (const idx of r.Plots) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || startsWar(u, loc)) continue;
+        const enemy = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null))
+            .find((t) => hostileOwner(t));
+        if (!enemy) continue;
+        const d = Math.min(Infinity, ...ours.map((c) => safe(() => GameplayMap.getPlotDistance(c.x, c.y, loc.x, loc.y), Infinity)));
+        if (!(d <= AIR_STRIKE_RADIUS)) continue;
+        const score = (d <= RANGED_GUARD_RADIUS ? 2000 : 0) + damageAt(loc) - d;
+        if (!best || score > best.score) best = { loc, enemy, score };
+    }
+    if (!best) return null;
+    Game.UnitOperations.sendRequest(u.id, OP, { X: best.loc.x, Y: best.loc.y });
+    const theirs = safe(() => GameInfo.Units.lookup(best.enemy.type), null);
+    return { key: "AIR_STRIKE", args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.loc.x, best.loc.y] };
+}
+
+/**
+ * Enemy aircraft we see within AIR_WATCH_RADIUS of our settlements: those of the majors at war with us, on a tile
+ * visible to us (research/36 §7). @returns their number
+ */
+export function hostileAircraftNear() {
+    const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    const VISIBLE = globalThis.RevealedStates?.VISIBLE;
+    let n = 0;
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (!p?.isMajor || p.id === pid() || !safe(() => Players.get(pid()).Diplomacy.isAtWarWith(p.id), false)) continue;
+        for (const u of safe(() => p.Units.getUnits(), []) ?? []) {
+            const def = safe(() => GameInfo.Units.lookup(u.type), null);
+            if (def?.Domain !== "DOMAIN_AIR" || !u.location || u.location.x < 0) continue;
+            if (VISIBLE !== undefined && safe(() => GameplayMap.getRevealedState(pid(), u.location.x, u.location.y), VISIBLE) !== VISIBLE) continue;
+            if (ours.some((c) => safe(() => GameplayMap.getPlotDistance(c.x, c.y, u.location.x, u.location.y), Infinity) <= AIR_WATCH_RADIUS)) n++;
+        }
+    }
+    return n;
+}
+
 /** A unit that attacks from afar: a ranged or bombard strength (GameInfo.Unit_Stats). */
 function shootsFromAfar(def) {
     const s = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
@@ -2434,10 +2779,12 @@ async function shootRaiders(ordered) {
     for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
         if (out.length >= SHOTS_MAX) break;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
-        if (!isSoldier(def) || u.isCommanderUnit || u.isOnMap === false || ordered.has(unitKey(u.id)) || !shootsFromAfar(def)) continue;
+        // Aircraft too (based ones may count as off the map): the game's air attack (airAttack).
+        const air = def?.Domain === "DOMAIN_AIR";
+        if (!isSoldier(def) || u.isCommanderUnit || (!air && u.isOnMap === false) || ordered.has(unitKey(u.id)) || !shootsFromAfar(def)) continue;
         if (!(Number(u.Combat?.attacksRemaining) > 0) || (A && u.activityType === A.OPERATION)) continue;
         if (def.Domain === "DOMAIN_LAND" && !centres.has(`${u.location?.x},${u.location?.y}`) && inDanger(u, def)) continue;
-        const e = rangedAttack(u, def, { hostileOnly: true });
+        const e = air ? airAttack(u, def) : rangedAttack(u, def, { hostileOnly: true });
         if (!e) continue;
         ordered.add(unitKey(u.id));
         out.push(e);
@@ -2865,6 +3212,15 @@ export function commandUnits(settings, options) {
         const g = goals.get(unitKey(u.id));
         if (g) g.lastAt = { x: u.location?.x, y: u.location?.y };
     }
+    for (const k of [...restedByUs]) if (!alive.has(k)) restedByUs.delete(k);
+    // Guard goals that no longer hold (research/36 §1): the unit heals, sleeps or walks elsewhere, or its settlement is
+    // neither threatened nor a war front any more.
+    const posts = new Set([...(options.threats ?? []), ...(options.fronts ?? [])].map((t) => `${t.settlement.x},${t.settlement.y}`));
+    for (const u of units) {
+        const k = unitKey(u.id);
+        const g = goals.get(k);
+        if (g?.guard !== undefined && (!posts.has(g.guard) || !safe(() => guardProgress(u, g), null))) goals.delete(k);
+    }
     const taken = new Set([...goals.values()].filter((g) => g.x !== undefined).map((g) => `${g.x},${g.y}`));
     let routes = null;
     const walking = [...goals.values()].filter((g) => g.city);
@@ -2902,8 +3258,9 @@ export function commandUnits(settings, options) {
         distant: !!options.distant, // settlers: Distant Lands first (economy focus in the Exploration age)
         hostileAt: new Map(), // plot index -> a hostile military unit stands there (settlers keep away)
         threats: options.threats ?? [],
-        // Defenders each threatened settlement still lacks ("x,y" -> count).
-        need: new Map((options.threats ?? []).map((t) => [`${t.settlement.x},${t.settlement.y}`, guardsWanted(t) - guardsFor(t, units, options.threats)])),
+        // War fronts that are not threatened yet: a guard each (research/36 §2).
+        fronts: (options.fronts ?? []).filter((f) => !(options.threats ?? []).some((t) => same(t.settlement, f.settlement))),
+        posts: new Map(), // unit key -> its post (planDefence)
     };
     safe(() => noteHits(units), null);
     safe(() => logCommanderParameters(), null);
@@ -2917,9 +3274,19 @@ export function commandUnits(settings, options) {
         for (const u of units) {
             const def = safe(() => GameInfo.Units.lookup(u.type), null);
             const tile = `${u.location?.x},${u.location?.y}`;
-            if (def?.CoreClass !== "CORE_CLASS_MILITARY" || !cityTiles.has(tile) || taken.has(tile)) continue;
+            if (def?.CoreClass !== "CORE_CLASS_MILITARY" || def.Domain === "DOMAIN_AIR" || !cityTiles.has(tile) || taken.has(tile)) continue;
             taken.add(tile);
             garrison.add(unitKey(u.id));
+        }
+    }
+    // Who defends where (research/36 §4): with «Оборона» or «Армия».
+    if (options.defend || options.roam) {
+        try {
+            ctx.supply = defenceSupply(units, ctx);
+            planDefence(units, ctx);
+        } catch (error) {
+            log.debug("autopilot defence plan failed", error);
+            ctx.posts = new Map();
         }
     }
     const A = globalThis.UnitActivityTypes;
@@ -2990,6 +3357,16 @@ export function commandUnits(settings, options) {
                 continue;
             }
         }
+        // A defender for a threatened settlement or a war front (planDefence), woken when it sleeps or is fortified.
+        if (def && ctx.posts.has(unitKey(u.id))) {
+            const e = safe(() => reinforce(u, def, ctx), null);
+            if (e) {
+                seen.push(`${what}:${e.key}`);
+                entries.push(e);
+                ordered.add(unitKey(u.id));
+                continue;
+            }
+        }
         // Roaming military units are woken from fortification too (not while moving or healing).
         const roamer = options.roam && def?.CoreClass === "CORE_CLASS_MILITARY" && !u.isCommanderUnit && !garrison.has(unitKey(u.id))
             && u.isOnMap !== false && u.canMove !== false && u.hasMoved !== true && !(Number(u.Health?.damage) > 0)
@@ -3024,7 +3401,7 @@ export function commandUnits(settings, options) {
         if (roamer && !guarding(u, ctx)) {
             let e = null;
             try {
-                e = disperseHere(u, def, ctx) ?? goDisperse(u, def, ctx) ?? reinforce(u, def, ctx) ?? (ctx.approach.length > 0 ? approach(u, def, ctx) : null) ?? roam(u, def, ctx);
+                e = disperseHere(u, def, ctx) ?? goDisperse(u, def, ctx) ?? (ctx.approach.length > 0 ? approach(u, def, ctx) : null) ?? roam(u, def, ctx);
             } catch (error) {
                 log.debug(`autopilot roam ${def.UnitType} failed`, error);
             }
@@ -3117,8 +3494,8 @@ export function commandUnits(settings, options) {
             }
             else if (options.defend) e = defend(u, def, ctx);
             // No order and only moving allowed (two of a kind on one tile): one steps aside, or
-            // the turn stays held (NOTIFICATION_COMMAND_UNITS).
-            if (!e) e = stepAside(u, def, ctx);
+            // the turn stays held (NOTIFICATION_COMMAND_UNITS). Aircraft do not walk.
+            if (!e && def.Domain !== "DOMAIN_AIR") e = stepAside(u, def, ctx);
         } catch (error) {
             log.debug(`autopilot unit ${def.UnitType} failed`, error);
         }
@@ -3128,6 +3505,7 @@ export function commandUnits(settings, options) {
             ordered.add(unitKey(u.id));
         }
     }
+    if (options.defend || options.roam) safe(() => logDefence(ctx, units), null);
     // The game cuts log lines at about 1000 characters: busy units are only counted.
     const busy = seen.filter((t) => t.endsWith(":busy")).length;
     log.info(`autopilot units: ${busy} busy; ${seen.filter((t) => !t.endsWith(":busy")).join("; ") || "no other"}`);

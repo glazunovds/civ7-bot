@@ -897,3 +897,87 @@ test("syncretism: its own civilization when that brings a culture slot, else the
         delete world.notifications;
     }
 });
+
+// Research/34 §1: game 28 swapped Living Standards (−25% building upkeep, Happiness too) for Social Science (+3 Science a
+// specialist, +1 Food and Happiness upkeep a specialist) while its cities stood below zero; their production fell 187 → 110
+// and their science 260 → 182. The previews' empire-wide sum hid what each city lost to the game's penalty.
+test("a policy's Happiness is priced in each settlement: below zero, Social Science does not replace Living Standards; in calm cities it does", () => {
+    installPreviews();
+    reset();
+    const SPEC = 4; // specialists in each city, 6 Happiness and 2 Food upkeep each (the Modern age's)
+    rows.push({ TraditionType: "TRADITION_LIVING", Name: "Living Standards", slot: 2, yields: { YIELD_GOLD: 4, YIELD_HAPPINESS: 4 }, $index: rows.length, $hash: 100 + rows.length });
+    rows.push({ TraditionType: "TRADITION_SOCIAL", Name: "Social Science", slot: 2, yields: { YIELD_SCIENCE: 3 * SPEC * 2, YIELD_FOOD: -SPEC * 2, YIELD_HAPPINESS: -SPEC * 2 }, $index: rows.length, $hash: 100 + rows.length });
+    const H = (t) => rows.find((r) => r.TraditionType === t).$hash;
+    useModifiers([
+        { id: "LIVING_MOD", effect: "EFFECT_CITY_ADJUST_BUILDING_MAINTENANCE_EFFICIENCY", args: { Gold: "true", Happiness: "true", Amount: 25 } },
+        { id: "SOCIAL_SCI", effect: "EFFECT_CITY_ADJUST_WORKER_YIELD", args: { YieldType: "YIELD_SCIENCE", Amount: 3 } },
+        { id: "SOCIAL_HAPPY", effect: "EFFECT_CITY_ADJUST_WORKER_MAINTENANCE_EFFICIENCY", args: { YieldType: "YIELD_HAPPINESS", Amount: 1 } },
+        { id: "SOCIAL_FOOD", effect: "EFFECT_CITY_ADJUST_WORKER_MAINTENANCE_EFFICIENCY", args: { YieldType: "YIELD_FOOD", Amount: 1 } },
+    ]);
+    GameInfo.TraditionModifiers = [
+        { TraditionType: "TRADITION_LIVING", ModifierId: "LIVING_MOD" },
+        { TraditionType: "TRADITION_SOCIAL", ModifierId: "SOCIAL_SCI" }, { TraditionType: "TRADITION_SOCIAL", ModifierId: "SOCIAL_HAPPY" }, { TraditionType: "TRADITION_SOCIAL", ModifierId: "SOCIAL_FOOD" },
+    ];
+    const at = (yieldType, n) => {
+        const a = Array.from(GameInfo.Yields, () => 0);
+        a[GameInfo.Yields.lookup(yieldType).$index] = n;
+        return a;
+    };
+    const happyFood = (h, f) => at("YIELD_HAPPINESS", h).map((v, i) => v + at("YIELD_FOOD", f)[i]);
+    // Each city: two buildings costing 4 Happiness each on a tile next to it (Living Standards gives 2 of those 8 back).
+    world.cities = [{ owner: 0, x: 2, y: 2, name: "Nineveh" }, { owner: 0, x: 6, y: 6, name: "Kalhu" }];
+    for (const c of world.cities) Object.assign(c, { prod: 40, food: 10, nets: { YIELD_SCIENCE: 40, YIELD_GOLD: 20, YIELD_CULTURE: 10 } });
+    world.structures = (x, y) => (world.cities.some((c) => c.x + 1 === x && c.y === y) ? { district: "DISTRICT_URBAN", constructibles: ["BUILDING_LIBRARY", "BUILDING_MONUMENT"] } : { district: null, constructibles: [] });
+    world.maintenance = () => at("YIELD_HAPPINESS", 4);
+    world.workers = () => [{ PlotIndex: 0, IsBlocked: false, NumWorkers: SPEC, MaxWorkers: SPEC, CurrentYields: at("YIELD_SCIENCE", 0), NextYields: at("YIELD_SCIENCE", 0), CurrentMaintenance: happyFood(6 * SPEC, 2 * SPEC), NextMaintenance: happyFood(6 * SPEC, 2 * SPEC) }];
+    culture.canSwapCultureSlot = () => true;
+    slots[2] = 1;
+    active.add(H("TRADITION_LIVING"));
+    const science = { ...DEFAULT_SETTINGS, profile: "SCIENCE" };
+    try {
+        for (const c of world.cities) c.happy = -5;
+        assert.deepEqual(choices.swapOnePolicy(science), [], "below zero: 4 more upkeep a city costs 20% of its other yields");
+        for (const c of world.cities) c.happy = 30;
+        const out = choices.swapOnePolicy(science);
+        assert.deepEqual([out[0]?.args[0], out[0]?.args[2]], ["Living Standards", "Social Science"], JSON.stringify(out));
+    } finally {
+        rows.splice(-2);
+        clearModifiers();
+        delete culture.canSwapCultureSlot;
+        for (const k of ["structures", "maintenance", "workers"]) delete world[k];
+        world.cities = [];
+        slots[2] = 0;
+        active.clear();
+    }
+});
+
+// A crisis card's Happiness pushed below zero was weighed ×2 (the old stand-in for the game's penalty); the penalty on the
+// settlement's other yields is now priced on its own (localHappiness), so the Happiness itself counts once, as costValue does.
+test("a crisis card's Happiness that crosses zero: the penalty on the other yields once, the Happiness at full weight", async () => {
+    const { profileFor } = await import("../mod/expansion-planner/ui/core/xpl-profiles.js");
+    const { happinessWorth } = await import("../mod/expansion-planner/ui/core/xpl-scarcity.js");
+    installPreviews();
+    reset();
+    const w = profileFor(DEFAULT_SETTINGS).y;
+    // The town's yields as the fake reports them: production 30, the rest 1; Happiness 2, −6 takes it to −4.
+    const pen = happinessWorth(w, [1, 30, 1, 1, 1, 2, 1], 2, -6);
+    const gold = (9 * w[5] - pen) / w[2]; // a gold card worth what the happiness card is worth with its Happiness ×1.5
+    rows.push({ TraditionType: "CRISIS_SCORN", Name: "Provincial scorn", slot: 3, yields: { YIELD_HAPPINESS: -6 }, $index: rows.length, $hash: 100 + rows.length });
+    rows.push({ TraditionType: "CRISIS_TAX", Name: "Tax", slot: 3, yields: { YIELD_GOLD: -gold }, $index: rows.length, $hash: 100 + rows.length });
+    const offeredBefore = culture.getUnlockedTraditions;
+    culture.getUnlockedTraditions = (t) => (t === 3 ? rows.filter((r) => r.TraditionType === "CRISIS_SCORN" || r.TraditionType === "CRISIS_TAX").map((r) => r.$hash) : offeredBefore(t));
+    useModifiers([{ id: "SCORN_MOD", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: -6 } }]);
+    GameInfo.TraditionModifiers = [{ TraditionType: "CRISIS_SCORN", ModifierId: "SCORN_MOD" }];
+    world.cities = [{ owner: 0, x: 6, y: 6, name: "Cole", isTown: true, happy: 2, prod: 30 }];
+    slots[3] = 1;
+    try {
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["CRISIS_SCORN"], `−6 Happiness with its penalty (${pen.toFixed(1)}) against ${gold.toFixed(1)} gold`);
+    } finally {
+        rows.splice(-2);
+        culture.getUnlockedTraditions = offeredBefore;
+        clearModifiers();
+        world.cities = [];
+        slots[3] = 0;
+    }
+});

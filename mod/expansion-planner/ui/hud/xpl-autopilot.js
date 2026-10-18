@@ -273,7 +273,7 @@ function updateFocus(target = "AUTO") {
         // The final age: the score that decides a game nobody wins (research/30 §1: lost 923 to 933, last in the economy);
         // not while the score victory is off (research/31 §1: game 26 printed «score: ours 0 …» every turn).
         if (finalAge && scoreVictoryOn()) logScore(races);
-        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
+        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.countdown != null ? ` countdown ${w.countdown}` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
     }
     // Our countdown to a victory has just started: worth a line in the tab's log.
     const out = noteWatch(watch);
@@ -348,7 +348,8 @@ function noteWatch(watch) {
         const near = `${w.cls}:${w.leader}:DANGER`;
         if (w.level === "DANGER" && !watchWarned.has(near)) {
             watchWarned.add(near);
-            out.push({ key: "RIVAL_NEAR_WIN", args: [w.leaderName, victory, w.points, w.goal ?? "?", w.need ?? "?"] });
+            // A fixed score (science) has no score of ours that holds it back.
+            out.push(w.fixed ? { key: "RIVAL_NEAR_WIN_FIXED", args: [w.leaderName, victory, w.points, w.goal] } : { key: "RIVAL_NEAR_WIN", args: [w.leaderName, victory, w.points, w.goal ?? "?", w.need ?? "?"] });
         }
         const counting = `${w.cls}:${w.leader}:COUNTDOWN`;
         if (w.countdown !== null && w.countdown !== undefined && !watchWarned.has(counting)) {
@@ -452,6 +453,8 @@ export async function runTurn(force = false) {
             const r = commandUnits(s, {
                 explore: !!o.explore, settlers: !!o.settlers, defend: !!o.defend, merchants: !!o.merchants, roam: !!o.roam,
                 approach: unbefriendable(), leave: released, threats: o.defend || o.roam ? threats : [], riskOwners: steps.warState().risk,
+                // Settlements facing a war or a war risk: a guard each from the army we have (research/36 §2).
+                fronts: o.defend ? steps.warFronts() : [],
                 settleNear: !!s.strategy?.settleNear,
                 // A countdown to block or to start: settlers with no site found wherever the game allows (research/31 §3).
                 anywhere: !!s.strategy?.settleAnywhere,

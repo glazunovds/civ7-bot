@@ -1686,6 +1686,15 @@
     <Row Tag="LOC_XPL_AP_REINFORCE">
       <Text>{1_Unit} goes to defend {2_Name}</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_STAGED">
+      <Text>{1_Unit} stands guard at {2_Name} (a war or a war risk is near)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AIR_STRIKE">
+      <Text>{1_Unit} strikes {2_Unit} from the air at {3_X},{4_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_INTERCEPTOR">
+      <Text>{1_City}: queued {2_Name} against enemy aircraft (wanted {3_Num})</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_MADE_ROOM">
       <Text>{1_Unit} steps out to make room for {2_Unit}</Text>
     </Row>
@@ -2087,6 +2096,21 @@
     </Row>
     <Row Tag="LOC_XPL_AP_BIAS_SET_NONE">
       <Text>No focus</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_FIXED">
+      <Text>{1_Leader} leads ({2_Victory}): {3_Points} of {4_Goal}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_FIXED_DANGER">
+      <Text>{1_Leader} is near a win ({2_Victory}): {3_Points} of {4_Goal}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_FIXED_COUNTDOWN">
+      <Text>{1_Leader} is counting down to a win ({2_Victory}): {3_Points} of {4_Goal}, {5_Turns} turn(s) left; only what is done by then counts</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RIVAL_NEAR_WIN_FIXED">
+      <Text>{1_Leader} is near a win ({2_Victory}): {3_Points} of {4_Goal}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRATEGY_TT_CITY_TARGET">
+      <Text>Towns become cities up to {1_Num} cities while every city stands at or above zero Happiness (conversions cost far less now than in the next age)</Text>
     </Row>
   </EnglishText>
 </Database>

@@ -150,7 +150,9 @@ export function growthAdvice(cityID, settings, { focusKind = null, victory = nul
             const total = (safe(() => GameplayMap.getYields(w.PlotIndex, pid), []) ?? []).reduce((sum, [, amount]) => sum + (Number(amount) || 0), 0);
             bonus = highYieldBonus(total, yields.reduce((a, b) => a + b, 0), threshold);
         }
-        specialists.push({ idx: w.PlotIndex, x: loc.x, y: loc.y, yields, upkeep, highYield: bonus > 0, gain: Math.round((gainValue(weights, yields, nets) - costValue(weights, upkeep, nets) + bonus) * 10) / 10 });
+        // Its own yields count at what the city keeps once its upkeep is paid (below zero Happiness the game takes a share).
+        const after = nets[H] + (yields[H] || 0) - (upkeep[H] || 0);
+        specialists.push({ idx: w.PlotIndex, x: loc.x, y: loc.y, yields, upkeep, highYield: bonus > 0, gain: Math.round((gainValue(weights, yields, nets, { happinessAfter: after }) - costValue(weights, upkeep, nets) + bonus) * 10) / 10 });
     }
     specialists.sort((a, b) => b.gain - a.gain || a.idx - b.idx);
     const best = expand[0] ?? null;

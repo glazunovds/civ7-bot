@@ -63,6 +63,10 @@ test("which towns may become cities: any while towns outnumber cities; at 1:1 or
     assert.deepEqual(conversionRule({ cities: 3, towns: 2 }), { floor: false, verdicts: ["CONVERT"] });
     assert.deepEqual(conversionRule({ cities: 2, towns: 2 }), { floor: false, verdicts: ["CONVERT"] });
     assert.deepEqual(conversionRule({ cities: 2, towns: 0 }).verdicts, []);
+    // The strategy's city target (research/35): below it any town, while the cities are healthy (research/34 §2).
+    assert.deepEqual(conversionRule({ cities: 3, towns: 3, cityTarget: 5 }), { floor: true, verdicts: null });
+    assert.deepEqual(conversionRule({ cities: 3, towns: 3, cityTarget: 5, healthy: false }), { floor: false, verdicts: ["CONVERT"] });
+    assert.deepEqual(conversionRule({ cities: 5, towns: 3, cityTarget: 5 }), { floor: false, verdicts: ["CONVERT"] });
 });
 
 test("conversion order: a planned city site, then the verdict; science and economy take the most production, culture the cheapest", () => {

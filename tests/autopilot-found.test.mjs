@@ -141,7 +141,7 @@ test("production: the advisor's military unit only below 2 soldiers per settleme
     delete world.buildRecs;
 });
 
-test("science or economy in peace: the advisor's soldier and Barracks are skipped; under threat they are allowed (research/21 E2)", async () => {
+test("science or economy in peace: the advisor's soldier is skipped, the Barracks (a production building too) is not; under threat the soldier is allowed (research/21 E2, research/34)", async () => {
     const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
     const warrior = GameInfo.Units.lookup("UNIT_WARRIOR").$hash;
     const barracks = GameInfo.Constructibles.lookup("BUILDING_BARRACKS").$hash;
@@ -160,8 +160,10 @@ test("science or economy in peace: the advisor's soldier and Barracks are skippe
         world.buildRecs = () => [{ subject: 8, recommendedType: "UNIT_WARRIOR", whichAdvisors: [] }, { subject: 9, recommendedType: "BUILDING_BARRACKS", whichAdvisors: [] }];
         fake.sent.length = 0;
         let out = steps.fillProduction(new Map(), { strategy });
-        assert.ok(![warrior].includes(queued()[0]?.UnitType) && queued()[0]?.ConstructibleType !== barracks, JSON.stringify(out));
-        assert.equal(out[0]?.key, "QUEUED_FALLBACK", "the cheapest building that is not military");
+        assert.ok(queued()[0]?.UnitType !== warrior, JSON.stringify(out));
+        // Tagged PRODUCTION as well as MILITARY (+3 Production): a production building, not skipped in peace.
+        assert.equal(queued()[0]?.ConstructibleType, barracks, JSON.stringify(out));
+        assert.equal(out[0]?.key, "QUEUED_ADVISOR");
         fake.sent.length = 0;
         out = steps.fillProduction(new Map(), { strategy, threats: [{ settlement: { name: "Rome", x: SITE.x, y: SITE.y }, count: 0, owners: [] }] });
         assert.equal(queued()[0]?.UnitType, warrior, `under threat: ${JSON.stringify(out)}`);

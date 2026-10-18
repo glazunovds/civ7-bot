@@ -29,6 +29,8 @@ const reset = () => {
     for (const k of ["canBuild", "canBuy", "buyCost", "villages", "indepRelation", "enemies"]) delete world[k];
     world.units = [];
     world.gold = 1000;
+    // The defenders bought and queued this turn (a purchase stops a defender being trained for it in the same turn).
+    steps.resetWar();
 };
 const unitName = (s) => GameInfo.Units.lookup(s.args.UnitType)?.UnitType;
 const trained = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType !== undefined).map(unitName);

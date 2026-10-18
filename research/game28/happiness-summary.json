@@ -1,0 +1,62 @@
+[
+  {
+    "city": "Ниневия",
+    "observed_turns": 93,
+    "negative_turns": 81,
+    "minimum_happiness": -26,
+    "turns_at_penalty_cap": 16,
+    "mean_production": 40.5,
+    "potential_production_recovery": 1713,
+    "potential_science_recovery": 3997
+  },
+  {
+    "city": "Кальху",
+    "observed_turns": 93,
+    "negative_turns": 93,
+    "minimum_happiness": -33,
+    "turns_at_penalty_cap": 29,
+    "mean_production": 22.9,
+    "potential_production_recovery": 3013,
+    "potential_science_recovery": 5848
+  },
+  {
+    "city": "Арби-Илу",
+    "observed_turns": 93,
+    "negative_turns": 84,
+    "minimum_happiness": -19,
+    "turns_at_penalty_cap": 13,
+    "mean_production": 38.4,
+    "potential_production_recovery": 1437,
+    "potential_science_recovery": 1766
+  },
+  {
+    "city": "Аррапха",
+    "observed_turns": 93,
+    "negative_turns": 85,
+    "minimum_happiness": -11,
+    "turns_at_penalty_cap": 0,
+    "mean_production": 45.6,
+    "potential_production_recovery": 1403,
+    "potential_science_recovery": 2366
+  },
+  {
+    "city": "Шираз",
+    "observed_turns": 93,
+    "negative_turns": 0,
+    "minimum_happiness": 2,
+    "turns_at_penalty_cap": 0,
+    "mean_production": 41.8,
+    "potential_production_recovery": 0,
+    "potential_science_recovery": 0
+  },
+  {
+    "city": "Ахваз",
+    "observed_turns": 93,
+    "negative_turns": 72,
+    "minimum_happiness": -10,
+    "turns_at_penalty_cap": 0,
+    "mean_production": 27.1,
+    "potential_production_recovery": 643,
+    "potential_science_recovery": 1597
+  }
+]

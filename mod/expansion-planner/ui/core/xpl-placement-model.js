@@ -634,12 +634,25 @@ export class PlanState {
         if (active + need > max) return { ok: false, reason: "NO_SLOT" };
         const overbuild = active + obsoleteCount + need > max ? obsolete : null;
 
-        // The engine knows best for tiles the settlement can build on now.
+        // The engine knows best for tiles the settlement can build on now. It lists only tiles next to the urban area
+        // standing now (root gotcha 5), so its "no" for an owned tile that touches none is not final: the plan's own
+        // connector may open it, and our rules decide there.
         if (s.engineValid && ownedBySettlement) {
             const e = s.engineValid(type, idx);
-            if (e === false) return { ok: false, reason: "ENGINE" };
+            if (e === false && this.touchesBuiltUrban(t, s)) return { ok: false, reason: "ENGINE" };
         }
         return { ok: true, overbuild };
+    }
+
+    /** Does this tile stand in or next to the settlement's urban area as it stands now (the game's own tiles, not the plan's)? */
+    touchesBuiltUrban(tile, s) {
+        const built = (d) => d === URBAN || d === CENTRE;
+        if (tile.idx === s.centre || built(tile.facts?.district)) return true;
+        return this.nbrs(tile.idx).some((n) => {
+            if (n === s.centre) return true;
+            const nt = this.tiles.get(n);
+            return !!nt && nt.sid === s.id && built(nt.facts?.district);
+        });
     }
 
     /**
@@ -697,6 +710,9 @@ export class PlanState {
             t.districtTime = time;
         } else if (!this.isUrbanLike(t)) {
             t.district = URBAN;
+            t.districtTime = time;
+        } else if (t.district !== t.origDistrict && time < (t.districtTime ?? 0)) {
+            // A tile the plan makes urban turns urban with its first building done (a move may bring an earlier one).
             t.districtTime = time;
         }
         token.item = { type, obsolete: false, planned: true, fixed: false, overbuilt: token.overbuilt, t: time };
@@ -773,6 +789,8 @@ export class PlanState {
         if (!t.items.some((i) => i.planned)) {
             t.district = t.origDistrict;
             t.districtTime = 0;
+        } else if (t.district !== t.origDistrict) {
+            t.districtTime = this.urbanTime(t);
         }
         s.planned.delete(type);
         this.touch(idx);
@@ -794,24 +812,63 @@ export class PlanState {
         return this.place(lifted.type, idx, check, lifted.item.t);
     }
 
-    /** True if every planned urban tile connects to its own settlement centre through its urban tiles (one settlement if sid is given). */
+    /** The turn a tile the plan makes urban turns urban: its first planned building done. */
+    urbanTime(tile) {
+        let at = Infinity;
+        for (const i of tile.items) if (i.planned && (i.t ?? 0) < at) at = i.t ?? 0;
+        return at === Infinity ? 0 : at;
+    }
+
+    /**
+     * True if every planned urban tile connects to its own settlement centre through its urban tiles (one settlement if sid
+     * is given), and in build order: a tile the plan makes urban touches the centre or an urban tile standing by the turn
+     * its first building is done. Moves and swaps keep a building's completion turn, so a building could otherwise come
+     * before the connector its tile needs (26 of 30 random layouts had one), and the game refuses it until then.
+     */
     isConnected(sid = null) {
         for (const s of sid ? [this.settlements.get(sid)] : this.settlements.values()) {
-            const seen = new Set([s.centre]);
-            const queue = [s.centre];
-            while (queue.length) {
-                const cur = queue.pop();
-                for (const n of this.nbrs(cur)) {
-                    if (seen.has(n)) continue;
-                    const t = this.tiles.get(n);
-                    if (t && t.sid === s.id && this.isUrbanLike(t)) {
-                        seen.add(n);
-                        queue.push(n);
+            // The urban area standing now (the tiles' own districts), reached from the centre.
+            const reached = new Set();
+            const reach = (start) => {
+                reached.add(start);
+                const queue = [start];
+                while (queue.length) {
+                    const cur = queue.pop();
+                    for (const n of this.nbrs(cur)) {
+                        if (reached.has(n)) continue;
+                        const t = this.tiles.get(n);
+                        if (t && t.sid === s.id && this.isUrbanLike(t) && t.district === t.origDistrict) {
+                            reached.add(n);
+                            queue.push(n);
+                        }
                     }
                 }
-            }
-            for (const t of this.tilesOf(s.id)) {
-                if (this.isUrbanLike(t) && t.district !== t.origDistrict && !seen.has(t.idx)) return false;
+            };
+            reach(s.centre);
+            // Then the tiles the plan makes urban, in the order they turn urban (those of one turn in any order).
+            const made = this.tilesOf(s.id).filter((t) => this.isUrbanLike(t) && t.district !== t.origDistrict)
+                .map((t) => ({ idx: t.idx, at: this.urbanTime(t) }))
+                .sort((a, b) => a.at - b.at);
+            for (let i = 0; i < made.length;) {
+                let j = i;
+                while (j < made.length && made[j].at === made[i].at) j++;
+                let left = made.slice(i, j);
+                let progress = true;
+                while (left.length > 0 && progress) {
+                    progress = false;
+                    const rest = [];
+                    for (const m of left) {
+                        if (this.nbrs(m.idx).some((n) => reached.has(n))) {
+                            reach(m.idx);
+                            progress = true;
+                        } else {
+                            rest.push(m);
+                        }
+                    }
+                    left = rest;
+                }
+                if (left.length > 0) return false;
+                i = j;
             }
         }
         return true;

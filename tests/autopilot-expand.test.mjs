@@ -187,6 +187,26 @@ test("while towns outnumber cities, the best town becomes a city when gold above
     world.cities.pop();
 });
 
+// Research/35: a conversion cost 250-475 gold in game 28's Antiquity, 1,100-1,500 in Exploration, 2,500 in Modern, and the
+// empire stopped at 1:1 (3 cities, 3 towns). The strategy aims at more cities while those it has are healthy (research/34 §2).
+test("the strategy's city target: past 1:1 a town becomes a city while every city stands at or above zero Happiness", () => {
+    world.gold = 1000;
+    world.cities.push({ owner: 0, x: 2, y: 2, name: "Bath", pop: 1 });
+    const cities = world.cities.filter((c) => c.owner === 0 && !c.isTown);
+    const s = { ...DEFAULT_SETTINGS, strategy: { cityTarget: 3, goals: ["CONVERT"] } };
+    try {
+        reset();
+        assert.equal(steps.convertTowns(s, 2)[0]?.key, "TOWN_CONVERTED", "2 cities of the 3 wanted");
+        for (const c of cities) c.happy = 5;
+        cities[0].happy = -2;
+        reset();
+        assert.deepEqual(steps.convertTowns(s, 2), [], "a city below zero: its Happiness first");
+    } finally {
+        world.cities.pop();
+        for (const c of cities) delete c.happy;
+    }
+});
+
 test("no town becomes a city while it is in unrest or unhappy, nor during a crisis without 6 Happiness to spare", () => {
     // Seen in game 5: a town converted while a -6 Happiness-in-cities crisis card was slotted went
     // into unrest that turn and revolted 5 turns later (it joined Maurya).
@@ -239,16 +259,18 @@ test("a town that will farm puts new citizens on tiles that get a farm", () => {
 const YORK = { x: 12, y: 14 };
 const hattusa = { x: 13, y: 4 };
 
-test("threat: 2+ hostile military units near a settlement; befriended independents and a lone unit 3+ tiles away do not count", () => {
+test("threat: 2+ hostile military units near a settlement; befriended independents and a lone unit 3+ tiles away that our guard there matches do not count", () => {
     world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }, { x: YORK.x, y: YORK.y - 2, owner: 5 }, { x: LONDON.x + 3, y: LONDON.y, owner: 6 }];
+    world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
     let threats = units.threatenedSettlements();
-    assert.deepEqual(threats.map((t) => [t.settlement.name, t.count]), [["York", 2]], "London has only one, 3 tiles away");
+    assert.deepEqual(threats.map((t) => [t.settlement.name, t.count]), [["York", 2]], "London has only one, 3 tiles away, and a warrior of ours");
     assert.deepEqual(threats[0].owners, [{ id: 5, independent: true }]);
     world.indepRelation = { 5: IndependentRelationship.FRIENDLY };
     threats = units.threatenedSettlements();
     assert.deepEqual(threats, [], "a befriended independent is no threat");
     delete world.indepRelation;
     delete world.enemies;
+    world.units = [];
 });
 
 test("threat: an independent at peace with us (NEUTRAL) is no threat; only one at war (HOSTILE)", () => {
@@ -293,6 +315,8 @@ test("threat: a village's own units at home (within 2 of it) are no threat, unle
 
 test("threat: one hostile unit within 2 tiles, or one within 4 while the centre is damaged (seen in game 5: lone Line Infantry took three settlements)", () => {
     try {
+        // A warrior of ours on London: a lone warrior 3-4 tiles away is no stronger than it.
+        world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
         world.enemies = [{ x: LONDON.x + 2, y: LONDON.y, owner: 6 }];
         assert.deepEqual(units.threatenedSettlements().map((t) => [t.settlement.name, t.count]), [["London", 1]], "2 tiles away");
         world.enemies = [{ x: LONDON.x + 4, y: LONDON.y, owner: 6 }];
@@ -304,6 +328,27 @@ test("threat: one hostile unit within 2 tiles, or one within 4 while the centre 
     } finally {
         delete world.enemies;
         delete world.districtHealth;
+        world.units = [];
+    }
+});
+
+test("threat: one land raider 3-4 tiles away stronger than every guard of ours there (none: any) is a threat, and asks one guard more (research/36 §3)", () => {
+    // Game 29: one independent Line Infantry at 50 took Ollantaytambo, whose centre defended at 20, in two attacks.
+    try {
+        world.enemies = [{ x: LONDON.x + 4, y: LONDON.y, owner: 6, type: "UNIT_SPEARMAN" }];
+        let t = units.threatenedSettlements();
+        assert.deepEqual(t.map((x) => [x.settlement.name, x.strong, x.strongest]), [["London", true, "UNIT_SPEARMAN"]], "no guard at all");
+        assert.equal(units.guardsWanted(t[0]), 2, "one for the raider, one that can match it");
+        world.units = [{ id: 1, type: "UNIT_WARRIOR", x: LONDON.x + 1, y: LONDON.y }];
+        t = units.threatenedSettlements();
+        assert.deepEqual(t.map((x) => [x.settlement.name, x.strong]), [["London", true]], "a warrior (20) does not match a spearman (25)");
+        world.units = [{ id: 1, type: "UNIT_SPEARMAN", x: LONDON.x + 1, y: LONDON.y }];
+        assert.deepEqual(units.threatenedSettlements(), [], "a spearman of ours there does");
+        world.units = [{ id: 1, type: "UNIT_SPEARMAN", x: LONDON.x + 3, y: LONDON.y + 3 }];
+        assert.deepEqual(units.threatenedSettlements().map((x) => x.settlement.name), ["London"], "ours 3+ tiles from London guards nothing there");
+    } finally {
+        delete world.enemies;
+        world.units = [];
     }
 });
 

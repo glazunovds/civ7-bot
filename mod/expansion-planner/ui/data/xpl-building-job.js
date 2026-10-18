@@ -27,7 +27,7 @@ import { ageOutlook, productionToGoldRatio } from './xpl-town-job.js';
 import { siteRoleAt } from './xpl-site-job.js';
 import { cityEntry, noteCache } from './xpl-engine-cache.js';
 import { upkeepIn } from './xpl-city-actions.js';
-import { costValue } from '../core/xpl-scarcity.js';
+import { costValue, happinessWorth } from '../core/xpl-scarcity.js';
 import { runWonderPlanner } from './xpl-wonder-job.js';
 import { tierValue } from '../core/xpl-wonder-tiers.js';
 
@@ -119,6 +119,36 @@ export function settlementRole(target, settings) {
     const pick = state.get().results.sites?.picks?.find((p) => p.x === target.x && p.y === target.y);
     if (pick?.role) return pick.role;
     return siteRoleAt(target.x, target.y, settings);
+}
+
+/** A settlement's net yields by our yield order (NaN where the game does not say), or null without a settlement. */
+function netsOf(city) {
+    if (!city) return null;
+    const out = [NaN, NaN, NaN, NaN, NaN, NaN, NaN];
+    for (const k of ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD", "YIELD_SCIENCE", "YIELD_CULTURE", "YIELD_HAPPINESS", "YIELD_DIPLOMACY"]) {
+        out[yieldIndex(k)] = Number(safe(() => city.Yields.getNetYield(YieldTypes[k]), NaN));
+    }
+    return out;
+}
+
+/**
+ * What a building's Happiness wins back in a settlement below zero (happinessWorth: the game takes 5% of its other yields
+ * a point, at most 80%), by settlement and type: [{ sid, type, value }]. Research/34 §2: game 28's six cities sat below
+ * zero for 72-93 of Modern's 93 turns (Kalhu at −33) while the plan valued a happiness building by its happiness alone.
+ */
+function happinessRecovery(members, types, rules, weights) {
+    const H = yieldIndex("YIELD_HAPPINESS");
+    const out = [];
+    for (const m of members) {
+        const nets = netsOf(m.city);
+        if (!nets || !(nets[H] < 0)) continue;
+        for (const type of types) {
+            const h = Number(rules.baseYields.get(type)?.[H]) || 0;
+            const value = h > 0 ? happinessWorth(weights, nets, nets[H], h) : 0;
+            if (value > 0) out.push({ sid: m.key, type, value });
+        }
+    }
+    return out;
 }
 
 /** What the game says about each building in a city (answers kept in this turn's cache entry). */
@@ -645,6 +675,11 @@ export function startBuildingPlan(target, settings, options = {}) {
             for (const type of warehouseTypes) planState.setExtraValue(st.id, type, warehouseValue.get(`${st.id}|${type}`) ?? WAREHOUSE_GUESS);
         }
         for (const a of anchors) planState.setExtraValue(a.sid, a.type, ANCHOR_VALUE);
+        // A settlement below zero Happiness: a happiness building also wins back the penalty on its other yields, wherever it
+        // stands there, so it comes earlier in the plan's order (and its purchase is worth more: `net`).
+        const recovery = happinessRecovery(members, selected, rules, profile.y);
+        for (const r of recovery) planState.setExtraValue(r.sid, r.type, (planState.extraValue.get(`${r.sid}|${r.type}`) ?? 0) + r.value);
+        const recoveryOf = new Map(recovery.map((r) => [`${r.sid}|${r.type}`, r.value]));
         const tackInfo = bs.respectTacks !== false ? applyUserTacks(planState, queuedTypes(members)) : { count: 0, kept: new Set() };
         planState.invalidateAll();
 
@@ -675,7 +710,7 @@ export function startBuildingPlan(target, settings, options = {}) {
         timing.setup += now() - t0;
         ctx = {
             facts, areaSet, uniqueTypes, validity, engineData, lockedSet, locked, horizon, roleBySid, settlements, planState,
-            calibration, tackInfo, adjacencySelection, warehouseSelection, selectionFor, memberSigs, inputSig, dirty, seed, anchors,
+            calibration, tackInfo, adjacencySelection, warehouseSelection, selectionFor, memberSigs, inputSig, dirty, seed, anchors, recoveryOf,
         };
     }
 
@@ -714,14 +749,6 @@ export function startBuildingPlan(target, settings, options = {}) {
             const upkeepOf = (sid, type) => upkeepIn(cityBySid.get(sid), type, rules);
             // Food and happiness upkeep weigh less where the settlement has plenty to spare, and happiness pushed below zero
             // costs the game's share of its other yields (core/xpl-scarcity.js; research/31 §8).
-            const netsOf = (c) => {
-                if (!c) return null;
-                const out = [NaN, NaN, NaN, NaN, NaN, NaN, NaN];
-                for (const k of ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD", "YIELD_SCIENCE", "YIELD_CULTURE", "YIELD_HAPPINESS", "YIELD_DIPLOMACY"]) {
-                    out[yieldIndex(k)] = Number(safe(() => c.Yields.getNetYield(YieldTypes[k]), NaN));
-                }
-                return out;
-            };
             const netsBySid = new Map(members.map((m) => [m.key, netsOf(m.city)]));
             const upkeepValue = (sid, upkeep) => costValue(profile.y, upkeep, netsBySid.get(sid) ?? null);
             // Wonder anchors are kept apart: the autopilot starts wonders by its own rules, on the tile kept here.
@@ -731,9 +758,12 @@ export function startBuildingPlan(target, settings, options = {}) {
                 const hash = GameInfo.Constructibles.lookup(p.type)?.$hash;
                 const engine = engineData.get(`${hash}:${p.idx}`) ?? null;
                 const upkeep = upkeepOf(p.sid, p.type);
+                // Happiness that wins back a settlement's penalty below zero (happinessRecovery).
+                const recovery = Math.round((ctx.recoveryOf.get(`${p.sid}|${p.type}`) ?? 0) * 10) / 10;
                 return {
                     upkeep,
-                    net: Math.round((p.value - upkeepValue(p.sid, upkeep)) * 10) / 10,
+                    recovery,
+                    net: Math.round((p.value + recovery - upkeepValue(p.sid, upkeep)) * 10) / 10,
                     bestNow: bestNowFor(p, engineByHash.get(hash) ?? [], engine, planState, plannedAt, describe, nameOf),
                     ...p,
                     ...describe(p.idx, p.sid),

@@ -124,16 +124,20 @@ test("conversions: none with a war at our door; with a war risk the gold for two
     assert.equal(converted(), 0, "at war");
 });
 
-test("a defender bought: never a siege unit; with the income below zero the fallback keeps the reserve (research/23 D6)", () => {
+test("a defender bought: never a siege unit; with the income below zero it leaves 3 turns of the deficit, not the whole reserve (research/23 D6, research/36 §8)", () => {
     const threat = [{ settlement: { x: LONDON.x, y: LONDON.y, name: "London" }, count: 1, land: 1, owners: [{ id: 1, independent: false }] }];
     const bought = () => fake.sent.filter((s) => s.kind === "command" && s.args.UnitType !== undefined).map(unitName);
     const sells = { UNIT_ARCHER: 150, UNIT_BALLISTA: 100 };
     reset({ wars: [1], goldIncome: -10, gold: 400, canBuy: (type) => (sells[type] ? { Success: true, Cost: sells[type] } : { Success: false }) });
     steps.buyDefenders(threat, { reserveTurns: 2 });
     assert.deepEqual(bought(), ["UNIT_ARCHER"], "not the Ballista");
+    // 10 turns of the deficit (100) are the reserve; a defender may take all but 3 turns of it (30).
     reset({ wars: [1], goldIncome: -10, gold: 200, canBuy: (type) => (sells[type] ? { Success: true, Cost: sells[type] } : { Success: false }) });
     steps.buyDefenders(threat, { reserveTurns: 2 });
-    assert.deepEqual(bought(), [], "10 turns of the deficit (100) stay: 100 free < 150");
+    assert.deepEqual(bought(), ["UNIT_ARCHER"], "200 - 30 >= 150");
+    reset({ wars: [1], goldIncome: -10, gold: 170, canBuy: (type) => (sells[type] ? { Success: true, Cost: sells[type] } : { Success: false }) });
+    steps.buyDefenders(threat, { reserveTurns: 2 });
+    assert.deepEqual(bought(), [], "170 - 30 < 150");
 });
 
 test("a defender at war passes a queued settler at the front of the queue (research/23 D9)", () => {

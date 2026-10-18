@@ -143,6 +143,22 @@ function cultureBlockable(w) {
     return need - ours <= CULTURE_BLOCK_REACH;
 }
 
+// Without points for settlements, the final push trains no settler once this share of the age's research gate is in.
+export const SETTLERS_GATE_NEAR = 0.6;
+
+// Cities a science or economic empire aims at before the final age (research/35, a video's model of the 1.4 rules, against
+// our games): a conversion costs about 250-475 gold in Antiquity, 1,100-1,500 in Exploration and 2,500 in Modern (game 28),
+// and a city kept through the age change («keep your cities») costs nothing more. Antiquity: 5; Exploration: 6 in its first
+// half (its core built first), 8 after. Game 28 ended Antiquity with 3 cities and 3 towns at 1:1, the floor.
+export const CITY_TARGETS = Object.freeze({ AGE_ANTIQUITY: [5, 5], AGE_EXPLORATION: [6, 8] });
+
+/** The cities this focus aims at in this age (0: none beyond the 1:1 floor). */
+export function cityTarget(focus, age, ageFrac = 0) {
+    if (focus !== "SCIENCE" && focus !== "ECONOMIC") return 0;
+    const [early, late] = CITY_TARGETS[age] ?? [0, 0];
+    return (Number(ageFrac) || 0) < 0.5 ? early : late;
+}
+
 function basePlan(facts, focus, { previous = null, profile = null } = {}) {
     const phase = phaseOf(facts, previous);
     const base = {
@@ -152,6 +168,7 @@ function basePlan(facts, focus, { previous = null, profile = null } = {}) {
         wonders: 1, wonderKind: "ANY", padCitiesNoWonders: false, unitsAheadOfWonders: false,
         explorers: true, trainSettlers: true, upgrades: "THREAT", advisorSoldiers: true, militaryBuildings: true,
         townFocusBias: {}, pads: null, minCities: 0,
+        cityTarget: facts.finalAge ? 0 : cityTarget(focus, facts.age, facts.ageFrac),
     };
     if (phase === "GROWTH") {
         return {
@@ -162,10 +179,17 @@ function basePlan(facts, focus, { previous = null, profile = null } = {}) {
     }
     if (phase === "BUILD") return { ...base, ...BUILD[focus], trainSettlers: true, gate: facts.gate ?? null };
     // The final push fills the settlement cap, nearest safe sites first: each settlement is 4 military points
-    // (research/26 §3.3: game 12 stood at 11 of 16 from M30 with sites known, game 11 lost by one countdown turn).
+    // (research/26 §3.3: game 12 stood at 11 of 16 from M30 with sites known, game 11 lost by one countdown turn). They count
+    // for the military victory and the score victory's military place only (`settlementsScore`). With neither on, settlers
+    // only below half the cap, and none once the age's gate is near (research/34 §6: game 28 had only the science victory;
+    // Modern spent 30 city-turns on settlers for 7 settlements, lost one, and its capital trained Tanks for two of them).
+    const settlements = Number(facts.settlements) || 0;
+    const cap = Number(facts.cap) || 0;
+    const scores = facts.settlementsScore !== false;
+    const gateNear = !!facts.gate?.open || (Number(facts.gate?.progress) || 0) >= SETTLERS_GATE_NEAR;
     const plan = {
-        ...base, ...COMMIT[focus], trainSettlers: (Number(facts.settlements) || 0) < (Number(facts.cap) || 0),
-        fillCap: true, settleNear: true, gate: facts.gate ?? null,
+        ...base, ...COMMIT[focus], trainSettlers: scores ? settlements < cap : settlements < cap / 2 && !gateNear,
+        fillCap: scores, settleNear: scores, gate: facts.gate ?? null,
     };
     if (focus === "SCIENCE") {
         plan.pads = padsWanted(facts.cities);
@@ -201,7 +225,7 @@ export function applyStrategy(settings, plan) {
             phase: plan.phase, goals: plan.goals, townShare: plan.townShare, planBuys: plan.planBuys,
             wonderKind: plan.wonderKind, padCitiesNoWonders: plan.padCitiesNoWonders, unitsAheadOfWonders: plan.unitsAheadOfWonders,
             upgrades: plan.upgrades, advisorSoldiers: plan.advisorSoldiers, militaryBuildings: plan.militaryBuildings,
-            townFocusBias: plan.townFocusBias, pads: plan.pads, minCities: plan.minCities, gate: plan.gate ?? null,
+            townFocusBias: plan.townFocusBias, pads: plan.pads, minCities: plan.minCities, cityTarget: Number(plan.cityTarget) || 0, gate: plan.gate ?? null,
             noFutureTech: !!plan.noFutureTech, denyWonders: !!plan.denyWonders, overlay: plan.overlay ?? [], gateLate: !!plan.gateLate,
             settleNear: !!plan.settleNear, fillCap: !!plan.fillCap, militaryLever: !!plan.militaryLever, ivy: !!plan.ivy,
             pastCap: Number(plan.pastCap) || 0, settleAnywhere: !!plan.settleAnywhere,
@@ -226,6 +250,7 @@ export function strategyLines(plan) {
     if (!plan.advisorSoldiers) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_PEACE_ARMY", args: [] });
     if (plan.planBuys === "CITIES") out.push({ key: "LOC_XPL_AP_STRATEGY_TT_CITIES_ONLY", args: [] });
     if (plan.pads) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_PADS", args: [plan.pads] });
+    if (plan.cityTarget > 0) out.push({ key: "LOC_XPL_AP_STRATEGY_TT_CITY_TARGET", args: [plan.cityTarget] });
     for (const cls of plan.overlay ?? []) out.push({ key: `LOC_XPL_AP_STRATEGY_TT_BLOCK_${cls}`, args: [] });
     return out;
 }

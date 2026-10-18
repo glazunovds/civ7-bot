@@ -1686,6 +1686,15 @@
     <Replace Tag="LOC_XPL_AP_REINFORCE" Language="ru_RU">
       <Text>{1_Unit} идёт защищать: {2_Name}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_STAGED" Language="ru_RU">
+      <Text>{1_Unit} встаёт на охрану: {2_Name} (рядом война или угроза войны)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AIR_STRIKE" Language="ru_RU">
+      <Text>{1_Unit} наносит удар с воздуха по {2_Unit} на {3_X},{4_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_INTERCEPTOR" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} против вражеской авиации (нужно {3_Num})</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_MADE_ROOM" Language="ru_RU">
       <Text>{1_Unit} уступает место: {2_Unit}</Text>
     </Replace>
@@ -2087,6 +2096,21 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_BIAS_SET_NONE" Language="ru_RU">
       <Text>Без фокуса</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WATCH_FIXED" Language="ru_RU">
+      <Text>{1_Leader} лидирует ({2_Victory}): {3_Points} из {4_Goal}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WATCH_FIXED_DANGER" Language="ru_RU">
+      <Text>{1_Leader} у порога победы ({2_Victory}): {3_Points} из {4_Goal}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WATCH_FIXED_COUNTDOWN" Language="ru_RU">
+      <Text>У {1_Leader} идёт отсчёт до победы ({2_Victory}): {3_Points} из {4_Goal}, осталось ходов: {5_Turns}; в счёт идёт только то, что готово к этому времени</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RIVAL_NEAR_WIN_FIXED" Language="ru_RU">
+      <Text>{1_Leader} у порога победы ({2_Victory}): {3_Points} из {4_Goal}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRATEGY_TT_CITY_TARGET" Language="ru_RU">
+      <Text>Городки становятся городами, пока городов меньше {1_Num} и каждый город не ниже нуля по довольству (сейчас преобразование стоит намного дешевле, чем в следующей эпохе)</Text>
     </Replace>
   </LocalizedText>
 </Database>

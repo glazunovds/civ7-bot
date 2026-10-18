@@ -47,3 +47,33 @@ test("annealing never returns a layout worse than the one local search gave it; 
         }
     }
 });
+
+// Moves and swaps keep a building's completion turn: replayed in that order, 26 of 30 random layouts had a building whose
+// tile touched no urban tile standing by then (its connector came later), which the game refuses until then.
+test("every layout can be built in its own completion order: each building's tile touches the urban area standing by then", () => {
+    for (let m = 1; m <= 15; m++) {
+        const { map, state, plan } = solve(m * 7919, undefined, { horizon: 80 });
+        const urban = new Set(state.tilesOf("s0").filter((t) => t.origDistrict === "DISTRICT_URBAN" || t.origDistrict === "DISTRICT_CITY_CENTER").map((t) => t.idx));
+        const items = [...plan.placements, ...plan.fillers].filter((p) => book.classOf(p.type) !== "WONDER").sort((a, b) => a.eta - b.eta);
+        const late = [];
+        // Buildings done on the same turn may stand in any order among themselves.
+        for (let i = 0; i < items.length;) {
+            let j = i;
+            while (j < items.length && items[j].eta === items[i].eta) j++;
+            let left = items.slice(i, j);
+            for (let progress = true; left.length > 0 && progress;) {
+                progress = false;
+                left = left.filter((p) => {
+                    if (!urban.has(p.idx) && !map.w.grid.neighbours(p.idx).some((n) => urban.has(n))) return true;
+                    urban.add(p.idx);
+                    progress = true;
+                    return false;
+                });
+            }
+            for (const p of left) urban.add(p.idx);
+            late.push(...left.map((p) => `${p.type}@${p.idx} T${p.eta}`));
+            i = j;
+        }
+        assert.deepEqual(late, [], `map ${m}`);
+    }
+});

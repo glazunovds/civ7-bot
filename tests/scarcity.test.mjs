@@ -94,3 +94,25 @@ test("a happiness cost that crosses zero costs the penalty on the other yields; 
     const won = gainValue(w, [0, 0, 0, 0, 0, 4, 0], hurt);
     assert.ok(Math.abs(won - (w[5] * 4 + 0.2 * (w[1] * 30 + w[2] * 10 + w[3] * 40 + w[4] * 20))) < 1e-9, String(won));
 });
+
+test("below zero Happiness a gain's penalised yields count at what the settlement keeps after it (research/34 §3)", () => {
+    const w = [1, 1, 1, 1, 1, 1, 1];
+    const hurt = [50, 6, 2, 8, 4, -23, 0]; // at −23: the game takes 80%
+    assert.ok(Math.abs(gainValue(w, [0, 0, 0, 10, 0, 0, 0], hurt, { happinessAfter: -29 }) - 2) < 1e-9, "10 science, a fifth kept");
+    assert.equal(gainValue(w, [3, 0, 0, 0, 0, 0, 0], [0, 6, 2, 8, 4, -23, 0]), 3, "food is not taken (none to spare: full weight)");
+    const calm = [50, 6, 2, 8, 4, 10, 0];
+    assert.equal(gainValue(w, [0, 0, 0, 10, 0, 0, 0], calm, { happinessAfter: 4 }), 10, "at or above zero: all of it");
+    assert.ok(Math.abs(gainValue(w, [0, 0, 0, 10, 0, 0, 0], calm, { happinessAfter: -2 }) - 9) < 1e-9, "its upkeep takes it to −2: 10% taken");
+});
+
+test("at the 80% cap a Happiness change still counts: its share of the way back to zero (research/34 §2: Kalhu at −33)", async () => {
+    const { happinessWorth } = await import("../mod/expansion-planner/ui/core/xpl-scarcity.js");
+    const w = [1, 1, 1, 1, 1, 1, 1];
+    const capped = [0, 6, 2, 8, 4, -33, 0]; // 20 shown: 100 before the penalty
+    assert.equal(unhappinessDelta(w, capped, -33, -28), 0, "+5 changes no share");
+    assert.ok(Math.abs(happinessWorth(w, capped, -33, 5) - 100 * (0.8 / 33) * 5) < 1e-9, "5 of the 33 points back");
+    assert.ok(happinessWorth(w, capped, -33, -6) < 0, "and 6 more down is not free");
+    const mild = [0, 24, 8, 32, 16, -4, 0];
+    assert.ok(Math.abs(happinessWorth(w, mild, -4, 4) + unhappinessDelta(w, mild, -4, 0)) < 1e-9, "below the cap: exactly the share");
+    assert.equal(happinessWorth(w, mild, -4, 10), happinessWorth(w, mild, -4, 4), "nothing past zero");
+});

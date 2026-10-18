@@ -59,6 +59,75 @@ export const SCIENCE_SITES = {
 };
 export const SITE_MAX_TURNS = 10;
 
+// Innovation (the science victory's points, VICTORY_SCIENCE_MODERN) each project grants (projects-gameeffects.xml:
+// EFFECT_PLAYER_GRANT_VICTORY_TRACKER_POINTS, Points); the data layer reads the game's own numbers first.
+export const PROJECT_INNOVATION = Object.freeze({ PROJECT_CREWED_SPACE_FLIGHT_PREP: 15, PROJECT_INVENT_CALCULUS: 10 });
+export const ONE_OFF_INNOVATION = 5;
+export const REACH_MAX_TURNS = 300; // the race is not looked at further ahead
+
+/**
+ * When the science victory's Innovation still needed is reached, each city running its projects one after another: its
+ * `runs` in order once `wait` turns have passed (the items ahead of them), then `repeat` (Crewed Space Flight Preparation
+ * where a Launch Pad stands) again and again. Runs done on one turn count together.
+ * @param need Innovation still needed
+ * @param cities [{ id, wait, runs: [{ key, innovation, turns, cost }], repeat: { key, innovation, turns, cost } | null }]
+ * @returns { turn (0: nothing needed; Infinity: not within maxTurns), done: Map(id -> the runs done by then) }
+ */
+export function innovationReach(need, cities, maxTurns = REACH_MAX_TURNS) {
+    const done = new Map((cities ?? []).map((c) => [c.id, []]));
+    if (!(need > 0)) return { turn: 0, done };
+    const events = [];
+    for (const c of cities ?? []) {
+        let t = Math.max(0, Number(c.wait) || 0);
+        for (const run of c.runs ?? []) {
+            t += Math.max(0, Number(run.turns) || 0);
+            if (t <= maxTurns) events.push({ t, id: c.id, run });
+        }
+        const r = c.repeat;
+        if (r && r.turns > 0 && r.innovation > 0) {
+            for (t += r.turns; t <= maxTurns; t += r.turns) events.push({ t, id: c.id, run: r });
+        }
+    }
+    events.sort((a, b) => a.t - b.t);
+    let sum = 0;
+    for (let i = 0; i < events.length;) {
+        let j = i;
+        for (; j < events.length && events[j].t === events[i].t; j++) {
+            sum += Number(events[j].run.innovation) || 0;
+            done.get(events[j].id).push(events[j].run);
+        }
+        if (sum >= need) return { turn: events[i].t, done };
+        i = j;
+    }
+    return { turn: Infinity, done };
+}
+
+/**
+ * Should a one-off project run next in this city, ahead of its next Crewed Space Flight Preparation run? Preparation
+ * gives more Innovation for its production (15 for 2000 against 5 for 1000: research/32 §3), but near the goal a one-off
+ * may close the gap sooner (at 95 of 100, Launch Satellite's 5 come in half the time of Preparation's 15). Every place
+ * the one-off could take in the city's runs (behind `lock` runs under way), Preparation filling the rest, is tried, and
+ * none at all: it runs next only when that place reaches the need strictly soonest (a tie keeps Preparation first).
+ * @param race { need, cities, maxTurns } (innovationReach's) @param id the city @param oneOff { key, innovation, turns, cost }
+ * @returns { next, at: the reach turn with it next, best: the soonest any other way }
+ */
+export function oneOffNext(race, id, oneOff, lock = 0) {
+    const city = race?.cities?.find((c) => c.id === id);
+    if (!city || !(race.need > 0)) return { next: false, at: Infinity, best: 0 };
+    const reach = (runs) => innovationReach(race.need, race.cities.map((c) => (c.id === id ? { ...c, runs } : c)), race.maxTurns).turn;
+    const extra = city.repeat ? Math.ceil(race.need / Math.max(1, city.repeat.innovation)) + 1 : 0;
+    const base = [...(city.runs ?? []), ...Array(extra).fill(city.repeat)];
+    const first = Math.min(lock, base.length);
+    let best = reach(city.runs ?? []);
+    let at = Infinity;
+    for (let k = first; k <= base.length; k++) {
+        const turn = reach([...base.slice(0, k), oneOff, ...base.slice(k)]);
+        if (k === first) at = turn;
+        else best = Math.min(best, turn);
+    }
+    return { next: at < best, at, best };
+}
+
 export function scienceSites(age, { pads = null } = {}) {
     const rows = SCIENCE_SITES[age] ?? [];
     return pads > 0 ? rows.map((r) => (r.type === LAUNCH_PAD ? { ...r, cities: pads } : r)) : rows;

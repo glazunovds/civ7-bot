@@ -142,6 +142,43 @@ export function victoryRaces() {
 }
 
 const RACE_CLASSES = [...FOCUS_CLASSES, "MILITARY"];
+const FIXED_SCORE = "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE";
+
+/** The science victory's Innovation: { ours, goal, need: what is still missing } or null (no such victory known). */
+export function innovationNeed() {
+    const v = GameInfo.VictoryTypes?.find((x) => x.ScoringType === FIXED_SCORE && String(x.VictoryType).includes("SCIENCE"));
+    const goal = Number(v?.MinimumPoints) || 0;
+    if (!(goal > 0)) return null;
+    const h = v.$hash ?? safe(() => Database.makeHash(v.VictoryType), null);
+    const ours = Number(safe(() => Players.get(pid()).Victories.getPointsForVictoryType(h), 0)) || 0;
+    return { ours, goal, need: Math.max(0, goal - ours) };
+}
+
+/**
+ * The soonest a rival's countdown to a fixed-score victory ends the game (science: 100 Innovation and an undamaged Launch
+ * Pad, then CountdownDuration turns), of the victories switched on: { turns, player, type } or null. Nothing we hold
+ * stops such a countdown (a dominance countdown we may break by holding second place: research/31 §3), so whatever is
+ * not done by then is lost. Game 27: Xerxes's countdown ran M97-M102 while our production had no end in sight (the score
+ * victory was off).
+ */
+export function rivalWinTurns() {
+    const VM = safe(() => Game.VictoryManager, null);
+    let best = null;
+    for (const v of GameInfo.VictoryTypes ?? []) {
+        if (v.ScoringType !== FIXED_SCORE) continue;
+        if (safe(() => VM.isCountdownVictoryEnabled(v.VictoryType), null) === false) continue;
+        const h = v.$hash ?? safe(() => Database.makeHash(v.VictoryType), null);
+        const duration = Number(v.CountdownDuration) || 0;
+        for (const p of safe(() => Players.getAlive(), []) ?? []) {
+            if (!p?.isMajor || p.id === pid()) continue;
+            const st = safe(() => p.Victories.getVictoryCountdownStatus(h), null);
+            if (!st?.isDominant) continue;
+            const turns = Math.max(0, duration - (Number(st.turns) || 0));
+            if (!best || turns < best.turns) best = { turns, player: p.id, type: v.VictoryType };
+        }
+    }
+    return best;
+}
 
 /**
  * The score victory (VICTORY_SCORE, decided when the final age ends with no winner): every alive major's score, as the

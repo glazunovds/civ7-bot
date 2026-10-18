@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { installFakeEngine } from "./fakes/fake-engine.mjs";
 
 const C = { x: 10, y: 8 };
-const fake = installFakeEngine({
+const world = {
     width: 24, height: 18, wrapX: false,
     tiles: (x, y) => {
         if (x === 12 && (y === 7 || y === 8)) return { terrain: "TERRAIN_MOUNTAIN", yields: { YIELD_PRODUCTION: 1 } };
@@ -15,7 +15,9 @@ const fake = installFakeEngine({
     structures: (x, y) => (x === C.x && y === C.y ? { district: "DISTRICT_CITY_CENTER", constructibles: ["BUILDING_PALACE"] } : { district: null, constructibles: [] }),
     players: [{ id: 0 }],
     cities: [{ owner: 0, x: C.x, y: C.y, name: "Rome", pop: 6, prod: 12 }],
-});
+};
+const fake = installFakeEngine(world);
+const worldCity = () => world.cities[0];
 const { listTargets, startBuildingPlan } = await import("../mod/expansion-planner/ui/data/xpl-building-job.js");
 const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
 const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
@@ -42,5 +44,29 @@ test("plans a layout for the capital with the real rules", async () => {
     // The mountains at (12,7) and (12,8) never get a building (the game data has no "Mountain" column).
     for (const p of [...plans.placements, ...plans.fillers]) {
         assert.ok(!(fake.grid.x(p.idx) === 12 && (fake.grid.y(p.idx) === 7 || fake.grid.y(p.idx) === 8)), `${p.type} planned on a mountain`);
+    }
+});
+
+// Research/34 §2: game 28's cities sat below zero Happiness most of Modern while the plan valued a happiness building by its
+// happiness alone. Below zero the game takes 5% of the other yields a point: the Altar's 3 win that back.
+test("in a settlement below zero Happiness a happiness building's value includes the yields it wins back", async () => {
+    const { clearEngineCache } = await import("../mod/expansion-planner/ui/data/xpl-engine-cache.js");
+    const settings = { ...DEFAULT_SETTINGS, buildings: { ...DEFAULT_SETTINGS.buildings, incremental: false, selected: ["BUILDING_ALTAR", "BUILDING_LIBRARY"] } };
+    const plan = async (happy) => {
+        Object.assign(worldCity(), { happy, nets: { YIELD_SCIENCE: 20, YIELD_GOLD: 10, YIELD_CULTURE: 10 } });
+        clearEngineCache();
+        await startBuildingPlan(listTargets()[0], settings).promise;
+        return state.get().results.plans.placements.find((p) => p.type === "BUILDING_ALTAR");
+    };
+    try {
+        const calm = await plan(5);
+        const unhappy = await plan(-8);
+        assert.equal(calm.recovery, 0);
+        assert.ok(unhappy.recovery > 5, `recovery ${unhappy.recovery}`);
+        assert.ok(unhappy.net > calm.net + 5, `net ${calm.net} -> ${unhappy.net}`);
+    } finally {
+        delete worldCity().happy;
+        delete worldCity().nets;
+        clearEngineCache();
     }
 });

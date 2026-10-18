@@ -1,0 +1,768 @@
+{
+  "source": "C:\\Users\\glazu\\AppData\\Local\\Firaxis Games\\Sid Meier's Civilization VII\\HallofFame.sqlite",
+  "game": {
+    "GameID": 31,
+    "Ruleset": "RULESET_STANDARD",
+    "GameMode": -379035929,
+    "TurnCount": 68,
+    "GameSpeedType": "GAMESPEED_ONLINE",
+    "MapSizeType": "MAPSIZE_SMALL",
+    "Map": "{base-standard}maps/continents-voronoi.js",
+    "StartAgeType": "AGE_MODERN",
+    "StartTurn": 1,
+    "VictorTeamID": null,
+    "VictoryType": null,
+    "LastPlayed": 1792283014
+  },
+  "population_changes": [
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 19
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 11,
+      "Y": 20
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 13,
+      "Y": 21
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 14,
+      "Y": 22
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 16,
+      "Y": 23
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 29,
+      "Y": 24
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 35,
+      "Y": 26
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 39,
+      "Y": 27
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 43,
+      "Y": 28
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 48,
+      "Y": 30
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 51,
+      "Y": 31
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 68,
+      "Y": 32
+    },
+    {
+      "Name": "Антавайлья",
+      "PlotIndex": 861,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 38
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 2,
+      "Y": 37
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 6,
+      "Y": 38
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 12,
+      "Y": 39
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 24,
+      "Y": 40
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 25,
+      "Y": 41
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 32,
+      "Y": 42
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 35,
+      "Y": 43
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 42,
+      "Y": 44
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 46,
+      "Y": 43
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 56,
+      "Y": 44
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 63,
+      "Y": 45
+    },
+    {
+      "Name": "Бак",
+      "PlotIndex": 1899,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Каан",
+      "PlotIndex": 1981,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 7
+    },
+    {
+      "Name": "Каан",
+      "PlotIndex": 1981,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Кахамарка",
+      "PlotIndex": 1232,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 3
+    },
+    {
+      "Name": "Кахамарка",
+      "PlotIndex": 1232,
+      "DataSet": "Population",
+      "X": 10,
+      "Y": 4
+    },
+    {
+      "Name": "Кахамарка",
+      "PlotIndex": 1232,
+      "DataSet": "Population",
+      "X": 15,
+      "Y": 5
+    },
+    {
+      "Name": "Кахамарка",
+      "PlotIndex": 1232,
+      "DataSet": "Population",
+      "X": 22,
+      "Y": 6
+    },
+    {
+      "Name": "Кахамарка",
+      "PlotIndex": 1232,
+      "DataSet": "Population",
+      "X": 30,
+      "Y": 7
+    },
+    {
+      "Name": "Кахамарка",
+      "PlotIndex": 1232,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 9
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 6,
+      "Y": 10
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 14,
+      "Y": 11
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 17,
+      "Y": 12
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 18,
+      "Y": 13
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 19,
+      "Y": 14
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 22,
+      "Y": 15
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 23,
+      "Y": 16
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 24,
+      "Y": 17
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 27,
+      "Y": 18
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 31,
+      "Y": 19
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 36,
+      "Y": 20
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 40,
+      "Y": 21
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 44,
+      "Y": 22
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 50,
+      "Y": 23
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 53,
+      "Y": 24
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 62,
+      "Y": 25
+    },
+    {
+      "Name": "Куско",
+      "PlotIndex": 561,
+      "DataSet": "Population",
+      "X": 65,
+      "Y": null
+    },
+    {
+      "Name": "Ольянтайтамбо",
+      "PlotIndex": 421,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 2
+    },
+    {
+      "Name": "Ольянтайтамбо",
+      "PlotIndex": 421,
+      "DataSet": "Population",
+      "X": 6,
+      "Y": 3
+    },
+    {
+      "Name": "Ольянтайтамбо",
+      "PlotIndex": 421,
+      "DataSet": "Population",
+      "X": 7,
+      "Y": null
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 16
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 11,
+      "Y": 17
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 13,
+      "Y": 18
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 15,
+      "Y": 19
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 21,
+      "Y": 20
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 28,
+      "Y": 21
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 36,
+      "Y": 22
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 38,
+      "Y": 23
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 42,
+      "Y": 24
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 47,
+      "Y": 25
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 48,
+      "Y": 26
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 58,
+      "Y": 27
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 62,
+      "Y": 28
+    },
+    {
+      "Name": "Сауса",
+      "PlotIndex": 1081,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Уак-Кабналь",
+      "PlotIndex": 1450,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 32
+    },
+    {
+      "Name": "Уак-Кабналь",
+      "PlotIndex": 1450,
+      "DataSet": "Population",
+      "X": 2,
+      "Y": 31
+    },
+    {
+      "Name": "Уак-Кабналь",
+      "PlotIndex": 1450,
+      "DataSet": "Population",
+      "X": 37,
+      "Y": 32
+    },
+    {
+      "Name": "Уак-Кабналь",
+      "PlotIndex": 1450,
+      "DataSet": "Population",
+      "X": 43,
+      "Y": 33
+    },
+    {
+      "Name": "Уак-Кабналь",
+      "PlotIndex": 1450,
+      "DataSet": "Population",
+      "X": 59,
+      "Y": 34
+    },
+    {
+      "Name": "Уак-Кабналь",
+      "PlotIndex": 1450,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 19
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 15,
+      "Y": 20
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 31,
+      "Y": 21
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 35,
+      "Y": 22
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 42,
+      "Y": 21
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 50,
+      "Y": 22
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 51,
+      "Y": 23
+    },
+    {
+      "Name": "Уилька-Уаман",
+      "PlotIndex": 492,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 34
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 10,
+      "Y": 35
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 19,
+      "Y": 36
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 23,
+      "Y": 37
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 31,
+      "Y": 36
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 41,
+      "Y": 37
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 42,
+      "Y": 38
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 51,
+      "Y": 37
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 62,
+      "Y": 38
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 65,
+      "Y": 39
+    },
+    {
+      "Name": "Ушмаль",
+      "PlotIndex": 2125,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 1,
+      "Y": 15
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 13,
+      "Y": 16
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 14,
+      "Y": 17
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 17,
+      "Y": 19
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 19,
+      "Y": 20
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 25,
+      "Y": 21
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 31,
+      "Y": 22
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 33,
+      "Y": 23
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 37,
+      "Y": 24
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 42,
+      "Y": 25
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 52,
+      "Y": 26
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 63,
+      "Y": 28
+    },
+    {
+      "Name": "Чичен-Ица",
+      "PlotIndex": 1681,
+      "DataSet": "Population",
+      "X": 70,
+      "Y": null
+    }
+  ]
+}

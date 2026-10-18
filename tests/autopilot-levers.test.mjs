@@ -52,6 +52,10 @@ test("science: the first Launch Pad in the best producing city, more (up to 3) w
     world.structures = (x, y) => ({ district: null, constructibles: world.cities.some((c) => pads.has(c.name) && padAt(c).x === x && padAt(c).y === y) ? ["BUILDING_LAUNCH_PAD"] : [] });
     const city = (name) => Players.get(0).Cities.getCities().find((c) => c.name === name).id.id;
     world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } }; // Trans-Oceanic Flight open: the Airfield is wanted
+    // The one-off projects cheap enough for weak Lille, Preparation (600) for Lyon: each site brings the goal sooner.
+    world.costOf = (t) => (t === "PROJECT_CREWED_SPACE_FLIGHT_PREP" ? 600 : t.startsWith("PROJECT_") ? 100 : undefined);
+    // 95 Innovation to go: Trans-Oceanic Flight's 5 make the goal come at turn 70 instead of 84 (siteHelps).
+    world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 5 } };
     try {
         fake.sent.length = 0;
         steps.pushVictoryWork("SCIENCE");
@@ -109,6 +113,8 @@ test("science: the first Launch Pad in the best producing city, more (up to 3) w
         delete world.structures;
         delete world.turnsFor;
         delete world.research;
+        delete world.costOf;
+        delete world.victoryPoints;
         world.cities.splice(-2, 2);
     }
 });
@@ -730,6 +736,8 @@ test("the final age with the score victory off goes on past its 100%: Launch Pad
     world.turnsFor = (c) => ({ Paris: 8, Lyon: 9 })[c.name] ?? -1;
     world.research = { depth: { NODE_TECH_MO_FLIGHT: 2 } };
     world.costOf = (t) => (t.startsWith("PROJECT_") ? 1000 : 900);
+    // 95 Innovation to go: Trans-Oceanic Flight's 5 bring the goal from turn 264 to 231 (siteHelps).
+    world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 5 } };
     const city = (name) => Players.get(0).Cities.getCities().find((c) => c.name === name).id.id;
     try {
         world.finalAge = true;
@@ -745,7 +753,7 @@ test("the final age with the score victory off goes on past its 100%: Launch Pad
     } finally {
         Game.VictoryManager = vm;
         world.canBuild = canBuild;
-        for (const k of ["turnsFor", "research", "costOf", "finalAge", "agePoints"]) delete world[k];
+        for (const k of ["turnsFor", "research", "costOf", "finalAge", "agePoints", "victoryPoints"]) delete world[k];
     }
     withPad(() => {
         world.costOf = (t) => (t === "PROJECT_CREWED_SPACE_FLIGHT_PREP" ? 600 : 900);
@@ -834,7 +842,7 @@ test("production first: a city with a Launch Pad queued builds the production bu
     const BUILT = ["BUILDING_IRONWORKS", "BUILDING_STEEL_MILL", "BUILDING_GROCER", "BUILDING_MILITARY_ACADEMY"];
     world.canBuild = (type, id, args) => (BUILT.includes(type) && id.id === 0 ? { Success: true, Plots: [idx(5, 3)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
     // The game's placement numbers: the Ironworks +10 production, the Steel Mill +5 (900: it does not pay), the Grocer food
-    // only, the Military Academy +20 (a military building: not in peace, whatever its production).
+    // only, the Military Academy +20 (tagged PRODUCTION as well as MILITARY: a production building, research/34).
     world.placements = (c) => (c.name !== "Paris" ? null : {
         buildings: [
             { constructibleType: C("BUILDING_MILITARY_ACADEMY"), placements: [{ plotID: idx(5, 3), yieldChanges: gain(20) }] },
@@ -850,17 +858,18 @@ test("production first: a city with a Launch Pad queued builds the production bu
         fake.sent.length = 0;
         const out = steps.pushVictoryWork("SCIENCE");
         const first = builds().filter(([id, t]) => id === 0 && BUILT.some((b) => C(b) === t));
-        assert.deepEqual(first, [[0, C("BUILDING_IRONWORKS")]], JSON.stringify(out));
+        assert.deepEqual(first, [[0, C("BUILDING_MILITARY_ACADEMY")], [0, C("BUILDING_IRONWORKS")]], JSON.stringify(out));
         const e = out.find((x) => x.key === "PRODUCTION_FIRST");
-        assert.deepEqual(e?.args.slice(2), [10, 2900], "900 for the pad and 2000 of projects");
+        // 900 for the pad and what Paris runs before the goal or the age's end (96 turns away): one Preparation run, 1000.
+        assert.deepEqual(e?.args.slice(2), [20, 1900], "the pad and the one Preparation run done in time");
         // Next pass: the Ironworks in the queue goes to the front first (the city's one edit), the pad stays behind it.
-        paris.queued = ["BUILDING_LAUNCH_PAD", "BUILDING_IRONWORKS"];
+        paris.queued = ["BUILDING_LAUNCH_PAD", "BUILDING_IRONWORKS", "BUILDING_MILITARY_ACADEMY"];
         fake.sent.length = 0;
         steps.beginQueuePass();
         steps.pushVictoryWork("SCIENCE");
         steps.endQueuePass();
         assert.deepEqual(MOVE().filter(([id]) => id === 0), [[0, 2, 0]]);
-        assert.deepEqual(builds().filter(([id, t]) => id === 0 && t === C("BUILDING_IRONWORKS")), [], "queued once");
+        assert.deepEqual(builds().filter(([id, t]) => id === 0 && (t === C("BUILDING_IRONWORKS") || t === C("BUILDING_MILITARY_ACADEMY"))), [], "queued once");
         // The Ironworks in production, nothing in it yet: the pad stays behind it.
         paris.queue = { type: "BUILDING_IRONWORKS", turns: 7, pct: 0 };
         paris.queued = ["BUILDING_LAUNCH_PAD"];
@@ -868,12 +877,13 @@ test("production first: a city with a Launch Pad queued builds the production bu
         steps.pushVictoryWork("SCIENCE");
         assert.deepEqual(MOVE().filter(([id]) => id === 0), [], "the pad does not jump ahead of it");
         paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
-        // A city with no space work: none.
-        fake.sent.length = 0;
+        // A city with no space work and none to come (the game refuses it a Launch Pad): none.
         paris.queued = [];
         steps.resetProductionFirst();
-        steps.pushVictoryWork("SCIENCE");
+        const offer = world.canBuild;
+        world.canBuild = (type, id, args) => (type === "BUILDING_LAUNCH_PAD" ? { Success: false, Plots: [] } : offer(type, id, args));
         assert.ok(!steps.pushVictoryWork("SCIENCE").some((x) => x.key === "PRODUCTION_FIRST"));
+        world.canBuild = offer;
     } finally {
         steps.resetProductionFirst();
         world.canBuild = canBuild;
@@ -1051,3 +1061,306 @@ test("a path's building never passes a queued wonder, wherever it stands in the 
     }
 });
 
+
+// The victory work and its purchases took the game's best tile for today's yields, often one the building plan keeps for a
+// quarter or a wonder's neighbours.
+test("the victory work and its purchases take the building plan's tile; without one, the game's best of the tiles the plan leaves free", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const paris = world.cities[0];
+    const sid = `c:${PARIS.x}-${PARIS.y}`;
+    const tiles = [idx(4, 3), idx(2, 3), idx(3, 4)];
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === "BUILDING_LAUNCH_PAD" && id.id === 0 ? { Success: true, Plots: tiles, ExpandUrbanPlots: [] } : canBuild(type, id, args));
+    world.canBuy = (type, id) => (type === "BUILDING_LAUNCH_PAD" && id.id === 0 ? { Success: true, Plots: tiles, Cost: 900 } : { Success: false });
+    // The game rates (4,3) best for today's yields.
+    world.placements = (c) => (c.name !== "Paris" ? null : {
+        buildings: [{ constructibleType: C("BUILDING_LAUNCH_PAD"), placements: [[4, 3, 5], [2, 3, 1], [3, 4, 3]].map(([x, y, v]) => ({ plotID: idx(x, y), yieldChanges: [v] })) }],
+    });
+    const before = state.get().results.plans;
+    const plan = (rows) => state.set({ results: { ...state.get().results, plans: { timeAware: true, placements: rows.map(([type, x, y]) => ({ sid, type, x, y, eta: 5 })), fillers: [], anchors: [] } } });
+    const at = (kind) => fake.sent.filter((s) => s.kind === kind && s.id.id === 0 && s.args.ConstructibleType === C("BUILDING_LAUNCH_PAD")).map((s) => [s.args.X, s.args.Y]);
+    try {
+        plan([["BUILDING_LAUNCH_PAD", 2, 3], ["BUILDING_SCHOOLHOUSE", 4, 3]]);
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(at("operation"), [[2, 3]], "the plan's tile");
+        world.gold = 5000;
+        world.goldIncome = 0;
+        paris.queued = ["BUILDING_LAUNCH_PAD"];
+        fake.sent.length = 0;
+        steps.buyVictoryWork("SCIENCE", 0, undefined, { commit: true });
+        assert.deepEqual(at("command"), [[2, 3]], "bought on the plan's tile");
+        delete paris.queued;
+        // No tile planned for the pad: (4,3) is kept for the Schoolhouse, so the best of the others.
+        plan([["BUILDING_SCHOOLHOUSE", 4, 3]]);
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(at("operation"), [[3, 4]]);
+    } finally {
+        state.set({ results: { ...state.get().results, plans: before } });
+        world.canBuild = canBuild;
+        delete paris.queued;
+        for (const k of ["canBuy", "placements", "gold", "goldIncome"]) delete world[k];
+    }
+});
+
+// The victory step queues the path's buildings only where they are built within 12 turns (leverSoon: game 16), but the
+// plan's own queueing did not ask: a 40-turn Laboratory the victory step refused went in through the plan.
+test("an empty queue takes no path's building from the plan or the advisor where it takes longer than the victory step allows", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const lyon = world.cities[1];
+    const sid = `c:${LYON.x}-${LYON.y}`;
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (id.id === 1 && (type === "BUILDING_LABORATORY" || type === "BUILDING_FACTORY") ? { Success: true, Plots: [idx(11, 4), idx(11, 2)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+    world.costOf = (t) => (t === "BUILDING_LABORATORY" ? 400 : 100);
+    const before = state.get().results.plans;
+    state.set({ results: { ...state.get().results, plans: { timeAware: true, placements: [{ sid, type: "BUILDING_LABORATORY", x: 11, y: 4, eta: 40 }, { sid, type: "BUILDING_FACTORY", x: 11, y: 2, eta: 50 }], fillers: [] } } });
+    const queued = () => builds().filter(([id]) => id === 1).map(([, t]) => t);
+    try {
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { victory: "SCIENCE" });
+        assert.deepEqual(queued(), [C("BUILDING_FACTORY")], "40 turns in Lyon: the Laboratory is left to the purchases");
+        lyon.prod = 40;
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { victory: "SCIENCE" });
+        assert.deepEqual(queued(), [C("BUILDING_LABORATORY"), C("BUILDING_FACTORY")], "10 turns: as the plan says");
+    } finally {
+        lyon.prod = 10;
+        state.set({ results: { ...state.get().results, plans: before } });
+        world.canBuild = canBuild;
+        delete world.costOf;
+    }
+});
+
+// With the score victory off the final age has no end on its clock (research/31 §1), and a rival's science countdown gave
+// none either: production went on as if the game had no end (game 27: Xerxes's countdown ran M97-M102).
+test("a rival's science countdown is the game's end: the outlook counts to it, and Preparation not done by then is not started", async () => {
+    const { ageOutlook } = await import("../mod/expansion-planner/ui/data/xpl-town-job.js");
+    const vm = Game.VictoryManager;
+    withPad(() => {
+        world.costOf = (t) => (t === "PROJECT_CREWED_SPACE_FLIGHT_PREP" ? 300 : 900); // 10 turns in Paris
+        const preps = () => fake.sent.filter((s) => s.kind === "operation" && s.id.id === 0 && s.args.ProjectType === P("PROJECT_CREWED_SPACE_FLIGHT_PREP")).length;
+        try {
+            world.finalAge = true;
+            world.agePoints = 100;
+            Game.VictoryManager = { isScoreVictoryEnabled: () => false };
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE");
+            assert.equal(preps(), 1, "no end: a 10-turn run");
+            world.countdowns = { VICTORY_SCIENCE_MODERN: { 1: 3 } }; // 3 of its 5 turns gone
+            const o = ageOutlook();
+            assert.deepEqual([o.turnsLeft, o.endless, o.rivalWin?.player], [2, false, 1]);
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE");
+            assert.equal(preps(), 0, "the game ends in 2 turns");
+        } finally {
+            Game.VictoryManager = vm;
+            for (const k of ["costOf", "finalAge", "agePoints", "countdowns"]) delete world[k];
+        }
+    });
+});
+
+// Production first for a city's space work: its Ironworks +10 production for 267 (the game's placement numbers).
+const withIronworks = (fn) => {
+    const PROD = GameInfo.Yields.lookup("YIELD_PRODUCTION").$index;
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === "BUILDING_IRONWORKS" && id.id === 0 ? { Success: true, Plots: [idx(5, 3)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+    world.placements = (c) => {
+        if (c.name !== "Paris") return null;
+        const y = [];
+        y[PROD] = 10;
+        return { buildings: [{ constructibleType: C("BUILDING_IRONWORKS"), placements: [{ plotID: idx(5, 3), yieldChanges: y }] }] };
+    };
+    try {
+        steps.resetProductionFirst();
+        fn();
+    } finally {
+        steps.resetProductionFirst();
+        world.canBuild = canBuild;
+        delete world.placements;
+    }
+};
+
+// Upgrades were weighed only once a science site was queued: a 40-turn Launch Pad started first, its Ironworks was queued
+// the next turn and stayed behind the pad's progress for 40 turns.
+test("production first is weighed before a city's first science site is ordered: its buildings go in ahead of the site", () => {
+    const paris = world.cities[0];
+    withIronworks(() => {
+        world.costOf = (t) => ({ BUILDING_LAUNCH_PAD: 1200, BUILDING_IRONWORKS: 267 })[t] ?? 1000; // a 40-turn pad
+        try {
+            delete paris.queue; // nothing in production: the pad would start this turn
+            paris.queued = [];
+            fake.sent.length = 0;
+            const out = steps.pushVictoryWork("SCIENCE");
+            const buildings = builds().filter(([id, t]) => id === 0 && (t === C("BUILDING_IRONWORKS") || t === C("BUILDING_LAUNCH_PAD"))).map(([, t]) => t);
+            assert.deepEqual(buildings, [C("BUILDING_IRONWORKS"), C("BUILDING_LAUNCH_PAD")], JSON.stringify(out));
+            assert.ok(out.some((e) => e.key === "PRODUCTION_FIRST"));
+        } finally {
+            delete world.costOf;
+            delete paris.queued;
+            paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+        }
+    });
+});
+
+// The payback assumed 2000 production of projects whatever was left: near the goal an Ironworks made the last run later.
+test("production first weighs the projects still needed to win: one run under way at 95 Innovation buys no upgrade, at 0 it does", () => {
+    withPad(() => withIronworks(() => {
+        const paris = world.cities[0];
+        world.costOf = (t) => ({ BUILDING_IRONWORKS: 267 })[t] ?? 1000;
+        paris.queue = { type: "PROJECT_CREWED_SPACE_FLIGHT_PREP", turns: 10, pct: 70 }; // 300 left, 10 turns
+        try {
+            world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 95 } };
+            fake.sent.length = 0;
+            assert.ok(!steps.pushVictoryWork("SCIENCE").some((e) => e.key === "PRODUCTION_FIRST"), "300 left to win: 267 for +10 makes it later");
+            world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 0 } };
+            steps.resetProductionFirst();
+            fake.sent.length = 0;
+            const out = steps.pushVictoryWork("SCIENCE");
+            assert.deepEqual(out.find((e) => e.key === "PRODUCTION_FIRST")?.args.slice(2), [10, 2300], "the run under way and two more before the age ends");
+        } finally {
+            delete world.costOf;
+            delete world.victoryPoints;
+        }
+    }));
+});
+
+// Preparation always went first in a Launch Pad's city, and no one-off ran there: at 95 Innovation a 20-turn run was
+// chosen over a 10-turn Launch Satellite that would also reach 100.
+test("near the goal a one-off that closes the gap sooner goes ahead of Preparation in a Launch Pad's city, and stays there", () => {
+    withPad(() => {
+        const paris = world.cities[0];
+        world.costOf = (t) => ({ PROJECT_CREWED_SPACE_FLIGHT_PREP: 600, PROJECT_LAUNCH_SATELLITE: 300 })[t] ?? 1000; // 20 and 10 turns
+        const projects = () => builds().filter(([id, t]) => id === 0 && (t === P("PROJECT_LAUNCH_SATELLITE") || t === P("PROJECT_CREWED_SPACE_FLIGHT_PREP"))).map(([, t]) => t);
+        try {
+            world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 95 } };
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE");
+            assert.deepEqual(projects(), [P("PROJECT_LAUNCH_SATELLITE"), P("PROJECT_CREWED_SPACE_FLIGHT_PREP")], "the satellite first");
+            // Both queued, Preparation ahead: the satellite moves ahead of it and stays.
+            paris.queue = { type: "BUILDING_CANNERY", turns: 3 };
+            paris.queued = ["PROJECT_CREWED_SPACE_FLIGHT_PREP", "PROJECT_LAUNCH_SATELLITE"];
+            const moves = passes(4, paris, 0);
+            assert.deepEqual([paris.queue.type, ...paris.queued].slice(0, 2), ["PROJECT_LAUNCH_SATELLITE", "PROJECT_CREWED_SPACE_FLIGHT_PREP"], JSON.stringify(moves));
+            assert.deepEqual(moves.slice(2), [0, 0], "settled");
+            // 20 to go: Preparation first (both orders reach it at 30 turns; Preparation gives more for the production).
+            world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 80 } };
+            paris.queue = { type: "BUILDING_CANNERY", turns: 3 };
+            paris.queued = [];
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE");
+            assert.deepEqual(projects(), [P("PROJECT_CREWED_SPACE_FLIGHT_PREP")]);
+        } finally {
+            delete world.costOf;
+            delete world.victoryPoints;
+        }
+    });
+});
+
+// Research/34 §2, §4: game 28's Kalhu stayed below zero Happiness all Modern (−33 at worst, its yields 80% gone) while it
+// built for its space work; an Ironworks there adds a fifth of its production, and Happiness wins production back.
+test("production first in an unhappy city: new production counts at what the city keeps, and a Happiness building wins production back", () => {
+    const PROD = GameInfo.Yields.lookup("YIELD_PRODUCTION").$index;
+    const HAPPY = GameInfo.Yields.lookup("YIELD_HAPPINESS").$index;
+    const change = (i, v) => {
+        const y = [];
+        y[i] = v;
+        return y;
+    };
+    const paris = world.cities[0];
+    const canBuild = world.canBuild;
+    const BUILT = ["BUILDING_IRONWORKS", "BUILDING_GROCER"];
+    world.canBuild = (type, id, args) => (BUILT.includes(type) && id.id === 0 ? { Success: true, Plots: [idx(5, 3)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+    world.costOf = (t) => ({ BUILDING_LAUNCH_PAD: 900, BUILDING_IRONWORKS: 267, BUILDING_GROCER: 267 })[t] ?? 1000;
+    world.placements = (c) => (c.name !== "Paris" ? null : {
+        buildings: [
+            { constructibleType: C("BUILDING_IRONWORKS"), placements: [{ plotID: idx(5, 3), yieldChanges: change(PROD, 10) }] },
+            { constructibleType: C("BUILDING_GROCER"), placements: [{ plotID: idx(5, 3), yieldChanges: change(HAPPY, 8) }] },
+        ],
+    });
+    const queued = () => builds().filter(([id, t]) => id === 0 && BUILT.some((b) => C(b) === t)).map(([, t]) => t);
+    try {
+        paris.queued = ["BUILDING_LAUNCH_PAD"];
+        paris.happy = 10;
+        steps.resetProductionFirst();
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(queued(), [C("BUILDING_IRONWORKS")], "calm: the Ironworks; Happiness wins nothing back");
+        paris.happy = -25;
+        steps.resetProductionFirst();
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(queued(), [C("BUILDING_GROCER")], "at −25: the Ironworks keeps a fifth of its 10; the Grocer's 8 Happiness win production back");
+    } finally {
+        steps.resetProductionFirst();
+        world.canBuild = canBuild;
+        delete paris.queued;
+        delete paris.happy;
+        for (const k of ["costOf", "placements"]) delete world[k];
+    }
+});
+
+// Research/34 §5: game 28's fifth Launch Pad (M83) ran no Preparation before the victory at M93, and Kalhu's Airfield
+// came at M89 with its first flight unfinished. A site beyond the victory's own pad only where it brings the goal sooner.
+test("one more Launch Pad only where it brings the science victory's Innovation sooner", () => {
+    withPad(() => {
+        const nice = { owner: 0, x: 3, y: 9, name: "Nice", prod: 20 };
+        world.cities.push(nice);
+        world.costOf = (t) => (t === "PROJECT_CREWED_SPACE_FLIGHT_PREP" ? 600 : t === "BUILDING_LAUNCH_PAD" ? 900 : undefined);
+        world.turnsFor = (c) => (c.name === "Nice" ? 9 : -1); // done within 10 turns: wanted by the old rule
+        const pads = () => builds().filter(([id, t]) => id === 2 && t === C("BUILDING_LAUNCH_PAD")).length;
+        try {
+            world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 85 } }; // 15 to go: Paris's next run (20 turns) makes it
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE", { pads: 2 });
+            assert.equal(pads(), 0, "Nice's pad (45 turns) and its run would come after the goal");
+            world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 0 } }; // 100 to go: two cities running Preparation win sooner
+            fake.sent.length = 0;
+            steps.pushVictoryWork("SCIENCE", { pads: 2 });
+            assert.equal(pads(), 1);
+        } finally {
+            world.cities.splice(world.cities.indexOf(nice), 1);
+            for (const k of ["costOf", "turnsFor", "victoryPoints"]) delete world[k];
+        }
+    });
+});
+
+// The audit of game 28 found the race counting a site in production twice: once as the item ahead of the projects, once
+// as the site still to be built.
+test("the race counts a Launch Pad in production once: the production-first work is its rest and the runs after it", () => {
+    withIronworks(() => {
+        const paris = world.cities[0];
+        world.costOf = (t) => ({ BUILDING_LAUNCH_PAD: 900, BUILDING_IRONWORKS: 267, PROJECT_CREWED_SPACE_FLIGHT_PREP: 1000 })[t] ?? 1000;
+        paris.queue = { type: "BUILDING_LAUNCH_PAD", turns: 15, pct: 50 }; // 450 left: 15 turns
+        try {
+            fake.sent.length = 0;
+            const e = steps.pushVictoryWork("SCIENCE").find((x) => x.key === "PRODUCTION_FIRST");
+            // 15 turns, then runs at 48 and 82 within the age's 95: 450 + 2 × 1000 (counted twice, 30 turns: one run).
+            assert.equal(e?.args[3], 2450);
+        } finally {
+            delete world.costOf;
+            paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+        }
+    });
+});
+
+// Research/34 §6: game 28's capital trained Tanks for two new settlements (Sirjan, Ardebil) while its Launch Pad, ordered at
+// M51, waited until M73. A defender comes from a city without space work when one within reach can train it.
+test("a defender for a threatened settlement comes from a city without space work when one within reach can train it", () => {
+    const paris = world.cities[0];
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (typeof type === "string" && type.startsWith("UNIT_") ? { Success: true } : canBuild(type, id, args));
+    world.costOf = (t) => (t.startsWith("UNIT_") ? 50 : undefined);
+    const threats = [{ settlement: { name: "Sirjan", x: 6, y: 3 }, count: 2, land: 2, owners: [{ id: 5, independent: true }] }];
+    const trainer = (out) => out.filter((e) => e.key === "QUEUED_DEFENDER").map((e) => e.args[0]);
+    try {
+        paris.queued = ["BUILDING_LAUNCH_PAD"];
+        assert.deepEqual(trainer(steps.fillProduction(new Map(), { threats, defend: true })), ["Lyon"], "though Paris is nearer");
+        paris.queued = [];
+        assert.deepEqual(trainer(steps.fillProduction(new Map(), { threats, defend: true })), ["Paris"], "no space work in Paris: the nearest");
+    } finally {
+        world.canBuild = canBuild;
+        delete world.costOf;
+        delete paris.queued;
+    }
+});

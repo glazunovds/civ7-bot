@@ -12,8 +12,8 @@
  * worth 0 and the first offered one fills the slot: a full slot beats an empty one.
  */
 import { profileFor } from '../core/xpl-profiles.js';
-import { dot, yieldIndex } from '../core/xpl-yields.js';
-import { costMultiplier } from '../core/xpl-scarcity.js';
+import { dot, H, yieldIndex, YIELD_KEYS } from '../core/xpl-yields.js';
+import { costMultiplier, happinessWorth } from '../core/xpl-scarcity.js';
 import { judgeDeal } from '../core/xpl-deals.js';
 import { log } from '../services/xpl-log.js';
 import { effectYields, focusOfProfile, rankGovernments } from '../core/xpl-effect-value.js';
@@ -115,10 +115,16 @@ function leverContext(settings) {
     for (const c of safe(() => me.Cities.getCities(), []) ?? []) {
         if (!c.isTown) production += Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
     }
+    let settlements = null;
     return {
         focus: focusOfProfile(settings?.profile),
         age: safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, null),
         production, science: net("YIELD_SCIENCE"), culture: net("YIELD_CULTURE"), gold: net("YIELD_GOLD"),
+        // Each settlement's Happiness facts, read once a step when a card needs them (localHappiness).
+        get settlements() {
+            settlements ??= settlementHappiness();
+            return settlements;
+        },
     };
 }
 
@@ -187,9 +193,11 @@ function traitCardValue(def, weights) {
 /**
  * What a policy card is worth per turn: Policy Yield Previews, plus (with `levers`, a
  * leverContext) what it cannot value (production toward projects or buildings, lump grants…:
- * Literature, Public Works, Think Tanks); null if unknown.
+ * Literature, Public Works, Think Tanks) and what its Happiness does to each settlement's other
+ * yields below zero (localHappiness; `active`: the card is slotted, so its worth is what taking it
+ * out would cost); null if unknown.
  */
-export function cardValue(traditionType, weights, levers = null) {
+export function cardValue(traditionType, weights, levers = null, { active = false } = {}) {
     const api = globalThis.LfYieldsPreview;
     if (!traditionType) return null;
     const r = api?.previewPolicyYields ? safe(() => api.previewPolicyYields({ TraditionType: traditionType }), null) : null;
@@ -197,7 +205,8 @@ export function cardValue(traditionType, weights, levers = null) {
     if (!levers) return value;
     const ids = (GameInfo.TraditionModifiers?.filter((m) => m.TraditionType === traditionType) ?? []).map((m) => m.ModifierId ?? m.ModifierID);
     const def = safe(() => GameInfo.Traditions.lookup(traditionType), null);
-    return withLevers(value, leverValue(ids, weights, levers) + safe(() => traitCardValue(def, weights), 0));
+    const local = safe(() => localHappiness(ids, weights, levers.settlements, { active }), 0);
+    return withLevers(value, leverValue(ids, weights, levers) + safe(() => traitCardValue(def, weights), 0) + local);
 }
 
 /** What a list of modifiers is worth per turn (Policy Yield Previews, plus with `levers` what it cannot value), or null if unknown. */
@@ -258,11 +267,130 @@ function happinessLoss(traditionType, weights) {
         known = true;
         for (const c of settlements.filter(applies)) {
             const net = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), NaN));
+            // Pushed below zero where the other yields are known: the game's penalty on them is priced by localHappiness,
+            // so the happiness itself at full weight (core/xpl-scarcity.js costValue does the same).
+            const priced = net - loss < 0 && Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), NaN)) > 0;
             plain -= w * loss;
-            weighted -= w * loss * costMultiplier(net, loss);
+            weighted -= w * loss * (priced ? 1 : costMultiplier(net, loss));
         }
     }
     return known ? { plain, weighted } : null;
+}
+
+// ---- a card's Happiness in each settlement (research/34 §1) ------------------------------------------
+
+/** A per-yield array of the game's (by GameInfo.Yields index) → one yield of it (Happiness by default). */
+function happinessIn(arr, yieldType = "YIELD_HAPPINESS") {
+    const i = safe(() => GameInfo.Yields.lookup(yieldType).$index, null);
+    return i === null ? 0 : Number(arr?.[i]) || 0;
+}
+
+/**
+ * Each settlement's Happiness facts: its net yields (the base of the game's penalty below zero Happiness), its specialists
+ * and the Happiness they cost now (the game's own maintenance numbers), and, read when a card needs it, what its
+ * buildings cost in Happiness.
+ */
+function settlementHappiness() {
+    const out = [];
+    for (const city of safe(() => Players.get(pid()).Cities.getCities(), []) ?? []) {
+        const nets = YIELD_KEYS.map((k) => Number(safe(() => city.Yields.getNetYield(YieldTypes[k]), NaN)));
+        if (!Number.isFinite(nets[H])) continue;
+        let specialists = 0;
+        let specialistUpkeep = 0;
+        let specialistFood = 0;
+        for (const w of safe(() => city.Workers.GetAllPlacementInfo(), []) ?? []) {
+            specialists += Number(w.NumWorkers) || 0;
+            specialistUpkeep += happinessIn(w.CurrentMaintenance);
+            specialistFood += happinessIn(w.CurrentMaintenance, "YIELD_FOOD");
+        }
+        let buildingUpkeep = null;
+        out.push({
+            city, nets, specialists, specialistUpkeep, specialistFood,
+            get buildingUpkeep() {
+                buildingUpkeep ??= buildingHappinessUpkeep(city);
+                return buildingUpkeep;
+            },
+        });
+    }
+    return out;
+}
+
+/** The Happiness a settlement's buildings cost a turn (city.Constructibles.getMaintenance of each one on its tiles). */
+function buildingHappinessUpkeep(city) {
+    let total = 0;
+    for (const idx of safe(() => city.getPurchasedPlots(), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        for (const id of loc ? safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? [] : []) {
+            const c = safe(() => Constructibles.getByComponentID(id), null);
+            const def = c ? safe(() => GameInfo.Constructibles.lookup(c.type), null) : null;
+            if (def?.ConstructibleClass !== "BUILDING") continue;
+            total += happinessIn(safe(() => city.Constructibles.getMaintenance(def.ConstructibleType), null));
+        }
+    }
+    return total;
+}
+
+/**
+ * What these modifiers change of a settlement's Happiness a turn: flat Happiness (EFFECT_CITY_ADJUST_YIELD), Happiness
+ * per specialist (…_WORKER_YIELD), the specialists' Happiness upkeep (…_WORKER_MAINTENANCE_EFFICIENCY: Amount more a
+ * specialist, Percent less of it) and the buildings' (…_BUILDING_MAINTENANCE_EFFICIENCY with Happiness: that much less).
+ * Only modifiers whose subject requirements we can read (settlementTest).
+ */
+function happinessChange(modifierIds, s) {
+    const t = modifierTables();
+    let change = 0;
+    for (const id of modifierIds) {
+        const effect = t.effect.get(t.type.get(id));
+        const args = t.args.get(id) ?? {};
+        const yields = String(args.YieldType ?? "").split(",").map((x) => x.trim());
+        const happiness = yields.includes("YIELD_HAPPINESS");
+        const amount = Number(args.Amount) || 0;
+        const percent = Number(args.Percent) || 0;
+        let d = 0;
+        if (effect === "EFFECT_CITY_ADJUST_YIELD" && happiness && !percent) d = amount;
+        else if (effect === "EFFECT_CITY_ADJUST_WORKER_YIELD" && happiness) d = amount * s.specialists;
+        else if (effect === "EFFECT_CITY_ADJUST_WORKER_MAINTENANCE_EFFICIENCY" && happiness) d = amount ? -amount * s.specialists : (percent / 100) * s.specialistUpkeep;
+        else if (effect === "EFFECT_CITY_ADJUST_BUILDING_MAINTENANCE_EFFICIENCY" && truthy(args.Happiness)) d = ((amount || percent) / 100) * s.buildingUpkeep;
+        if (!d) continue;
+        const applies = settlementTest(id);
+        if (applies && applies(s.city)) change += d;
+    }
+    return change;
+}
+
+/**
+ * What a card's Happiness is worth in the game's penalty on each settlement's other yields (core/xpl-scarcity.js
+ * happinessWorth: 5% of them a point below zero, at most 80%), summed over our settlements; `active`: the card is
+ * slotted, so its worth is what taking it out would cost. Policy Yield Previews counts the Happiness itself across the
+ * empire, where happy towns hide unhappy cities. Research/34 §1: game 28 swapped Living Standards (23.2) for Social
+ * Science (193.6) at M16, +3 Science but +1 Happiness upkeep a specialist, while the core cities stood below zero; their
+ * production fell 187 → 110 and their science 260 → 182 the next turn.
+ * Also the specialists' upkeep the previews get wrong: they take 2 a specialist as the base of a percent change (Free
+ * Speech's −50%), the game's is the upkeep it reports (6 in the Modern age).
+ */
+function localHappiness(modifierIds, weights, settlements, { active = false } = {}) {
+    if (!settlements || modifierIds.length === 0) return 0;
+    const t = modifierTables();
+    let v = 0;
+    for (const s of settlements) {
+        const d = happinessChange(modifierIds, s);
+        if (d) v += active ? -happinessWorth(weights, s.nets, s.nets[H], -d) : happinessWorth(weights, s.nets, s.nets[H], d);
+        // A percent change of the specialists' upkeep: what the previews counted (2 a specialist) against the game's own.
+        for (const id of modifierIds) {
+            if (t.effect.get(t.type.get(id)) !== "EFFECT_CITY_ADJUST_WORKER_MAINTENANCE_EFFICIENCY") continue;
+            const args = t.args.get(id) ?? {};
+            const percent = Number(args.Percent) || 0;
+            if (!percent || Number(args.Amount)) continue;
+            const applies = settlementTest(id);
+            if (!applies || !applies(s.city)) continue;
+            for (const y of String(args.YieldType ?? "").split(",").map((x) => x.trim())) {
+                const upkeep = y === "YIELD_HAPPINESS" ? s.specialistUpkeep : y === "YIELD_FOOD" ? s.specialistFood : null;
+                if (upkeep === null) continue;
+                v += (weights[yieldIndex(y)] ?? 0) * (percent / 100) * (upkeep - 2 * s.specialists);
+            }
+        }
+    }
+    return v;
 }
 
 /** Free slots of one kind: slot type -> number free. */
@@ -376,7 +504,7 @@ export function swapOnePolicy(settings, sent = new Set()) {
         for (const h of safe(() => culture.getActiveTraditions(slotType), []) ?? []) {
             if (sent.has(h)) continue; // just put in
             const def = safe(() => GameInfo.Traditions.lookup(h), null);
-            const value = def ? cardValue(def.TraditionType, weights, levers) : null;
+            const value = def ? cardValue(def.TraditionType, weights, levers, { active: true }) : null;
             if (value === null) continue;
             const gain = top.value - value;
             if (gain < Math.max(SWAP_MIN_GAIN, SWAP_MIN_SHARE * Math.abs(value))) continue;

@@ -49,7 +49,14 @@ export function dominanceMultiple(age, ageFrac) {
 export function victoryWatch(races, me, { age = null, ageFrac = 0, military = null } = {}) {
     const out = [];
     for (const r of races ?? []) {
-        if (r.enabled === false || r.scoring !== DOMINATION) continue;
+        if (r.enabled === false) continue;
+        // Science: a fixed score (fixedWatch). Before, only dominance races were watched: a rival two turns from winning
+        // the science victory gave no entry.
+        if (r.scoring === FIXED_SCORE) {
+            out.push(...fixedWatch(r, me));
+            continue;
+        }
+        if (r.scoring !== DOMINATION) continue;
         const board = r.board ?? [];
         // The final age: settlements we may still found can start our own military countdown (militaryOutlook).
         const lever = r.cls === "MILITARY" && military ? militaryOutlook(r, me, { age, ageFrac, ...military }) : null;
@@ -87,6 +94,32 @@ export function victoryWatch(races, me, { age = null, ageFrac = 0, military = nu
 // Our own countdown is within reach at this share of its goal (research/24 F2: at the final age's end every
 // turn in a countdown is 1000 score, more than a whole game's score).
 export const CHANCE_SHARE = 0.85;
+const FIXED_SCORE = "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE";
+
+/**
+ * A fixed-score race (science: 100 Innovation and an undamaged Launch Pad, then its countdown). Nobody's score holds it
+ * back, so there is no `need` and no multiple: the rival nearest to winning is watched (the first whose countdown ends,
+ * else the most points), level DANGER (its countdown runs, or DANGER_SHARE of the goal) or WATCH (WATCH_SHARE), with
+ * `countdown` its turns left and `fixed`; and our own CHANCE at CHANCE_SHARE. Its countdown is the game's end
+ * (data/xpl-victory.js rivalWinTurns, ageOutlook).
+ */
+function fixedWatch(r, me) {
+    const goal = Number(r.goal) || 0;
+    if (!(goal > 0)) return [];
+    const out = [];
+    const board = r.board ?? [];
+    const round = (x) => Math.round(x * 100) / 100;
+    const ours = Number(board.find((b) => b.id === me)?.points) || 0;
+    if (ours / goal >= CHANCE_SHARE) out.push({ cls: r.cls, own: true, fixed: true, ours, goal, share: round(ours / goal), need: Math.max(0, goal - ours), level: "CHANCE", multiple: null });
+    const rivals = board.filter((b) => b.id !== me && Number(b.points) > 0);
+    const counting = rivals.filter((b) => b.dominant).sort((a, b) => (a.turns ?? Infinity) - (b.turns ?? Infinity));
+    const leader = counting[0] ?? [...rivals].sort((a, b) => b.points - a.points)[0];
+    if (!leader) return out;
+    const share = leader.points / goal;
+    const level = leader.dominant || share >= DANGER_SHARE ? "DANGER" : share >= WATCH_SHARE ? "WATCH" : null;
+    out.push({ cls: r.cls, leader: leader.id, points: leader.points, goal, share: round(share), multiple: null, ours, need: null, level, countdown: leader.dominant ? leader.turns : null, fixed: true });
+    return out;
+}
 
 /**
  * Our own chance at a dominance countdown in this race: our goal is the multiple × the best of the others

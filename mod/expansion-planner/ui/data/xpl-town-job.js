@@ -11,6 +11,7 @@ import { FOCUS_YIELD_TAG } from '../core/xpl-victory-levers.js';
 import { getEngineMap } from './xpl-engine-map.js';
 import { getRules } from './xpl-rules-loader.js';
 import { FactsCache } from './xpl-map-facts.js';
+import { rivalWinTurns } from './xpl-victory.js';
 import { state } from '../services/xpl-state.js';
 import { gameKey, settings } from '../services/xpl-settings.js';
 import { log } from '../services/xpl-log.js';
@@ -111,7 +112,9 @@ export function ageHasEnd() {
 
 /**
  * Turns left in this age, from the age-progress samples (also used by building timing). Unlimited (Infinity, `endless`)
- * when the age has no end on its clock (ageHasEnd); the estimate is still remembered for the next age.
+ * when the age has no end on its clock (ageHasEnd); the estimate is still remembered for the next age. A rival's countdown
+ * to a fixed-score victory (science) ends the game sooner, clock or not (`rivalWin`: rivalWinTurns): every deadline then
+ * counts to it.
  */
 export function ageOutlook() {
     const rules = getRules();
@@ -123,7 +126,9 @@ export function ageOutlook() {
     const turnsLeft = estimateAgeTurnsLeft(samples, points, max, lastAgeTurns ?? undefined);
     rememberAge(rules.age, turnsLeft, samples.length);
     const endless = !ageHasEnd();
-    return { turnsLeft: endless ? Infinity : turnsLeft, isFinalAge, endless, ageFrac: max > 0 ? points / max : 0 };
+    const rivalWin = safe(() => rivalWinTurns(), null);
+    const clock = endless ? Infinity : turnsLeft;
+    return { turnsLeft: rivalWin ? Math.min(clock, rivalWin.turns) : clock, isFinalAge, endless: endless && !rivalWin, rivalWin, ageFrac: max > 0 ? points / max : 0 };
 }
 
 /** Median of (gold purchase cost / production cost) for current-age buildings in a real city. */
@@ -247,8 +252,9 @@ export function runTownAdvisor(settings) {
         agePoints,
         ageMax,
         isFinalAge,
-        // No end on the clock (ageHasEnd): no late cut for conversions either (research/31 §1).
-        ageTurnsLeft: ageHasEnd() ? estimateAgeTurnsLeft(samples, agePoints, ageMax, lastAgeTurns ?? undefined) : Infinity,
+        // No end on the clock (ageHasEnd): no late cut for conversions either (research/31 §1); a rival's science
+        // countdown ends the game sooner (rivalWinTurns).
+        ageTurnsLeft: Math.min(ageHasEnd() ? estimateAgeTurnsLeft(samples, agePoints, ageMax, lastAgeTurns ?? undefined) : Infinity, safe(() => rivalWinTurns()?.turns, Infinity) ?? Infinity),
         expectKeepCities: !!settings.towns?.expectKeepCities,
     };
 

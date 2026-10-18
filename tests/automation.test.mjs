@@ -66,6 +66,15 @@ test("queue the next planned buildings: in plan order, on their tiles, skipping 
     assert.deepEqual(actions.queueNextBuildings(plans(), "c:18-8").queued, [], "towns have no production queue");
 });
 
+// The plan keeps warehouses apart (fillers), and the queue read only the others: a warehouse the plan builds first (a
+// connector, a lasting quarter) was never queued from it.
+test("queue the next planned buildings: the plan's warehouses too, in build order", () => {
+    const at = (type, eta, x) => ({ sid: athens.key, type, x, y: C.y + 1, eta });
+    const plan = { timeAware: true, placements: [at("BUILDING_LIBRARY", 12, 9), at("BUILDING_MARKET", 20, 7)], fillers: [at("BUILDING_GRANARY", 5, 8)] };
+    assert.deepEqual(actions.queueNextBuildings(plan, athens.key, 2).queued, ["BUILDING_GRANARY", "BUILDING_LIBRARY"]);
+    assert.deepEqual(actions.plannedInOrder({ ...plan, timeAware: false }, athens.key).map((p) => p.type), ["BUILDING_LIBRARY", "BUILDING_MARKET", "BUILDING_GRANARY"], "an untimed plan: by value, then the warehouses");
+});
+
 test("gold purchases: best value per gold first, within the treasury; Buy sends the purchase on the planned tile", () => {
     const advice = actions.purchaseAdvice(plans(), settings);
     assert.equal(advice.gold, 600);

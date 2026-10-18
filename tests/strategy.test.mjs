@@ -136,7 +136,22 @@ test("watch: no goal yet before mid-Exploration: no level; the table's multiple 
 
 test("culture victory off: no watch, so no overlay, even with a rival at 95% (decision 6)", () => {
     assert.deepEqual(victoryWatch([race({ enabled: false, board: [{ id: 5, points: 1480 }, { id: 2, points: 388 }] })], 0), []);
-    assert.deepEqual(victoryWatch([race({ cls: "SCIENCE", scoring: "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE" })], 0), [], "science is a fixed score, not a dominance race");
+    assert.deepEqual(victoryWatch([science({ enabled: false })], 0), [], "science off: no watch either");
+});
+
+// Science is a fixed score, which nobody's score holds back: the watch read only dominance races, so a rival two turns from
+// winning the science victory gave no entry (game 27: Xerxes's countdown ran M97-M102).
+const science = (o) => ({ cls: "SCIENCE", scoring: "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE", enabled: true, goal: 100, board: [{ id: 3, points: 103, dominant: true, turns: 2 }, { id: 0, points: 86 }, { id: 2, points: 60 }], ...o });
+
+test("watch: a rival in its science countdown is DANGER with its turns left; near 100 Innovation a WATCH; ours near it a CHANCE", () => {
+    const w = victoryWatch([science({})], 0).find((x) => !x.own);
+    assert.deepEqual([w?.cls, w?.leader, w?.level, w?.countdown, w?.points, w?.goal, w?.need, w?.ours], ["SCIENCE", 3, "DANGER", 2, 103, 100, null, 86]);
+    const near = victoryWatch([science({ board: [{ id: 3, points: 70 }, { id: 0, points: 40 }] })], 0);
+    assert.deepEqual(near.map((x) => [x.leader, x.level, x.countdown]), [[3, "WATCH", null]], "70 of 100");
+    const first = victoryWatch([science({ board: [{ id: 2, points: 110 }, { id: 3, points: 101, dominant: true, turns: 1 }, { id: 0, points: 50 }] })], 0)[0];
+    assert.deepEqual([first.leader, first.countdown], [3, 1], "the countdown that ends first, not the most points");
+    const own = victoryWatch([science({ board: [{ id: 0, points: 90 }, { id: 3, points: 40 }] })], 0).find((x) => x.own);
+    assert.deepEqual([own?.level, own?.need], ["CHANCE", 10]);
 });
 
 test("a rival near a culture win: one more wonder, any kind, worth more, explorers allowed, no Future Tech, in a science game", () => {
@@ -272,4 +287,27 @@ test("blocking a military countdown: the settlements that would hold the score t
     assert.equal(applyStrategy({ autopilot: { settlers: true } }, planStrategy(f, "SCIENCE", { watch: [lever] })).strategy.settleAnywhere, true);
     // Not a block: a culture or economic race has no settlements.
     assert.equal(victoryWatch([{ ...race, cls: "CULTURE" }], 0, { age: "AGE_MODERN", ageFrac: 0.85 }).find((x) => !x.own)?.block, undefined);
+});
+
+// Research/34 §6: game 28 had only the science victory on; the final push still filled the settlement cap (10 → 16 of 17,
+// one lost), 30 city-turns of settlers, and its capital trained Tanks for two new settlements.
+test("the final push fills the settlement cap only while settlements score (the military or the score victory on)", () => {
+    const modern = (o) => facts({ age: "AGE_MODERN", ageFrac: 0.1, finalAge: true, settlements: 10, cap: 17, cities: 6, towns: 4, ...o });
+    const on = planStrategy(modern({}), "SCIENCE");
+    assert.deepEqual([on.trainSettlers, on.fillCap, on.settleNear], [true, true, true], "as before");
+    const off = planStrategy(modern({ settlementsScore: false }), "SCIENCE");
+    assert.deepEqual([off.trainSettlers, off.fillCap, off.settleNear], [false, false, false], "10 of 17: past half the cap");
+    assert.equal(planStrategy(modern({ settlementsScore: false, settlements: 6 }), "SCIENCE").trainSettlers, true, "6 of 17: below half");
+    assert.equal(planStrategy(modern({ settlementsScore: false, settlements: 6, gate: { open: false, progress: 0.7 } }), "SCIENCE").trainSettlers, false, "Rocketry near: none");
+});
+
+// Research/35: cities a science or economic empire aims at before the final age (a video's model of the 1.4 rules).
+test("the city target by age: Antiquity 5, Exploration 6 then 8, none in the final age nor for culture", () => {
+    const at = (age, ageFrac, focus = "SCIENCE", o = {}) => planStrategy(facts({ age, ageFrac, ...o }), focus).cityTarget;
+    assert.equal(at("AGE_ANTIQUITY", 0.3), 5);
+    assert.deepEqual([at("AGE_EXPLORATION", 0.2), at("AGE_EXPLORATION", 0.6)], [6, 8]);
+    assert.equal(at("AGE_EXPLORATION", 0.6, "ECONOMIC"), 8);
+    assert.equal(at("AGE_EXPLORATION", 0.6, "CULTURE"), 0);
+    assert.equal(at("AGE_MODERN", 0.2, "SCIENCE", { finalAge: true }), 0);
+    assert.equal(applyStrategy({ autopilot: {} }, planStrategy(facts({ age: "AGE_ANTIQUITY", ageFrac: 0.3 }), "SCIENCE")).strategy.cityTarget, 5);
 });

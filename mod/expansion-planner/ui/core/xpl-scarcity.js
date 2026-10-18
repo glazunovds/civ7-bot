@@ -48,6 +48,29 @@ export function unhappinessDelta(weights, nets, from, to) {
     return (total / (1 - now)) * (unhappinessShare(to) - now);
 }
 
+/**
+ * What a change of `delta` Happiness from `from` is worth in the game's penalty on a settlement's other yields (positive:
+ * yields won back, negative: yields lost; `nets` as for unhappinessDelta). Exact while the penalty's share moves (5% a
+ * point). A settlement held at the 80% cap counts the cap's share of the way back: each point between it and zero is
+ * worth the cap over those points, so a gain there is not worth nothing, nor a further loss free. Research/34 §2: game
+ * 28's Kalhu sat at −33 all Modern, where a +5 building alone changes no share, and nothing was done about it; its
+ * yields lost 80%.
+ */
+export function happinessWorth(weights, nets, from, delta) {
+    if (!nets || !Number.isFinite(from) || !Number.isFinite(delta) || delta === 0) return 0;
+    const exact = -unhappinessDelta(weights, nets, from, from + delta);
+    if (!(from < 0)) return exact;
+    let total = 0;
+    for (const i of PENALISED) if (Number.isFinite(nets[i]) && nets[i] > 0) total += (weights[i] ?? 0) * nets[i];
+    if (!(total > 0)) return exact;
+    const now = unhappinessShare(from);
+    // The share each point below zero holds on the way back (5% until the cap, less beyond it).
+    const slope = now / -from;
+    const raw = total / (1 - now);
+    const path = raw * slope * (delta > 0 ? Math.min(delta, -from) : delta);
+    return delta > 0 ? Math.max(exact, path) : Math.min(exact, path);
+}
+
 /** Weight multiplier for paying `cost` of a yield the settlement has `net` per turn of. */
 export function costMultiplier(net, cost) {
     if (!Number.isFinite(net)) return 1;
@@ -68,17 +91,24 @@ export function gainMultiplier(net) {
 
 /**
  * Weighted value of a recurring gain (amounts by yield): food and happiness scaled down by what the settlement has
- * to spare (gainMultiplier); the other yields at the profile's weight. Losses (negative amounts) at full weight.
+ * to spare (gainMultiplier); the other yields at the profile's weight, less the share the game takes of them below zero
+ * Happiness (at `happinessAfter`, the settlement's Happiness once the gain and its upkeep are in; default: now plus the
+ * gain's own happiness). Losses (negative amounts) at full weight.
  * @param weights profile weights[7] @param gains number[7] @param nets number[7] | null (null: plain weights)
  */
-export function gainValue(weights, gains, nets) {
+export function gainValue(weights, gains, nets, { happinessAfter = null } = {}) {
+    // Research/34 §3: game 28's Nineveh at −23 took a specialist valued 19.6, and its science moved 26 → 27: the game took
+    // 80% of the new yields too.
+    const after = !nets ? NaN : Number.isFinite(happinessAfter) ? happinessAfter : nets[H] + Math.max(0, gains[H] || 0);
+    const kept = 1 - unhappinessShare(after);
     let v = 0;
     gains.forEach((g, i) => {
         if (!g) return;
         const m = nets && LOCAL.includes(i) && g > 0 ? gainMultiplier(nets[i]) : 1;
-        // Happiness in a settlement below zero also wins back the game's penalty on its other yields.
-        const won = nets && i === H && g > 0 ? -unhappinessDelta(weights, nets, nets[H], nets[H] + g) : 0;
-        v += (weights[i] ?? 0) * g * m + won;
+        const share = g > 0 && PENALISED.includes(i) ? kept : 1;
+        // Happiness in a settlement below zero also wins back the game's penalty on its other yields (happinessWorth).
+        const won = nets && i === H && g > 0 ? happinessWorth(weights, nets, nets[H], g) : 0;
+        v += (weights[i] ?? 0) * g * m * share + won;
     });
     return v;
 }
@@ -96,8 +126,8 @@ export function costValue(weights, costs, nets) {
         if (!c) return;
         const local = !!nets && LOCAL.includes(i) && c > 0;
         // Happiness pushed below zero: the game's penalty on the settlement's other yields when they are known (the
-        // happiness itself then at full weight), else SHORTAGE.
-        const penalty = local && i === H ? unhappinessDelta(weights, nets, nets[H], nets[H] - c) : 0;
+        // happiness itself then at full weight; at the 80% cap still the way back it adds: happinessWorth), else SHORTAGE.
+        const penalty = local && i === H ? -happinessWorth(weights, nets, nets[H], -c) : 0;
         const m = !local ? 1 : penalty > 0 ? 1 : costMultiplier(nets[i], c);
         v += (weights[i] ?? 0) * c * m + penalty;
     });

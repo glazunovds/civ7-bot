@@ -60,6 +60,19 @@ function queuedTypes(city) {
 }
 
 /**
+ * A settlement's planned buildings in the order they are to be built: the adjacency buildings and the warehouses (the
+ * plan keeps those apart, as fillers) by completion turn when the plan is timed, else the adjacency buildings first.
+ * The plan's connectors and lasting quarters may be warehouses: queuing only the others skipped them.
+ */
+export function plannedInOrder(plans, sid) {
+    const mine = (list) => (list ?? []).filter((q) => q.sid === sid);
+    const all = [...mine(plans?.placements), ...mine(plans?.fillers)];
+    if (!plans?.timeAware) return all;
+    // Stable: on the same turn the adjacency buildings keep their place ahead of the warehouses.
+    return all.map((p, i) => ({ p, i })).sort((a, b) => (a.p.eta ?? 0) - (b.p.eta ?? 0) || a.i - b.i).map((x) => x.p);
+}
+
+/**
  * Queues a city's next planned buildings (plan order) at their planned tiles, skipping
  * those already queued and those the game refuses there now (a future tile, locked...).
  * @returns { queued: [type], refused: number }
@@ -70,7 +83,7 @@ export function queueNextBuildings(plans, sid, max = QUEUE_MAX_NEW, { skip = nul
     const inQueue = queuedTypes(city);
     const queued = [];
     let refused = 0;
-    for (const p of plans.placements.filter((q) => q.sid === sid)) {
+    for (const p of plannedInOrder(plans, sid)) {
         if (queued.length >= max) break;
         if (inQueue.has(p.type) || p.locked || skip?.(p.type)) continue;
         const def = GameInfo.Constructibles.lookup(p.type);

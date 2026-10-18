@@ -185,3 +185,22 @@ test("the game's experience and army parameters are logged once (their values ar
     assert.equal(logged.length, 1, JSON.stringify(lines));
     assert.match(logged[0], /EXPERIENCE_MAX_BARB_LEVEL=2, ARMY_MAX_UNITS=4$/);
 });
+
+test("a commander's radius is the game's own (Units.getCommandRadiusPlots): an archer 2 tiles away joins Focus Fire (research/36 §6)", async () => {
+    const raider = { x: 7, y: 5, owner: 1, type: "UNIT_WARRIOR" };
+    const result = (_id, op) => ({ Success: false, Plots: op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED" ? [idx(raider.x, raider.y)] : [] });
+    const archers = [{ id: 2, type: "UNIT_ARCHER", x: 3, y: 5, ranged: 20, melee: 10 }, { id: 3, type: "UNIT_ARCHER", x: 6, y: 5, ranged: 20, melee: 10 }];
+    const base = { wars: [1], enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] };
+    const focus = () => orders().find((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED");
+    try {
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], base);
+        await units.strikeRaiders();
+        assert.equal(focus(), undefined, "radius 1 without Merit: one archer in it");
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], { ...base, commandRadius: () => [ATHENS, { x: 4, y: 5 }, { x: 3, y: 5 }, { x: 6, y: 5 }].map((p) => idx(p.x, p.y)) });
+        const r = await units.strikeRaiders();
+        assert.deepEqual([focus()?.args.X, focus()?.args.Y], [raider.x, raider.y], JSON.stringify(orders()));
+        assert.deepEqual(r.entries.map((e) => [e.key, e.args[4]]), [["FOCUS_FIRE", 2]]);
+    } finally {
+        delete world.commandRadius;
+    }
+});

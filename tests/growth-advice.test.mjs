@@ -149,3 +149,26 @@ test("a specialist that would take the city below zero Happiness pays the game's
         urbanHappiness = 0;
     }
 });
+
+// Below zero Happiness the game takes a share of the new yields too: at the 80% cap a specialist's own science counts a
+// fifth, and the penalty it adds is nothing (research/34 §3: game 28's Nineveh at −23 took one valued 19.6, and its
+// science moved 26 → 27).
+test("in a city at the unhappiness cap a specialist's own yields count at what the city keeps: the tile wins", () => {
+    const city = world.cities[0];
+    urbanScience = 20;
+    urbanHappiness = 6;
+    try {
+        Object.assign(city, { food: 40, prod: 30, nets: { YIELD_GOLD: 20, YIELD_SCIENCE: 40, YIELD_CULTURE: 10 } });
+        city.happy = -23;
+        const a = growthAdvice(athens().id, DEFAULT_SETTINGS);
+        assert.equal(a.choice, "TILE", `tile ${a.best.score} vs specialist ${a.bestSpecialist.gain}`);
+        const urban = a.specialists.find((s) => s.x === URBAN.x && s.y === URBAN.y);
+        city.happy = 30;
+        const calm = growthAdvice(athens().id, DEFAULT_SETTINGS).specialists.find((s) => s.x === URBAN.x && s.y === URBAN.y);
+        assert.ok(urban.gain < calm.gain - 10, `at −23 ${urban.gain}, at 30 ${calm.gain}`);
+    } finally {
+        for (const k of ["food", "prod", "nets", "happy"]) delete city[k];
+        urbanScience = 6;
+        urbanHappiness = 0;
+    }
+});

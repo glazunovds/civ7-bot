@@ -207,7 +207,11 @@ export function installFakeEngine(world, age = "antiquity") {
             Gold: { getTownUpgradeCost: () => c.cost ?? 300, getBuildingPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250, getUnitPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250 },
             Production: {
                 getConstructibleProductionCost: (type) => world.costOf?.(type) ?? 100,
-                getProjectProductionCost: (type) => world.costOf?.(typeof type === "string" ? type : info.Projects.lookup(type)?.ProjectType) ?? 100,
+                // Like the game: a project's own Cost (Preparation 2000, Launch Satellite 1000), unless the test prices it.
+                getProjectProductionCost: (type) => {
+                    const def = info.Projects.lookup(type);
+                    return world.costOf?.(typeof type === "string" ? type : def?.ProjectType) ?? (Number(def?.Cost) || 100);
+                },
                 getUnitProductionCost: (type) => world.costOf?.(typeof type === "string" ? type : info.Units.lookup(type)?.UnitType) ?? 100,
             },
             BuildQueue: makeQueue(c),
@@ -435,6 +439,8 @@ export function installFakeEngine(world, age = "antiquity") {
     }));
     const enemyIds = () => (world.enemies ?? []).map((e, i) => ({ id: { owner: e.owner ?? 1, id: 1000 + i, type: 1 }, e }));
     g.Units = {
+        // world.commandRadius(unitId) -> plot indices of a commander's radius (Units.getCommandRadiusPlots; default none)
+        getCommandRadiusPlots: (id) => world.commandRadius?.(id) ?? [],
         // world.units[i].dest = {x, y}: a move order the unit keeps (its activity OPERATION)
         getQueuedOperationDestination: (id) => (world.units ?? []).find((u) => u.id === id?.id && (id?.owner ?? 0) === 0)?.dest ?? null,
         get: (id) => unitObjects().find((u) => u.id.owner === id?.owner && u.id.id === id?.id)
@@ -691,6 +697,8 @@ export function installFakeEngine(world, age = "antiquity") {
         };
         // world.wonderArtifacts = [feature index] (natural wonders that still hold an artifact)
         p.Stats.hasNaturalWonderArtifact = (feature) => (world.wonderArtifacts ?? []).includes(feature);
+        // Another player's units: its world.enemies (owner = its id), as Units.get answers them.
+        if (p.id !== 0) p.Units = { getUnits: () => enemyIds().filter(({ id }) => id.owner === p.id).map(({ id }) => g.Units.get(id)) };
         if (p.id === 0) {
             p.Units = { getUnits: unitObjects };
             // world.resources = [{ value, type, offMap }] (the player's resources); world.resourcesLocked

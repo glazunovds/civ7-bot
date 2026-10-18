@@ -61,7 +61,7 @@ See the root `CLAUDE.md` first (commands, game loop, gotchas). The mod is `mod/e
   - **Compatibility:** works with Drongo's Compact Production (`.drongo-compact-action-wrap`) and the base menu. It refreshes on events and polls every 500 ms while the menu is open, recomputing only when its signature changes.
 
 ## Planner model essentials (`core/xpl-placement-model.js`, `PlanState`)
-- **Tiles:** tiles are assigned to settlements; slots come from `Districts.MaxConstructibles` (urban and city centre: 2). Urban growth must touch the settlement's urban tiles or centre (`isConnected(sid)`). The plan allows one of each building per settlement (unless `MultiplePerCity`), and never puts a building on a wonder tile.
+- **Tiles:** tiles are assigned to settlements; slots come from `Districts.MaxConstructibles` (urban and city centre: 2). Urban growth must touch the settlement's urban tiles or centre (`isConnected(sid)`), in build order: a tile the plan makes urban touches the urban area standing by the turn its first building is done (`urbanTime`; research/33 §8). A tile's `districtTime` follows its earliest building after moves. The plan allows one of each building per settlement (unless `MultiplePerCity`), and never puts a building on a wonder tile.
 - **`tileValue`:**
   - planned items' base yields + `extraValue`;
   - adjacency (timed: a neighbour counts from when it exists);
@@ -77,7 +77,7 @@ See the root `CLAUDE.md` first (commands, game loop, gotchas). The mod is `mod/e
   - `RiverPlacement` (RIVER = river on the tile; OFF_COAST = coast touching land; ANCHORED = navigable river or coast touching land);
   - `AdjacentRiver` / `AdjacentLake` / `AdjacentTerrain`, `NoRiver`, `NoFeature`.
   - A land building that lists `ValidTerrains` (the Modern Airfield: `TERRAIN_FLAT`) still needs an urbanizable tile: no resource, mountain, natural wonder or impassable feature.
-  For owned tiles the engine's yes or no wins. Towns (and towns planned as cities) only get the game's PURCHASE answer, which says nothing about city-only buildings: there our rules are the only guard.
+  For owned tiles the engine's yes or no wins, but its no only in or next to the urban area standing now (`touchesBuiltUrban`): beyond it the game lists nothing yet, and the plan's connectors may open a tile (research/33 §9). Towns (and towns planned as cities) only get the game's PURCHASE answer, which says nothing about city-only buildings: there our rules are the only guard.
 - **Constants:** tuning lives in `core/xpl-tuning.js` (sites, towns) and at the top of `data/xpl-building-job.js` (plan timing, region, warehouses).
 
 ## Speed (building plans)
@@ -250,6 +250,50 @@ Measured in the log line `buildings timing:`:
       - `holdsWonder(city)`: a wonder in its queue, or a `wonderOrders` entry of this turn, with a UI.log line once a turn per city.
       - Checked by `victoryPurchases`, `buyBuildings`, `buyGoal`, `codexGoals`, `gdpGoals`, `siteGoals`, `repairBuildings` (the buy branch) and `fortifyThreatened` (unless `real`: a war at our door, 2+ land raiders or a damaged centre).
       - `buyAgeEndItems`, units and town conversions are not held back.
+  - The review after game 27 (research/33; root CLAUDE.md gotchas 5, 25, 58, 59):
+    - **A rival's science countdown:**
+      - `victoryWatch` watches fixed-score races too (`fixedWatch`: `fixed`, no `need`; tab `LOC_XPL_AP_WATCH_FIXED*`, log RIVAL_NEAR_WIN_FIXED).
+      - `rivalWinTurns()` (data/xpl-victory.js) caps `ageOutlook().turnsLeft` (`rivalWin`) and the town job's `ageTurnsLeft`.
+    - **The space race:**
+      - `innovationNeed()` (data/xpl-victory.js) gives the Innovation still missing.
+      - `spaceRace(cities, extra)` builds each city's runs: the queued projects (`lock`: one under way), `wait` for the items ahead, Preparation as `repeat` with a Launch Pad, the Airfield's flights. `projectInnovation` reads the game's completion modifiers, else `PROJECT_INNOVATION`.
+      - Core: `innovationReach`, `oneOffNext`, `REACH_MAX_TURNS` 300 (capped by the game's end).
+    - **One-offs near the goal:** `pushVictoryWork` fills `nextOneOff` (sid → project) before the projects. Those go first in the loop, and `victoryRanks(levers, nextOneOff)` ranks them at PREP − 0.5. UI.log `victory work: <project> ahead of Crewed Space Flight Preparation in <city>: N Innovation still needed`.
+    - **Production first:**
+      - `productionFirstIn(city, work)` is the per-city half of `productionFirstStep`.
+      - Its work is `spaceWork(race, sid)`: the runs this city finishes before the need is met. The PRODUCTION_FIRST entry's last number is that work.
+      - `placeSite` weighs it before a city's first science site is ordered (`spaceWorkIn`, `extras`).
+    - **Tiles:** `bestPlotFor` → `pickPlot(city, typeHash, plots, best)` → `planTiles` (the plan's own tile, the tiles it keeps for others and its wonder anchors).
+    - **The plan's order:** `plannedInOrder(plans, sid)` (data/xpl-city-actions.js) feeds `queueNextBuildings`. `fillProduction` skips a path's building that is not `leverSoon` (`slowLever`), in the plan, the advisor and the fallback.
+  - Game 28 (research/34; the video's claims: research/35; root CLAUDE.md gotchas 24, 25, 31, 44, 45, 46, 60):
+    - **Happiness in each settlement:**
+      - `happinessWorth(weights, nets, from, delta)` (core/xpl-scarcity.js): exact while the share moves; at the cap, its share of the way back.
+      - `gainValue(…, { happinessAfter })` counts penalised gains at what the city keeps. The growth job passes the specialist's Happiness after its upkeep.
+      - The building job: module-level `netsOf`, and `happinessRecovery(members, selected, rules, weights)` → `extraValue`. The context carries `recoveryOf`; the rows carry `recovery`, which is in `net`.
+      - Choices: `leverContext().settlements` (`settlementHappiness`: nets, specialists, their Happiness and Food upkeep, and building upkeep when asked). `happinessChange(modifierIds, s)`, then `localHappiness(…, { active })` in `cardValue(type, weights, levers, { active })`. `swapOnePolicy` values the slotted card `active`.
+      - Crisis cards: `happinessLoss` weighs the Happiness ×1 where the penalty is priced.
+    - **Production first:** `effective(p, upkeep)` in `productionFirst`: kept production plus `happinessWorth` on production alone.
+    - **Space sites:**
+      - `siteHelps(cities, city, type, extra, { bought })` in `placeSite` (`needed` for the victory's own pad) and in `victoryPurchases`' `missing`.
+      - `spaceRace(…, { instant })` for bought sites; a site that is `ahead` is not waited for twice.
+    - **The final push:** `strategyFacts().settlementsScore` (military victory not off, or score victory on); `SETTLERS_GATE_NEAR` 0.6 in core/xpl-strategy.js.
+    - **Defenders:** `trainDefenders` sorts space cities last (`spaceLast`).
+    - **Cities:**
+      - `CITY_TARGETS` and `cityTarget(focus, age, ageFrac)` set the plan's `cityTarget` (strategy, tooltip LOC_XPL_AP_STRATEGY_TT_CITY_TARGET).
+      - `conversionRule({ …, cityTarget, healthy })` gets `healthy` from `citiesHealthy()`.
+      - `conversionsFrom` and `goldPlan` pass both.
+    - **Military buildings:** `isMilitaryBuilding` is MILITARY and not PRODUCTION.
+  - Game 29 (research/36; root CLAUDE.md gotcha 61):
+    - **Threats:** `threatenedSettlements` adds `air`, `close`, `strong` (a land raider stronger than every melee guard of ours within GUARD_RADIUS; `unitStrength`) and `strongest`. `earlyWarning(t)`: `strong` alone, nothing within THREAT_CLOSE, centre intact.
+    - **Guards:** `guardDetail(t, units, threats, {ranged})` → `{present, incoming: [{u, turns}]}`; `guardProgress(u, goal)` (memoised per unit, turn, tile, activity and destination). `guardsFor(…, {within})`; `guardDeadline(t)`. Guard goals carry `tile`, `turn` and `front`; `commandUnits` drops stale ones and those of settlements no longer threatened or fronts.
+    - **The plan:** `defenceDemands` → `defenceSupply` (spare guards, `restedByUs`) → `postFor` (melee: nearest the settlement; ranged: off the centre, away from the raiders) → `planDefence` fills `ctx.posts`; `reinforce` sends a unit to its post (STAGED or REINFORCE) after `wakeUnit`. `logDefence` writes the `defence:` lines.
+    - **Fronts:** `steps.warFronts()` (FRONT_HOLD_TURNS 5, FRONTS_PER_RISK 2); the hud passes `fronts` to `commandUnits` with «Оборона»; `FRONT_GUARDS` 1, `STAGE_RADIUS` 2.
+    - **Wants:** `guardsWanted` +1 when `strong`; `rangedWanted(t, {support})` adds one against `RANGED_SUPPORT_LAND` 2 land raiders.
+    - **Purchases:** `buyDefenders` uses one pool (all the gold less `DEFICIT_KEEP_TURNS` 3 turns of a deficit), counts guards within `guardDeadline`, remembers `defenderBought` (per role, this turn) and logs the cheapest unit (`cheapestDefender`) when it buys none.
+    - **Training:** `trainDefenders` ranks cities by training + walk (`travelTurns`, BaseMoves), `DEFENDER_ARRIVAL_TURNS` 16; `trainedFor` keeps the defender queued for each settlement; a queued soldier of the right role in time covers one settlement (`claimed`).
+    - **Walls and towns:** `fortifyThreatened` and `setTownFocus` skip an early warning.
+    - **Air:** `airAttack` (units), `AIR_STRIKE_RADIUS` 6, aircraft skip `stepAside`; `hostileAircraftNear()` (`AIR_WATCH_RADIUS` 10, visible tiles); `unitsWanted` QUEUED_INTERCEPTOR (`isInterceptor`, `strongestOrder`, `AIR_GUARDS_MAX` 2) before QUEUED_MELEE; `frontLoadUnits` treats interceptors as wanted at war.
+    - **Commanders:** `commanderAttacks` takes the radius from `Units.getCommandRadiusPlots` (indices or locations), else 1 + Merit.
   - Probe diagnostics (research/21 §2, UI.log only): `strike: SimulateCombatResult N ms after our request; token …, ours …, match …` for every answer, `no SimulateCombatResult within N ms` (the turn's first simulation waits 2000 ms, `SIMULATE_FIRST_WAIT_MS`) and `simulateAttackAsync gave no token` (P1); `sites: … villages N seen, M unseen` and `settle: founding at x,y; nearest village D tiles … (type, seen|UNSEEN, relationship, friendly)` (`villagesOf` now also returns `type` and `revealed`) (P2); `urban center: <town> may buy: BUILDING_X yes|gold|no/<tiles> (reasons)…` once a turn for towns with the Urban Center Focus (`logUrbanCenters`, P3).
   - Gold income below zero (`steps.goldIncome()`; seen in game 6: crisis cards doubled unit upkeep, income −13, the reserve was 0 and purchases emptied the treasury while Horsemen were still trained): `goldReserve` keeps `DEFICIT_RESERVE_TURNS` 10 turns of the deficit (cap 1000); no strong-melee unit (QUEUED_MELEE), no garrison for an exposed settlement, none of the advisor's soldiers (`unitWanted`), upgrades only for units near a threatened settlement. Defenders for a threatened settlement are still trained and bought.
   - Expansion first (`expandingFirst(settlersOn)`: Antiquity, «Поселенцы», `numSettlements < settlementCap`, and expansion is real: a settler walks to a site (`settlerGoals`) or one is in a city's queue; sites known alone do not hold wonders, research/22 B5): `chooseWonders(…, {settlers})` picks none; one already in production carries on. Science projects are not held (research/21 D4; seen in game 6: Spherical Earth waited): settlers go ahead of them anyway (`unitSlot`).

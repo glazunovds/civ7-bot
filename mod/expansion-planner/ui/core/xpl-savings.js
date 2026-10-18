@@ -147,11 +147,14 @@ export function noteGoalBought(memory, key, turn) {
  * Which towns may become cities (decision 3, research/21 §9): cities and towns 1 to 1 is a floor,
  * not a cap. While towns outnumber cities any town may (the best first); at 1:1 or more cities only
  * a town the Towns tab rates CONVERT on its yields. `minCities` (the strategy: science in the final age
- * wants a city for every Launch Pad) also counts as below the floor. @returns { floor, verdicts or null (any) }
+ * wants a city for every Launch Pad) also counts as below the floor, and so does `cityTarget` (the strategy's cities for
+ * the age: research/35) while every city stands at or above zero Happiness (`healthy`: the cities we have come first,
+ * research/34 §2). @returns { floor, verdicts or null (any) }
  */
-export function conversionRule({ cities = 0, towns = 0, minCities = 0 } = {}) {
+export function conversionRule({ cities = 0, towns = 0, minCities = 0, cityTarget = 0, healthy = true } = {}) {
     if (towns <= 0) return { floor: false, verdicts: [] };
-    return towns > cities || cities < minCities ? { floor: true, verdicts: null } : { floor: false, verdicts: CONVERT_VERDICTS_PAST_FLOOR };
+    const target = healthy && cities < cityTarget;
+    return towns > cities || cities < minCities || target ? { floor: true, verdicts: null } : { floor: false, verdicts: CONVERT_VERDICTS_PAST_FLOOR };
 }
 
 const VERDICT_RANK = { CONVERT: 0, CONSIDER: 1, WAIT: 2, KEEP: 3 };
