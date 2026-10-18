@@ -22,6 +22,7 @@ import { RELAXED_MIN_PICKS } from '../core/xpl-tuning.js';
 import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
 import { goldBalance } from '../data/xpl-city-actions.js';
+import { probeDistricts } from '../data/xpl-growth-job.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
 import { commandUnits, disbandSurplus, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
@@ -741,6 +742,8 @@ export async function runTurn(force = false) {
         if (full) await guarded("economy", () => steps.logEconomy(s));
         // UI.log probes for the next military phases: armies, reinforcements, aircraft (research/37 §3F).
         if (full) await guarded("probes", () => probeMilitary());
+        // How close our urban districts come to the age's science triumph mark (growth.probeDistricts; game 35).
+        if (full) await guarded("probes", () => probeDistricts());
         // For the next age's first turn: this age's cities (its cheap conversions) and that the autopilot was on (it switches
         // itself on again there: resumeAfterAgeChange).
         if (full) await guarded("memory", () => {

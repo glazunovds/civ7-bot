@@ -17,8 +17,9 @@ import { profileFor } from '../core/xpl-profiles.js';
 import { dot, yieldIndex, YIELD_KEYS, F, G, H } from '../core/xpl-yields.js';
 import { improvementKind } from '../core/xpl-town-focus.js';
 import { costValue, gainValue } from '../core/xpl-scarcity.js';
-import { highYieldBonus, highYieldTarget, RESOURCE_TILE_VALUE } from '../core/xpl-victory-levers.js';
+import { HIGH_YIELD_COUNT, highYieldBonus, highYieldTarget, RESOURCE_TILE_VALUE } from '../core/xpl-victory-levers.js';
 import { state } from '../services/xpl-state.js';
+import { log } from '../services/xpl-log.js';
 
 export const PLAN_TILE_BONUS = 2;    // least weighted value of claiming a tile a planned building needs
 export const PLAN_VALUE_SHARE = 0.5; // ... else this share of that building's value per turn (it could also be claimed later)
@@ -72,16 +73,60 @@ function plannedTiles() {
  */
 /** Each of our urban tiles' (not a city centre) total yield: how many reach the science marks already. */
 function urbanTotals(pid) {
+    return urbanTiles(pid).map((t) => t.total);
+}
+
+/** Our urban tiles (DISTRICT_URBAN, never a centre): { city, x, y, idx, total }, with `workers` the specialists' { now, max }. */
+function urbanTiles(pid, { workers = false } = {}) {
     const out = [];
     for (const c of safe(() => Players.get(pid).Cities.getCities(), []) ?? []) {
+        const slots = new Map();
+        if (workers) for (const w of safe(() => c.Workers.GetAllPlacementInfo(), []) ?? []) slots.set(w.PlotIndex, w);
         for (const idx of safe(() => c.getPurchasedPlots(), []) ?? []) {
             const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             const d = loc ? safe(() => Districts.getAtLocation({ x: loc.x, y: loc.y }), null) : null;
             if (!d || safe(() => GameInfo.Districts.lookup(d.type)?.DistrictType, null) !== "DISTRICT_URBAN") continue;
-            out.push((safe(() => GameplayMap.getYields(idx, pid), []) ?? []).reduce((sum, [, amount]) => sum + (Number(amount) || 0), 0));
+            const total = (safe(() => GameplayMap.getYields(idx, pid), []) ?? []).reduce((sum, [, amount]) => sum + (Number(amount) || 0), 0);
+            const w = slots.get(idx);
+            out.push({ city: safe(() => Locale.compose(c.name), "?"), x: loc.x, y: loc.y, idx, total, workers: w ? { now: Number(w.NumWorkers) || 0, max: Number(w.MaxWorkers) || 0 } : null });
         }
     }
     return out;
+}
+
+// ---- the district probe (game 35) ----------------------------------------------------------------------------------------
+// Each age has a science triumph for HIGH_YIELD_COUNT 5 urban districts (not the centre) yielding at least a mark in all:
+// Antiquity 30 (LEGACY_AQ_SCIENTIFIC_2), Exploration 75 (LEGACY_EX_SCIENTIFIC_1), Modern 120 (LEGACY_MO_SCIENTIFIC_4,
+// «Составная прибыль»: +50% production for projects). The growth step aims specialists at the mark (highYieldTarget), but
+// nothing said how close the districts came (game 35: 0 of 5 in Modern). UI.log gives our count, the game's own progress
+// (does our sum of the tile's yields match its rule?) and the best tiles with their specialists, when that changes.
+export const DISTRICT_TRIUMPHS = Object.freeze({
+    AGE_ANTIQUITY: { mark: 30, legacy: "LEGACY_AQ_SCIENTIFIC_2" },
+    AGE_EXPLORATION: { mark: 75, legacy: "LEGACY_EX_SCIENTIFIC_1" },
+    AGE_MODERN: { mark: 120, legacy: "LEGACY_MO_SCIENTIFIC_4" },
+});
+const DISTRICT_PROBE_TILES = 6;
+let districtProbe = { turn: -1, line: null };
+
+/** Writes the district probe to UI.log (above): at most once a turn, only when the line changes. @returns the line, or null */
+export function probeDistricts() {
+    if (districtProbe.turn === Game.turn) return null;
+    districtProbe.turn = Game.turn;
+    const t = DISTRICT_TRIUMPHS[safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, "")];
+    if (!t) return null;
+    const pid = GameContext.localPlayerID;
+    const legacies = safe(() => Players.get(pid).Legacies, null);
+    if (safe(() => legacies?.isTriggered(t.legacy), false)) return null; // reached: nothing to watch
+    const tiles = urbanTiles(pid, { workers: true }).sort((a, b) => b.total - a.total);
+    const ours = tiles.filter((x) => x.total >= t.mark).length;
+    const p = safe(() => legacies?.getProgress(t.legacy)?.progress?.[0], null);
+    const game = p ? `${Number(p.current) || 0}/${Number(p.total) || 0}` : "?";
+    const best = tiles.slice(0, DISTRICT_PROBE_TILES).map((x) => `${x.city} ${x.x},${x.y} ${Math.round(x.total)}${x.workers ? ` s${x.workers.now}/${x.workers.max}` : ""}`);
+    const line = `districts: ${ours} of ${HIGH_YIELD_COUNT} urban districts at ${t.mark}+ (the game: ${game}, ${t.legacy}); best: ${best.join(", ") || "none"}`;
+    if (line === districtProbe.line) return null;
+    districtProbe.line = line;
+    log.info(line);
+    return line;
 }
 
 export function growthAdvice(cityID, settings, { focusKind = null, victory = null } = {}) {

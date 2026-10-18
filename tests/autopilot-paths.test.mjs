@@ -381,3 +381,40 @@ test("a codex mastery is wanted only with room for the codex: empty great-work s
         world.research = { tech: { available: [] }, culture: { available: [] } };
     }
 });
+
+// Game 35: Modern's «Составная прибыль» (5 urban districts at 120+: +50% production for projects) stood at 0 of 5, and no
+// line said how close the districts came.
+test("the district probe: our urban districts at the age's mark, the game's own count, the best tiles and their specialists, when it changes", async () => {
+    const growth = await import("../mod/expansion-planner/ui/data/xpl-growth-job.js");
+    const lines = [];
+    const info = console.log;
+    const warn = console.warn;
+    const player = Players.get(0);
+    const turn = Game.turn;
+    world.structures = (x, y) => ({ district: [NEAR, FAR].some((p) => p.x === x && p.y === y) ? "DISTRICT_URBAN" : x === ATHENS.x && y === ATHENS.y ? "DISTRICT_CITY_CENTER" : null, constructibles: [] });
+    world.workers = (c) => (c.name === "Athens" ? [{ PlotIndex: idx(NEAR), NumWorkers: 1, MaxWorkers: 2 }] : []);
+    player.Legacies = { isTriggered: () => false, getProgress: (t) => (t === "LEGACY_AQ_SCIENTIFIC_2" ? { progress: [{ current: 1, total: 5 }] } : null) };
+    console.log = console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        Game.turn = turn + 1;
+        const line = growth.probeDistricts();
+        assert.ok(line?.includes("districts: 1 of 5 urban districts at 30+ (the game: 1/5, LEGACY_AQ_SCIENTIFIC_2)"), line);
+        assert.ok(line.includes(`Athens ${NEAR.x},${NEAR.y} 36 s1/2`) && line.includes(`Athens ${FAR.x},${FAR.y} 20`), line);
+        assert.ok(!line.includes(`${ATHENS.x},${ATHENS.y}`), "the centre is no district");
+        assert.equal(growth.probeDistricts(), null, "once a turn");
+        Game.turn = turn + 2;
+        assert.equal(growth.probeDistricts(), null, "the same line: not again");
+        player.Legacies.isTriggered = () => true;
+        player.Legacies.getProgress = () => ({ progress: [{ current: 5, total: 5 }] }); // a line that would differ
+        Game.turn = turn + 3;
+        assert.equal(growth.probeDistricts(), null, "reached: nothing to watch");
+        assert.equal(lines.filter((l) => l.includes("districts:")).length, 1);
+    } finally {
+        console.log = info;
+        console.warn = warn;
+        Game.turn = turn;
+        delete world.structures;
+        delete world.workers;
+        delete player.Legacies;
+    }
+});
