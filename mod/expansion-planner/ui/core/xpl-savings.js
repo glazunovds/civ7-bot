@@ -102,7 +102,9 @@ export function chooseGoal(candidatesByKind, order, { memory = {}, turn = 0, hav
         for (const c of candidatesByKind?.[kind] ?? []) {
             if (!c || !(Number(c.cost) > 0)) continue;
             if (!goalAllowed(memory, c.key, turn)) continue;
-            if (!withinReach(Number(c.hold ?? c.cost), have, income, Math.min(c.anyHorizon ? Infinity : GOAL_HORIZON, ageEnd))) continue;
+            // A goal sized to what the gold reaches (`sized`: the bank for the next age) is never out of reach; checked again,
+            // a rounded gold or income dropped it (game 32: E64-E69 lost the Modern bank to a University goal).
+            if (!c.sized && !withinReach(Number(c.hold ?? c.cost), have, income, Math.min(c.anyHorizon ? Infinity : GOAL_HORIZON, ageEnd))) continue;
             return { kind, ...c };
         }
     }

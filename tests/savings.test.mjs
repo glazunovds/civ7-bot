@@ -94,6 +94,11 @@ test("a goal within reach: covered now, or at most 12 turns of a positive income
     assert.equal(withinReach(500, 200, 25), true, "12 turns");
     assert.equal(withinReach(500, 200, 20), false, "15 turns");
     assert.equal(withinReach(500, 200, -5), false);
+    // A goal sized to what the gold reaches (the bank for the next age) is not checked again: rounded, it fell a hair
+    // beyond the age's end (game 32, E64-E69).
+    const bank = { key: "MODERN_BANK", cost: 1088, hold: 1088 };
+    assert.equal(chooseGoal({ BANK: [bank] }, ["BANK"], { have: 500.4, income: 117.4, turnsLeft: 6 }), null, "587.6 over 117.4 a turn: 5.005 turns");
+    assert.equal(chooseGoal({ BANK: [{ ...bank, sized: true }] }, ["BANK"], { have: 500.4, income: 117.4, turnsLeft: 6 })?.key, "MODERN_BANK");
     const goal = chooseGoal({ PADS: [{ key: "bank", cost: 7000, hold: 400 }] }, ["PADS"], { have: 200, income: 25 });
     assert.equal(goal?.key, "bank", "the bank holds 400 now");
 });

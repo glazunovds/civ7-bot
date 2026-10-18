@@ -548,8 +548,11 @@ export async function runTurn(force = false) {
             exposed: o.defend ? steps.exposedSettlements(threats) : [],
             explorers: o.explorers ?? !!o.explore, trainSettlers: o.trainSettlers ?? !!o.settlers, strategy: s.strategy ?? null,
         };
-        const victoryQueued = new Map(); // sid -> types the victory step queued this pass (H2)
         const produce = async () => {
+            // sid -> types the victory step queued in this run (H2: the game's isEmpty is stale until it handles them). Fresh for
+            // each end-of-turn retry: by then the game has handled them, and one it refused must not keep a queue empty (game
+            // 32, E64: Liverpool's empty queue was skipped in every retry and «Выбрать производство» held the turn).
+            const victoryQueued = new Map();
             record(await replanIfDue(s));
             // The victory focus's own work first (science projects and a Launch Pad; the path's buildings of this age).
             if (focus) record(steps.pushVictoryWork(focus, { settlers: !!o.settlers, pads: s.strategy?.pads ?? null, queued: victoryQueued }));

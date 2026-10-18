@@ -984,6 +984,21 @@ test("near Rocketry a city kept for a Launch Pad starts no building that would s
         fake.sent.length = 0;
         steps.fillProduction(new Map(), commit(0.4));
         assert.deepEqual(queued(0), ["BUILDING_CITY_PARK"], "Rocketry still far: the cheapest");
+        // The plan's own Launch Pad is never held back for room (game 32: «keeps room for its Launch Pad: no BUILDING_LAUNCH_PAD»).
+        state.set({ results: { ...state.get().results, plans: { placements: [{ sid: `c:${PARIS.x}-${PARIS.y}`, type: "BUILDING_LAUNCH_PAD", x: 4, y: 4 }], fillers: [] } } });
+        const lines = [];
+        const warn = console.warn;
+        const info = console.log;
+        console.warn = console.log = (...a) => lines.push(a.join(" "));
+        Game.turn += 1;
+        try {
+            steps.fillProduction(new Map(), commit(0.9));
+        } finally {
+            console.warn = warn;
+            console.log = info;
+            Game.turn -= 1;
+        }
+        assert.ok(!lines.some((l) => l.includes("no BUILDING_LAUNCH_PAD")), lines.filter((l) => l.includes("keeps room")).join(" | "));
     } finally {
         world.canBuild = canBuild;
         paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
@@ -1663,6 +1678,23 @@ test("a Crewed Space Flight Preparation run within 3 turns of done keeps the fro
         for (const k of ["canBuy", "costOf"]) delete world[k];
         delete paris.queued;
         paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+    }
+});
+
+// Game 32, E64: Liverpool's damaged University was repaired with gold, the same pass ordered it again (the game offers a damaged
+// building as its repair), the game refused, and the empty queue held the turn.
+test("the victory step never orders a building the city has: a damaged one is the repairs' to buy or queue", () => {
+    const structures = world.structures;
+    const canBuild = world.canBuild;
+    world.structures = (x, y) => (x === 2 && y === 3 ? { district: null, constructibles: ["BUILDING_SCHOOLHOUSE"] } : { district: null, constructibles: [] });
+    world.canBuild = (type, id, args) => (type === "BUILDING_SCHOOLHOUSE" && id.id === 0 ? { Success: true, RepairDamaged: true, Plots: [idx(2, 3)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+    try {
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.ok(!builds().some(([id, t]) => id === 0 && t === C("BUILDING_SCHOOLHOUSE")), JSON.stringify(builds()));
+    } finally {
+        world.structures = structures;
+        world.canBuild = canBuild;
     }
 });
 

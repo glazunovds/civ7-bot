@@ -109,7 +109,9 @@ function withOverlay(plan, focus, watch, finalAge = false) {
     if (danger.length === 0) return plan;
     // A culture leader is blocked only by holding `need` ourselves: wonders and the rest are spent only when that is
     // within CULTURE_BLOCK_REACH points (game 16: 97 against about 255, and Dogo Onsen took the capital).
-    const acting = danger.filter((w) => w.own || w.cls !== "CULTURE" || cultureBlockable(w));
+    // An economic leader the same way: our GDP within ECONOMIC_BLOCK_SHARE of the score that blocks it (game 32: a Port bought
+    // for 972 at M29 against Franklin's 2,858 when ours was 878).
+    const acting = danger.filter((w) => w.own || (w.cls !== "CULTURE" || cultureBlockable(w)) && (w.cls !== "ECONOMIC" || economyBlockable(w)));
     const out = { ...plan, noFutureTech: true, overlay: [...new Set(acting.map((w) => w.cls))] };
     if (out.overlay.includes("CULTURE")) {
         // Launch Pad cities stay out of wonders (the science push's best producers).
@@ -141,6 +143,17 @@ function cultureBlockable(w) {
     const ours = Number(w.ours);
     if (!Number.isFinite(need) || !Number.isFinite(ours)) return true;
     return need - ours <= CULTURE_BLOCK_REACH;
+}
+
+// An economic block is worth gold buildings only when our score is at most this share short of the score it needs.
+export const ECONOMIC_BLOCK_SHARE = 0.15;
+
+/** Can we hold the score that blocks this economic leader (ours within ECONOMIC_BLOCK_SHARE of its `need`)? Unknown: yes. */
+function economyBlockable(w) {
+    const need = Number(w.need);
+    const ours = Number(w.ours);
+    if (!Number.isFinite(need) || !Number.isFinite(ours) || !(need > 0)) return true;
+    return need - ours <= ECONOMIC_BLOCK_SHARE * need;
 }
 
 // Without points for settlements, the final push trains no settler once this share of the age's research gate is in.

@@ -1299,8 +1299,12 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
         };
     };
     const placeable = (city, def) => {
+        // Never one the city has: the game offers a damaged one as its repair, which repairBuildings buys or queues (game 32,
+        // E64: Liverpool's University was repaired with gold, the same pass ordered it again, the game refused, and the
+        // empty queue held the turn).
+        if (cityHas(city, def.ConstructibleType)) return null;
         const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
-        if (!probe?.Success || probe.InQueue || probe.InProgress) return null;
+        if (!probe?.Success || probe.InQueue || probe.InProgress || probe.RepairDamaged) return null;
         const plots = [...(probe.Plots ?? []), ...(probe.ExpandUrbanPlots ?? [])];
         return plots.length > 0 ? plots : null;
     };
@@ -4292,6 +4296,8 @@ const padRoomNoted = new Map(); // sid -> the turn UI.log said a pad city kept r
 function holdsPadRoom(city, t, gateEta) {
     const def = safe(() => GameInfo.Constructibles.lookup(t), null);
     if (def?.ConstructibleClass !== "BUILDING") return false;
+    // Never a science site (game 32 logged «no BUILDING_LAUNCH_PAD» for the pad itself), nor a production building.
+    if (scienceSites(currentAge()).some((x) => x.type === def.ConstructibleType)) return false;
     if (GameInfo.TypeTags?.find((r) => r.Type === def.ConstructibleType && (r.Tag === "PRODUCTION" || r.Tag === "PRODUCTION_WAREHOUSE"))) return false;
     const turns = itemTurns(city, def.$hash);
     if (!(turns > gateEta)) return false;
@@ -4875,9 +4881,9 @@ function bankForNextAge(budget, income) {
     if (left === null || !(left > 0)) return null;
     const cap = carriedGoldCap("AGE_MODERN");
     const reach = Math.max(0, budget.forGoal()) + Math.max(0, Number(income) || 0) * Math.max(0, left - 1);
-    const cost = Math.round(Math.min(cap, reach));
+    const cost = Math.floor(Math.min(cap, reach));
     if (!(cost > 0)) return null;
-    return { key: "MODERN_BANK", label: composeOr("LOC_XPL_AP_GOAL_BANK", cap), cost, hold: cost, holdShare: 1, anyHorizon: true };
+    return { key: "MODERN_BANK", label: composeOr("LOC_XPL_AP_GOAL_BANK", cap), cost, hold: cost, holdShare: 1, anyHorizon: true, sized: true };
 }
 
 /**

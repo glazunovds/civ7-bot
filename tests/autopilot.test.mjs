@@ -100,6 +100,38 @@ test("a choice still holds the turn: the turn is not ended, the log says why", a
     assert.deepEqual(blocked?.args, ["NOTIFICATION_CHOOSE_BELIEF"]);
 });
 
+// Game 32, E64: the victory step's order in Liverpool was refused (a building already repaired with gold), and every end-of-turn
+// retry skipped Liverpool's empty queue as "queued by the victory step this pass": «Выбрать производство» held the turn.
+test("an end-of-turn retry fills a queue the victory step's refused order left empty", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "SCIENCE", skipUnits: false, endTurn: true, purchases: false, replanEvery: 0 } });
+    GameInfo.LegacyPaths = [{ LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true }];
+    GameInfo.AgeProgressionMilestones = [{ LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 500 }];
+    Players.get(0).LegacyPaths = { getScore: () => 20 };
+    const hashOf = (t) => GameInfo.Constructibles.lookup(t)?.$hash ?? GameInfo.Projects.lookup(t)?.$hash ?? GameInfo.Units.lookup(t)?.$hash;
+    const athensBuilds = () => sent("operation").filter((x) => x.id.id === 0 && x.args.InsertMode === undefined).map((x) => x.args.ConstructibleType ?? x.args.ProjectType ?? x.args.UnitType);
+    const canBuild = world.canBuild;
+    // Athens's queue is empty. The game takes an order once; asked again it refuses (the queue the fake keeps never shows
+    // it), as it refused Liverpool's: the queue stays empty.
+    world.canBuild = (type, id, args) => (id.id === 0 && type !== undefined && athensBuilds().includes(hashOf(type)) ? { Success: false, Plots: [] } : canBuild(type, id, args));
+    world.turnSent = false;
+    world.blocker = { type: EndTurnBlockingTypes.OTHER, name: "NOTIFICATION_CHOOSE_CITY_PRODUCTION" };
+    const filled = () => (state.get().autopilot.log ?? []).filter((e) => /^QUEUED_(PLAN|ADVISOR|FALLBACK)$/.test(e.key) && e.args?.[0] === "Athens");
+    try {
+        fake.sent.length = 0;
+        state.set({ autopilot: { ...(state.get().autopilot ?? {}), log: [] } });
+        autopilot.setAutopilot(true);
+        await new Promise((r) => setTimeout(r, 6000)); // the pass, then up to two more tries
+        autopilot.setAutopilot(false);
+        assert.ok((state.get().autopilot.log ?? []).some((e) => e.key === "VICTORY_WORK" && e.args?.[0] === "Athens"), "the victory step ordered in Athens first");
+        assert.ok(filled().length > 0, `a retry fills Athens's queue: ${JSON.stringify((state.get().autopilot.log ?? []).map((e) => e.key))}`);
+    } finally {
+        delete world.blocker;
+        world.canBuild = canBuild;
+        delete Players.get(0).LegacyPaths;
+        settings.patch({ autopilot: { focus: false, victory: "AUTO", endTurn: false } });
+    }
+});
+
 test("victory focus: the path we lead sets this pass's priority (research follows its advisor); off, the player's own priority again", async () => {
     settings.patch({ autopilot: { focus: true, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
     GameInfo.LegacyPaths = [

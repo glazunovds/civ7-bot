@@ -281,6 +281,13 @@ test("science: Exploration's last turns bank the free gold for Modern, up to wha
         let p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
         assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.cost], ["BANK", 2500], "2000 now and 5 turns of 100");
         assert.deepEqual([p.budget.free(), p.budget.all()], [0, 2000], "nothing free; defenders, repairs and nearly done buildings still buy from all of it");
+        // Gold and income are not whole numbers (game 32, E64-E69: the bank was dropped for a University goal).
+        world.gold = 2000.6;
+        world.goldIncome = 117.4;
+        steps.resetGoldPlan();
+        p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
+        assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.cost], ["BANK", 2587], "2000.6 now and 5 turns of 117.4");
+        world.goldIncome = 100;
         world.gold = 9500;
         steps.resetGoldPlan();
         p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });

@@ -195,6 +195,9 @@ test("a rival near a culture win: one more wonder, any kind, worth more, explore
     assert.deepEqual(planStrategy(f, "CULTURE", { watch }).overlay, undefined, "our own victory: nothing to block");
     const econ = planStrategy(f, "SCIENCE", { watch: [{ cls: "ECONOMIC", level: "DANGER" }] });
     assert.ok(econ.goals.includes("GDP"));
+    // Game 32: a Port bought for 972 against Franklin's economy when ours was 878 of the 3,270 that would block him.
+    const econAt = (ours, need) => planStrategy(f, "SCIENCE", { watch: [{ cls: "ECONOMIC", level: "DANGER", ours, need }] }).goals.includes("GDP");
+    assert.deepEqual([econAt(878, 3270), econAt(950, 1000)], [false, true], "only a block within 15% of ours");
     const war = planStrategy(facts({ age: "AGE_MODERN", finalAge: true, cities: 3 }), "SCIENCE", { watch: [{ cls: "MILITARY", level: "DANGER" }] });
     assert.equal(war.trainSettlers, true, "settlements count for a military rival's score");
 });
