@@ -157,8 +157,8 @@ export function nextDominanceMultiple(age, ageFrac) {
 /**
  * Settlements that would start our own military countdown (research/26 §3.3: game 11 ended 55 to the leader's 60;
  * five more settlements would have made us first with the 75 the goal then asks). We would lead, so our goal is
- * ⌊multiple × the best other⌋; judged at the next step's multiple when it is lower (a settler takes turns to
- * found; the multiple only falls). Rivals' own growth is not foreseen.
+ * ⌊multiple × the best other⌋; at the current multiple when the settlements it takes are within reach, else at the next
+ * step's when it is lower (a settler takes turns to found; the multiple only falls). Rivals' own growth is not foreseen.
  * @param race the MILITARY victoryRaces entry (board sorted, the game's goal) @param me our player id
  * @param { age, ageFrac, room: settlements we may still found, over: more past the cap (research/30 §1), ivy: Operation
  * Ivy can still be ours in time }
@@ -173,24 +173,30 @@ export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, o
     const second = Number(board[1]?.points) || 0;
     const now = Number(race.goal) > 0 && second > 0 ? Number(race.goal) / second : dominanceMultiple(age, ageFrac);
     if (!(now > 0)) return null;
-    const next = nextDominanceMultiple(age, ageFrac);
-    const multiple = next && next < now ? next : now;
-    const goal = Math.floor(top * multiple);
-    const short = Math.max(0, goal - ours);
-    const need = Math.ceil(short / SETTLEMENT_MILITARY_POINTS);
-    const needIvy = ivy ? Math.ceil(Math.max(0, short - IVY_MILITARY_POINTS) / SETTLEMENT_MILITARY_POINTS) : need;
     const free = Math.max(0, Number(room) || 0);
     const past = Math.max(0, Number(over) || 0);
-    // Under the cap first, then with Operation Ivy, then past the cap (Happiness everywhere), then both.
-    let reachable = true;
-    let withIvy = false;
-    let pastCap = 0;
-    if (need <= free) withIvy = false;
-    else if (ivy && needIvy <= free) withIvy = true;
-    else if (need <= free + past) pastCap = need - free;
-    else if (ivy && needIvy <= free + past) [withIvy, pastCap] = [true, needIvy - free];
-    else reachable = false;
-    return { ours, top, multiple: Math.round(multiple * 100) / 100, goal, need, needIvy, room: free, over: past, reachable, withIvy, pastCap };
+    const at = (multiple) => {
+        const goal = Math.floor(top * multiple);
+        const short = Math.max(0, goal - ours);
+        const need = Math.ceil(short / SETTLEMENT_MILITARY_POINTS);
+        const needIvy = ivy ? Math.ceil(Math.max(0, short - IVY_MILITARY_POINTS) / SETTLEMENT_MILITARY_POINTS) : need;
+        // Under the cap first, then with Operation Ivy, then past the cap (Happiness everywhere), then both.
+        let reachable = true;
+        let withIvy = false;
+        let pastCap = 0;
+        if (need <= free) withIvy = false;
+        else if (ivy && needIvy <= free) withIvy = true;
+        else if (need <= free + past) pastCap = need - free;
+        else if (ivy && needIvy <= free + past) [withIvy, pastCap] = [true, needIvy - free];
+        else reachable = false;
+        return { ours, top, multiple: Math.round(multiple * 100) / 100, goal, need, needIvy, room: free, over: past, reachable, withIvy, pastCap };
+    };
+    // Starting the countdown now beats waiting for the next step: a rival's countdown may start at that step (game 31:
+    // at Modern's 60% Augustus's culture countdown began while ours, two settlements away at ×1.5, waited for ×1.25 and
+    // the lever trained and bought no more settlers). The next step's multiple only when the current one is out of reach.
+    const current = at(now);
+    const next = nextDominanceMultiple(age, ageFrac);
+    return next && next < now && !current.reachable ? at(next) : current;
 }
 
 /** The watch entry of a reachable military lever: our own CHANCE, with the settlements it takes. */

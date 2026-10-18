@@ -212,7 +212,14 @@ test("military outlook: settlements (4 points each) to our own countdown, at the
     assert.equal(nextDominanceMultiple("AGE_MODERN", 0.85), null);
     assert.equal(nextDominanceMultiple("AGE_EXPLORATION", 0.5), null, "the final age only");
     o = militaryOutlook(MIL({ goal: 110 }), 0, { age: "AGE_MODERN", ageFrac: 0.5, room: 9 });
-    assert.deepEqual([o.multiple, o.goal, o.need, o.reachable], [1.5, 90, 9, true], "⌊60 × 1.5⌋ = 90: 35 short");
+    assert.deepEqual([o.multiple, o.goal, o.need, o.reachable], [1.5, 90, 9, true], "2× (110) is out of reach: ⌊60 × 1.5⌋ = 90, 35 short");
+    // Game 31, Modern 60%: ours 66, the best other 49, the goal 73 at ×1.5; two settlements start our countdown now, where
+    // waiting for ×1.25 (61: none needed) lost to a rival's countdown begun at that same step.
+    const g31 = { cls: "MILITARY", enabled: true, goal: 73, board: [{ id: 0, points: 66 }, { id: 5, points: 49 }, { id: 4, points: 40 }] };
+    o = militaryOutlook(g31, 0, { age: "AGE_MODERN", ageFrac: 0.61, room: 2 });
+    assert.deepEqual([o.multiple, o.goal, o.need, o.reachable], [1.49, 73, 2, true], "now, at ×1.5");
+    o = militaryOutlook(g31, 0, { age: "AGE_MODERN", ageFrac: 0.61, room: 1 });
+    assert.deepEqual([o.multiple, o.goal, o.need, o.reachable], [1.25, 61, 0, true], "out of reach now: the next step's");
     assert.equal(militaryOutlook(MIL({ board: [{ id: 0, points: 55 }] }), 0, { ...late, room: 5 }), null, "nobody else scores");
 });
 

@@ -367,6 +367,7 @@ The mod is linked into the game with a folder junction:
 | 348 | Holder stays | A town's holder (next to its centre) is not sent to another exposed town or a front. |
 | 349 | Army member deploys | Under the Regroup age setting (or with units packed): `army: <unit> leaves the army at x,y onto x,y for <town>` and DEPLOYED; next turn it walks to the town. Send the line for probe P-A2. |
 | 350 | Fronts after an age change | WAR_RISK in a new age: STAGED soon after, with a soldier that started the age fortified; no `war front …: melee 0 of 1 … 13 free soldier(s)` for many turns. Also after a reload mid-age. |
+| 351 | Military lever at a step | Final age, our military countdown a few settlements away: after a multiple step (Modern 40%, 60%, 80%) the `military:` line keeps `our goal … at ×<the current multiple>; N settlement(s)` while N is within the room, and settlers stay the first goal (not `0 settlement(s)` judged at the next step). |
 
 ## Memento Advisor (second mod, `mod/memento-advisor`)
 Restart the game once: new mod. Check it is enabled in Add-Ons («Советник по памятным вещам»).
