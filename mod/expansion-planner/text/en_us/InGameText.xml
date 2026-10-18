@@ -1623,6 +1623,15 @@
     <Row Tag="LOC_XPL_AP_REVOLT_GUARD">
       <Text>{1_Settlement} may revolt: {2_Building} bought there ({3_Gold} gold)</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_WONDER_WAIT_DROPPED">
+      <Text>{1_City}: {2_Wonder} leaves the queue while {3_Item} holds it (about {4_Turns} turns): if a rival finished the wonder, the game would take {3_Item}'s progress</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUE_UNSTUCK">
+      <Text>{1_City}: {2_Item} has stood at 100% for turns and the game does not complete it: {3_Other} goes ahead of it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUE_UNSTUCK_QUEUED">
+      <Text>{1_City}: {2_Item} has stood at 100% for turns and the game does not complete it: {3_Other} queued to go ahead of it</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_SPACE_PUSH_HALF">
       <Text>Rocketry is in and a Launch Pad stands or is queued: production now weighs ×1.25 and science ÷1.25 (the full push comes after the Innovation masteries)</Text>
     </Row>

@@ -1623,6 +1623,15 @@
     <Replace Tag="LOC_XPL_AP_REVOLT_GUARD" Language="ru_RU">
       <Text>{1_Settlement} может восстать: там куплено «{2_Building}» ({3_Gold} золота)</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_WONDER_WAIT_DROPPED" Language="ru_RU">
+      <Text>{1_City}: «{2_Wonder}» убрано из очереди, пока строится «{3_Item}» (около {4_Turns} ход.): если соперник достроит чудо, игра заберёт производство «{3_Item}»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUE_UNSTUCK" Language="ru_RU">
+      <Text>{1_City}: «{2_Item}» уже не первый ход стоит на 100%, и игра его не завершает: «{3_Other}» строится раньше</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUE_UNSTUCK_QUEUED" Language="ru_RU">
+      <Text>{1_City}: «{2_Item}» уже не первый ход стоит на 100%, и игра его не завершает: в очередь поставлено «{3_Other}», чтобы строиться раньше</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SPACE_PUSH_HALF" Language="ru_RU">
       <Text>Ракетная техника изучена, космодром стоит или строится: производство теперь весит ×1.25, наука ÷1.25 (полный перевес — после мастерств с Инновациями)</Text>
     </Replace>

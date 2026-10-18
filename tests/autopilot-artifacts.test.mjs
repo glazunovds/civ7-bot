@@ -89,6 +89,8 @@ test("cities train explorers (up to 2) while there is something to dig or resear
     const queued = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType === explorer).length;
     const scouts = [{ id: 10, type: "UNIT_SCOUT", x: 9, y: 9, activity: UnitActivityTypes.SLEEP }, { id: 11, type: "UNIT_SCOUT", x: 9, y: 9, activity: UnitActivityTypes.SLEEP }];
     ruins = RUINS;
+    const paris = world.cities[0];
+    paris.prod = 100; // trained within 10 turns (game 34: none where it takes longer)
     fresh(scouts);
     let out = steps.fillProduction(new Map(), { explore: true });
     assert.equal(queued(), 1, JSON.stringify(out));
@@ -104,6 +106,23 @@ test("cities train explorers (up to 2) while there is something to dig or resear
     fresh(scouts);
     steps.fillProduction(new Map(), { explore: false });
     assert.equal(queued(), 0, "only while the autopilot explores");
+    // Game 34: Ливерпуль's Antiquarian (400 at 39 a turn) took its production M14-M37.
+    paris.prod = 5;
+    fresh(scouts);
+    steps.fillProduction(new Map(), { explore: true });
+    assert.equal(queued(), 0, "not where it takes over 10 turns");
+    // Nor in a city kept for a Launch Pad (Ливерпуль got its pad at M47): Lyon trains it.
+    paris.prod = 100;
+    world.cities.push({ owner: 0, x: 12, y: 12, name: "Lyon", prod: 60 });
+    try {
+        fresh(scouts);
+        steps.fillProduction(new Map(), { explore: true, strategy: { padCitiesNoWonders: true, pads: 1, gate: { open: true } } });
+        const where = fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType === explorer).map((s) => s.id.id);
+        assert.deepEqual(where, [1], "Lyon, not Paris");
+    } finally {
+        world.cities.pop();
+        delete paris.prod;
+    }
 });
 
 test("science or economy focus: no explorers trained even with ruins to dig (the strategy leaves them to culture)", () => {

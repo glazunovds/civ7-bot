@@ -985,6 +985,8 @@ function removeFromQueue(city, index) {
  * progress the same way.
  */
 function frontSlot(city) {
+    // An item the game does not complete loses nothing behind another (stuckHeadSince, game 33).
+    if (stuckHeadSince(city) !== null) return 0;
     const progress = currentProgress(city);
     if (progress === 0) return 0;
     // Only overflow from the item before (no more than one turn of the city's production): moving
@@ -1062,14 +1064,15 @@ function leverSlot(city) {
 function toFront(city, hash, slot = null, { behind = null } = {}) {
     const types = queueTypes(city);
     const i = types.findIndex((t) => t === hash);
-    if (i <= 0) return false;
+    // Never an item the game does not complete back to the front (stuckHeadSince).
+    if (i <= 0 || isStuck(city, hash)) return false;
     const repairs = new Set(damagedOf(city).map((d) => d.def.$hash));
     let to = slot ?? frontSlot(city);
     // Never ahead of what `behind` names, wherever it stands before the item (a lever: a queued wonder or project; the
     // victory work: an item of the same or a higher rank, research/32 §2).
     if (behind) {
         for (let j = i - 1; j >= to; j--) {
-            if (!behind(types[j])) continue;
+            if (!behind(types[j]) || isStuck(city, types[j])) continue;
             to = j + 1;
             break;
         }
@@ -1096,7 +1099,7 @@ function padSlot(city) {
     const h = safe(() => city.BuildQueue.currentProductionTypeHash, null);
     const front = safe(() => GameInfo.Constructibles.lookup(h), null);
     if (front?.ConstructibleClass !== "BUILDING" || isWallsType(h)) return slot;
-    if (scienceSites(currentAge()).some((x) => x.type === front.ConstructibleType)) return slot;
+    if (siteIn(city, front.ConstructibleType)) return slot;
     return 0;
 }
 
@@ -1139,7 +1142,7 @@ function projectSlot(city, def) {
     // Ahead of a plain building with progress: nothing is lost either way (the project takes its progress, or the
     // building keeps it; research/24 P3: a Kiln queued the turn before kept the Heliocentric Model back E60-E63). Not
     // ahead of a science site (a Launch Pad, an Airfield): the projects need it.
-    const site = !!front && scienceSites(currentAge()).some((x) => x.type === front.ConstructibleType);
+    const site = !!front && siteIn(city, front.ConstructibleType);
     if (front?.ConstructibleClass === "BUILDING" && !site) return noteProjectSlot(city, def, 0, `ahead of ${front.ConstructibleType}`);
     const outlook = safe(() => ageOutlook(), null);
     if (!outlook || outlook.isFinalAge) return noteProjectSlot(city, def, slot, "final age");
@@ -1241,6 +1244,17 @@ function victoryRanks(levers, nextOneOff = new Map()) {
         }
         return sites.get(t) ?? leverRank.get(t) ?? null;
     };
+}
+
+/**
+ * Is this building a science site for this city? The Airfield and the Radio Station are only where no Launch Pad stands
+ * or is queued (research/32 §3, 38 C1): there Crewed Space Flight Preparation brings more Innovation, and the Radio
+ * Telescope never runs. Game 34: Бирмингем's Launch Satellite and Preparation and Ньюкасл's Preparation waited 6-7 turns
+ * behind Radio Stations the plan had queued before their pads (a project never passes a science site in production).
+ */
+function siteIn(city, type) {
+    if (!scienceSites(currentAge()).some((x) => x.type === type)) return false;
+    return type === LAUNCH_PAD || !padIn(city);
 }
 
 /** Does this city have a Launch Pad, standing or queued? */
@@ -3052,6 +3066,9 @@ function trainWantedUnits(unitOptions) {
     // Units the overlays and options want (explorers, settlers, scouts, merchants) never come from a space city in the
     // final push (game 11: the capital built Antiquarians on turns 56-58 instead of science projects).
     const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE"]);
+    // Explorers neither from a city kept for a Launch Pad nor where they take long (game 34: Ливерпуль's Antiquarian, 400
+    // at 39 a turn, took its production M14-M37, and its pad came at M47).
+    const padKept = safe(() => padExclusion(unitOptions.strategy), null);
     const left = ageEndTurns(); // an age's last turns (the final age: all of it)
     for (const w of unitsWanted(unitOptions)) {
         let n = w.n;
@@ -3076,6 +3093,7 @@ function trainWantedUnits(unitOptions) {
             if (!doneInAge(city, order.args.UnitType, left, turnsUntilFree(city, ahead))) continue;
             // Soldiers (aircraft too) only where they are done soon (game 18: 33 turns for a Landship).
             if (isSoldierDef(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
+            if (w.key === "QUEUED_EXPLORER" && (padKept?.has(sidOf(city)) || unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS)) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             if (w.key === "QUEUED_GUARD") noteGuardOrder(city, order.args.UnitType);
             if (w.key === "QUEUED_MELEE") meleeOrders.set(sidOf(city), order.args.UnitType);
@@ -3994,6 +4012,7 @@ function watchWonderOrders(w) {
 // whose item in production has stood at 100% since an earlier turn, UI.log gets the queue with each entry's progress and
 // the turns something was bought there (the game's CityMadePurchase).
 const stuckSince = new Map();    // "sid|hash" -> the first turn the item in production stood at ≥ 100%
+const stuckTypes = new Map();    // sid -> the items found stuck there (hashes), while queued
 const purchaseTurns = new Map(); // city id string -> the last turns something was bought there
 const PROBE_PURCHASES = 4;
 let queueProbeTurn = -1;
@@ -4010,6 +4029,79 @@ try {
     // No engine events here.
 }
 
+// ---- items the game does not complete (game 33) ---------------------------------------------------------------------
+// Such an item stands at 100% while production piles up in it (above; game 33: Брэдфорд's Granary A66-A70, after the
+// plague damaged 9 of its tiles at A65 and its purchase failed, and its City Park M56-M60, 945 of 451, while Crewed Space
+// Flight Preparation and both flights waited behind it as its production-first building). From the turn after it first
+// stood at 100% it is stuck: what it holds is not lost behind another item (root gotcha 20: each keeps its own), so
+// frontSlot is 0 there, toFront never brings it back to the front nor keeps a move behind it, and unstickQueues moves the
+// next item ahead of it (or queues one when it stands alone).
+
+/** The first turn this city's item in production stood at 100%, when that was an earlier turn (stuck); else null. */
+function stuckHeadSince(city) {
+    const sid = sidOf(city);
+    const head = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+    const k = `${sid}|${head}`;
+    for (const key of [...stuckSince.keys()]) if (key.startsWith(`${sid}|`) && key !== k) stuckSince.delete(key);
+    if (head === null || head === -1 || !((Number(safe(() => city.BuildQueue.getPercentComplete(head), 0)) || 0) >= 100)) {
+        stuckSince.delete(k);
+        return null;
+    }
+    if (!stuckSince.has(k)) stuckSince.set(k, Game.turn);
+    const since = stuckSince.get(k);
+    if (!(since < Game.turn)) return null;
+    const set = stuckTypes.get(sid) ?? new Set();
+    set.add(head);
+    stuckTypes.set(sid, set);
+    return since;
+}
+
+/** Was this item found stuck in this city (stuckHeadSince), and is it still in its queue? */
+function isStuck(city, hash) {
+    const set = stuckTypes.get(sidOf(city));
+    if (!set?.has(hash)) return false;
+    if (queueTypes(city).includes(hash)) return true;
+    set.delete(hash);
+    return false;
+}
+
+/** Forgets the items found stuck (tests; a new game). */
+export function resetStuckItems() {
+    stuckSince.clear();
+    stuckTypes.clear();
+}
+
+/**
+ * The next item goes ahead of an item the game does not complete (above), as this pass's edit of that city's queue; one
+ * standing alone gets the plan's next building (else the cheapest), to go ahead of it next pass. @returns log entries
+ */
+export function unstickQueues() {
+    const out = [];
+    for (const city of ownSettlements()) {
+        if (city.isTown || editedThisPass(city)) continue;
+        const since = stuckHeadSince(city);
+        if (since === null) continue;
+        const types = queueTypes(city);
+        const head = types[0];
+        const held = Math.round(Number(safe(() => city.BuildQueue.getPercentComplete(head), 0)) || 0);
+        if (types.length > 1) {
+            if (!moveInQueue(city, 1, 0)) continue;
+            log.warn(`queue: ${nameOf(city)}: ${typeNameOf(head)} has stood at 100% since T${since} (${held}%: the game does not complete it); ${typeNameOf(types[1])} moved ahead of it (probe)`);
+            out.push({ key: "QUEUE_UNSTUCK", args: [nameOf(city), itemName(head), itemName(types[1])] });
+            continue;
+        }
+        const add = plannedAbsorbers(city)[0] ?? cheapestBuilding(city) ?? lastResort(city);
+        if (!add) continue;
+        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, add.args);
+        const type = add.type ?? safe(() => GameInfo.Constructibles.lookup(add.args?.ConstructibleType)?.ConstructibleType, null);
+        if (type) noteBuilt(city, type);
+        const name = type ? itemName(type) : safe(() => Locale.compose(add.name), String(add.name));
+        log.warn(`queue: ${nameOf(city)}: ${typeNameOf(head)} has stood at 100% since T${since} (${held}%: the game does not complete it) alone; ${type ?? add.name} queued to go ahead of it (probe)`);
+        out.push({ key: "QUEUE_UNSTUCK_QUEUED", args: [nameOf(city), itemName(head), name] });
+    }
+    return out;
+}
+
 /** Writes the queue probe to UI.log, once a turn (above). */
 export function probeQueues() {
     if (queueProbeTurn === Game.turn) return;
@@ -4019,13 +4111,7 @@ export function probeQueues() {
         const types = queueTypes(city);
         const head = safe(() => city.BuildQueue.currentProductionTypeHash, null);
         const pctOf = (h) => Math.round(Number(safe(() => city.BuildQueue.getPercentComplete(h), 0)) || 0);
-        const k = `${sidOf(city)}|${head}`;
-        for (const key of [...stuckSince.keys()]) if (key.startsWith(`${sidOf(city)}|`) && key !== k) stuckSince.delete(key);
-        let stuck = null;
-        if (head !== null && head !== -1 && pctOf(head) >= 100) {
-            if (!stuckSince.has(k)) stuckSince.set(k, Game.turn);
-            if (stuckSince.get(k) < Game.turn) stuck = stuckSince.get(k);
-        } else stuckSince.delete(k);
+        const stuck = stuckHeadSince(city);
         if (stuck === null && !types.some(isWonderType)) continue;
         const bought = purchaseTurns.get(idString(city.id)) ?? [];
         log.warn(`queue probe: ${nameOf(city)}: [${types.map((h) => `${typeNameOf(h)} ${pctOf(h)}%${h === head ? "*" : ""}`).join(", ")}]${stuck !== null ? `; ${typeNameOf(head)} at 100% since T${stuck}` : ""}; bought here ${bought.length ? bought.map((t) => `T${t}`).join(", ") : "-"}`);
@@ -4103,6 +4189,30 @@ function wonderSlot(city) {
 
 // A wonder option taking longer than this is not started (research/24 P5).
 export const WONDER_MAX_TURNS = 15;
+
+// A rival finishing a wonder that waits in our queue takes the progress of our item in production with it: the game drops
+// the wonder (NOTIFICATION_PRODUCTION_INVALIDATED, «0 returned») and the item starts over. Game 34: Лондон's Chart the
+// Stars lost 78 at A39 to the Colossus and 181 at A57 to the Ha'amonga a Maui, both waiting behind it; game 25: Spherical
+// Earth lost 187 to the Pyramid of the Sun. So no wonder waits behind an item that holds the front longer than
+// WONDER_WAIT_TURNS: a project (a wonder never passes one) or a wonder in production.
+export const WONDER_WAIT_TURNS = 1;
+const wonderHeldNoted = new Map(); // sid -> the turn UI.log said a wonder was not ordered there
+
+/** The project or wonder in production that holds this city's front longer than WONDER_WAIT_TURNS: { h, left }, else null. */
+function frontHeld(city) {
+    const h = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+    if (h === null || h === -1) return null;
+    if (!isWonderType(h) && !safe(() => GameInfo.Projects.lookup(h), null)) return null;
+    const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+    return left > WONDER_WAIT_TURNS ? { h, left } : null;
+}
+
+/** UI.log once a turn per city: a chosen wonder is not ordered behind the item that holds the front (frontHeld). */
+function noteWonderHeld(city, type, held) {
+    if (wonderHeldNoted.get(sidOf(city)) === Game.turn) return;
+    wonderHeldNoted.set(sidOf(city), Game.turn);
+    log.info(`wonders: ${type} not ordered in ${nameOf(city)}: ${typeNameOf(held.h)} holds its queue ${held.left} turns, and a rival finishing the wonder would take that item's progress`);
+}
 
 // A wonder granting Innovation (research/21 D7): worth this much more with the science focus (3 points × 4,
 // like WONDER_LEGACY_VALUE for the culture path).
@@ -4235,7 +4345,9 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         if (city.isTown) continue;
         const wonder = wonderPicks.get(sidOf(city));
         const busy = !safe(() => city.BuildQueue.isEmpty, false) || unitOptions.queued?.get(sidOf(city))?.size > 0;
-        if (wonder && busy) {
+        const held = frontHeld(city);
+        if (wonder && busy && held) noteWonderHeld(city, wonder.type, held);
+        else if (wonder && busy) {
             const entry = orderWonder(city, wonder);
             if (entry) {
                 out.push(entry);
@@ -4248,6 +4360,14 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         const slot = wonderSlot(city);
         const i = types.findIndex((t, j) => j > slot && isWonderType(t) && !lost.has(typeNameOf(t)));
         if (i <= 0) continue;
+        // Exposed behind an item that holds the front (frontHeld): it leaves the queue while it holds nothing.
+        if (held && !((Number(safe(() => city.BuildQueue.getPercentComplete(types[i]), 0)) || 0) > 0)) {
+            if (removeFromQueue(city, i)) {
+                log.warn(`wonders: ${typeNameOf(types[i])} leaves ${nameOf(city)}'s queue while ${typeNameOf(held.h)} holds it ${held.left} turns: a rival finishing it would take that item's progress (game 34)`);
+                out.push({ key: "WONDER_WAIT_DROPPED", args: [nameOf(city), itemName(types[i]), itemName(held.h), held.left] });
+            }
+            continue;
+        }
         // Never ahead of a project (a science project is the path's own work).
         let to = slot;
         while (to < i && safe(() => GameInfo.Projects.lookup(types[to]), null)) to++;
@@ -4269,7 +4389,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         // building (game 11: the plan queued a Cannery behind Лянчжоу's Launch Pad; the pad's overflow went into it).
         const space = spaceCity(city, unitOptions);
         const military = skipsMilitaryBuildings(unitOptions) ? isMilitaryBuilding : null;
-        const sites = space ? new Set(scienceSites(currentAge(), { pads: unitOptions.strategy?.pads ?? null }).map((x) => x.type)) : null;
+        const sites = space ? new Set(scienceSites(currentAge(), { pads: unitOptions.strategy?.pads ?? null }).map((x) => x.type).filter((t) => siteIn(city, t))) : null;
         const inAge = (t) => doneInAge(city, t, left);
         // The path's buildings only where they are built soon, as the victory step queues them (leverSoon; game 16's
         // Laboratories took 25-36 turns in weak cities): a slower city leaves them to the purchases. The plan and the
@@ -4308,8 +4428,10 @@ const padRoomNoted = new Map(); // sid -> the turn UI.log said a pad city kept r
 function holdsPadRoom(city, t, gateEta) {
     const def = safe(() => GameInfo.Constructibles.lookup(t), null);
     if (def?.ConstructibleClass !== "BUILDING") return false;
-    // Never a science site (game 32 logged «no BUILDING_LAUNCH_PAD» for the pad itself), nor a production building.
-    if (scienceSites(currentAge()).some((x) => x.type === def.ConstructibleType)) return false;
+    // Never its Launch Pad (game 32 logged «no BUILDING_LAUNCH_PAD» for the pad itself), nor a production building. The
+    // Airfield and the Radio Station are no site of a city kept for a pad (siteIn; game 34: Ньюкасл and Бирмингем queued
+    // Radio Stations from the plan five turns before Rocketry, and their projects waited behind them).
+    if (def.ConstructibleType === LAUNCH_PAD) return false;
     if (GameInfo.TypeTags?.find((r) => r.Type === def.ConstructibleType && (r.Tag === "PRODUCTION" || r.Tag === "PRODUCTION_WAREHOUSE"))) return false;
     const turns = itemTurns(city, def.$hash);
     if (!(turns > gateEta)) return false;
@@ -4449,7 +4571,10 @@ export function buyAgeEndItems(budget = null, { threatened = false } = {}) {
         items.push({ city, args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, cost, kept: (itemCost(city, h).cost * pct) / 100, name: itemName(h) });
     }
     items.sort((a, b2) => b2.kept - a.kept);
-    const pool = () => (threatened ? b.free() : b.all());
+    // Not from the gold banked for the next age (game 34: a Shipyard and an Armorer took 920 of Exploration's 974 bank at
+    // E67, and Modern opened with 255).
+    const banking = b.goal?.kind === "BANK" && !b.goal.done;
+    const pool = () => (threatened || banking ? b.free() : b.all());
     for (const it of items) {
         if (it.cost > pool()) continue;
         Game.CityCommands.sendRequest(it.city.id, CityCommandTypes.PURCHASE, it.args);
@@ -4669,8 +4794,12 @@ function conversionsFrom(rows, focus, { minCities = 0, cityTarget = 0, ctx = nul
     const stats = safe(() => Players.get(pid()).Stats, null);
     const healthy = citiesHealthy();
     const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities, cityTarget, healthy, finalAge: !!ctx?.isFinalAge && focus === "SCIENCE" });
+    // A new age's first turn: last age's cities come back with the card the player takes (turn 2); paying for one now
+    // also makes every other town dearer (game 33: Брэдфорд for 150 at M1, Манчестер the goal at E1; research/39 §2A).
+    const returning = ctx?.expectKeepCities ? lastAgeCities() : null;
     const ok = rows
         .map((r) => ({ ...r, plannedCity: plannedRoleAt(r.town.x, r.town.y) === "CITY", floor: rule.floor }))
+        .filter((r) => !returning?.has(`${r.town.x},${r.town.y}`))
         .filter((r) => r.town.canConvert && r.town.cost > 0 && r.advice?.verdict !== "BLOCKED"
             && (rule.verdicts === null || r.plannedCity || rule.verdicts.includes(r.advice?.verdict))
             && calmEnough(r.town.id));
@@ -4706,8 +4835,18 @@ export function conversionCandidates(settings, focus = null) {
     return conversionsFrom(towns?.rows ?? [], focus, { minCities: Number(settings?.strategy?.minCities) || 0, cityTarget: Number(settings?.strategy?.cityTarget) || 0, ctx: towns?.ctx ?? null });
 }
 
-/** Does every city of ours stand at or above zero Happiness (the strategy's city target waits for it: research/34 §2)? */
+/** Is a crisis on (its policy slots: the age's last stage)? */
+function crisisOn() {
+    return (Number(safe(() => Players.get(pid()).Culture.getNumCultureSlots(CultureSlotTypes.CRISIS_CULTURE_SLOT), 0)) || 0) > 0;
+}
+
+/**
+ * Does every city of ours stand at or above zero Happiness (the strategy's city target waits for it: research/34 §2)? A
+ * crisis does not make it wait: its unhappiness ends with the age, and the revolt guard buys Happiness where a revolt
+ * threatens (game 33: Бирмингем's 500 waited from A59 to the age's end in the plague crisis and cost 1,500 at E31).
+ */
 function citiesHealthy() {
+    if (crisisOn()) return true;
     return ownSettlements().filter((c) => !c.isTown).every((c) => !(Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) < 0));
 }
 
@@ -4791,12 +4930,20 @@ export async function convertAtAgeStart(budget, focus) {
     const tried = new Set();
     let cities = last.size;
     while (cities < target) {
-        const towns = ownSettlements().filter((c) => c.isTown && !tried.has(sidOf(c)) && !last.has(`${c.location.x},${c.location.y}`))
-            .map((c) => ({ c, town: { prodNow: Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0, cost: Number(safe(() => c.Gold.getTownUpgradeCost(), -1)) } }))
-            .filter((x) => x.town.cost > 0 && x.town.cost <= budget.forGoal() && calmEnough(x.c.id))
+        const all = ownSettlements().filter((c) => c.isTown && !tried.has(sidOf(c)) && !last.has(`${c.location.x},${c.location.y}`))
+            .map((c) => ({ c, town: { prodNow: Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0, cost: Number(safe(() => c.Gold.getTownUpgradeCost(), -1)) } }));
+        const towns = all.filter((x) => x.town.cost > 0 && x.town.cost <= budget.forGoal() && calmEnough(x.c.id))
             .sort((a, b) => conversionValue(b.town) - conversionValue(a.town) || a.town.cost - b.town.cost);
         const pick = towns[0];
-        if (!pick) break;
+        if (!pick) {
+            // The probe's other half (game 33: nothing at M1, the gold short of every price, which no line gave).
+            if (out.length === 0 && all.length > 0) {
+                const prices = all.filter((x) => x.town.cost > 0).sort((a, b) => a.town.cost - b.town.cost).slice(0, 4)
+                    .map((x) => `${nameOf(x.c)} ${Math.round(x.town.cost)}${calmEnough(x.c.id) ? "" : " unrest"}`);
+                log.info(`conversion window: none within ${Math.round(budget.forGoal())} gold above the reserve (${prices.join(", ") || "no price"}; research/39 probe)`);
+            }
+            break;
+        }
         tried.add(sidOf(pick.c));
         const args = { Directive: OrderTypes.ORDER_TOWN_UPGRADE };
         if (!safe(() => Game.CityCommands.canStart(pick.c.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) continue;

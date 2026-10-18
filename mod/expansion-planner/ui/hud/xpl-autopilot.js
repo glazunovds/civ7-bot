@@ -21,6 +21,8 @@ import { startSiteSearch } from '../data/xpl-site-job.js';
 import { RELAXED_MIN_PICKS } from '../core/xpl-tuning.js';
 import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
+import { goldBalance } from '../data/xpl-city-actions.js';
+import { createBudget } from '../core/xpl-savings.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
 import { commandUnits, disbandSurplus, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
@@ -97,7 +99,10 @@ export function setAutopilot(on, { keepResume = false } = {}) {
     setAp({ enabled: !!on });
     record([{ key: on ? "ON" : "OFF", args: [] }]);
     if (on) schedule(200);
-    else if (!keepResume) safe(() => settings.remember(gameKey(), { [RESUME_KEY]: null }));
+    else if (!keepResume) {
+        resumeOnChoice = null;
+        safe(() => settings.remember(gameKey(), { [RESUME_KEY]: null }));
+    }
 }
 
 // ---- switching itself on again after an age change (research/39: the player wants the age's first turn automated) --------
@@ -111,6 +116,9 @@ const RESUME_POLL_MS = 2000;
 const RESUME_POLLS = 450;
 const AGE_ORDER = ["AGE_ANTIQUITY", "AGE_EXPLORATION", "AGE_MODERN"];
 let resumeTimer = null;
+// The turn the autopilot stopped for the dedications of a new age it was already running in (the player switched it on
+// first: game 33, E1 and M1); it switches itself on again once they are chosen.
+let resumeOnChoice = null;
 
 function safe(fn, fallback = null) {
     try {
@@ -123,16 +131,44 @@ function safe(fn, fallback = null) {
 /** Is a switch-on after an age change pending (the autopilot was on in an earlier age of this game)? */
 function resumePending() {
     if (isAutopilotOn() || settings.get().autopilot?.resumeAfterAge === false) return false;
+    if (resumeOnChoice !== null && resumeOnChoice === Game.turn) return true;
     const was = settings.recall(gameKey(), RESUME_KEY);
     const age = ageType();
     return !!was && AGE_ORDER.indexOf(was) >= 0 && AGE_ORDER.indexOf(was) < AGE_ORDER.indexOf(age) && Game.turn <= RESUME_TURNS;
 }
 
+// The first turn's conversions come before the dedications: confirming them applies the card that keeps last age's cities,
+// so from then on every city counts in a conversion's price (game 34: 5 cities at M1 once they were chosen, the town
+// window closed when the autopilot switched itself on). While they wait, the conversions run once (steps.convertAtAgeStart).
+let windowTurn = null;
+
+/** Forgets that the first turn's conversions ran (tests; a new age loads the file afresh). */
+export function resetFirstTurnWindow() {
+    windowTurn = null;
+}
+
+/** The first turn's conversions while the dedications wait (above). @returns log entries */
+export async function convertBeforeDedications() {
+    if (windowTurn === Game.turn) return [];
+    windowTurn = Game.turn;
+    const o = settings.get().autopilot ?? {};
+    if (o.focus === false || o.towns === false || o.purchases === false) return [];
+    const budget = createBudget({ gold: goldBalance(), reserve: steps.goldReserve(Number(o.reserveTurns ?? 2)) });
+    const out = await steps.convertAtAgeStart(budget, safe(() => savedFocus(), null));
+    record(out);
+    return out;
+}
+
 /** Switches the autopilot on after an age change once the dedications are chosen (above). @returns true when it did */
 export function resumeAfterAgeChange() {
     if (!resumePending()) return false;
-    // The age's choices (the dedications) are the player's: wait for them.
-    if (ageChoiceKey(safe(() => turnBlocker(), null))) return false;
+    // The age's choices (the dedications) are the player's: wait for them, the cheapest conversions first.
+    const blocker = safe(() => turnBlocker(), null);
+    if (ageChoiceKey(blocker)) {
+        if (blocker === "NOTIFICATION_AGE_TRANSITION") convertBeforeDedications().catch((error) => log.error("autopilot: first-turn conversions failed", error));
+        return false;
+    }
+    resumeOnChoice = null;
     settings.remember(gameKey(), { [RESUME_KEY]: ageType() });
     record([{ key: "AUTO_RESUMED", args: [] }]);
     setAutopilot(true);
@@ -615,6 +651,8 @@ export async function runTurn(force = false) {
             // 32, E64: Liverpool's empty queue was skipped in every retry and «Выбрать производство» held the turn).
             const victoryQueued = new Map();
             record(await replanIfDue(s));
+            // An item the game does not complete gives way first (game 33: Брэдфорд's City Park at 945 of 451).
+            record(steps.unstickQueues());
             // The victory focus's own work first (science projects and a Launch Pad; the path's buildings of this age).
             if (focus) record(steps.pushVictoryWork(focus, { settlers: !!o.settlers, pads: s.strategy?.pads ?? null, queued: victoryQueued, strategy: s.strategy ?? null }));
             // Operation Ivy when the settlements alone fall short of our military countdown (research/26 §3.4).
@@ -736,6 +774,11 @@ export async function runTurn(force = false) {
             if (ageKey) {
                 record([{ key: ageKey, args: [] }]);
                 setAutopilot(false, { keepResume: true });
+                // The new age's dedications: on again once they are chosen (game 33: the player switched it on before them).
+                if (blocker === "NOTIFICATION_AGE_TRANSITION" && settings.get().autopilot?.resumeAfterAge !== false) {
+                    resumeOnChoice = Game.turn;
+                    watchResume();
+                }
             } else if (blocker) {
                 record([{ key: "BLOCKED", args: [blocker] }]);
                 if (blocker === "NOTIFICATION_NEW_POPULATION") log.info(`autopilot: settlements saying a citizen waits: ${steps.readyToGrow().join(", ") || "none"}`);

@@ -264,6 +264,19 @@ test("a non-final age's last turn: a building in production at least half done i
         fake.sent.length = 0;
         steps.buyAgeEndItems();
         assert.equal(bought().length, 1);
+        // Not from the gold banked for the next age (game 34: a Shipyard and an Armorer took 920 of the 974 Exploration
+        // banked for Modern at E67).
+        lastTurn();
+        const bank = createBudget({ gold: 800, reserve: 100 });
+        bank.setGoal({ kind: "BANK", key: "bank", label: "bank", cost: 650 });
+        fake.sent.length = 0;
+        steps.buyAgeEndItems(bank);
+        assert.deepEqual(bought(), [], "50 gold free above the bank");
+        const more = createBudget({ gold: 1100, reserve: 100 });
+        more.setGoal({ kind: "BANK", key: "bank", label: "bank", cost: 650 });
+        fake.sent.length = 0;
+        steps.buyAgeEndItems(more);
+        assert.equal(bought().length, 1, "350 free: bought");
     } finally {
         delete world.canBuy;
         delete world.gold;

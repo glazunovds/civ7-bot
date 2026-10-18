@@ -124,3 +124,7 @@ The user's answers: the «keep your cities» card is always taken (item 5: on by
 | 6 Modern's gold | `conversionRule({finalAge})` for science, `padGoals` `sized` | |
 | 7 production | `productionFirstStep(…, strategy)`, `spacePushNow().level` HALF | |
 | 8 logs | `noteNoConversion` | |
+
+## 7. Correction (game 34, 19 October 2026)
+
+The card that keeps the cities brings them back when the player confirms the dedications, on the age's first turn, not on turn 2: game 34 had 5 cities at M1 the moment the autopilot switched itself on after them (Player_Stats' turn-1 row, written at the turn's start, shows 1). So the window where only the capital counts is the time before the dedications are confirmed, and the auto-resume, which waits for them, always missed it. Now the window's conversions run while the dedications wait (`convertBeforeDedications`); root CLAUDE.md gotchas 31 and 66.

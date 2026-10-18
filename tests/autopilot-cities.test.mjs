@@ -99,6 +99,54 @@ test("a new age's first turn converts the best towns that were not cities in the
     }
 });
 
+// Game 33: Exploration's first turn held Манчестер (a city in Antiquity) as the conversion goal, and Modern's bought Брэдфорд (a
+// city in Exploration) for 150: the card the player takes brought both back on turn 2, and a city bought on that first turn
+// makes every other town dearer.
+test("a new age's first turn converts none of the last age's cities: the card brings them back on turn 2", async () => {
+    const pella = world.cities[1];
+    const lines = [];
+    const info = console.log;
+    const warn = console.warn;
+    try {
+        settings.remember(gameKey(), { ageCities: `AGE_ANTIQUITY|${A.x},${A.y};${P.x},${P.y}` });
+        steps.resetGoldPlan();
+        pella.prod = 60; // the most production per gold
+        let goal = steps.goldPlan(science, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal;
+        assert.equal(goal?.key, `convert:${K.x},${K.y}`, "Corinth, not Pella");
+        world.gold = 5000;
+        fake.sent.length = 0;
+        steps.resetGoldPlan();
+        steps.convertTowns(science, 0, { focus: "SCIENCE" });
+        assert.deepEqual(converted(), ["Corinth"]);
+        // Not expecting the card: Pella may be bought.
+        steps.resetGoldPlan();
+        const noCard = { ...science, towns: { ...DEFAULT_SETTINGS.towns, expectKeepCities: false } };
+        goal = steps.goldPlan(noCard, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal;
+        assert.equal(goal?.key, `convert:${P.x},${P.y}`, "no card expected");
+        // A later turn (this age's cities remembered): Pella may be bought.
+        settings.remember(gameKey(), { ageCities: `AGE_EXPLORATION|${A.x},${A.y}` });
+        steps.resetGoldPlan();
+        goal = steps.goldPlan(science, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal;
+        assert.equal(goal?.key, `convert:${P.x},${P.y}`, "the window is closed");
+        // The first-turn window says why it converted nothing (the probe: game 33's M1 gave no line).
+        settings.remember(gameKey(), { ageCities: `AGE_ANTIQUITY|${A.x},${A.y};${P.x},${P.y}` });
+        console.log = console.warn = (...a) => lines.push(a.join(" "));
+        const out = await steps.convertAtAgeStart(createBudget({ gold: 500 }), "SCIENCE");
+        console.log = info;
+        console.warn = warn;
+        assert.deepEqual(out, []);
+        assert.ok(lines.some((l) => l.includes("conversion window: none within 500 gold") && l.includes("Corinth 600") && l.includes("Thebes 900")), lines.join(" | "));
+    } finally {
+        console.log = info;
+        console.warn = warn;
+        pella.prod = 4;
+        world.gold = 100;
+        settings.remember(gameKey(), { ageCities: null });
+        steps.resetGoldPlan();
+        fake.sent.length = 0;
+    }
+});
+
 // Game 32 (research/39 §2C): Бирмингем, a city since A28, revolted at A61 in Antiquity's Revolts crisis; the game's warning
 // asks for Happiness infrastructure there.
 test("a settlement a revolt may take buys a Happiness building there from all the gold", () => {
@@ -189,5 +237,73 @@ test("the pass: a new age's first-turn conversion, a revolt guard's purchase, an
         world.gold = 100;
         settings.remember(gameKey(), { ageCities: null });
         settings.patch({ autopilot: { ...Object.fromEntries(Object.keys(off).map((k) => [k, true])), focus: false, victory: "AUTO" } });
+    }
+});
+
+// Game 33: at E1 and M1 the player switched the autopilot on before choosing the dedications; its pass stopped for them, and
+// it stayed off after them until the player switched it on again.
+test("switched on before the dedications: the autopilot stops for them and switches itself on again once they are chosen", async () => {
+    const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const off = { research: false, production: false, growth: false, choices: false, befriend: false, wonders: false, resources: false, tacks: false, purchases: false, towns: false };
+    settings.patch({ autopilot: { ...off, focus: false, replanEvery: 0, skipUnits: false, endTurn: true } });
+    const keys = () => (state.get().autopilot.log ?? []).map((e) => e.key);
+    try {
+        world.blocker = { type: EndTurnBlockingTypes.OTHER, name: "NOTIFICATION_AGE_TRANSITION" };
+        autopilot.setAutopilot(true);
+        await autopilot.runTurn();
+        assert.equal(autopilot.isAutopilotOn(), false, "off for the dedications");
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "they are the player's");
+        delete world.blocker;
+        state.set({ autopilot: { ...(state.get().autopilot ?? {}), log: [] } });
+        assert.equal(autopilot.resumeAfterAgeChange(), true, "chosen: on again");
+        assert.ok(keys().includes("AUTO_RESUMED"), JSON.stringify(keys()));
+        // The player's own switch-off stays.
+        autopilot.setAutopilot(false);
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "the player switched it off");
+    } finally {
+        autopilot.setAutopilot(false);
+        delete world.blocker;
+        settings.remember(gameKey(), { apOnAge: null, ageCities: null });
+        settings.patch({ autopilot: { ...Object.fromEntries(Object.keys(off).map((k) => [k, true])), endTurn: false } });
+    }
+});
+
+// Game 34: the card that keeps last age's cities brought them back once the dedications were confirmed (5 cities at M1 when
+// the autopilot switched itself on after them): the town window had closed by then.
+test("while the dedications wait on a new age's first turn, the first-turn conversions run, once", async () => {
+    const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
+    const send = Game.CityCommands.sendRequest;
+    Game.CityCommands.sendRequest = (id, op, args) => {
+        send(id, op, args);
+        if (args?.Directive === OrderTypes.ORDER_TOWN_UPGRADE) world.cities.filter((c) => c.owner === 0)[id.id].isTown = false;
+    };
+    const towns = world.cities.map((c) => c.isTown);
+    const turn = Game.turn;
+    try {
+        Game.turn = 1;
+        autopilot.setAutopilot(false);
+        autopilot.resetFirstTurnWindow();
+        settings.patch({ autopilot: { focus: true } });
+        settings.remember(gameKey(), { apOnAge: "AGE_ANTIQUITY", ageCities: `AGE_ANTIQUITY|${A.x},${A.y};${P.x},${P.y}`, focus: "SCIENCE" });
+        world.gold = 2000;
+        world.blocker = { type: EndTurnBlockingTypes.OTHER, name: "NOTIFICATION_AGE_TRANSITION" };
+        fake.sent.length = 0;
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "the dedications are the player's");
+        await new Promise((r) => setTimeout(r, 100));
+        assert.deepEqual(converted(), ["Corinth", "Thebes"], "only the capital counts until they are confirmed");
+        world.cities.forEach((c, i) => { c.isTown = towns[i]; });
+        fake.sent.length = 0;
+        autopilot.resumeAfterAgeChange();
+        await new Promise((r) => setTimeout(r, 100));
+        assert.deepEqual(converted(), [], "once a turn");
+    } finally {
+        Game.CityCommands.sendRequest = send;
+        world.cities.forEach((c, i) => { c.isTown = towns[i]; });
+        Game.turn = turn;
+        delete world.blocker;
+        world.gold = 100;
+        settings.remember(gameKey(), { apOnAge: null, ageCities: null, focus: null });
+        settings.patch({ autopilot: { focus: false } });
     }
 });

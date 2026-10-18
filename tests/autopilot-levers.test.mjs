@@ -1798,3 +1798,84 @@ test("a defender for a threatened settlement comes from a city without space wor
         delete paris.queued;
     }
 });
+
+// Game 34: Бирмингем's Launch Satellite and Preparation and Ньюкасл's Preparation waited 6-7 turns behind Radio Stations the
+// plan had queued in those cities five turns before Rocketry (a project never passed a science site in production).
+test("in a Launch Pad city the Radio Station is no science site: projects go ahead of one with progress, and a space city's plan does not queue it", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const plans = state.get().results.plans;
+    const C2 = (t) => GameInfo.Constructibles.lookup(t)?.ConstructibleType;
+    withPad(() => {
+        world.cities[0].queue = { type: "BUILDING_RADIO_STATION", turns: 9, pct: 30 };
+        world.cities[0].queued = ["PROJECT_CREWED_SPACE_FLIGHT_PREP"];
+        world.costOf = () => 400;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        delete world.costOf;
+        assert.deepEqual(MOVE().filter(([id]) => id === 0), [[0, 1, 0]], "Preparation ahead of the Radio Station");
+        const canBuild = world.canBuild;
+        world.canBuild = (type, id, args) => (type === "BUILDING_RADIO_STATION" ? { Success: true, Plots: [idx(4, 2)], ExpandUrbanPlots: [] } : canBuild(type, id, args));
+        delete world.cities[0].queue;
+        delete world.cities[0].queued;
+        state.set({ results: { ...state.get().results, plans: { placements: [{ sid: `c:${PARIS.x}-${PARIS.y}`, type: "BUILDING_RADIO_STATION", x: 4, y: 2 }] } } });
+        try {
+            fake.sent.length = 0;
+            steps.fillProduction(new Map(), { victory: "SCIENCE", strategy: { phase: "COMMIT", pads: 3, gate: { open: true } } });
+            const built = fake.sent.filter((s) => s.kind === "operation" && s.id.id === 0 && s.args.ConstructibleType !== undefined).map((s) => C2(s.args.ConstructibleType));
+            assert.ok(!built.includes("BUILDING_RADIO_STATION"), JSON.stringify(built));
+        } finally {
+            world.canBuild = canBuild;
+            state.set({ results: { ...state.get().results, plans } });
+        }
+    });
+});
+
+test("a queued Launch Pad goes ahead of a Radio Station with progress (game 34: the Radio Station is no site of a pad city)", () => {
+    const paris = world.cities[0];
+    try {
+        paris.queue = { type: "BUILDING_RADIO_STATION", turns: 9, pct: 30 };
+        paris.queued = ["BUILDING_LAUNCH_PAD"];
+        world.costOf = () => 400;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(MOVE().filter(([id]) => id === 0), [[0, 1, 0]]);
+    } finally {
+        delete world.costOf;
+        delete paris.queued;
+        paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+    }
+});
+
+test("near Rocketry a city kept for a Launch Pad starts no Radio Station either: it is the site of a city without a pad", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const plans = state.get().results.plans;
+    const paris = world.cities[0];
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id) => (type === undefined ? { Success: true } : type === "BUILDING_RADIO_STATION" ? { Success: true, Plots: [idx(id.id === 0 ? 4 : 11, 4)], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    const pre = new Map();
+    for (const r of GameInfo.ProgressionTreePrereqs) pre.set(r.Node, [...(pre.get(r.Node) ?? []), r.PrereqNode]);
+    const depth = {};
+    const stack = [...(pre.get("NODE_TECH_MO_ROCKETRY") ?? [])];
+    while (stack.length > 0) {
+        const n = stack.pop();
+        if (depth[n]) continue;
+        depth[n] = 1;
+        stack.push(...(pre.get(n) ?? []));
+    }
+    world.research = { depth, turns: { NODE_TECH_MO_ROCKETRY: 3 } };
+    world.costOf = (t) => ({ BUILDING_RADIO_STATION: 780 })[t]; // Paris: 26 turns
+    state.set({ results: { ...state.get().results, plans: null } });
+    const queued = (id) => fake.sent.filter((s) => s.kind === "operation" && s.id.id === id && s.args.ConstructibleType !== undefined).map((s) => GameInfo.Constructibles.lookup(s.args.ConstructibleType)?.ConstructibleType);
+    try {
+        delete paris.queue;
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { victory: "SCIENCE", strategy: { phase: "COMMIT", pads: 2, padCitiesNoWonders: true, gate: { open: false, progress: 0.9 } } });
+        assert.ok(!queued(0).includes("BUILDING_RADIO_STATION"), JSON.stringify(queued(0)));
+        assert.deepEqual(queued(1), ["BUILDING_RADIO_STATION"], "Lyon is no pad city");
+    } finally {
+        world.canBuild = canBuild;
+        for (const k of ["research", "costOf"]) delete world[k];
+        state.set({ results: { ...state.get().results, plans } });
+        paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+    }
+});

@@ -258,7 +258,7 @@ test("a wonder waiting in a queue goes to the very front, ahead of a building wi
         athens.queue = { type: "BUILDING_MONUMENT", turns: 1, pct: 80 };
         assert.deepEqual(move(), [2, 1], "the Monument is done this turn");
         athens.queue = { type: "WONDER_HANGING_GARDENS", turns: 6, pct: 30 };
-        assert.deepEqual(move(), [2, 1], "behind the wonder in production");
+        assert.equal(move(), null, "not ahead of the wonder in production (game 34: nor waiting behind it)");
         // A threatened settlement's walls, just moved to the front (game 27): nothing passes them.
         athens.queue = { type: "BUILDING_ANCIENT_WALLS", turns: 3, pct: 0 };
         assert.deepEqual(move(), [2, 1], "behind the walls");
@@ -440,5 +440,49 @@ test("no building is bought in a city where a wonder was ordered this turn, nor 
         athens.queue = keep.queue;
         athens.queued = keep.queued;
         for (const k of ["canBuy", "gold"]) delete world[k];
+    }
+});
+
+// Game 34: Лондон's Chart the Stars lost 78 at A39 and 181 at A57 when rivals finished the Colossus and the Ha'amonga a Maui,
+// both waiting behind it (the game drops the wonder, «0 returned», and the item in production starts over).
+test("no wonder waits behind a project or a wonder in production: none is ordered there, and one waiting with nothing in it leaves the queue", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === undefined ? { Success: true } : canBuild(type, id, args)); // queue edits
+    const removed = () => fake.sent.filter((s) => s.args.InsertMode === CityOperationsParametersValues.RemoveAt).map((s) => [s.id.id, s.args.QueueLocation]);
+    try {
+        athens.queue = { type: "PROJECT_CHART_THE_STARS", turns: 6, pct: 30 };
+        athens.queued = [];
+        const picks = steps.chooseWonders(DEFAULT_SETTINGS, 1);
+        assert.equal([...picks.keys()][0], `c:${A.x}-${A.y}`);
+        fake.sent.length = 0;
+        steps.fillProduction(picks);
+        assert.equal(wonderOrders().filter((s) => s.id.id === 0).length, 0, "not behind Chart the Stars");
+        athens.queued = ["WONDER_PYRAMIDS"];
+        fake.sent.length = 0;
+        const out = steps.fillProduction(new Map());
+        assert.deepEqual(removed(), [[0, 1]]);
+        assert.ok(out.some((e) => e.key === "WONDER_WAIT_DROPPED"), JSON.stringify(out));
+        // The project done this turn: the wonder may wait, and a chosen one is ordered.
+        athens.queue = { type: "PROJECT_CHART_THE_STARS", turns: 1, pct: 90 };
+        fake.sent.length = 0;
+        steps.fillProduction(new Map());
+        assert.deepEqual(removed(), []);
+        athens.queued = [];
+        steps.resetWonderOrders();
+        fake.sent.length = 0;
+        steps.fillProduction(picks);
+        assert.equal(wonderOrders().filter((s) => s.id.id === 0).length, 1, "ordered behind a project done this turn");
+        // Behind a wonder in production, the same.
+        athens.queue = { type: "WONDER_HANGING_GARDENS", turns: 6, pct: 30 };
+        athens.queued = ["BUILDING_GRANARY", "WONDER_PYRAMIDS"];
+        fake.sent.length = 0;
+        steps.fillProduction(new Map());
+        assert.deepEqual(removed(), [[0, 2]]);
+    } finally {
+        world.canBuild = canBuild;
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
     }
 });

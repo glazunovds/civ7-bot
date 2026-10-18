@@ -207,6 +207,29 @@ test("the strategy's city target: past 1:1 a town becomes a city while every cit
     }
 });
 
+// Game 33: the plague crisis took London, Manchester and Bradford below zero from A59, so Бирмингем's 500 waited to the age's
+// end and cost 1,500 at E31. A crisis's unhappiness ends with the age; the revolt guard buys Happiness where a revolt threatens.
+test("the city target does not wait for the cities' Happiness during a crisis", () => {
+    world.gold = 1000;
+    world.cities.push({ owner: 0, x: 2, y: 2, name: "Bath", pop: 1 });
+    const cities = world.cities.filter((c) => c.owner === 0 && !c.isTown);
+    const towns = world.cities.filter((c) => c.owner === 0 && c.isTown);
+    const player = Players.get(0);
+    const s = { ...DEFAULT_SETTINGS, strategy: { cityTarget: 3, goals: ["CONVERT"] } };
+    try {
+        for (const c of cities) c.happy = 5;
+        cities[0].happy = -2;
+        for (const t of towns) t.happy = 8; // calm enough in a crisis (6 to spare)
+        player.Culture = { getNumCultureSlots: (slot) => (slot === CultureSlotTypes.CRISIS_CULTURE_SLOT ? 1 : 2) };
+        reset();
+        assert.equal(steps.convertTowns(s, 2)[0]?.key, "TOWN_CONVERTED", "a crisis: the target goes on");
+    } finally {
+        world.cities.pop();
+        for (const c of [...cities, ...towns]) delete c.happy;
+        delete player.Culture;
+    }
+});
+
 test("no town becomes a city while it is in unrest or unhappy, nor during a crisis without 6 Happiness to spare", () => {
     // Seen in game 5: a town converted while a -6 Happiness-in-cities crisis card was slotted went
     // into unrest that turn and revolted 5 turns later (it joined Maurya).

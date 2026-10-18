@@ -513,3 +513,72 @@ test("the queue probe names the item in production whatever it is (research/24: 
         reset();
     }
 });
+
+// Game 33: Брэдфорд's City Park stood at 100% from M56 (945 of 451 by M60) and its Granary from A66 to Antiquity's end; the
+// game never completed them, and Crewed Space Flight Preparation and both flights waited behind the park.
+test("an item the game does not complete (100% since an earlier turn) gives way: the next item goes ahead of it, items may go ahead of it, and none brings it back to the front", () => {
+    reset();
+    steps.resetStuckItems();
+    const turn = Game.turn;
+    world.canBuild = (type) => (type === undefined ? { Success: true } : { Success: true, Plots: [] });
+    try {
+        athens.queue = { type: "BUILDING_LIBRARY", turns: 1, pct: 100 };
+        athens.queued = ["BUILDING_GRANARY"];
+        assert.deepEqual(steps.unstickQueues(), [], "100% for the first time: done at the turn's end");
+        assert.deepEqual(moves(), []);
+        Game.turn = turn + 1;
+        const out = steps.unstickQueues();
+        assert.deepEqual(moves(), [[0, 1, 0]], "the Granary goes ahead of it");
+        assert.equal(out[0]?.key, "QUEUE_UNSTUCK");
+        // The Granary in production, the Library behind it: the victory work does not bring the Library back.
+        athens.queue = { type: "BUILDING_GRANARY", turns: 3, pct: 0 };
+        athens.queued = ["BUILDING_LIBRARY"];
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(moves(), [], "not back to the front");
+        // A stuck item in production holds no front: a lever goes ahead of it (frontSlot 0, not 1).
+        steps.resetStuckItems();
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 1, pct: 100 };
+        athens.queued = ["BUILDING_GRANARY", "BUILDING_LIBRARY"];
+        steps.unstickQueues(); // turn + 1: first seen
+        Game.turn = turn + 2;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(moves(), [[0, 2, 0]], "the Library to the very front");
+        // A stuck project holds nothing behind it either (a lever never passes a project otherwise: research/23 S1).
+        steps.resetStuckItems();
+        athens.queue = { type: "PROJECT_CHART_THE_STARS", turns: 1, pct: 100 };
+        athens.queued = ["BUILDING_GRANARY", "BUILDING_LIBRARY"];
+        steps.unstickQueues(); // turn + 2: first seen
+        Game.turn = turn + 3;
+        fake.sent.length = 0;
+        steps.pushVictoryWork("SCIENCE");
+        assert.deepEqual(moves(), [[0, 2, 0]], "past the stuck project");
+    } finally {
+        Game.turn = turn;
+        steps.resetStuckItems();
+        reset();
+    }
+});
+
+test("a stuck item alone in its queue: a building is queued to go ahead of it next pass", () => {
+    reset();
+    steps.resetStuckItems();
+    const turn = Game.turn;
+    const sparta = world.cities[1];
+    const spot = GameplayMap.getIndexFromXY(15, 6);
+    world.canBuild = (type) => (type === undefined ? { Success: true } : type === "BUILDING_GRANARY" ? { Success: true, Plots: [spot] } : { Success: false, Plots: [] });
+    try {
+        sparta.queue = { type: "BUILDING_MONUMENT", turns: 1, pct: 100 };
+        steps.unstickQueues();
+        Game.turn = turn + 1;
+        const out = steps.unstickQueues();
+        const built = fake.sent.filter((s) => s.kind === "operation" && s.id.id === 1 && s.args.ConstructibleType === GameInfo.Constructibles.lookup("BUILDING_GRANARY").$hash);
+        assert.equal(built.length, 1, JSON.stringify(fake.sent));
+        assert.equal(out[0]?.key, "QUEUE_UNSTUCK_QUEUED");
+    } finally {
+        Game.turn = turn;
+        steps.resetStuckItems();
+        reset();
+    }
+});
