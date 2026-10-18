@@ -36,7 +36,9 @@ import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './x
 import { TUNING } from '../core/xpl-tuning.js';
 import { focusOfProfile } from '../core/xpl-effect-value.js';
 import { greatWorksWaiting, hostileActs, traitEffects } from './xpl-autopilot-choices.js';
-import { chooseGoal, conversionRule, createBudget, noteGoalBought, rankConversions, TOWN_SHARE } from '../core/xpl-savings.js';
+import { chooseGoal, conversionRule, conversionValue, createBudget, noteGoalBought, rankConversions, TOWN_SHARE } from '../core/xpl-savings.js';
+import { CITY_TARGETS } from '../core/xpl-strategy.js';
+import { gameKey, settings } from '../services/xpl-settings.js';
 
 export const MAX_GROWTH_PER_CITY = 3;  // citizens placed per city and turn
 export const MAX_PURCHASES = 3;        // buildings bought per turn
@@ -1273,7 +1275,7 @@ function padIn(city) {
  * Queued with the production list's requests (BUILD {ProjectType} / {ConstructibleType, X, Y}) and moved to the front.
  * @returns log entries
  */
-export function pushVictoryWork(focus, { settlers = false, pads = null, queued = null } = {}) {
+export function pushVictoryWork(focus, { settlers = false, pads = null, queued = null, strategy = null } = {}) {
     const out = [];
     // What this step queued, per city (fillProduction's isEmpty is stale until the game handles it: H2).
     const note = (city, hash) => {
@@ -1286,7 +1288,7 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
     const queuedAnywhere = (hash) => cities.some((c) => queueTypes(c).includes(hash));
     // Science: the cities running space work put the production buildings that pay for themselves first; their move is
     // the city's queue edit of this pass, and nothing of the victory work moves ahead of them (research/31 §2.4).
-    if (focus === "SCIENCE") productionFirstStep(cities, out, note);
+    if (focus === "SCIENCE") productionFirstStep(cities, out, note, strategy);
     const levers = leverBuildings(focus, currentAge()).map((t) => safe(() => GameInfo.Constructibles.lookup(t), null)).filter(Boolean);
     const nextOneOff = new Map(); // sid -> a one-off that runs ahead of Preparation there (oneOffNext)
     const rankOf = victoryRanks(levers, nextOneOff);
@@ -1729,11 +1731,11 @@ function innovationMasteriesLeft() {
     return rows.filter((r) => depthOf(r.ProgressionTreeNodeType) < (Number(r.UnlockDepth) || 1)).length;
 }
 
-let spacePushOn = false;
+let spacePushOn = null; // the last pass's push: "FULL", "HALF" or null
 
 /** Forgets whether the last pass was in the space push (tests; a new game). */
 export function resetSpacePush() {
-    spacePushOn = false;
+    spacePushOn = null;
 }
 
 /**
@@ -1742,14 +1744,16 @@ export function resetSpacePush() {
  * @returns { on, changed }
  */
 export function spacePushNow(focus) {
-    const on = focus === "SCIENCE" && currentAge() === "AGE_MODERN"
-        && !!safe(() => gateState(focus).open, false)
-        && ownSettlements().some((c) => !c.isTown && cityHas(c, LAUNCH_PAD))
-        && innovationMasteriesLeft() === 0;
-    const changed = on !== spacePushOn;
-    spacePushOn = on;
-    if (changed) log.info(`space push: ${on ? "on: production weighs more, science less" : "off"}`);
-    return { on, changed };
+    const pad = safe(() => GameInfo.Constructibles.lookup(LAUNCH_PAD)?.$hash, null);
+    const rocketry = focus === "SCIENCE" && currentAge() === "AGE_MODERN" && !!safe(() => gateState(focus).open, false);
+    const standing = rocketry && ownSettlements().some((c) => !c.isTown && cityHas(c, LAUNCH_PAD));
+    const queued = rocketry && ownSettlements().some((c) => !c.isTown && pad !== null && queueTypes(c).includes(pad));
+    // Full once the masteries are in and a pad stands; half from Rocketry with a pad standing or queued (research/39 §4.7).
+    const level = standing && innovationMasteriesLeft() === 0 ? "FULL" : standing || queued ? "HALF" : null;
+    const changed = level !== spacePushOn;
+    spacePushOn = level;
+    if (changed) log.info(`space push: ${level === "FULL" ? "on: production weighs more, science less" : level === "HALF" ? "half: production ×1.25, science ÷1.25 from Rocketry" : "off"}`);
+    return { on: level === "FULL", level, changed };
 }
 
 let raceNoted = null; // the turn UI.log last described the race
@@ -1951,10 +1955,13 @@ export function productionFirst(city, work) {
  * in the queue goes to the front (behind an item with progress: frontSlot); pushVictoryWork runs this first, so in game
  * that move is the city's queue edit of the pass. Remembered per city while queued (behindFirst). @returns nothing
  */
-function productionFirstStep(cities, out, note) {
+function productionFirstStep(cities, out, note, strategy = null) {
     const sites = activeSites(null).map((site) => ({ site, def: safe(() => GameInfo.Constructibles.lookup(site.type), null) })).filter((x) => x.def);
     if (sites.length === 0) return;
     const race = spaceRace(cities);
+    // Before Rocketry the cities kept for Launch Pads (padExclusion: from PAD_GATE_NEAR) weigh their production buildings
+    // against the pad and the runs they will make there (research/39 §4.7: production first never fired in game 32).
+    const padNear = strategy && !strategy.gate?.open ? padExclusion(strategy) : null;
     for (const c of cities) {
         let work = 0;
         let space = false;
@@ -1967,6 +1974,11 @@ function productionFirstStep(cities, out, note) {
             space = true;
             const pct = Math.min(100, Math.max(0, Number(safe(() => c.BuildQueue.getPercentComplete(def.$hash), 0)) || 0));
             work += costIn(c, site.type) * (1 - pct / 100);
+        }
+        if (!space && padNear?.has(sidOf(c))) {
+            const extra = new Map([[sidOf(c), new Set([LAUNCH_PAD])]]);
+            productionFirstIn(c, costIn(c, LAUNCH_PAD) + spaceWork(spaceRace(cities, extra), sidOf(c)), out, note);
+            continue;
         }
         if (!space) {
             firstWork.delete(sidOf(c));
@@ -4655,13 +4667,30 @@ function conversionsFrom(rows, focus, { minCities = 0, cityTarget = 0, ctx = nul
     if (ctx && !ctx.isFinalAge && !ctx.expectKeepCities && Number(ctx.ageTurnsLeft) <= LATE_CONVERSION_TURNS) return [];
     if (ctx?.isFinalAge && Number(ctx.ageTurnsLeft) <= FINAL_CONVERSION_TURNS) return [];
     const stats = safe(() => Players.get(pid()).Stats, null);
-    const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities, cityTarget, healthy: citiesHealthy() });
+    const healthy = citiesHealthy();
+    const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities, cityTarget, healthy, finalAge: !!ctx?.isFinalAge && focus === "SCIENCE" });
     const ok = rows
-        .map((r) => ({ ...r, plannedCity: plannedRoleAt(r.town.x, r.town.y) === "CITY" }))
+        .map((r) => ({ ...r, plannedCity: plannedRoleAt(r.town.x, r.town.y) === "CITY", floor: rule.floor }))
         .filter((r) => r.town.canConvert && r.town.cost > 0 && r.advice?.verdict !== "BLOCKED"
             && (rule.verdicts === null || r.plannedCity || rule.verdicts.includes(r.advice?.verdict))
             && calmEnough(r.town.id));
+    if (ok.length === 0 && rows.length > 0) noteNoConversion(rows, rule, healthy);
     return rankConversions(ok, focus);
+}
+
+let noConversionNoted = null; // the turn UI.log last said why no town may become a city
+
+/**
+ * UI.log once a turn when towns exist and none may become a city (research/39 §4.8: game 32's Antiquity had no conversion
+ * A52-A60 with Leeds about 10 turns of income away, and the log did not say why): the floor, the cities below zero
+ * Happiness, the towns not calm, the verdicts.
+ */
+function noteNoConversion(rows, rule, healthy) {
+    if (noConversionNoted === Game.turn) return;
+    noConversionNoted = Game.turn;
+    const unhappy = ownSettlements().filter((c) => !c.isTown).map((c) => [nameOf(c), Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0]).filter(([, h]) => h < 0);
+    const towns = rows.map((r) => `${r.town.name} ${r.advice?.verdict ?? "?"}${r.town.canConvert ? "" : " cannot"}${calmEnough(r.town.id) ? "" : " unrest"}`);
+    log.info(`conversions: none of ${rows.length} town(s) (floor ${rule.floor}, healthy ${healthy}${unhappy.length ? `: ${unhappy.map(([n, h]) => `${n} ${h}`).join(", ")}` : ""}); ${towns.join(", ")}`);
 }
 
 /**
@@ -4706,7 +4735,136 @@ export function convertTowns(settings, pass = 2, { focus = null } = {}) {
     Game.CityCommands.sendRequest(pick.town.id, CityCommandTypes.PURCHASE, args);
     b.spend(pick.town.cost, { kind: "CONVERT", key: convertKey(pick.town), label: pick.town.name }, { goal: !!goal });
     if (goal) noteGoal(goal.key);
+    if (convertGoalKey === convertKey(pick.town)) convertGoalKey = null;
     return [{ key: "TOWN_CONVERTED", args: [pick.town.name, pick.town.cost] }];
+}
+
+// ---- a new age's first turn: the cheapest conversions (research/39 §4.1) ----------------------------------------------
+// Every city but the capital is a town again on a new age's first turn, until the card that keeps them brings them back
+// on turn 2 (root gotcha 31). Only the capital counts in a conversion's price then: ~425 gold at E1 instead of ~1,475,
+// ~525 at M1 instead of 2,500 (research/39 §2A). The cities at an age's end are remembered (the settings' game memory:
+// gotcha 57); on the next age's first turn the best towns that were not cities are converted from the gold above the
+// reserve, one after another (the game prices each after the last), up to AGE_START_CITY_TARGET with the cities coming back.
+export const AGE_START_CITY_TARGET = Object.freeze({ AGE_EXPLORATION: CITY_TARGETS.AGE_EXPLORATION[0], AGE_MODERN: CITY_TARGETS.AGE_EXPLORATION[1] });
+const AGE_CITIES = "ageCities";
+const CONVERT_WAIT_MS = 100;
+const CONVERT_WAIT_TRIES = 15;
+
+/** Remembers this age's cities for the next age's first turn ("AGE|x,y;x,y"). */
+export function noteCitiesForNextAge() {
+    const age = currentAge();
+    if (!age) return;
+    const cities = ownSettlements().filter((c) => !c.isTown).map((c) => `${c.location.x},${c.location.y}`).join(";");
+    settings.remember(gameKey(), { [AGE_CITIES]: `${age}|${cities}` });
+}
+
+/** The last age's cities (tiles "x,y") while this is a new age and they have not come back yet; else null. */
+export function lastAgeCities() {
+    const raw = String(settings.recall(gameKey(), AGE_CITIES) ?? "");
+    const bar = raw.indexOf("|");
+    if (bar < 0) return null;
+    const age = raw.slice(0, bar);
+    if (!age || age === currentAge()) return null;
+    const tiles = raw.slice(bar + 1).split(";").filter(Boolean);
+    const cities = ownSettlements().filter((c) => !c.isTown).length;
+    return cities < tiles.length ? new Set(tiles) : null;
+}
+
+/** Waits until the town has become a city (the game handles the purchase a moment later). @returns true when it has */
+async function becameCity(id) {
+    for (let i = 0; i < CONVERT_WAIT_TRIES; i++) {
+        if (safe(() => Cities.get(id)?.isTown, true) === false) return true;
+        await new Promise((r) => setTimeout(r, CONVERT_WAIT_MS));
+    }
+    return safe(() => Cities.get(id)?.isTown, true) === false;
+}
+
+/**
+ * The conversions of a new age's first turn (above): science and economy, no war at our door. @returns log entries
+ */
+export async function convertAtAgeStart(budget, focus) {
+    const out = [];
+    if ((focus !== "SCIENCE" && focus !== "ECONOMIC") || war.near || !budget) return out;
+    const last = lastAgeCities();
+    if (!last) return out;
+    const target = AGE_START_CITY_TARGET[currentAge()] ?? 0;
+    const tried = new Set();
+    let cities = last.size;
+    while (cities < target) {
+        const towns = ownSettlements().filter((c) => c.isTown && !tried.has(sidOf(c)) && !last.has(`${c.location.x},${c.location.y}`))
+            .map((c) => ({ c, town: { prodNow: Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0, cost: Number(safe(() => c.Gold.getTownUpgradeCost(), -1)) } }))
+            .filter((x) => x.town.cost > 0 && x.town.cost <= budget.forGoal() && calmEnough(x.c.id))
+            .sort((a, b) => conversionValue(b.town) - conversionValue(a.town) || a.town.cost - b.town.cost);
+        const pick = towns[0];
+        if (!pick) break;
+        tried.add(sidOf(pick.c));
+        const args = { Directive: OrderTypes.ORDER_TOWN_UPGRADE };
+        if (!safe(() => Game.CityCommands.canStart(pick.c.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) continue;
+        Game.CityCommands.sendRequest(pick.c.id, CityCommandTypes.PURCHASE, args);
+        budget.spend(pick.town.cost, { kind: "CONVERT", key: convertKey({ x: pick.c.location.x, y: pick.c.location.y }), label: nameOf(pick.c) });
+        log.info(`conversion window: ${nameOf(pick.c)} for ${pick.town.cost} on the age's first turn (cities now ${ownSettlements().filter((c) => !c.isTown).length}, ${last.size} last age; research/39 probe)`);
+        out.push({ key: "TOWN_CONVERTED_AGE_START", args: [nameOf(pick.c), Math.round(pick.town.cost)] });
+        cities++;
+        // The next is priced once the game counts this one.
+        if (!(await becameCity(pick.c.id))) break;
+    }
+    return out;
+}
+
+// ---- a revolt guard (research/39 §4.4) ----------------------------------------------------------------------------------
+// Game 32 lost Бирмингем (a city since A28) to a revolt at A61, in Antiquity's Revolts crisis: «If they remain Unhappy for N
+// turns, they may Revolt. We should assign Happiness resources, station a Commander in the settlement, or invest in Happiness
+// infrastructure here immediately» (ADVISOR_WARNING_CITY_REVOLT). A settlement below zero Happiness while a crisis is on (or
+// in unrest) buys the cheapest Happiness building the game sells there, from all the gold (as walls against a real attack),
+// once a turn per settlement; UI.log lists every such settlement once a turn.
+const revoltNoted = new Map(); // sid -> the turn UI.log listed it
+
+/** Settlements a revolt may take: below zero Happiness while a crisis is on, or in unrest. */
+export function revoltRisks() {
+    const crisis = (Number(safe(() => Players.get(pid()).Culture.getNumCultureSlots(CultureSlotTypes.CRISIS_CULTURE_SLOT), 0)) || 0) > 0;
+    const out = [];
+    for (const c of ownSettlements()) {
+        const happy = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0;
+        const unrest = !!safe(() => c.Happiness.hasUnrest, false);
+        if (!unrest && !(crisis && happy < 0)) continue;
+        out.push({ c, happy, unrest, turns: Number(safe(() => c.Happiness.turnsOfUnrest, -1)), crisis });
+    }
+    return out;
+}
+
+/** Buys a Happiness building in each settlement at risk of a revolt (above). @returns log entries */
+export function guardRevolts(budget = null) {
+    const out = [];
+    const risks = revoltRisks();
+    if (risks.length === 0) return out;
+    const b = budget ?? createBudget({ gold: goldBalance() });
+    const happy = GameInfo.TypeTags?.filter((t) => t.Tag === "HAPPINESS").map((t) => safe(() => GameInfo.Constructibles.lookup(t.Type), null)).filter((d) => d && d.ConstructibleClass === "BUILDING") ?? [];
+    for (const r of risks) {
+        const sid = sidOf(r.c);
+        if (revoltNoted.get(sid) !== Game.turn) {
+            revoltNoted.set(sid, Game.turn);
+            log.warn(`happiness: ${nameOf(r.c)} ${r.happy}${r.unrest ? `, unrest ${r.turns} turn(s)` : ""}${r.crisis ? ", a crisis is on" : ""}: a revolt may take it`);
+        }
+        let best = null;
+        for (const def of happy) {
+            if (cityHas(r.c, def.ConstructibleType)) continue;
+            const probe = safe(() => Game.CityCommands.canStart(r.c.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
+            const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
+            if (!probe?.Success || plots.length === 0) continue;
+            const cost = Number(probe.Cost ?? safe(() => r.c.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
+            if (!Number.isFinite(cost) || cost <= 0 || cost > b.all()) continue;
+            if (!best || cost < best.cost) best = { def, plots, cost };
+        }
+        if (!best) continue;
+        const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(r.c, best.def.$hash, best.plots) ?? best.plots[0]), null);
+        if (!loc) continue;
+        const args = { ConstructibleType: best.def.$hash, X: loc.x, Y: loc.y };
+        if (!safe(() => Game.CityCommands.canStart(r.c.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) continue;
+        Game.CityCommands.sendRequest(r.c.id, CityCommandTypes.PURCHASE, args);
+        b.spend(best.cost, { kind: "REVOLT", key: `${sid}|${best.def.ConstructibleType}`, label: `${composeOr(best.def.Name)} (${nameOf(r.c)})` });
+        out.push({ key: "REVOLT_GUARD", args: [nameOf(r.c), composeOr(best.def.Name), Math.round(best.cost)] });
+    }
+    return out;
 }
 
 /**
@@ -4738,6 +4896,7 @@ export function logUrbanCenters() {
 
 let goalMemory = {};    // goal key -> { attempts, lastTurn, until } (core noteGoalBought)
 let lastGoalKey = null; // SAVING is logged when the goal changes
+let convertGoalKey = null; // the town a conversion goal is saving for (research/39 §4.2)
 
 function noteGoal(key) {
     goalMemory = noteGoalBought(goalMemory, key, Game.turn);
@@ -4747,6 +4906,7 @@ function noteGoal(key) {
 export function resetGoldPlan() {
     goalMemory = {};
     lastGoalKey = null;
+    convertGoalKey = null;
     goldTrack = { turn: null, turns: [], level: 0 };
 }
 
@@ -4820,6 +4980,10 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     if (war.near) kinds.length = 0;
     const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap, past: pastCapOf(settings?.strategy) }), null) : null;
     const keep = kinds.includes("CONVERT") ? conversionKeep() : 0;
+    // The town chosen stays the goal while it may still become a city (research/39 §4.2: game 32's goal went back and forth
+    // between Liverpool and Leeds); below the floor a conversion is a goal at any horizon (no goal at all E1-E16).
+    const stuck = convertGoalKey ? conversions.findIndex((r) => convertKey(r.town) === convertGoalKey) : -1;
+    const ordered = stuck > 0 ? [conversions[stuck], ...conversions.filter((_, i) => i !== stuck)] : conversions;
     const candidates = {
         BANK: modernBank ? [modernBank] : [],
         SETTLER: offer ? [{ key: "settler", label: composeOr("LOC_XPL_AP_GOAL_SETTLER", nameOf(offer.city)), cost: offer.cost, purchase: { city: offer.city, args: offer.args, name: composeOr(offer.name), drop: offer.drop } }] : [],
@@ -4829,9 +4993,9 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
         PADS: focus === "SCIENCE" && pads > 0 && kinds.includes("PADS") ? safe(() => padGoals(focus, pads, settings?.strategy?.gate ?? null), []) ?? [] : [],
         // The war risk's keep is part of the need (research/24 G1: «held 225/1500» while the gold over the cost went
         // elsewhere, so the conversion, which needs cost + keep, never came).
-        CONVERT: conversions.map((r) => (keep > 0
-            ? { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT_KEEP", r.town.name, Math.round(keep)), cost: r.town.cost + keep }
-            : { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT", r.town.name), cost: r.town.cost })),
+        CONVERT: ordered.map((r) => (keep > 0
+            ? { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT_KEEP", r.town.name, Math.round(keep)), cost: r.town.cost + keep, anyHorizon: !!r.floor }
+            : { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT", r.town.name), cost: r.town.cost, anyHorizon: !!r.floor })),
         LEVER: focus && kinds.includes("LEVER")
             ? (safe(() => victoryPurchases(focus), []) ?? [])
                 // Its own city builds it sooner than the gold would come (S6: game 8, an Academy held 504 gold
@@ -4842,13 +5006,15 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     };
     const turnsLeft = Number(safe(() => ageOutlook().turnsLeft, Infinity));
     const goal = budget.setGoal(chooseGoal(candidates, kinds, { memory: goalMemory, turn: Game.turn, have: budget.free(), income, turnsLeft }));
+    if (goal?.kind === "CONVERT") convertGoalKey = goal.key;
+    else if (stuck < 0) convertGoalKey = null;
     const entries = [];
     if (goal && goal.key !== lastGoalKey && goal.cost > budget.forGoal()) {
         entries.push({ key: "SAVING", args: [goal.label, Math.round(goal.cost), Math.max(0, Math.round(budget.forGoal()))] });
     }
     lastGoalKey = goal?.key ?? null;
     return {
-        budget, conversions, focus, entries, turn: Game.turn,
+        budget, conversions: ordered, focus, entries, turn: Game.turn,
         reserveTurns: Number(reserveTurns) || 0,
         cheapest: cheapest ? { name: cheapest.town.name, cost: Math.round(cheapest.town.cost) } : null,
     };
@@ -5054,7 +5220,9 @@ function padGoals(focus, pads, gate) {
     // above the reserve: game 30 bought a 1,072 Schoolhouse three turns before Rocketry and could buy one pad.
     const progress = Math.max(0, Math.min(1, Number(gate?.progress) || 0));
     const near = progress >= PAD_GATE_NEAR;
-    return [{ key: "PADS_BANK", label: composeOr("LOC_XPL_AP_GOAL_PADS", prices.length), cost: Math.round(bank), hold: Math.round(near ? bank : bank * progress), holdShare: near ? 1 : PAD_HOLD_SHARE }];
+    // `sized`: the hold is a share of the gold there is, so the 12-turn horizon never drops it (research/39 §4.6: game 32's
+    // Modern income of -19 to 160 kept the bank out of reach, and a 2,500 conversion goal held the gold instead).
+    return [{ key: "PADS_BANK", label: composeOr("LOC_XPL_AP_GOAL_PADS", prices.length), cost: Math.round(bank), hold: Math.round(near ? bank : bank * progress), holdShare: near ? 1 : PAD_HOLD_SHARE, sized: true }];
 }
 
 /**

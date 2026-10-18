@@ -49,6 +49,7 @@ test("the balance in use: the victory focus's own set (science leans to science)
     assert.deepEqual(biasFor({ biasFocus: "SCIENCE" }), { F: 0.7, P: 1, G: 1, S: 1.5, C: 1, H: 1 }, "unset: the science default");
     // The science victory's last stretch (research/38 §4 E1): production ×1.5, science ÷1.5.
     assert.deepEqual(biasFor({ biasFocus: "SCIENCE", spacePush: true }), { F: 0.7, P: 1.5, G: 1, S: 1, C: 1, H: 1 });
+    assert.deepEqual(biasFor({ biasFocus: "SCIENCE", spacePush: "HALF" }), { F: 0.7, P: 1.25, G: 1, S: 1.2, C: 1, H: 1 }, "from Rocketry (research/39 §4.7)");
     assert.deepEqual(biasFor({}), { F: 1, P: 1, G: 1, S: 1, C: 1, H: 1 });
     assert.equal(biasKey({ biasFocus: "MILITARY" }), "NONE");
     assert.deepEqual(biasFor({ biasFocus: "CULTURE", yieldBias: { CULTURE: { C: 1.5 } } }).C, 1.5);

@@ -301,7 +301,13 @@ test("the science victory's last stretch: Rocketry and the Innovation masteries 
         assert.equal(steps.spacePushNow("SCIENCE").on, true);
         assert.equal(steps.spacePushNow("CULTURE").on, false, "another focus");
         world.research = late({ NODE_TECH_MO_ELECTRICITY: 1 });
-        assert.equal(steps.spacePushNow("SCIENCE").on, false, "Electricity's mastery still to research");
+        assert.deepEqual([steps.spacePushNow("SCIENCE").on, steps.spacePushNow("SCIENCE").level], [false, "HALF"], "Electricity's mastery still to research: half (research/39 §4.7)");
+        world.structures = undefined;
+        world.cities[0].queued = ["BUILDING_LAUNCH_PAD"];
+        assert.equal(steps.spacePushNow("SCIENCE").level, "HALF", "a pad queued");
+        delete world.cities[0].queued;
+        assert.equal(steps.spacePushNow("SCIENCE").level, null, "no pad at all");
+        world.structures = (x, y) => (x === 4 && y === 3 ? { district: null, constructibles: ["BUILDING_LAUNCH_PAD"] } : { district: null, constructibles: [] });
         world.research = late();
         GameInfo.LegacyPaths = [{ LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true }];
         GameInfo.AgeProgressionMilestones = [{ LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 500 }];
@@ -323,6 +329,76 @@ test("the science victory's last stretch: Rocketry and the Innovation masteries 
         for (const k of ["structures", "research"]) delete world[k];
         delete Players.get(0).LegacyPaths;
         steps.resetSpacePush();
+    }
+});
+
+// Research/39 §4.7: production first never fired in game 32 (Modern's production buildings are dear, and before Rocketry it ran
+// only in Airfield or Radio Station cities): Launch Pads waited behind 40-60 production cities.
+test("before Rocketry a city kept for a Launch Pad builds the production buildings that pay against its pad and runs", () => {
+    const pre = new Map();
+    for (const r of GameInfo.ProgressionTreePrereqs) pre.set(r.Node, [...(pre.get(r.Node) ?? []), r.PrereqNode]);
+    const depth = {};
+    const stack = [...(pre.get("NODE_TECH_MO_ROCKETRY") ?? [])];
+    while (stack.length > 0) {
+        const n = stack.pop();
+        if (depth[n]) continue;
+        depth[n] = 1;
+        stack.push(...(pre.get(n) ?? []));
+    }
+    withIronworks(() => {
+        const canBuild = world.canBuild;
+        world.canBuild = (type, id, args) => (type === "BUILDING_LAUNCH_PAD" ? { Success: false, Plots: [] } : canBuild(type, id, args)); // no pad before Rocketry
+        world.research = { depth, turns: { NODE_TECH_MO_ROCKETRY: 3 } };
+        world.costOf = (t) => ({ BUILDING_LAUNCH_PAD: 900, BUILDING_IRONWORKS: 267, PROJECT_CREWED_SPACE_FLIGHT_PREP: 1000 })[t];
+        const strategy = (progress) => ({ phase: "COMMIT", pads: 2, padCitiesNoWonders: true, gate: { open: false, progress } });
+        const first = (out) => out.filter((e) => e.key === "PRODUCTION_FIRST").map((e) => e.args[0]);
+        try {
+            fake.sent.length = 0;
+            assert.deepEqual(first(steps.pushVictoryWork("SCIENCE", { strategy: strategy(0.7) })), ["Paris"], "Paris is kept for a pad");
+            steps.resetProductionFirst();
+            fake.sent.length = 0;
+            assert.deepEqual(first(steps.pushVictoryWork("SCIENCE", { strategy: strategy(0.3) })), [], "Rocketry still far");
+        } finally {
+            world.canBuild = canBuild;
+            for (const k of ["research", "costOf"]) delete world[k];
+        }
+    });
+});
+
+// The player wants the age's first turn automated (research/39): the autopilot is off at every load, and an age change loads
+// the next age; its first turn's conversions are the cheapest of the age.
+test("the autopilot switches itself on again in a new age once the dedications are chosen, if it was on when the last age ended", () => {
+    const turn = Game.turn;
+    try {
+        Game.turn = 1;
+        autopilot.setAutopilot(false);
+        settings.remember(gameKey(), { apOnAge: "AGE_EXPLORATION" });
+        world.blocker = { type: EndTurnBlockingTypes.OTHER, name: "NOTIFICATION_AGE_TRANSITION" };
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "the dedications are the player's");
+        delete world.blocker;
+        assert.equal(autopilot.resumeAfterAgeChange(), true);
+        assert.equal(autopilot.isAutopilotOn(), true);
+        // Switched off by the player in the last age: not again.
+        autopilot.setAutopilot(false);
+        settings.remember(gameKey(), { apOnAge: "AGE_EXPLORATION" });
+        autopilot.setAutopilot(true);
+        autopilot.setAutopilot(false);
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "the player switched it off");
+        // Not from a later age's memory (an earlier save), not after the first turns, not with the option off.
+        settings.remember(gameKey(), { apOnAge: "AGE_MODERN" });
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "the same age");
+        settings.remember(gameKey(), { apOnAge: "AGE_EXPLORATION" });
+        Game.turn = 5;
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "turn 5");
+        Game.turn = 1;
+        settings.patch({ autopilot: { resumeAfterAge: false } });
+        assert.equal(autopilot.resumeAfterAgeChange(), false, "the option off");
+    } finally {
+        settings.patch({ autopilot: { resumeAfterAge: true } });
+        autopilot.setAutopilot(false);
+        settings.remember(gameKey(), { apOnAge: null });
+        delete world.blocker;
+        Game.turn = turn;
     }
 });
 
@@ -542,6 +618,12 @@ test("before Rocketry the bank holds the Launch Pads the race still needs, price
         assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.cost, p.budget.goal?.hold], ["PADS", 2200, 1100], "two pads, in Paris and Nice (not the cheapest Lille and Lyon); half the way: half of it held");
         steps.buyVictoryWork("SCIENCE", 1, p.budget, { pads: 4, commit: true });
         assert.equal(bought(), 1, "2950 above the reserve, 1100 held: the Schoolhouse");
+        // Little income (game 32's Modern: -19 to 160 a turn): the bank stays the goal however far it is (research/39 §4.6).
+        world.gold = 300;
+        world.goldIncome = 5;
+        steps.resetGoldPlan();
+        assert.equal(steps.goldPlan(s(0.5), { focus: "SCIENCE", reserveTurns: 1 }).budget.goal?.kind, "PADS", "1,100 to hold at 5 a turn");
+        world.goldIncome = 50;
         // Near Rocketry: the whole bank, from all the gold above the reserve.
         world.gold = 2000;
         fake.sent.length = 0;

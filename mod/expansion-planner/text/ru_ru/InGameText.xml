@@ -1608,6 +1608,24 @@
     <Replace Tag="LOC_XPL_AP_WATCH_STEP" Language="ru_RU">
       <Text>{1_Leader} будет у порога победы ({2_Victory}) на следующем шаге: {3_Points} из {4_Goal}, когда множитель упадёт до ×{5_Multiple}; чтобы сдержать, нам нужно {6_Need}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_RESUME_LABEL" Language="ru_RU">
+      <Text>Включаться снова в новой эпохе</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESUME_TT" Language="ru_RU">
+      <Text>Включён к концу эпохи — автопилот сам включится снова в первый ход новой эпохи, когда вы выберете устремления (выборы эпохи остаются вашими). Преобразования городков в этот первый ход самые дешёвые за эпоху: городом считается только столица, пока «Все ваши города прошлой эпохи остаются городами» не вернёт остальные.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AUTO_RESUMED" Language="ru_RU">
+      <Text>Новая эпоха: автопилот снова включается сам (он был включён к концу прошлой эпохи)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOWN_CONVERTED_AGE_START" Language="ru_RU">
+      <Text>{1_Town} становится городом в первый ход эпохи ({2_Gold} золота: пока карта не вернёт города, считается только столица)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REVOLT_GUARD" Language="ru_RU">
+      <Text>{1_Settlement} может восстать: там куплено «{2_Building}» ({3_Gold} золота)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SPACE_PUSH_HALF" Language="ru_RU">
+      <Text>Ракетная техника изучена, космодром стоит или строится: производство теперь весит ×1.25, наука ÷1.25 (полный перевес — после мастерств с Инновациями)</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SPACE_PUSH" Language="ru_RU">
       <Text>Путь к космодрому открыт, все мастерства с Инновациями изучены, космодром стоит: производство теперь весит ×1.5, наука ÷1.5 (Инновации дают подготовки к пилотируемому полёту)</Text>
     </Replace>

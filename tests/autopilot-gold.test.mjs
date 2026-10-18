@@ -189,13 +189,19 @@ test("no conversion in a non-final age's last 10 turns (cities become towns agai
     try {
         world.gold = 2000;
         world.agePoints = 95; // about 6 turns left
+        // Without «expect to keep cities» (the player does not take the card that keeps them).
+        const noCard = { ...settings.get(), towns: { expectKeepCities: false } };
+        fake.sent.length = 0;
+        steps.convertTowns(noCard, 0);
+        assert.deepEqual(converted(), [], "the age is ending");
+        // With it (the default since research/39: the player always takes the card), the cheap conversion goes on.
         fake.sent.length = 0;
         steps.convertTowns(settings.get(), 0);
-        assert.deepEqual(converted(), [], "the age is ending");
+        assert.deepEqual(converted(), [1], "the card keeps it");
         // The final age: cities stay, but in its last 25 turns a city builds too little before the game ends.
         world.finalAge = true;
         fake.sent.length = 0;
-        steps.convertTowns(settings.get(), 0);
+        steps.convertTowns(noCard, 0);
         assert.deepEqual(converted(), [], "the final age, about 6 turns left");
         world.agePoints = 85; // about 18 left
         fake.sent.length = 0;

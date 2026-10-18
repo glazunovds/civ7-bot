@@ -96,8 +96,14 @@ export function biasFor(settings) {
     const out = g > 1 ? { ...b, G: Math.round(b.G * g * 100) / 100 } : b;
     // The science victory's last stretch (the autopilot's `settings.spacePush`): production SPACE_PUSH times more, science
     // that many times less (research/38 §4 E1).
-    return settings?.spacePush ? { ...out, P: Math.round(out.P * SPACE_PUSH * 100) / 100, S: Math.round((out.S / SPACE_PUSH) * 100) / 100 } : out;
+    // HALF from Rocketry with a Launch Pad standing or queued, the full push once the Innovation masteries are in.
+    const push = settings?.spacePush === "HALF" ? SPACE_PUSH_HALF : settings?.spacePush ? SPACE_PUSH : 1;
+    return push > 1 ? { ...out, P: Math.round(out.P * push * 100) / 100, S: Math.round((out.S / push) * 100) / 100 } : out;
 }
+
+// From Rocketry, while the masteries still bring Innovation: half the push (research/39 §4.7: game 32 had 11-13 turns between
+// Rocketry and the full push).
+export const SPACE_PUSH_HALF = 1.25;
 
 // Once Rocketry and the Innovation masteries are in and a Launch Pad stands, science buys only Future Tech (3 Innovation for
 // 5,000 science and more) while 1,000 production runs a Crewed Space Flight Preparation (15): research/38 §3.7, game 30's

@@ -13,7 +13,7 @@ import { BIAS_DEFAULTS, BIAS_KEYS, BIAS_SETS, normaliseBias } from '../core/xpl-
 
 const BIAS_SAVE_MS = 300; // a dragged slider is saved once it rests
 
-const CHECKS = ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "strategy", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"];
+const CHECKS = ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "strategy", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn", "resumeAfterAge"];
 const MAX_WONDER_OPTIONS = [1, 2, 3];
 const RESERVE_OPTIONS = [0, 1, 2, 3, 5];
 const REPLAN_OPTIONS = [0, 1, 3, 5, 10];

@@ -1608,6 +1608,24 @@
     <Row Tag="LOC_XPL_AP_WATCH_STEP">
       <Text>{1_Leader} nears a win ({2_Victory}) at the next step: {3_Points} of {4_Goal} once the multiple falls to ×{5_Multiple}; we need {6_Need} to hold it back</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_RESUME_LABEL">
+      <Text>Switch on again in the next age</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_RESUME_TT">
+      <Text>On when the age ends: the autopilot switches itself on again in the next age's first turn, once you have chosen the dedications (the age's choices stay yours). That first turn's town conversions are the cheapest of the age: only the capital counts as a city until «All your Cities from the previous Age remain Cities» brings the others back.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_AUTO_RESUMED">
+      <Text>A new age: the autopilot switches itself on again (it was on when the last age ended)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_TOWN_CONVERTED_AGE_START">
+      <Text>{1_Town} becomes a city on the age's first turn ({2_Gold} gold: only the capital counts until the card brings the cities back)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REVOLT_GUARD">
+      <Text>{1_Settlement} may revolt: {2_Building} bought there ({3_Gold} gold)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SPACE_PUSH_HALF">
+      <Text>Rocketry is in and a Launch Pad stands or is queued: production now weighs ×1.25 and science ÷1.25 (the full push comes after the Innovation masteries)</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_SPACE_PUSH">
       <Text>Rocketry and every Innovation mastery are in, and a Launch Pad stands: production now weighs ×1.5 and science ÷1.5 (Crewed Space Flight Preparation brings the Innovation)</Text>
     </Row>

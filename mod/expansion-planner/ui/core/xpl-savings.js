@@ -153,10 +153,12 @@ export function noteGoalBought(memory, key, turn) {
  * the age: research/35) while every city stands at or above zero Happiness (`healthy`: the cities we have come first,
  * research/34 §2). @returns { floor, verdicts or null (any) }
  */
-export function conversionRule({ cities = 0, towns = 0, minCities = 0, cityTarget = 0, healthy = true } = {}) {
+export function conversionRule({ cities = 0, towns = 0, minCities = 0, cityTarget = 0, healthy = true, finalAge = false } = {}) {
     if (towns <= 0) return { floor: false, verdicts: [] };
     const target = healthy && cities < cityTarget;
-    return towns > cities || cities < minCities || target ? { floor: true, verdicts: null } : { floor: false, verdicts: CONVERT_VERDICTS_PAST_FLOOR };
+    // `finalAge` (the science focus's final age): towns outnumbering cities is no floor there; a 2,500 conversion makes
+    // ~20 production for the rest of the game, a Launch Pad bought with it runs the space work (research/39 §4.6).
+    return (towns > cities && !finalAge) || cities < minCities || target ? { floor: true, verdicts: null } : { floor: false, verdicts: CONVERT_VERDICTS_PAST_FLOOR };
 }
 
 const VERDICT_RANK = { CONVERT: 0, CONSIDER: 1, WAIT: 2, KEEP: 3 };
@@ -175,6 +177,18 @@ export function rankConversions(rows, focus = null) {
     const byProduction = focus === "SCIENCE" || focus === "ECONOMIC";
     const rank = (r) => (r.plannedCity && (Number(r.town.pop) || 0) >= PLANNED_CITY_MIN_POP ? -1 : VERDICT_RANK[r.advice?.verdict] ?? 4);
     return [...rows].sort((a, b) => rank(a) - rank(b)
-        || (byProduction ? (Number(b.town.prodPot) || 0) - (Number(a.town.prodPot) || 0) : 0)
+        || (byProduction ? conversionValue(b.town) - conversionValue(a.town) : 0)
         || (Number(a.town.cost) || 0) - (Number(b.town.cost) || 0));
+}
+
+// The share of a town's production potential a new city counts on (it is reached only over time).
+export const PROD_POT_SHARE = 0.5;
+
+/**
+ * What a conversion's gold buys (research/39 §4.3): the production the city makes now, or a share of its potential, per
+ * gold. Game 32 saved for Liverpool (2 production for 1,425) while Leeds made 11 for 1,087.
+ */
+export function conversionValue(town) {
+    const production = Math.max(Number(town?.prodNow) || 0, PROD_POT_SHARE * (Number(town?.prodPot) || 0));
+    return production / Math.max(1, Number(town?.cost) || 0);
 }

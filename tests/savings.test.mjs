@@ -67,6 +67,9 @@ test("which towns may become cities: any while towns outnumber cities; at 1:1 or
     assert.deepEqual(conversionRule({ cities: 3, towns: 3, cityTarget: 5 }), { floor: true, verdicts: null });
     assert.deepEqual(conversionRule({ cities: 3, towns: 3, cityTarget: 5, healthy: false }), { floor: false, verdicts: ["CONVERT"] });
     assert.deepEqual(conversionRule({ cities: 5, towns: 3, cityTarget: 5 }), { floor: false, verdicts: ["CONVERT"] });
+    // The science focus's final age (research/39 §4.6): towns outnumbering cities is no floor; a city a Launch Pad needs is.
+    assert.deepEqual(conversionRule({ cities: 4, towns: 7, finalAge: true }), { floor: false, verdicts: ["CONVERT"] });
+    assert.deepEqual(conversionRule({ cities: 4, towns: 7, minCities: 5, finalAge: true }), { floor: true, verdicts: null });
 });
 
 test("conversion order: a planned city site, then the verdict; science and economy take the most production, culture the cheapest", () => {
@@ -112,4 +115,16 @@ test("a goal the gold cannot cover before the age ends is not saved for; a site 
     assert.equal(chooseGoal(site, ["LEVER"], { have: 100, income: 50, turnsLeft: 40 })?.key, "c:1-1|BUILDING_AIRFIELD");
     assert.equal(chooseGoal(site, ["LEVER"], { have: 100, income: 50, turnsLeft: 15 }), null, "not past the age");
     assert.equal(withinReach(1100, 100, 50, 20), true);
+});
+
+// Research/39 §4.3: game 32 saved for Liverpool (2 production, 1,425) while Leeds made 11 for 1,087.
+test("conversions for science and economy: the most production per gold (now, or half the potential)", () => {
+    const row = (name, prodNow, prodPot, cost) => ({ town: { name, prodNow, prodPot, cost }, advice: { verdict: "WAIT" } });
+    const leeds = row("Leeds", 11, 25, 1087);
+    const liverpool = row("Liverpool", 2, 30, 1425);
+    assert.deepEqual(rankConversions([liverpool, leeds], "SCIENCE").map((r) => r.town.name), ["Leeds", "Liverpool"]);
+    assert.deepEqual(rankConversions([liverpool, leeds], "ECONOMIC").map((r) => r.town.name), ["Leeds", "Liverpool"]);
+    // A fresh town with a large potential still counts half of it: 0.5 × 60 = 30 for 1,000.
+    const fresh = row("Fresh", 1, 60, 1000);
+    assert.equal(rankConversions([leeds, fresh], "SCIENCE")[0].town.name, "Fresh");
 });

@@ -14,7 +14,7 @@ import { MOD_ID, PROFILES } from '../core/xpl-constants.js';
 import { BIAS_DEFAULTS, normaliseBiasSets } from '../core/xpl-profiles.js';
 import { log } from './xpl-log.js';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const OPTION_NAME = `${MOD_ID}.settings`;
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -37,9 +37,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // victory focus (science leans to science over food) and one without: 1 = as is.
     yieldBias: JSON.parse(JSON.stringify(BIAS_DEFAULTS)),
     // What the autopilot may do (it is switched on per session, see hud/xpl-autopilot.js).
-    autopilot: { research: true, production: true, wonders: true, maxWonders: 1, growth: true, towns: true, purchases: true, choices: true, closePopups: true, befriend: true, tacks: true, focus: false, strategy: true, victory: "AUTO", resources: true, diplomacy: false, roam: false, explore: false, settlers: false, defend: false, merchants: false, skipUnits: false, endTurn: false, biasOpen: false, reserveTurns: 2, replanEvery: 5, aiTurns: 5, lastHumanPlayer: -1 },
+    autopilot: { research: true, production: true, wonders: true, maxWonders: 1, growth: true, towns: true, purchases: true, choices: true, closePopups: true, befriend: true, tacks: true, focus: false, strategy: true, victory: "AUTO", resources: true, diplomacy: false, roam: false, explore: false, settlers: false, defend: false, merchants: false, skipUnits: false, endTurn: false, resumeAfterAge: true, biasOpen: false, reserveTurns: 2, replanEvery: 5, aiTurns: 5, lastHumanPlayer: -1 },
     buildings: { excluded: [], respectTacks: true, useEngine: true, futureTiles: true, specialists: 0.5, optionsOpen: false, autoTacks: false, lastTarget: null, townsAsCities: false, incremental: true, growthHints: true },
-    towns: { expectKeepCities: false },
+    // The player takes «All your Cities from the previous Age remain Cities» at every age change (research/39 §4.5).
+    towns: { expectKeepCities: true },
     wonders: { omniscient: false },
     debug: false,
     // What must outlive an age change for this game (`remember`): the save's GameTutorial properties do not (game 22).
@@ -82,7 +83,10 @@ function sanitize(raw) {
     for (const key of ["includeHidden", "spread", "heatmap", "useAI", "keepHighlights", "replacePrevious", "debug", "panelLarge"]) {
         s[key] = !!s[key];
     }
-    for (const key of ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "strategy", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn"]) s.autopilot[key] = !!s.autopilot[key];
+    for (const key of ["research", "production", "wonders", "growth", "towns", "purchases", "choices", "closePopups", "befriend", "tacks", "focus", "strategy", "resources", "diplomacy", "roam", "explore", "settlers", "defend", "merchants", "skipUnits", "endTurn", "resumeAfterAge"]) s.autopilot[key] = !!s.autopilot[key];
+    // Version 2 (research/39): «expect to keep cities» on, the player's answer (the card is always taken).
+    if (!(Number(raw?.v) >= 2)) s.towns = { ...s.towns, expectKeepCities: true };
+    s.towns.expectKeepCities = !!s.towns?.expectKeepCities;
     s.autopilot.biasOpen = !!s.autopilot.biasOpen;
     s.yieldBias = normaliseBiasSets(s.yieldBias);
     s.autopilot.maxWonders = clampInt(s.autopilot.maxWonders, 1, 3, DEFAULT_SETTINGS.autopilot.maxWonders);
