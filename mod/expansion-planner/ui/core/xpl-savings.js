@@ -13,7 +13,7 @@
  * next building): while it waits, small purchases do not eat its gold.
  */
 
-export const GOAL_KINDS = Object.freeze(["CONVERT", "CODEX", "LEVER", "PADS", "AIRFIELD", "GDP"]);
+export const GOAL_KINDS = Object.freeze(["CONVERT", "CODEX", "LEVER", "PADS", "AIRFIELD", "GDP", "BANK"]);
 export const TOWN_SHARE = 0.5;        // towns' plan purchases take at most this share of the free gold
 export const GOAL_FAIL_TURNS = 3;     // a goal bought this many turns in a row and still there: the game refuses it...
 export const GOAL_COOLDOWN = 5;       // ...dropped for this many turns

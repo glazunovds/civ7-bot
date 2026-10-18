@@ -122,3 +122,24 @@ Each phase ships with regression tests proven by revert on a scratch copy, a TES
 - **Buying projects:** the game has no purchase for them.
 - **More science volume** (specialists, buildings, policies): it is the largest lever (4–5 turns per 100 science a turn) but has no single fix; the gold pressure and the plan already weigh it. Oxford's timing (finish it after the cheap techs) is a candidate once a game shows the race is safe.
 - **The research/37 military phases 3–7:** they wait; games 30 and 31 lost no settlement, Continuity keeps armies unpacked, and no aircraft or naval threat appeared.
+
+## 8. Status: implemented (18 October 2026)
+
+Every task of §4 is in the code, each with a regression test proven by reverting it on a scratch copy (30 cases), and the root CLAUDE.md has it as gotcha 65. 730 tests pass. New text (LOC_XPL_AP_GOAL_BANK, LOC_XPL_AP_SPACE_PUSH): a full game restart. TESTING rows 354–363.
+
+| Task | Where | Decision taken while implementing |
+|---|---|---|
+| A1 research in the race | `researchPlan`, `RESEARCH_RACE` in `spaceRace`; core `run.start`, `rankInnovationResearch` | No "one Preparation run" margin in production first: it broke the near-goal rule (a run under way at 95 buys no upgrade). Innovation wonders in production are not counted yet. Future Tech: 2 copies ahead, each a step dearer, none while the strategy holds them back. A Launch Pad standing, queued or offered means Rocketry is in. |
+| A2 Airfield goal | `siteGoals` → `siteHelps` | The "no site" line once a turn per city. |
+| A3 pad under way | `victoryPurchases` (`underWay`), `padGoals` | Any science site under way, not only pads. |
+| B1 pad bank | `padGoals`, `victoryPurchases`' city order | No separate "no lever purchases" rule: from PAD_GATE_NEAR the bank holds all the gold above the reserve, which stops every free-gold purchase until it is full. |
+| B2 pads to the front | `padSlot` | Also not ahead of walls or another science site in production. |
+| B3 room for the pad | `holdsPadRoom` in `fillProduction` | Production buildings (PRODUCTION or PRODUCTION_WAREHOUSE) still go in. |
+| C1 sites when unlocked | `activeSites`, `SCIENCE_SITES` (Radio Station row) | `siteHelps` decides each, as for the Launch Pads beyond the first. |
+| C2 research by Innovation per turn | `innovationStep`, `oneOffSites` | Also when the gate is out of reach (`gateLate`). |
+| D1 bank for Modern | `bankForNextAge`, `carriedGoldCap` | The bank is what the free gold can reach before the age ends, at most the cap, so the goal is always within reach. |
+| E1 space push | `spacePushNow`, core `SPACE_PUSH` in `biasFor` | Needs a Launch Pad standing too. |
+| E2 Preparation keeps the front | `prepNearlyDone` (`PREP_HOLD_TURNS` 3) | Walls wait too, unless the centre is damaged or a war is at our door. |
+| E3 project policies | `PROJECT_PRODUCTION_TRADITIONS` in `innovationCivics` | `projectShare` left as it was: valuing Public Works before Rocketry keeps it slotted for when the projects start (policy swaps are gated). Socialism only once we are in the Communism branch; Think Tanks (Elective Republic) left to the advisor. |
+
+**The next science game should show:** the `victory work: race:` forecast close to the real crossing; «космодромы (K)» held and K pads bought at Rocketry; `queue: … BUILDING_LAUNCH_PAD moved ahead of …` and `keeps room for its Launch Pad`; an Airfield and a Radio Station built before their masteries and their projects run; the 2-point masteries before Nuclear Fission; Modern opening with gold near the cap; SPACE_PUSH after the masteries.

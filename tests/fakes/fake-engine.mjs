@@ -204,7 +204,7 @@ export function installFakeEngine(world, age = "antiquity") {
             },
             // world.cities[i].unrest = true: the settlement is in unrest
             Happiness: { get hasUnrest() { return !!c.unrest; }, get turnsOfUnrest() { return c.unrest ? 1 : -1; } },
-            Gold: { getTownUpgradeCost: () => c.cost ?? 300, getBuildingPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250, getUnitPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250 },
+            Gold: { getTownUpgradeCost: () => c.cost ?? 300, getBuildingPurchaseCost: (_y, type) => world.buyCost?.(type, c) ?? 250, getUnitPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250 },
             Production: {
                 getConstructibleProductionCost: (type) => world.costOf?.(type) ?? 100,
                 // Like the game: a project's own Cost (Preparation 2000, Launch Satellite 1000), unless the test prices it.

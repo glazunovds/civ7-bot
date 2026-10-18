@@ -298,7 +298,7 @@ function updateFocus(target = "AUTO") {
  */
 function noteStrategy(plan, facts) {
     const before = ap().strategy;
-    setAp({ strategy: { phase: plan.phase, age: plan.age, focus: plan.focus, profile: plan.profile, gateLate: !!plan.gateLate, lines: strategyLines(plan) } });
+    setAp({ strategy: { phase: plan.phase, age: plan.age, focus: plan.focus, profile: plan.profile, gateLate: !!plan.gateLate, noFutureTech: !!plan.noFutureTech, lines: strategyLines(plan) } });
     if (strategyLoggedTurn !== Game.turn) {
         strategyLoggedTurn = Game.turn;
         const gate = facts.gate?.known ? `${facts.gate.open ? "open" : "no"} ${Math.round((facts.gate.progress ?? 0) * 100) / 100}` : "-";
@@ -454,7 +454,13 @@ export async function runTurn(force = false) {
             if (gold.rose) record([{ key: "GOLD_PRESSURE", args: [gold.deficitTurns, gold.factor] }]);
             else if (gold.changed && gold.level === 0) record([{ key: "GOLD_PRESSURE_OFF", args: [] }]);
         });
-        s = { ...s, biasFocus: focus ?? "NONE", goldPressure: gold.factor };
+        // The science victory's last stretch: production over science (steps.spacePushNow; research/38 §4 E1).
+        let push = { on: false };
+        await guarded("space push", () => {
+            push = steps.spacePushNow(focus);
+            if (push.changed && push.on) record([{ key: "SPACE_PUSH", args: [] }]);
+        });
+        s = { ...s, biasFocus: focus ?? "NONE", goldPressure: gold.factor, spacePush: push.on };
         o = s.autopilot ?? {};
         const maxWonders = plan ? Math.max(1, Number(o.maxWonders) || 1) : wondersAtOnce(o.maxWonders ?? 1, focus);
         // Units first: a settler that founds now gives a new city (on turn 1 the capital,

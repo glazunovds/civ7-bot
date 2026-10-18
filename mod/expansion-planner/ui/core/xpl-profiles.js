@@ -93,8 +93,16 @@ export function biasFor(settings) {
     const raw = settings?.yieldBias;
     const b = isFlat(raw) ? normaliseBias(raw) : normaliseBias(raw?.[biasKey(settings)] ?? BIAS_DEFAULTS[biasKey(settings)]);
     const g = Number(settings?.goldPressure);
-    return g > 1 ? { ...b, G: Math.round(b.G * g * 100) / 100 } : b;
+    const out = g > 1 ? { ...b, G: Math.round(b.G * g * 100) / 100 } : b;
+    // The science victory's last stretch (the autopilot's `settings.spacePush`): production SPACE_PUSH times more, science
+    // that many times less (research/38 §4 E1).
+    return settings?.spacePush ? { ...out, P: Math.round(out.P * SPACE_PUSH * 100) / 100, S: Math.round((out.S / SPACE_PUSH) * 100) / 100 } : out;
 }
+
+// Once Rocketry and the Innovation masteries are in and a Launch Pad stands, science buys only Future Tech (3 Innovation for
+// 5,000 science and more) while 1,000 production runs a Crewed Space Flight Preparation (15): research/38 §3.7, game 30's
+// London fell from 66 to 36 production at M55 while the science balance still placed specialists.
+export const SPACE_PUSH = 1.5;
 
 const biased = new Map(); // "<profile>|<bias>" -> the profile with the balance applied
 

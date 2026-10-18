@@ -53,8 +53,13 @@ export const REPEATABLE_PROJECTS = new Set(["PROJECT_CREWED_SPACE_FLIGHT_PREP"])
 export const SCIENCE_SITES = {
     AGE_MODERN: [
         { type: LAUNCH_PAD, cities: 3, always: 1, projects: ["PROJECT_LAUNCH_SATELLITE"] },
-        // Only once its projects can start (Flight's and Aerodynamics' masteries; seen in game 6: an Airfield idle for most of the age).
+        // Once the building is unlocked (Flight), before its projects can start (Flight's and Aerodynamics' masteries), where
+        // the race says it brings the goal sooner: its flights count from the turn the research plan brings their mastery
+        // (research/38 §4 C1: no Airfield flight ran in games 28-31, 10 Innovation that needs no Launch Pad).
         { type: "BUILDING_AIRFIELD", cities: 1, always: 0, needs: ["PROJECT_TRANS_OCEANIC_FLIGHT", "PROJECT_BREAK_SOUND_BARRIER"] },
+        // The Radio Telescope's (Radio's mastery): 5 Innovation for a Radio Station and 1200 production, in a city without a
+        // Launch Pad, the same way (research/38 §4 C1).
+        { type: "BUILDING_RADIO_STATION", cities: 1, always: 0, needs: ["PROJECT_CREWED_SPACE_FLIGHT_RESEARCH"] },
     ],
 };
 export const SITE_MAX_TURNS = 10;
@@ -63,14 +68,37 @@ export const SITE_MAX_TURNS = 10;
 // EFFECT_PLAYER_GRANT_VICTORY_TRACKER_POINTS, Points); the data layer reads the game's own numbers first.
 export const PROJECT_INNOVATION = Object.freeze({ PROJECT_CREWED_SPACE_FLIGHT_PREP: 15, PROJECT_INVENT_CALCULUS: 10 });
 export const ONE_OFF_INNOVATION = 5;
+
+// Policies that speed every project (EFFECT_CITY_ADJUST_PROJECT_PRODUCTION): Public Works +30% (Socialism, in the Communism
+// branch). Its civic is a science goal once we are in that branch (research/38 §4 E3: games 30 and 31 got Socialism from the
+// advisor at M38 and M33). Think Tanks (Globalism) needs Elective Republic: left to the advisor.
+export const PROJECT_PRODUCTION_TRADITIONS = Object.freeze(["TRADITION_PUBLIC_WORKS"]);
 export const REACH_MAX_TURNS = 300; // the race is not looked at further ahead
+
+// Innovation a technology grants by itself (its *_SCIENCE_VP unlock: progression-trees-tech-gameeffects.xml Points; Rocketry
+// and Aerodynamics' mastery 5, Future Tech 3, the other Modern masteries 2); the data layer reads the game's own number first.
+export const RESEARCH_INNOVATION = Object.freeze({ MOD_TECH_MO_ROCKETRY_SCIENCE_VP: 5, MOD_TECH_MO_AERODYNAMICS_SCIENCE_VP: 5, MOD_MO_FUTURE_TECH_SCIENCE_VP: 3 });
+export const MASTERY_INNOVATION = 2;
+
+/**
+ * The order to research what brings Innovation (research/38 §4 C2: game 30 took Flight's mastery and Nuclear Fission, no
+ * Innovation, before the 2-point masteries): Innovation per turn of research, the points the research grants itself plus a
+ * one-off project it opens where that project's site stands or is queued (Flight's mastery: Trans-Oceanic Flight with an
+ * Airfield). Nothing for neither. Ties: the quicker first.
+ * @param cands [{ nodeType, points, oneOff, turns }] @returns the ones worth something, best first
+ */
+export function rankInnovationResearch(cands) {
+    const worth = (c) => ((Number(c.points) || 0) + (Number(c.oneOff) || 0)) / Math.max(0.5, Number(c.turns) || 0);
+    return (cands ?? []).filter((c) => worth(c) > 0).sort((a, b) => worth(b) - worth(a) || (Number(a.turns) || 0) - (Number(b.turns) || 0));
+}
 
 /**
  * When the science victory's Innovation still needed is reached, each city running its projects one after another: its
  * `runs` in order once `wait` turns have passed (the items ahead of them), then `repeat` (Crewed Space Flight Preparation
- * where a Launch Pad stands) again and again. Runs done on one turn count together.
+ * where a Launch Pad stands) again and again. A run with `start` begins no earlier than that turn (a flight waiting for its
+ * mastery). Runs done on one turn count together. Research is one more such "city" (spaceRace: its runs are the techs).
  * @param need Innovation still needed
- * @param cities [{ id, wait, runs: [{ key, innovation, turns, cost }], repeat: { key, innovation, turns, cost } | null }]
+ * @param cities [{ id, wait, runs: [{ key, innovation, turns, cost, start? }], repeat: { key, innovation, turns, cost } | null }]
  * @returns { turn (0: nothing needed; Infinity: not within maxTurns), done: Map(id -> the runs done by then) }
  */
 export function innovationReach(need, cities, maxTurns = REACH_MAX_TURNS) {
@@ -80,7 +108,7 @@ export function innovationReach(need, cities, maxTurns = REACH_MAX_TURNS) {
     for (const c of cities ?? []) {
         let t = Math.max(0, Number(c.wait) || 0);
         for (const run of c.runs ?? []) {
-            t += Math.max(0, Number(run.turns) || 0);
+            t = Math.max(t, Number(run.start) || 0) + Math.max(0, Number(run.turns) || 0);
             if (t <= maxTurns) events.push({ t, id: c.id, run });
         }
         const r = c.repeat;

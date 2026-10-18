@@ -264,3 +264,53 @@ test("science: no research gate is given up before a quarter of the age, science
         delete world.agePoints;
     }
 });
+
+// Research/38 §4 D1: games 30 and 31 entered Modern with 1,155-1,277 gold while the age change keeps up to 4,500 at Online
+// speed (9,000 × 50%), and Launch Pads cost 2,150-2,850 at Rocketry.
+test("science: Exploration's last turns bank the free gold for Modern, up to what the age change keeps", () => {
+    const age = (left) => {
+        GameTutorial.setProperty(Database.makeHash("_XPL_OBJ_AGE_SAMPLES"), null);
+        world.agePoints = 100 - (left / 120) * 100;
+    };
+    const s = { ...DEFAULT_SETTINGS, strategy: { goals: ["CONVERT", "LEVER"], phase: "BUILD" } };
+    try {
+        world.gold = 2000;
+        world.goldIncome = 100;
+        age(6);
+        steps.resetGoldPlan();
+        let p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
+        assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.cost], ["BANK", 2500], "2000 now and 5 turns of 100");
+        assert.deepEqual([p.budget.free(), p.budget.all()], [0, 2000], "nothing free; defenders, repairs and nearly done buildings still buy from all of it");
+        world.gold = 9500;
+        steps.resetGoldPlan();
+        p = steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 });
+        assert.equal(p.budget.goal?.cost, 9000, "Continuity keeps 9,000 entering Modern");
+        assert.equal(p.budget.free(), 500);
+        // Another focus, or the age's end still far: no bank.
+        steps.resetGoldPlan();
+        assert.notEqual(steps.goldPlan(s, { focus: "CULTURE", reserveTurns: 0 }).budget.goal?.kind, "BANK");
+        age(40);
+        steps.resetGoldPlan();
+        assert.notEqual(steps.goldPlan(s, { focus: "SCIENCE", reserveTurns: 0 }).budget.goal?.kind, "BANK");
+    } finally {
+        steps.resetGoldPlan();
+        GameTutorial.setProperty(Database.makeHash("_XPL_OBJ_AGE_SAMPLES"), null);
+        for (const k of ["gold", "goldIncome", "agePoints"]) delete world[k];
+    }
+});
+
+test("the gold an age change keeps: Continuity 9,000 entering Modern, Regroup 3,000, scaled by the game speed", () => {
+    const config = Configuration.getGame;
+    const speeds = GameInfo.GameSpeeds;
+    try {
+        assert.equal(steps.carriedGoldCap("AGE_MODERN"), 9000, "the default setting, a speed the data does not know: ×1");
+        GameInfo.GameSpeeds = { lookup: (t) => (t === "GAMESPEED_ONLINE" ? { CostMultiplier: 50 } : null) };
+        Configuration.getGame = () => ({ ...config(), gameSpeedType: "GAMESPEED_ONLINE", getValue: (k) => (k === "AgeTransitionSettingName" ? "AGE_TRANSITION_SETTING_KEEP_MORE" : null) });
+        assert.deepEqual([steps.carriedGoldCap("AGE_MODERN"), steps.carriedGoldCap("AGE_EXPLORATION")], [4500, 3000]);
+        Configuration.getGame = () => ({ ...config(), gameSpeedType: "GAMESPEED_ONLINE", getValue: () => "AGE_TRANSITION_SETTING_ORIGINAL" });
+        assert.equal(steps.carriedGoldCap("AGE_MODERN"), 1500, "Regroup");
+    } finally {
+        Configuration.getGame = config;
+        GameInfo.GameSpeeds = speeds;
+    }
+});

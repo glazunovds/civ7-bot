@@ -2,7 +2,7 @@
 // path in each age, and the 40-yield bonus for Exploration science specialists.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { highYieldBonus, highYieldTarget, innovationReach, leverBuildings, oneOffNext, pickVictoryResearch, researchToward, wantedResearch } from "../mod/expansion-planner/ui/core/xpl-victory-levers.js";
+import { highYieldBonus, highYieldTarget, innovationReach, leverBuildings, oneOffNext, pickVictoryResearch, rankInnovationResearch, researchToward, wantedResearch } from "../mod/expansion-planner/ui/core/xpl-victory-levers.js";
 
 test("research: the quickest of the candidates whose next research unlocks the path's work", () => {
     const c = [
@@ -72,4 +72,28 @@ test("a one-off goes ahead of Preparation only when it reaches the goal strictly
     assert.equal(oneOffNext(race(20), "a", SAT).next, false, "20 to go: both orders reach it at 15, so Preparation first");
     const half = { ...PREP, turns: 4, cost: 400 };
     assert.equal(oneOffNext(race(5, [half]), "a", SAT, 1).next, false, "a run under way stays first and makes it at 4");
+});
+
+// Research/38 §4 A1: research is one more "city" in the race; a flight waits for its mastery (`start`), whatever the city's
+// own wait.
+test("the race: a run with a start begins no earlier than that turn; research runs in sequence like a city's", () => {
+    const research = { id: "research", wait: 0, runs: [{ key: "ROCKETRY", innovation: 5, turns: 20 }, { key: "AERO", innovation: 5, turns: 4 }], repeat: null };
+    const airfield = { id: "b", wait: 3, runs: [{ key: "FLIGHT", innovation: 5, turns: 5, start: 24 }], repeat: null };
+    const r = innovationReach(15, [research, airfield]);
+    assert.equal(r.turn, 29, "Rocketry 20, Aerodynamics' mastery 24, the flight from 24: 29 (not 8)");
+    assert.deepEqual(r.done.get("research").map((x) => x.key), ["ROCKETRY", "AERO"]);
+});
+
+// Research/38 §4 C2: game 30 researched Flight's mastery (no Innovation, no Airfield) and Nuclear Fission before the 2-point
+// masteries.
+test("research for Innovation: points per turn, a one-off it opens counted only where its site is; nothing for neither", () => {
+    const cands = [
+        { nodeType: "FLIGHT", points: 0, oneOff: 0, turns: 3 },
+        { nodeType: "ELECTRICITY", points: 2, oneOff: 0, turns: 2 },
+        { nodeType: "AERODYNAMICS", points: 5, oneOff: 0, turns: 4 },
+        { nodeType: "RADIO", points: 2, oneOff: 0, turns: 3 },
+    ];
+    assert.deepEqual(rankInnovationResearch(cands).map((c) => c.nodeType), ["AERODYNAMICS", "ELECTRICITY", "RADIO"]);
+    cands[0].oneOff = 5; // an Airfield stands: Trans-Oceanic Flight
+    assert.deepEqual(rankInnovationResearch(cands).map((c) => c.nodeType), ["FLIGHT", "AERODYNAMICS", "ELECTRICITY", "RADIO"]);
 });

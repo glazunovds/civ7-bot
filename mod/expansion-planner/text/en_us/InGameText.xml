@@ -1536,6 +1536,9 @@
     <Row Tag="LOC_XPL_AP_GOAL_PADS">
       <Text>Launch Pads ({1_N})</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_BANK">
+      <Text>gold for the Modern Age (the age change keeps up to {1_Cap}[icon:YIELD_GOLD])</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_STRATEGY_NOW">
       <Text>Strategy: {1_Phase} → {2_Focus}</Text>
     </Row>
@@ -1604,6 +1607,9 @@
     </Row>
     <Row Tag="LOC_XPL_AP_WATCH_STEP">
       <Text>{1_Leader} nears a win ({2_Victory}) at the next step: {3_Points} of {4_Goal} once the multiple falls to ×{5_Multiple}; we need {6_Need} to hold it back</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SPACE_PUSH">
+      <Text>Rocketry and every Innovation mastery are in, and a Launch Pad stands: production now weighs ×1.5 and science ÷1.5 (Crewed Space Flight Preparation brings the Innovation)</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_GOLD_PRESSURE">
       <Text>Gold income below zero ({1_Num} turns): gold now weighs ×{2_Num} in every choice</Text>

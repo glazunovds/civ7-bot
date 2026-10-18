@@ -1536,6 +1536,9 @@
     <Replace Tag="LOC_XPL_AP_GOAL_PADS" Language="ru_RU">
       <Text>космодромы ({1_N})</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_GOAL_BANK" Language="ru_RU">
+      <Text>золото на Новое время (смена эпохи сохранит до {1_Cap}[icon:YIELD_GOLD])</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_STRATEGY_NOW" Language="ru_RU">
       <Text>Стратегия: {1_Phase} → {2_Focus}</Text>
     </Replace>
@@ -1604,6 +1607,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_WATCH_STEP" Language="ru_RU">
       <Text>{1_Leader} будет у порога победы ({2_Victory}) на следующем шаге: {3_Points} из {4_Goal}, когда множитель упадёт до ×{5_Multiple}; чтобы сдержать, нам нужно {6_Need}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SPACE_PUSH" Language="ru_RU">
+      <Text>Путь к космодрому открыт, все мастерства с Инновациями изучены, космодром стоит: производство теперь весит ×1.5, наука ÷1.5 (Инновации дают подготовки к пилотируемому полёту)</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_GOLD_PRESSURE" Language="ru_RU">
       <Text>Доход золота ниже нуля (ходов: {1_Num}): золото теперь весит ×{2_Num} во всех решениях</Text>

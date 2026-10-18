@@ -25,7 +25,7 @@ import { biasFor, biasKey, profileFor } from '../core/xpl-profiles.js';
 import { H, yieldIndex, YIELD_KEYS } from '../core/xpl-yields.js';
 import { GOLD_PRESSURE, goldPressure, happinessWorth, unhappinessShare } from '../core/xpl-scarcity.js';
 const HAPPINESS = yieldIndex("YIELD_HAPPINESS");
-import { FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, REACH_MAX_TURNS, REPEATABLE_PROJECTS, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
+import { FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MASTERY_INNOVATION, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, PROJECT_PRODUCTION_TRADITIONS, rankInnovationResearch, REACH_MAX_TURNS, REPEATABLE_PROJECTS, RESEARCH_INNOVATION, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
 import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory.js';
 import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
@@ -454,13 +454,18 @@ function innovationCivics(candidates) {
     const turnsOf = nodeTurns(safe(() => Players.get(pid()).Culture, null));
     const goals = [];
     const way = new Set();
+    // A tree we are in: one of its nodes researched (an ideology's branch is not chosen for a policy).
+    const entered = (tree) => !!GameInfo.ProgressionTreeNodes?.find((n) => n.ProgressionTree === tree && researched(n.ProgressionTreeNodeType));
     for (const r of GameInfo.ProgressionTreeNodeUnlocks ?? []) {
         if (r.RequiredTraitType || (Number(r.UnlockDepth) || 1) !== 1) continue;
         const t = r.TargetType ?? "";
-        if (!/_SCIENCE_VP$/.test(t) && !wonders.has(t) && !scienceBuilding(t)) continue;
+        // A policy speeding every project (Public Works: research/38 §4 E3), where no government is required.
+        const projectPolicy = PROJECT_PRODUCTION_TRADITIONS.includes(t) && !r.RequiredGovernmentType;
+        if (!/_SCIENCE_VP$/.test(t) && !wonders.has(t) && !scienceBuilding(t) && !projectPolicy) continue;
         const node = r.ProgressionTreeNodeType;
         const tree = treeOf(node);
         if (!tree.includes("CIVIC") || !(tree.includes("_MAIN") || ours.has(tree)) || researched(node) || goals.includes(node)) continue;
+        if (projectPolicy && !tree.includes("_MAIN") && !entered(tree)) continue;
         // Its way, and whether it can be researched before the age ends (S4: Social Class was 35 turns short).
         const mine = new Set([node]);
         const stack = [...(prereqs.get(node) ?? [])];
@@ -576,9 +581,14 @@ function unlockReached(target) {
     return !!GameInfo.ProgressionTreeNodeUnlocks?.find((r) => r.TargetType === target && !r.RequiredTraitType && depthOf(r.ProgressionTreeNodeType) >= (Number(r.UnlockDepth) || 1));
 }
 
-/** This age's science sites (core scienceSites) whose projects can start (`needs`: an unlock reached; research/21 D5). */
+/**
+ * This age's science sites (core scienceSites) we may build: one with `needs` once the building itself is unlocked (Flight's
+ * Airfield, Radio's Radio Station), its projects counted by the race from the turn their mastery comes (research/38 §4 C1;
+ * before, only once a project could start: research/21 D5, an Airfield idle most of game 6's age, which siteHelps now
+ * weighs).
+ */
 function activeSites(pads = null) {
-    return scienceSites(currentAge(), { pads }).filter((site) => !site.needs || site.needs.some(unlockReached));
+    return scienceSites(currentAge(), { pads }).filter((site) => !site.needs || unlockReached(site.type) || site.needs.some(unlockReached));
 }
 
 /** The age's countdown has started and at most 3 points (turns) are left: upgrades and conversions are wasted now. */
@@ -691,12 +701,21 @@ export function chooseResearch(kind, settings, focus = null) {
     const late = !!settings?.strategy?.gateLate || !!found?.late;
     const gate = found?.late ? null : found;
     const quickest = (list) => [...list].sort((a, b) => (a.turns ?? 99) - (b.turns ?? 99))[0];
+    // Modern, no gate before us (Rocketry in, or out of reach): the research that brings Innovation, by Innovation per turn
+    // (research/38 §4 C2). A one-off project a mastery opens is wanted only where its site stands or is queued: game 30 took
+    // Flight's mastery with no Airfield, and Nuclear Fission, before the 2-point masteries.
+    const modernScience = focus === "SCIENCE" && kind === "tech" && !gate && currentAge() === "AGE_MODERN";
+    if (modernScience) {
+        const sites = oneOffSites();
+        for (const c of candidates) c.targets = c.targets.filter((t) => !(t in sites) || sites[t]);
+    }
+    const innovationTech = modernScience ? safe(() => innovationStep(candidates), null) : null;
     // Innovation civics (Literacy, Social Class: Innovation the moment they are in) and the way to them
     // first (D2): the civic tree does not compete with the technology gates.
     const civics = focus === "SCIENCE" && kind === "culture" ? safe(() => innovationCivics(candidates), null) : null;
     const innovation = civics ? quickest(civics.pool.filter((c) => civics.goals.has(c.nodeType))) ?? null : null;
     const civicWay = civics && !innovation ? { via: quickest(civics.pool), goal: civics.goal } : null;
-    const victory = focus && !innovation && !civicWay ? (late ? pickBonusResearch(focus, candidates) : null) ?? pickVictoryResearch(focus, gate ? gate.pool : candidates) : null;
+    const victory = focus && !innovation && !civicWay ? innovationTech ?? (late ? pickBonusResearch(focus, candidates) : null) ?? pickVictoryResearch(focus, gate ? gate.pool : candidates) : null;
     const toward = civicWay ?? (focus && !innovation && !victory
         // On a gate's way: toward the path's nearest wanted research through it (Pottery to Writing's
         // Library, both on the way to Mathematics), else the quickest step.
@@ -1061,6 +1080,24 @@ function toFront(city, hash, slot = null, { behind = null } = {}) {
     return moveInQueue(city, i, to);
 }
 
+/**
+ * Where a queued Launch Pad goes (research/38 §4 B2: games 30 and 31 started their pads 2-8 turns after Rocketry, behind a
+ * Cannery, a Laboratory, City Parks begun just before it): the very front, ahead of a plain building with progress (root
+ * gotcha 20: the building keeps its own). Not ahead of a wonder, a project, a unit, walls or another science site in
+ * production, nor of an item done this turn; behind repairs (toFront) and the production-first buildings (their rank).
+ */
+function padSlot(city) {
+    const slot = frontSlot(city);
+    if (slot === 0) return 0;
+    const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+    if (left > 0 && left <= 1) return slot;
+    const h = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+    const front = safe(() => GameInfo.Constructibles.lookup(h), null);
+    if (front?.ConstructibleClass !== "BUILDING" || isWallsType(h)) return slot;
+    if (scienceSites(currentAge()).some((x) => x.type === front.ConstructibleType)) return slot;
+    return 0;
+}
+
 /** Walls: a FORTIFICATION-tagged building (any civilization's). */
 function isWallsType(h) {
     const c = safe(() => GameInfo.Constructibles.lookup(h), null);
@@ -1313,8 +1350,16 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
             if (!def) continue;
             const pad = site.type === LAUNCH_PAD;
             const holders = cities.filter((c) => queueTypes(c).includes(def.$hash) || cityHas(c, site.type));
-            // One queued that no longer fits is not pushed ahead (the age-end step would move it back: ageEndOrder).
-            for (const c of holders) if (!finalAge || cityHas(c, site.type) || siteFitsAge(c, def, site)) toFront(c, def.$hash, null, { behind: behindOwn(c, def.$hash) });
+            // One queued that no longer fits is not pushed ahead (the age-end step would move it back: ageEndOrder). A Launch
+            // Pad goes ahead of a plain building with progress (padSlot), with a UI.log probe of gotcha 20's rule.
+            for (const c of holders) {
+                if (finalAge && !cityHas(c, site.type) && !siteFitsAge(c, def, site)) continue;
+                const slot = pad ? padSlot(c) : null;
+                const kept = slot === 0 && frontSlot(c) ? { item: typeNameOf(safe(() => c.BuildQueue.currentProductionTypeHash, null)), production: Math.round(Number(currentProgress(c)) || 0) } : null;
+                if (toFront(c, def.$hash, slot, { behind: behindOwn(c, def.$hash) }) && kept) {
+                    log.info(`queue: ${nameOf(c)}: ${LAUNCH_PAD} moved ahead of ${kept.item} with ${kept.production} production in it (research/38 B2; CityBuildQueue.csv shows whether it keeps it)`);
+                }
+            }
             // The other sites (the Airfield) only in a city without a Launch Pad; one in a Launch Pad's city does not count,
             // its flights never run there (Preparation comes first: research/32 §3).
             const order = pad ? cities : cities.filter((c) => !hasPad(c));
@@ -1357,6 +1402,7 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
         // Launch Satellite's 5 come in half the time of Preparation's 15, and once Preparation stood first it never ran
         // (research/32 §3). Decided on the race as it stands, city by city (oneOffNext; a tie keeps Preparation first).
         const race = spaceRace(cities, extras());
+        noteRace(race);
         if (race && race.need > 0) {
             for (const type of SCIENCE_PROJECTS) {
                 const def = REPEATABLE_PROJECTS.has(type) ? null : safe(() => GameInfo.Projects.lookup(type), null);
@@ -1547,6 +1593,174 @@ function spaceWorkIn(city) {
     return activeSites(null).some((site) => cityHas(city, site.type) || queueTypes(city).includes(safe(() => GameInfo.Constructibles.lookup(site.type)?.$hash, null)));
 }
 
+// spaceRace's entry for the Innovation research brings (research/38 §4 A1), and the Future Techs it counts ahead: each costs a
+// step more than the last, and a far forecast only flatters the race.
+export const RESEARCH_RACE = "research";
+const FUTURE_TECH_AHEAD = 2;
+const RADIO_STATION = "BUILDING_RADIO_STATION";
+const researchPointsCache = new Map(); // "age|modifier" -> Innovation
+
+/** Innovation a technology's unlock grants (the game's Points of a science VictoryType), else the table's. */
+function researchInnovationOf(target) {
+    const key = `${currentAge()}|${target}`;
+    if (researchPointsCache.has(key)) return researchPointsCache.get(key);
+    const args = safe(() => GameInfo.ModifierArguments.filter((a) => a.ModifierId === target), []) ?? [];
+    let points = String(args.find((a) => a.Name === "VictoryType")?.Value ?? "").includes("SCIENCE") ? Number(args.find((a) => a.Name === "Points")?.Value) || 0 : 0;
+    if (!(points > 0)) points = RESEARCH_INNOVATION[target] ?? MASTERY_INNOVATION;
+    researchPointsCache.set(key, points);
+    return points;
+}
+
+/** Rocketry is in whatever the tree says: a Launch Pad stands or is queued, or the game lets a city build one. */
+function padOffered(cities) {
+    const def = safe(() => GameInfo.Constructibles.lookup(LAUNCH_PAD), null);
+    if (!def) return false;
+    return cities.some((c) => cityHas(c, LAUNCH_PAD) || queueTypes(c).includes(def.$hash))
+        || cities.some((c) => !!safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null)?.Success);
+}
+
+/**
+ * The Innovation research still brings (research/38 §4 A1: the race counted only projects and forecast 44 turns at game
+ * 30's M35, where 26 came), in the order chooseResearch takes it: Rocketry at the end of its way (`gateTurns`), then the
+ * masteries by Innovation per turn (rankInnovationResearch; a one-off they open counts for the order only where its site
+ * stands or comes: `airfield`, `radio`), then Future Tech's prerequisites and FUTURE_TECH_AHEAD Future Techs (none while
+ * the strategy holds them back). Turns are the game's (getTurnsForNode); a mastery whose tech is not in yet takes as long
+ * again. @returns { gateTurns, runs: [{ key, innovation, turns, cost: 0 }], at: Map(nodeType -> the turn it is in) }
+ */
+function researchPlan(cities, { airfield = false, radio = false } = {}) {
+    const plan = { gateTurns: 0, runs: [], at: new Map() };
+    const holder = safe(() => Players.get(pid()).Techs, null);
+    if (!holder) return plan;
+    const { prereqs, researched, depthOf } = treeFacts();
+    const turnsOf = nodeTurns(holder);
+    const isTech = (node) => String(safe(() => GameInfo.ProgressionTreeNodes.lookup(node)?.ProgressionTree, "") ?? "").includes("TECH");
+    const rows = GameInfo.ProgressionTreeNodeUnlocks?.filter((r) => !r.RequiredTraitType && isTech(r.ProgressionTreeNodeType)) ?? [];
+    let t = 0;
+    const push = (key, innovation, turns) => {
+        t += turns;
+        plan.runs.push({ key, innovation, turns, cost: 0 });
+        plan.at.set(key, t);
+    };
+    // Rocketry and its way first: research takes nothing else until it is in (researchGate).
+    const gate = safe(() => gateState("SCIENCE"), null);
+    const way = new Set();
+    if (gate?.known && !gate.open && !padOffered(cities)) {
+        const stack = [gate.goal];
+        while (stack.length > 0) {
+            const n = stack.pop();
+            if (way.has(n) || researched(n)) continue;
+            way.add(n);
+            stack.push(...(prereqs.get(n) ?? []));
+        }
+        plan.gateTurns = [...way].reduce((sum, n) => sum + turnsOf(n), 0);
+        const points = rows.filter((r) => r.ProgressionTreeNodeType === gate.goal && (Number(r.UnlockDepth) || 1) === 1 && /_SCIENCE_VP$/.test(String(r.TargetType)))
+            .reduce((sum, r) => sum + researchInnovationOf(r.TargetType), 0);
+        push(gate.goal, points, plan.gateTurns);
+    }
+    // The masteries, and the one-offs they open where the one-off's site stands or comes.
+    const siteFor = { PROJECT_TRANS_OCEANIC_FLIGHT: airfield, PROJECT_BREAK_SOUND_BARRIER: airfield };
+    for (const p of STANDING_SITE_PROJECTS) siteFor[p] = radio;
+    const cands = new Map();
+    for (const r of rows) {
+        const depth = Number(r.UnlockDepth) || 1;
+        const node = r.ProgressionTreeNodeType;
+        if (depth < 2 || depthOf(node) >= depth) continue;
+        const target = String(r.TargetType ?? "");
+        const points = /_SCIENCE_VP$/.test(target) ? researchInnovationOf(target) : 0;
+        const oneOff = siteFor[target] ? projectInnovation(target) : 0;
+        if (!(points > 0) && !(oneOff > 0)) continue;
+        const c = cands.get(node) ?? { nodeType: node, points: 0, oneOff: 0, turns: turnsOf(node) * (researched(node) || way.has(node) ? 1 : 2) };
+        c.points += points;
+        c.oneOff += oneOff;
+        cands.set(node, c);
+    }
+    for (const c of rankInnovationResearch([...cands.values()])) push(c.nodeType, c.points, c.turns);
+    // Future Tech after its prerequisites (Nuclear Fission: no Innovation of its own), each a step dearer.
+    if (!safe(() => state.get().autopilot?.strategy?.noFutureTech, false)) {
+        const ft = rows.find((r) => /FUTURE_TECH_SCIENCE_VP$/.test(String(r.TargetType)));
+        if (ft) {
+            const node = ft.ProgressionTreeNodeType;
+            for (const p of prereqs.get(node) ?? []) if (!researched(p) && !plan.at.has(p)) push(p, 0, turnsOf(p));
+            const points = researchInnovationOf(ft.TargetType);
+            for (let k = 1; k <= FUTURE_TECH_AHEAD; k++) push(node, points, turnsOf(node) * k);
+        }
+    }
+    return plan;
+}
+
+/** The one-off projects a mastery opens, and whether their site stands or is queued in one of our cities (the Airfield's flights, the Radio Telescope). */
+function oneOffSites() {
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    const has = (type) => {
+        const h = safe(() => GameInfo.Constructibles.lookup(type)?.$hash, null);
+        return cities.some((c) => cityHas(c, type) || (h !== null && queueTypes(c).includes(h)));
+    };
+    const airfield = has("BUILDING_AIRFIELD");
+    const out = { PROJECT_TRANS_OCEANIC_FLIGHT: airfield, PROJECT_BREAK_SOUND_BARRIER: airfield };
+    for (const p of STANDING_SITE_PROJECTS) out[p] = has(RADIO_STATION);
+    return out;
+}
+
+/**
+ * The research that brings the most Innovation per turn (research/38 §4 C2; core rankInnovationResearch): the points its next
+ * research grants itself (*_SCIENCE_VP) plus a one-off project it opens where that project's site stands or is queued.
+ * @param candidates researchCandidates' @returns one of them or null
+ */
+function innovationStep(candidates) {
+    const sites = oneOffSites();
+    const cands = (candidates ?? []).map((c) => ({
+        ...c,
+        points: c.targets.filter((t) => /_SCIENCE_VP$/.test(String(t))).reduce((sum, t) => sum + researchInnovationOf(t), 0),
+        oneOff: c.targets.reduce((sum, t) => sum + (sites[t] ? projectInnovation(t) : 0), 0),
+    }));
+    return rankInnovationResearch(cands)[0] ?? null;
+}
+
+/** The Innovation masteries still to research (tech nodes whose mastery grants *_SCIENCE_VP and is not reached). */
+function innovationMasteriesLeft() {
+    const { depthOf } = treeFacts();
+    const isTech = (node) => String(safe(() => GameInfo.ProgressionTreeNodes.lookup(node)?.ProgressionTree, "") ?? "").includes("TECH");
+    const rows = GameInfo.ProgressionTreeNodeUnlocks?.filter((r) => !r.RequiredTraitType && (Number(r.UnlockDepth) || 1) >= 2
+        && /_SCIENCE_VP$/.test(String(r.TargetType ?? "")) && isTech(r.ProgressionTreeNodeType)) ?? [];
+    return rows.filter((r) => depthOf(r.ProgressionTreeNodeType) < (Number(r.UnlockDepth) || 1)).length;
+}
+
+let spacePushOn = false;
+
+/** Forgets whether the last pass was in the space push (tests; a new game). */
+export function resetSpacePush() {
+    spacePushOn = false;
+}
+
+/**
+ * The science victory's last stretch (research/38 §4 E1; core SPACE_PUSH): the science focus in Modern, Rocketry in, no
+ * Innovation mastery left and a Launch Pad standing. Then the pass weighs production more and science less (biasFor).
+ * @returns { on, changed }
+ */
+export function spacePushNow(focus) {
+    const on = focus === "SCIENCE" && currentAge() === "AGE_MODERN"
+        && !!safe(() => gateState(focus).open, false)
+        && ownSettlements().some((c) => !c.isTown && cityHas(c, LAUNCH_PAD))
+        && innovationMasteriesLeft() === 0;
+    const changed = on !== spacePushOn;
+    spacePushOn = on;
+    if (changed) log.info(`space push: ${on ? "on: production weighs more, science less" : "off"}`);
+    return { on, changed };
+}
+
+let raceNoted = null; // the turn UI.log last described the race
+
+/** UI.log once a turn: the race the victory work decides on (research/38 §4 A1: the forecast against the real crossing). */
+function noteRace(race) {
+    if (!race || raceNoted === Game.turn) return;
+    raceNoted = Game.turn;
+    const reach = innovationReach(race.need, race.cities, race.maxTurns);
+    const sum = (runs) => (runs ?? []).reduce((a, r) => a + (Number(r.innovation) || 0), 0);
+    const research = race.cities.find((c) => c.id === RESEARCH_RACE);
+    const cities = race.cities.filter((c) => c.id !== RESEARCH_RACE).map((c) => `${c.id} wait ${Math.ceil(c.wait)} runs ${c.runs.map((r) => String(r.key).replace("PROJECT_", "")).join("+") || "-"}${c.repeat ? ` prep every ${Math.ceil(c.repeat.turns)}` : ""}`);
+    log.info(`victory work: race: ${race.need} Innovation needed, reached in ${Number.isFinite(reach.turn) ? Math.ceil(reach.turn) : "-"} turns; research ${sum(reach.done.get(RESEARCH_RACE))} of it by then (${sum(research?.runs)} ahead${race.gateTurns > 0 ? `, Rocketry in ${Math.ceil(race.gateTurns)}` : ""}); ${cities.join("; ") || "no space work"}`);
+}
+
 /**
  * The science victory's race as it stands, for innovationReach: the Innovation still needed and each city's project runs.
  * A city runs the Innovation projects queued there in order (one under way keeps its place: `lock`) after the item in
@@ -1554,8 +1768,9 @@ function spaceWorkIn(city) {
  * site still to be built; then, with a Launch Pad standing or queued, Crewed Space Flight Preparation again and again;
  * with another site (the Airfield), the projects it is for, each once, where none is queued. `extra`: sid -> the site
  * types a city gets this pass (`instant`: "sid|type" of those bought, standing at once). Up to the game's end (ageOutlook:
- * a rival's science countdown included).
- * @returns { need, cities: [{ id, wait, runs, repeat, lock }], maxTurns } or null (no science victory known)
+ * a rival's science countdown included). Research is one more entry (RESEARCH_RACE: researchPlan), no Launch Pad comes
+ * before Rocketry (`gateTurns`), and a flight counts from the turn its mastery comes in the research plan.
+ * @returns { need, cities: [{ id, wait, runs, repeat, lock }], maxTurns, gateTurns } or null (no science victory known)
  */
 function spaceRace(cities, extra = new Map(), { instant = new Set() } = {}) {
     const known = safe(() => innovationNeed(), null);
@@ -1563,8 +1778,19 @@ function spaceRace(cities, extra = new Map(), { instant = new Set() } = {}) {
     const end = Number(safe(() => ageOutlook().turnsLeft, Infinity));
     const maxTurns = Number.isFinite(end) ? Math.max(0, Math.min(REACH_MAX_TURNS, end - AGE_END_MARGIN)) : REACH_MAX_TURNS;
     const prep = safe(() => GameInfo.Projects.lookup(PREP), null);
-    const sites = activeSites(null).map((site) => ({ site, def: safe(() => GameInfo.Constructibles.lookup(site.type), null) })).filter((x) => x.def);
+    // Every science site: one whose projects wait for a mastery counts them from the turn the research plan brings it.
+    const sites = scienceSites(currentAge()).map((site) => ({ site, def: safe(() => GameInfo.Constructibles.lookup(site.type), null) })).filter((x) => x.def);
     const taken = new Set(cities.flatMap((c) => queueTypes(c)));
+    const has = (type) => {
+        const h = safe(() => GameInfo.Constructibles.lookup(type)?.$hash, null);
+        return cities.some((c) => cityHas(c, type) || (h !== null && queueTypes(c).includes(h))) || [...extra.values()].some((set) => set.has(type));
+    };
+    const plan = researchPlan(cities, { airfield: has("BUILDING_AIRFIELD"), radio: has(RADIO_STATION) });
+    const startOf = (t) => {
+        if (unlockReached(t)) return 0;
+        const row = GameInfo.ProgressionTreeNodeUnlocks?.find((r) => r.TargetType === t && !r.RequiredTraitType);
+        return plan.at.get(row?.ProgressionTreeNodeType) ?? Infinity;
+    };
     const out = [];
     for (const c of cities) {
         const prod = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
@@ -1588,6 +1814,8 @@ function spaceRace(cities, extra = new Map(), { instant = new Set() } = {}) {
             const standing = cityHas(c, site.type);
             const queued = !standing && types.includes(def.$hash);
             if (!standing && !queued && !extra.get(sid)?.has(site.type)) continue;
+            // No Launch Pad before Rocketry: one ordered or bought before it is built from then on.
+            if (!standing && site.type === LAUNCH_PAD && plan.gateTurns > 0) wait = Math.max(wait, plan.gateTurns);
             // A site in production with progress is in `wait` already (`ahead`: research/34 §5 saw it counted twice).
             if (!standing && def.$hash !== ahead && !instant.has(`${sid}|${site.type}`)) wait += (queued ? leftOf(def.$hash, costIn(c, site.type)) : costIn(c, site.type)) / prod;
             if (site.type === LAUNCH_PAD) {
@@ -1600,17 +1828,21 @@ function spaceRace(cities, extra = new Map(), { instant = new Set() } = {}) {
             // only those the game lets it start (one done is refused).
             for (const t of site.needs ?? []) {
                 const p = safe(() => GameInfo.Projects.lookup(t), null);
-                if (!p || taken.has(p.$hash) || !unlockReached(t)) continue;
-                if (standing && !safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ProjectType: p.$hash }, false), null)?.Success) continue;
+                if (!p || taken.has(p.$hash)) continue;
+                // Not before its mastery (the research plan's turn for it; none planned: not counted).
+                const start = startOf(t);
+                if (!Number.isFinite(start)) continue;
+                if (start === 0 && standing && !safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ProjectType: p.$hash }, false), null)?.Success) continue;
                 const run = projectRun(c, p);
                 if (!run) continue;
-                runs.push(run);
+                runs.push(start > 0 ? { ...run, start } : run);
                 taken.add(p.$hash);
             }
         }
         out.push({ id: sid, wait, runs, repeat, lock });
     }
-    return { need: known.need, cities: out, maxTurns };
+    if (plan.runs.length > 0) out.push({ id: RESEARCH_RACE, wait: 0, runs: plan.runs, repeat: null, lock: 0 });
+    return { need: known.need, cities: out, maxTurns, gateTurns: plan.gateTurns };
 }
 
 /**
@@ -1630,11 +1862,19 @@ function siteHelps(cities, city, siteType, extra = new Map(), { bought = false }
     const withIt = innovationReach(after.need, after.cities, after.maxTurns).turn;
     if (!Number.isFinite(without) && !Number.isFinite(withIt)) return true;
     if (withIt >= without) {
-        log.info(`victory work: no ${siteType} in ${nameOf(city)}${bought ? " bought" : ""}: the goal comes on turn ${Math.ceil(without)} either way (${before.need} Innovation still needed)`);
+        // Once a turn per city and site: the savings goal, the LEVER goal and the purchase step all ask (game 30 logged it
+        // three times a pass).
+        const k = `${sidOf(city)}|${siteType}|${bought}`;
+        if (helpsNoted.get(k) !== Game.turn) {
+            helpsNoted.set(k, Game.turn);
+            log.info(`victory work: no ${siteType} in ${nameOf(city)}${bought ? " bought" : ""}: the goal comes on turn ${Math.ceil(without)} either way (${before.need} Innovation still needed)`);
+        }
         return false;
     }
     return true;
 }
+
+const helpsNoted = new Map(); // "sid|site|bought" -> the turn UI.log said the site would not help
 
 /**
  * The production this city still puts into Innovation projects before the science victory's need is met (or the game
@@ -1817,11 +2057,13 @@ export function victoryPurchases(focus, { pads = null, sitesFirst = false } = {}
     const inTime = (city, d) => !finalAge || !siteRows.has(d.ConstructibleType) || siteFitsAge(city, d, siteRows.get(d.ConstructibleType), { bought: true });
     // The Launch Pad first: one item a city, so a city that buys a pad buys no Airfield.
     // Beyond the victory's own Launch Pad, a site bought where it brings the goal sooner (siteHelps; research/34 §5).
-    const cityList = all.filter((c) => !c.isTown);
+    // Cities by production, the best first: a Launch Pad bought where Preparation runs soonest, and the bank (padGoals) is
+    // priced in those same cities (research/38 §3.3: game 30 held the cheapest city's 2,148 and bought London's 2,620).
+    const cityList = all.filter((c) => !c.isTown).sort((a, b) => cityProduction(b) - cityProduction(a));
     const anyPad = cityList.some((c) => padIn(c));
     const helps = (city, d) => (d.ConstructibleType === LAUNCH_PAD && !anyPad) || siteHelps(cityList, city, d.ConstructibleType, new Map(), { bought: true });
     const missing = (city) => (city.isTown ? [] : sites.filter((d) => fits(city, d) && !queueTypes(city).includes(d.$hash) && !cityHas(city, d.ConstructibleType) && have(d) < (want.get(d.ConstructibleType) ?? 0) && inTime(city, d) && helps(city, d)));
-    for (const town of [...all.filter((c) => c.isTown), ...all.filter((c) => !c.isTown)]) {
+    for (const town of [...all.filter((c) => c.isTown), ...cityList]) {
         // No building bought where a wonder is queued (research/32 §6).
         if (holdsWonder(town)) continue;
         const producing = !town.isTown && frontSlot(town) ? safe(() => town.BuildQueue.currentProductionTypeHash, null) : null;
@@ -1831,13 +2073,24 @@ export function victoryPurchases(focus, { pads = null, sitesFirst = false } = {}
         const order = sitesFirst ? [...queuedSites, ...missing(town), ...levers] : [...queuedSites, ...levers, ...missing(town)];
         if (town.isTown) order.push(...forTowns);
         for (const def of order) {
-            if (def.$hash === producing) continue;
+            // The item in production with progress is not bought, unless it is a science site: the game sells it at what it
+            // lacks, on its own tile (research/38 §3.3: game 30 had 1,600-2,100 gold M47-M53 beside half-built Launch Pads).
+            const underWay = def.$hash === producing;
+            if (underWay && !siteRows.has(def.ConstructibleType)) continue;
             // Already there: the game still says InsufficientFunds by the gold alone (seen in game 7: a University
             // bought at Exploration turn 40 stayed the savings goal for 29 turns; research/22 B4).
             if (cityHas(town, def.ConstructibleType)) continue;
             const probe = safe(() => Game.CityCommands.canStart(town.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
             if (!probe?.Success && !probe?.InsufficientFunds) continue;
             const key = `${sidOf(town)}|${def.ConstructibleType}`;
+            if (underWay) {
+                // As the game's production list buys an item in progress (buyAgeEndItems): on the tile it names.
+                const loc = probe.InProgress && probe.Plots?.length > 0 ? safe(() => GameplayMap.getLocationFromIndex(probe.Plots[0]), null) : null;
+                const cost = Number(probe.Cost ?? safe(() => town.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
+                if (!loc || !Number.isFinite(cost) || cost <= 0) continue;
+                out.push({ city: town, def, args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, cost, key, ok: !!probe.Success, underWay: true });
+                break;
+            }
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             if (plots.length === 0) {
                 if (!probe.InsufficientFunds) continue;
@@ -2843,6 +3096,7 @@ export function frontLoadUnits(unitOptions = {}) {
     const deficit = (expansionDeficit() && unitOptions.strategy?.phase !== "COMMIT") || leverSettlers(unitOptions);
     // Real defenders: units of the city that trains for a threatened settlement (the nearest city: trainDefenders).
     const defenderCities = new Set((unitOptions.threats ?? []).map((t) => nearestCity(t.settlement)).filter(Boolean).map(sidOf));
+    const hardPressed = war.near || (unitOptions.threats ?? []).some((t) => t.damaged);
     if (underThreat) for (const k of defenderTrainers) defenderCities.add(k);
     const moved = new Set();
     for (const city of ownSettlements()) {
@@ -2854,6 +3108,9 @@ export function frontLoadUnits(unitOptions = {}) {
         // D4: game 8, Забид's defender waited behind a Tavern until the city fell; probe: does it take that
         // progress? CityBuildQueue.csv).
         const slotOf = (def) => {
+            // A Crewed Space Flight Preparation run nearly done keeps the front unless the centre is damaged or a war is at our
+            // door (research/38 §4 E2: game 29's run at 510 of 1,000 lost to two Tanks and two walls, M53-M64).
+            if (prepNearlyDone(city) && !hardPressed) return 1;
             if (defender(def) && defenderCities.has(sidOf(city))) return 0;
             const s = unitSlot(city, ahead || (isSettler(def) && deficit));
             // Not ahead of walls in production (a threatened settlement's first: wallsSlot), unless urgent.
@@ -2924,9 +3181,24 @@ function holdsFront(city, def, delayTurns = null) {
         return (Number(row.rivalsSeen) || 0) > 0;
     }
     const p = safe(() => GameInfo.Projects.lookup(h), null);
-    if (!p || !SCIENCE_PROJECTS.includes(p.ProjectType) || REPEATABLE_PROJECTS.has(p.ProjectType)) return false;
+    // A Preparation run nearly done (research/38 §4 E2): the walls wait for it too (wallsSlot, unless the centre is damaged or a
+    // war is at our door).
+    if (p && REPEATABLE_PROJECTS.has(p.ProjectType)) return prepNearlyDone(city);
+    if (!p || !SCIENCE_PROJECTS.includes(p.ProjectType)) return false;
     const turnsLeft = Number(safe(() => ageOutlook().turnsLeft, Infinity));
     return left + delay > turnsLeft - 1;
+}
+
+// A repeatable science project (Crewed Space Flight Preparation, 15 Innovation) this close to done keeps the front.
+const PREP_HOLD_TURNS = 3;
+
+/** Is a repeatable science project in production here within PREP_HOLD_TURNS of done? */
+function prepNearlyDone(city) {
+    const h = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+    const p = safe(() => GameInfo.Projects.lookup(h), null);
+    if (!p || !REPEATABLE_PROJECTS.has(p.ProjectType)) return false;
+    const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+    return left > 0 && left <= PREP_HOLD_TURNS;
 }
 
 /**
@@ -3935,6 +4207,11 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
     const trained = trainWantedUnits(unitOptions);
     const out = [...trained.entries];
     const lost = lostWonderRows();
+    // Near Rocketry a city kept for a Launch Pad starts no building that would still be in production when Rocketry comes,
+    // production buildings aside (research/38 §4 B3: games 30 and 31 started Canneries, Laboratories and City Parks a turn
+    // or two before it, and their pads waited 2-8 turns behind them). Rocketry's turns: the research plan's way.
+    const padNear = !unitOptions.strategy?.gate?.open ? padExclusion(unitOptions.strategy) : null;
+    const gateEta = padNear ? Number(safe(() => researchPlan(ownSettlements().filter((c) => !c.isTown)).gateTurns, 0)) || 0 : 0;
     // A chosen wonder goes into a busy queue too, and a wonder waiting in a queue moves to the front
     // (behind an item with progress; the levers then stay behind it: leverSlot). Research/22 B5: with the
     // science levers every queue stayed busy, and no wonder was built all game.
@@ -3985,7 +4262,8 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
             const def = levers.size > 0 ? safe(() => GameInfo.Constructibles.lookup(t), null) : null;
             return !!def && levers.has(def.ConstructibleType) && !leverSoon(city, def);
         };
-        const skip = (t) => (space ? !sites.has(t) : !!military?.(t)) || !inAge(t) || slowLever(t);
+        const padWait = padNear?.has(sidOf(city)) && gateEta > 0 ? (t) => holdsPadRoom(city, t, gateEta) : null;
+        const skip = (t) => (space ? !sites.has(t) : !!military?.(t)) || !inAge(t) || slowLever(t) || !!padWait?.(t);
         if (plans) {
             const r = queueNextBuildings(plans, sidOf(city), 2, { skip });
             if (r.queued.length > 0) {
@@ -3993,7 +4271,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
                 continue;
             }
         }
-        const order = advisorOrder(city, { ...unitOptions, onlyProjects: space, fits: (t) => inAge(t) && !slowLever(t) });
+        const order = advisorOrder(city, { ...unitOptions, onlyProjects: space, fits: (t) => inAge(t) && !slowLever(t) && !padWait?.(t) });
         const fallback = order ? null : cheapestBuilding(city, { skip }) ?? lastResort(city);
         if (order) {
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
@@ -4006,6 +4284,22 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         }
     }
     return out;
+}
+
+const padRoomNoted = new Map(); // sid -> the turn UI.log said a pad city kept room for its pad
+
+/** A building a pad city does not start now: not a production building, and longer than Rocketry's turns (fillProduction). */
+function holdsPadRoom(city, t, gateEta) {
+    const def = safe(() => GameInfo.Constructibles.lookup(t), null);
+    if (def?.ConstructibleClass !== "BUILDING") return false;
+    if (GameInfo.TypeTags?.find((r) => r.Type === def.ConstructibleType && (r.Tag === "PRODUCTION" || r.Tag === "PRODUCTION_WAREHOUSE"))) return false;
+    const turns = itemTurns(city, def.$hash);
+    if (!(turns > gateEta)) return false;
+    if (padRoomNoted.get(sidOf(city)) !== Game.turn) {
+        padRoomNoted.set(sidOf(city), Game.turn);
+        log.info(`queue: ${nameOf(city)} keeps room for its Launch Pad: no ${def.ConstructibleType} (${turns} turns), Rocketry in ${Math.ceil(gateEta)}`);
+    }
+    return true;
 }
 
 // ---- an age's last turns -------------------------------------------------------------------------
@@ -4511,12 +4805,17 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     if (settling && (Number(stats?.numSettlements) || 0) < (Number(stats?.settlementCap) || 0) / 2 && !kinds.includes("SETTLER")) kinds.unshift("SETTLER");
     // The military lever puts SETTLER first itself (core/xpl-strategy.js); without «Поселенцы» it is no goal.
     if (!settling) kinds.splice(0, kinds.length, ...kinds.filter((k) => k !== "SETTLER"));
+    // Exploration's last turns with the science focus: the free gold is banked for Modern, first of all (research/38 §4 D1:
+    // games 30 and 31 entered Modern with 1,155-1,277 gold against Launch Pads at 2,150-2,850 bought at Rocketry).
+    const modernBank = focus === "SCIENCE" ? safe(() => bankForNextAge(budget, goldIncome()), null) : null;
+    if (modernBank) kinds.unshift("BANK");
     // A war at our door: no savings goal, the gold stays free for defenders and upgrades (research/23 D5: game 8,
     // a conversion goal and then a University goal kept the free gold at 0 for the whole war).
     if (war.near) kinds.length = 0;
     const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap, past: pastCapOf(settings?.strategy) }), null) : null;
     const keep = kinds.includes("CONVERT") ? conversionKeep() : 0;
     const candidates = {
+        BANK: modernBank ? [modernBank] : [],
         SETTLER: offer ? [{ key: "settler", label: composeOr("LOC_XPL_AP_GOAL_SETTLER", nameOf(offer.city)), cost: offer.cost, purchase: { city: offer.city, args: offer.args, name: composeOr(offer.name), drop: offer.drop } }] : [],
         CODEX: focus === "SCIENCE" && kinds.includes("CODEX") ? safe(() => codexGoals(), []) ?? [] : [],
         GDP: kinds.includes("GDP") ? safe(() => gdpGoals(), []) ?? [] : [],
@@ -4547,6 +4846,38 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
         reserveTurns: Number(reserveTurns) || 0,
         cheapest: cheapest ? { name: cheapest.town.name, cost: Math.round(cheapest.town.cost) } : null,
     };
+}
+
+// What an age change keeps of the treasury (the game's capGold, base-standard/scripts/age-transition-post-load.js): under
+// Continuity (the default, AGE_TRANSITION_SETTING_KEEP_MORE) 6,000 entering Exploration and 9,000 entering Modern, else 3,000;
+// scaled by the game speed (adjustForGameSpeed: the GameSpeeds CostMultiplier; Online 50: 4,500 logged entering Modern).
+const CARRY_GOLD = Object.freeze({ AGE_EXPLORATION: 6000, AGE_MODERN: 9000 });
+const CARRY_GOLD_REGROUP = 3000;
+
+/** The gold the change into `nextAge` keeps (CARRY_GOLD). */
+export function carriedGoldCap(nextAge) {
+    const game = safe(() => Configuration.getGame(), null);
+    const setting = safe(() => game.getValue("AgeTransitionSettingName"), null) ?? safe(() => Configuration.getGameValue("AgeTransitionSettingName"), null);
+    const continuity = !setting || setting === "AGE_TRANSITION_SETTING_KEEP_MORE";
+    const base = continuity ? CARRY_GOLD[nextAge] ?? CARRY_GOLD_REGROUP : CARRY_GOLD_REGROUP;
+    const multiplier = Number(safe(() => GameInfo.GameSpeeds.lookup(game.gameSpeedType)?.CostMultiplier, 100)) || 100;
+    return Math.round((base * multiplier) / 100);
+}
+
+/**
+ * The bank for Modern (research/38 §4 D1): in Exploration's last AGE_END_TURNS, what the free gold can reach before the age
+ * ends, at most what the age change keeps (carriedGoldCap). Held whole: only purchases from all the gold (defenders,
+ * repairs, walls, buyAgeEndItems) go ahead of it. @returns a goal candidate or null
+ */
+function bankForNextAge(budget, income) {
+    if (currentAge() !== "AGE_EXPLORATION") return null;
+    const left = ageEndTurns();
+    if (left === null || !(left > 0)) return null;
+    const cap = carriedGoldCap("AGE_MODERN");
+    const reach = Math.max(0, budget.forGoal()) + Math.max(0, Number(income) || 0) * Math.max(0, left - 1);
+    const cost = Math.round(Math.min(cap, reach));
+    if (!(cost > 0)) return null;
+    return { key: "MODERN_BANK", label: composeOr("LOC_XPL_AP_GOAL_BANK", cap), cost, hold: cost, holdShare: 1, anyHorizon: true };
 }
 
 /**
@@ -4601,6 +4932,9 @@ function siteGoals(pads) {
             if (cityHas(city, site.type) || padIn(city) || holdsWonder(city)) continue;
             // The final age: only where its project is done before the game ends once it is bought (research/30 §3).
             if (finalAge && !siteFitsAge(city, def, site, { bought: true })) continue;
+            // Only where it brings the goal sooner, as the purchase asks (research/38 §3.5: game 30 held 2,216-2,284 gold for
+            // about 20 turns for an Airfield the purchase step kept refusing, then spent it on a Laboratory at M55).
+            if (!siteHelps(cities, city, site.type, new Map(), { bought: true })) continue;
             const probe = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             if ((!probe?.Success && !probe?.InsufficientFunds) || plots.length === 0) continue;
@@ -4667,6 +5001,8 @@ export function buyGoal(budget) {
 
 export const PAD_HOLD_SHARE = 0.75;
 
+const cityProduction = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+
 /** A Launch Pad's gold price in this city (the game's, else its production cost × the age's gold per production). */
 function padPrice(city, def) {
     const gold = Number(safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), 0)) || 0;
@@ -4687,21 +5023,32 @@ function padGoals(focus, pads, gate) {
     if (!def) return [];
     const cities = ownSettlements().filter((c) => !c.isTown);
     const producing = (c) => safe(() => c.BuildQueue.currentProductionTypeHash, null) === def.$hash && frontSlot(c) > 0;
-    const have = cities.filter((c) => cityHas(c, LAUNCH_PAD) || producing(c)).length;
+    const standing = cities.filter((c) => cityHas(c, LAUNCH_PAD)).length;
+    const have = standing + cities.filter((c) => !cityHas(c, LAUNCH_PAD) && producing(c)).length;
+    if (gate?.open) {
+        // After Rocketry a pad under way is a goal too: the game sells it at what it lacks (research/38 §3.3).
+        if (pads - standing <= 0) return [];
+        const item = (safe(() => victoryPurchases(focus, { pads, sitesFirst: true }), []) ?? []).find((i) => i.def.ConstructibleType === LAUNCH_PAD);
+        return item ? [{ key: item.key, label: composeOr("LOC_XPL_AP_GOAL_PADS", pads - standing), cost: item.cost }] : [];
+    }
     const missing = Math.max(0, pads - have);
     if (missing === 0) return [];
-    const label = composeOr("LOC_XPL_AP_GOAL_PADS", missing);
-    if (gate?.open) {
-        const item = (safe(() => victoryPurchases(focus, { pads, sitesFirst: true }), []) ?? []).find((i) => i.def.ConstructibleType === LAUNCH_PAD);
-        return item ? [{ key: item.key, label, cost: item.cost }] : [];
-    }
-    const prices = cities.filter((c) => !cityHas(c, LAUNCH_PAD) && !producing(c)).map((c) => padPrice(c, def)).filter((p) => p > 0).sort((a, b) => a - b).slice(0, missing);
+    // As many as the race still needs Preparation runs once research has brought its Innovation (research/38 §4 B1: game 30's
+    // bank held one pad's price and bought one pad at Rocketry), at least one, at most the pads still missing; each priced in
+    // the city that will buy it, the best producers first (victoryPurchases' order).
+    const race = safe(() => spaceRace(cities), null);
+    const research = (race?.cities.find((c) => c.id === RESEARCH_RACE)?.runs ?? []).reduce((a, r) => a + (Number(r.innovation) || 0), 0);
+    const runs = race ? Math.ceil(Math.max(0, race.need - research) / (projectInnovation(PREP) || 15)) : missing;
+    const buyers = cities.filter((c) => !cityHas(c, LAUNCH_PAD) && !producing(c)).sort((a, b) => cityProduction(b) - cityProduction(a)).slice(0, Math.min(missing, Math.max(1, runs)));
+    const prices = buyers.map((c) => padPrice(c, def)).filter((p) => p > 0);
     const bank = prices.reduce((a, b) => a + b, 0);
     if (!(bank > 0)) return [];
-    // Held: one pad at a time (the next one's price), ramped by the way to Rocketry, and never more than
-    // PAD_HOLD_SHARE of the gold above the reserve (research/22 B3: game 7 held 6,832 against 1,395).
-    const ramp = Math.max(0, Math.min(1, Number(gate?.progress) || 0));
-    return [{ key: "PADS_BANK", label, cost: Math.round(bank), hold: Math.round(Math.min(bank * ramp, prices[0])), holdShare: PAD_HOLD_SHARE }];
+    // Held as research nears Rocketry (the bank × the way's share), at most PAD_HOLD_SHARE of the gold above the reserve
+    // (research/22 B3: game 7 held 6,832 against 1,395 for an age). Near it (PAD_GATE_NEAR), the whole bank and all the gold
+    // above the reserve: game 30 bought a 1,072 Schoolhouse three turns before Rocketry and could buy one pad.
+    const progress = Math.max(0, Math.min(1, Number(gate?.progress) || 0));
+    const near = progress >= PAD_GATE_NEAR;
+    return [{ key: "PADS_BANK", label: composeOr("LOC_XPL_AP_GOAL_PADS", prices.length), cost: Math.round(bank), hold: Math.round(near ? bank : bank * progress), holdShare: near ? 1 : PAD_HOLD_SHARE }];
 }
 
 /**
