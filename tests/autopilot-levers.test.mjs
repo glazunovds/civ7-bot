@@ -20,7 +20,7 @@ const world = {
 const fake = installFakeEngine(world, "modern");
 const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
 const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
-const { DEFAULT_SETTINGS, settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+const { DEFAULT_SETTINGS, gameKey, settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
 const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
 
 const idx = (x, y) => GameplayMap.getIndexFromXY(x, y);
@@ -629,6 +629,13 @@ test("the final push: a space city's empty queue takes no plan building but its 
             steps.fillProduction(new Map(), { ...commit, explore: true });
             const scouts = fake.sent.filter((s) => s.kind === "operation" && GameInfo.Units.lookup(s.args.UnitType)?.UnitType === "UNIT_SCOUT").map((s) => s.id.id);
             assert.ok(scouts.length > 0 && scouts.every((id) => id !== 0), JSON.stringify(scouts));
+            // The age's first melee unit, wanted in a peaceful final push too (research/37 §2): not from Paris either.
+            settings.remember(gameKey(), { melee: null });
+            world.canBuild = (type, id, args) => (type === "UNIT_LINE_INFANTRY" ? { Success: true } : canBuild(type, id, args));
+            fake.sent.length = 0;
+            const out = steps.fillProduction(new Map(), { ...commit, defend: true });
+            const melee = fake.sent.filter((s) => s.kind === "operation" && steps.meleeStrength(GameInfo.Units.lookup(s.args.UnitType)) > 0).map((s) => s.id.id);
+            assert.deepEqual(melee, [1], `Lyon: ${JSON.stringify(out)}`);
         } finally {
             world.canBuild = canBuild;
             state.set({ results: { ...state.get().results, plans } });

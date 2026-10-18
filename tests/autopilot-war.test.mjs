@@ -27,8 +27,9 @@ const fake = installFakeEngine(world);
 const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
 const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
 const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
-const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+const { DEFAULT_SETTINGS, gameKey, settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
 const { createBudget } = await import("../mod/expansion-planner/ui/core/xpl-savings.js");
+const centres = await import("../mod/expansion-planner/ui/data/xpl-centre-defence.js");
 
 const A = DiplomacyActionTypes;
 const reset = (extra = {}) => {
@@ -45,6 +46,7 @@ const reset = (extra = {}) => {
     Object.assign(world, extra);
     steps.resetWar();
     steps.resetGoldPlan();
+    settings.remember(gameKey(), { melee: null }); // no melee unit obtained this age (research/37 §2)
 };
 const unitName = (s) => GameInfo.Units.lookup(s.args.UnitType)?.UnitType;
 const trained = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType !== undefined).map(unitName);
@@ -81,6 +83,7 @@ test("war risk: a guard for our settlement nearest to the risky leader, the stro
     assert.ok(out.some((e) => e.key === "QUEUED_GUARD"));
     reset({ canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
     world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
+    centres.noteMeleeObtained(GameInfo.Units.lookup("UNIT_SPEARMAN"), "trained"); // the centres' unit of this age is there too
     steps.assessWar([]);
     steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), [], "no risk: none");
@@ -372,16 +375,19 @@ test("a war risk's conversion goal needs the town's cost and two defenders' pric
 test("guards only near the enemy: a far conqueror calls one, for our settlement nearest to it; a risk alone one per leader; a war every settlement near it (research/24 G3; research/30 §2: game 23's ring held 14-18 of 18 settlements, six Tanks for a war that never came)", () => {
     reset({ canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
     world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
+    centres.noteMeleeObtained(GameInfo.Units.lookup("UNIT_SPEARMAN"), "trained");
     steps.assessWar([], { watch: [{ cls: "MILITARY", level: "DANGER", leader: 2 }] });
     steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), [], "Boston is far: the Spearman is that one guard");
     reset({ relations: { 1: "UNFRIENDLY" }, canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
     world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
+    centres.noteMeleeObtained(GameInfo.Units.lookup("UNIT_SPEARMAN"), "trained");
     steps.assessWar([]);
     steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), [], "Prussia, Unfriendly 10 tiles from London and York: one guard, for London: the Spearman");
     reset({ wars: [1], canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
     world.units = [{ id: 30, type: "UNIT_SPEARMAN", x: 8, y: 8 }];
+    centres.noteMeleeObtained(GameInfo.Units.lookup("UNIT_SPEARMAN"), "trained");
     steps.assessWar([]);
     steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), ["UNIT_SPEARMAN"], "at war with Prussia: London and York, two guards");

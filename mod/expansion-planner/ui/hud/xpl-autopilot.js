@@ -22,7 +22,7 @@ import { RELAXED_MIN_PICKS } from '../core/xpl-tuning.js';
 import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
-import { commandUnits, disbandSurplus, leadersNearExplorers, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
+import { commandUnits, disbandSurplus, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
 import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryRaces } from '../data/xpl-victory.js';
@@ -518,6 +518,8 @@ export async function runTurn(force = false) {
         if (full && o.defend && o.purchases !== false) await guarded("walls", () => record(steps.fortifyThreatened(steps.exposedFortTowns(), { buy: true, queue: false, reserve: steps.goldReserve(reserveTurns), budget, pool: "free" })));
         // Defenders bought on the spot (threatened, then exposed settlements), before buildings take the gold.
         if (full && o.defend && o.purchases !== false) await guarded("defenders", () => record(steps.buyDefenders(threats, { reserveTurns, budget })));
+        // The age's first melee unit, which sets every centre's defence (research/37 §2), bought when the gold allows.
+        if (full && o.defend && o.purchases !== false) await guarded("defenders", () => record(steps.buyFirstMelee(threats, { reserveTurns, budget })));
         const unitOptions = {
             explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, defend: !!o.defend, threats: o.defend || o.roam ? threats : [], profile: s.profile, victory: focus,
             explorers: o.explorers ?? !!o.explore, trainSettlers: o.trainSettlers ?? !!o.settlers, strategy: s.strategy ?? null,
@@ -603,6 +605,8 @@ export async function runTurn(force = false) {
         if (pass) await guarded("gold", () => steps.logGold(pass));
         // Every 10 turns: yields, population and where new citizens went (research/26 §3.2).
         if (full) await guarded("economy", () => steps.logEconomy(s));
+        // UI.log probes for the next military phases: armies, reinforcements, aircraft (research/37 §3F).
+        if (full) await guarded("probes", () => probeMilitary());
         const skip = async () => record(await steps.skipIdleUnits(ordered));
         if (o.skipUnits) await guarded("skip", skip);
         if (o.endTurn && isAutopilotOn() && !force) {

@@ -22,7 +22,8 @@ const world = {
 };
 const fake = installFakeEngine(world);
 const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
-const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+const { DEFAULT_SETTINGS, gameKey, settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+const centres = await import("../mod/expansion-planner/ui/data/xpl-centre-defence.js");
 
 const reset = () => {
     fake.sent.length = 0;
@@ -31,7 +32,9 @@ const reset = () => {
     world.gold = 1000;
     // The defenders bought and queued this turn (a purchase stops a defender being trained for it in the same turn).
     steps.resetWar();
+    settings.remember(gameKey(), { melee: null }); // no melee unit obtained this age (research/37 §2)
 };
+const obtained = (type) => centres.noteMeleeObtained(GameInfo.Units.lookup(type), "trained");
 const unitName = (s) => GameInfo.Units.lookup(s.args.UnitType)?.UnitType;
 const trained = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType !== undefined).map(unitName);
 const bought = () => fake.sent.filter((s) => s.kind === "command" && s.args.UnitType !== undefined).map((s) => [unitName(s), s.id.id]);
@@ -61,34 +64,47 @@ test("under threat the nearest city trains its strongest melee unit, not a range
     assert.ok(out.some((e) => e.key === "QUEUED_DEFENDER"));
 });
 
-test("defence: one melee unit as strong as the best we can train is kept (the centres' defence follows it)", () => {
+test("defence: one melee unit as strong as the best we can train, obtained this age (the centres' defence follows it)", () => {
     reset();
     world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_ARCHER");
     world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
     let out = steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), ["UNIT_SPEARMAN"], JSON.stringify(out));
     const e = out.find((x) => x.key === "QUEUED_MELEE");
-    assert.equal(e?.args[2], 15, "centres would defend at 25 - 10");
-    // One already there (or in a queue): nothing more.
+    assert.equal(e?.args[2], 25, "centres would defend at the Spearman's full 25 (research/37 §2: no minus 10)");
+    // One obtained this age, or one in a queue: nothing more.
     reset();
     world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_ARCHER");
     world.units = [{ id: 1, type: "UNIT_SPEARMAN", ...LONDON }];
+    obtained("UNIT_SPEARMAN");
     out = steps.fillProduction(new Map(), { defend: true });
     assert.deepEqual(trained(), [], JSON.stringify(out));
+    reset();
+    world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_ARCHER");
+    world.cities[0].queued = ["UNIT_SPEARMAN"];
+    try {
+        out = steps.fillProduction(new Map(), { defend: true });
+        assert.ok(!out.some((x) => x.key === "QUEUED_MELEE"), JSON.stringify(out));
+    } finally {
+        delete world.cities[0].queued;
+    }
     // Without «Оборона» nothing is trained for it.
     reset();
     world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN");
     steps.fillProduction(new Map(), {});
     assert.ok(!trained().includes("UNIT_SPEARMAN"));
-    // The final push in peace: none (game 16: a Landship, then a Tank took the capital 15 turns); under a threat: yes.
+    // The final push in peace: a stronger one than this age's (a Warrior) is not trained (game 16: a Landship, then a
+    // Tank took the capital 15 turns); under a threat: yes.
     reset();
     world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_ARCHER");
     world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
+    obtained("UNIT_WARRIOR");
     out = steps.fillProduction(new Map(), { defend: true, strategy: { phase: "COMMIT" } });
     assert.ok(!out.some((x) => x.key === "QUEUED_MELEE"), JSON.stringify(out));
     reset();
     world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_ARCHER");
     world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
+    obtained("UNIT_WARRIOR");
     out = steps.fillProduction(new Map(), { defend: true, strategy: { phase: "COMMIT" }, threats: [{ settlement: { name: "York", ...YORK }, count: 1, owners: [{ id: 5, independent: true }] }] });
     assert.ok(out.some((x) => x.key === "QUEUED_MELEE" || x.key === "QUEUED_DEFENDER"), JSON.stringify(out));
 });
@@ -361,12 +377,20 @@ test("gold income below zero: the reserve covers 10 turns of the deficit; no new
         assert.equal(steps.goldReserve(2), 130);
         world.goldIncome = 10;
         assert.equal(steps.goldReserve(2), 20, "as before with a positive income");
-        // The strong melee unit: not while broke.
+        // A stronger melee unit than this age's: not while broke...
+        world.goldIncome = -13;
+        world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN");
+        world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
+        obtained("UNIT_WARRIOR");
+        steps.fillProduction(new Map(), { defend: true });
+        assert.ok(!trained().includes("UNIT_SPEARMAN"), JSON.stringify(trained()));
+        // ...but the age's first one is (every centre stands at 20 until then: research/37 §2).
+        reset();
         world.goldIncome = -13;
         world.canBuild = trains("UNIT_WARRIOR", "UNIT_SPEARMAN");
         world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
         steps.fillProduction(new Map(), { defend: true });
-        assert.ok(!trained().includes("UNIT_SPEARMAN"), JSON.stringify(trained()));
+        assert.deepEqual(trained(), ["UNIT_SPEARMAN"]);
         // An exposed settlement's garrison: not while broke.
         reset();
         world.goldIncome = -13;

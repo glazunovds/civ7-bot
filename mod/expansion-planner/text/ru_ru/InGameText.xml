@@ -1630,6 +1630,12 @@
     <Replace Tag="LOC_XPL_AP_GARRISON_BOUGHT" Language="ru_RU">
       <Text>куплено: {1_Name} ({2_City}) за {3_Num}[icon:YIELD_GOLD] — рядом враждебный независимый народ, а солдата там не было</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_FIRST_MELEE_BOUGHT" Language="ru_RU">
+      <Text>куплено: {1_Name} ({2_City}) за {3_Num}[icon:YIELD_GOLD] — первый боец ближнего боя этой эпохи: центры всех поселений теперь защищаются с силой {4_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIRST_MELEE_UPGRADED" Language="ru_RU">
+      <Text>{1_Name} улучшен до {2_Name} — первый боец ближнего боя этой эпохи: центры всех поселений должны теперь защищаться с силой {3_Num}</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_DISPERSE_MOVE" Language="ru_RU">
       <Text>{1_Name} идёт разогнать пустую деревню ({2_Name}) в {3_X},{4_Y}</Text>
     </Replace>

@@ -414,14 +414,21 @@ export function installFakeEngine(world, age = "antiquity") {
     g.CityOperationsParametersValues = { Exclusive: 1, MoveTo: 2, RemoveAt: 3, Swap: 4 };
     g.TradeRouteStatus = { SUCCESS: 0, AT_WAR: 1, DISTANCE: 2, NEED_MORE_FRIENDSHIP: 3 };
     g.EndTurnBlockingTypes = { NONE: 0, UNITS: 1, VIEW_ADVISOR_WARNING: 2, OTHER: 3 };
+    // Armies (research/37): world.units[i].army / world.enemies[i].army = a number (its armyId), world.armies =
+    // { "<owner>:<army>": { x, y, capacity, unitCount } } (Armies.get: location, combatUnitCapacity, unitCount).
+    const armyIdOf = (owner, army) => (army === undefined || army === null ? undefined : { owner, id: army, type: 2 });
     const unitObjects = () => (world.units ?? []).map((u) => ({
         id: { owner: 0, id: u.id, type: 1 },
         owner: 0,
         type: info.Units.lookup(u.type).$hash,
+        // u.onMap === false: packed in an army (its location stays its commander's tile unless u.x is -1)
         location: { x: u.x, y: u.y },
         // A commander (UNIT_ARMY_COMMANDER, UNIT_FLEET_COMMANDER…), as the game's unit.isCommanderUnit
         isCommanderUnit: /_COMMANDER$/.test(u.type),
-        isOnMap: true,
+        isOnMap: u.onMap !== false,
+        // u.embarked: the game's unit.isEmbarked (left out: unknown, our code then reads the tile)
+        ...(u.embarked !== undefined ? { isEmbarked: !!u.embarked } : {}),
+        armyId: armyIdOf(0, u.army),
         canMove: true,
         hasMoved: !!u.moved,
         activityType: u.activity ?? g.UnitActivityTypes.NONE,
@@ -446,7 +453,10 @@ export function installFakeEngine(world, age = "antiquity") {
         get: (id) => unitObjects().find((u) => u.id.owner === id?.owner && u.id.id === id?.id)
             ?? (() => {
                 const hit = enemyIds().find((x) => x.id.id === id?.id && id?.owner === x.id.owner);
-                return hit ? { id: hit.id, owner: hit.id.owner, type: info.Units.lookup(hit.e.type ?? "UNIT_WARRIOR").$hash, location: { x: hit.e.x, y: hit.e.y }, Health: { damage: hit.e.damage ?? 0, maxDamage: 100 } } : null;
+                return hit ? {
+                    id: hit.id, owner: hit.id.owner, type: info.Units.lookup(hit.e.type ?? "UNIT_WARRIOR").$hash, location: { x: hit.e.x, y: hit.e.y }, Health: { damage: hit.e.damage ?? 0, maxDamage: 100 },
+                    isCommanderUnit: /_COMMANDER$/.test(hit.e.type ?? ""), isOnMap: hit.e.onMap !== false, armyId: armyIdOf(hit.id.owner, hit.e.army),
+                } : null;
             })(),
         // A straight walk, two tiles a turn, step by step (each step the neighbour nearest the
         // target, lowest index first); world.unreachable(x, y, unitId) -> no path.
@@ -467,11 +477,18 @@ export function installFakeEngine(world, age = "antiquity") {
             return { plots, turns: plots.map((_, i) => Math.ceil((i + 1) / 2)) };
         },
     };
+    g.Armies = {
+        get: (id) => {
+            const a = id ? world.armies?.[`${id.owner}:${id.id}`] : null;
+            return a ? { location: { x: a.x, y: a.y }, combatUnitCapacity: a.capacity ?? 4, unitCount: a.unitCount ?? 0, localId: id.id } : null;
+        },
+    };
     // Every unit on a plot: ours (world.units) and other players' (world.enemies).
     g.MapUnits = {
         getUnits: (x, y) => [
-            ...unitObjects().filter((u) => u.location.x === x && u.location.y === y).map((u) => u.id),
-            ...enemyIds().filter(({ e }) => e.x === x && e.y === y).map(({ id }) => id),
+            // Not units packed in an army (no flag of their own in the game: very likely not on the plot either).
+            ...unitObjects().filter((u) => u.isOnMap && u.location.x === x && u.location.y === y).map((u) => u.id),
+            ...enemyIds().filter(({ e }) => e.onMap !== false && e.x === x && e.y === y).map(({ id }) => id),
         ],
     };
     g.Game.UnitOperations = {

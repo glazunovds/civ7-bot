@@ -86,6 +86,7 @@
           <Item>ui/data/xpl-autopilot-steps.js</Item>
           <Item>ui/data/xpl-autopilot-units.js</Item>
           <Item>ui/data/xpl-building-job.js</Item>
+          <Item>ui/data/xpl-centre-defence.js</Item>
           <Item>ui/data/xpl-city-actions.js</Item>
           <Item>ui/data/xpl-empire-job.js</Item>
           <Item>ui/data/xpl-engine-cache.js</Item>

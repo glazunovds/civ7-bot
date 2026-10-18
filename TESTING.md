@@ -356,6 +356,13 @@ The mod is linked into the game with a folder junction:
 | 337 | Defender gold | At an income below zero, a defender is still bought when the gold covers it and 3 turns of the deficit; otherwise `defenders: none for … the cheapest, UNIT_…, costs N; M of G gold usable`. |
 | 338 | Defender training | `defenders: UNIT_… queued in <city> for <settlement>, there in N turn(s)`: the city whose unit arrives soonest, not always the nearest. |
 | 339 | Aircraft | Modern, war at our door: our aircraft strike raiders near our settlements (AIR_STRIKE); with enemy aircraft in sight, a fighter is queued where an Airfield allows it (QUEUED_INTERCEPTOR). |
+| 340 | The age's melee unit | A new age's first turns: FIRST_MELEE_UPGRADED or FIRST_MELEE_BOUGHT, or QUEUED_MELEE in the city that has it soonest; UI.log `melee: <unit> … obtained this age, centres defend at N`. CombatLog: our centres' DefStr rises from 20 to N the turn after (upgrade: probe P-DEF-3). |
+| 341 | Carried units | At an age's start carried soldiers do not stop QUEUED_MELEE; once one is obtained, a queued one not started leaves its queue (`queue: … dropped, this age's melee unit was obtained`). |
+| 342 | Packed units | A soldier packed in a commander on a threatened settlement: `defence: … packed [UNIT_…] not counted`, and a guard is sent, bought or trained. |
+| 343 | Rivers | No soldier is posted on a navigable river tile (REINFORCE/STAGED destinations are land). |
+| 344 | Ships | Raiding ships: the ranged defender bought or trained is the one with the best Bombard (a Ballista or Catapult over an Archer). |
+| 345 | Enemy aircraft | Modern war: an enemy Airfield alone queues no fighter; a fighter is queued only in an Airfield city near the bombed settlement, else `air: no fighter for …`. |
+| 346 | Probes | UI.log `army:` lines on an age's first turn (members' `onMap` and tiles), `air:` lines for aircraft and Airfields, `reinforce:` lines when a unit reinforces an army. Send them for Phases 2, 3 and 5. |
 
 ## Memento Advisor (second mod, `mod/memento-advisor`)
 Restart the game once: new mod. Check it is enabled in Add-Ons («Советник по памятным вещам»).

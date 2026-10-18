@@ -27,11 +27,12 @@ import { happinessWorth, unhappinessShare } from '../core/xpl-scarcity.js';
 const HAPPINESS = yieldIndex("YIELD_HAPPINESS");
 import { FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, REACH_MAX_TURNS, REPEATABLE_PROJECTS, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
 import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory.js';
-import { idString } from '../core/xpl-component-id.js';
+import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { allowedOperations, artifactSites, earlyWarning, guardDeadline, guardsFor, guardsWanted, hostileAircraftNear, isIdle, isRangedGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey } from './xpl-autopilot-units.js';
+import { afloat, airBases, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardsFor, guardsWanted, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
 import { villagesOf } from './xpl-player-facts.js';
+import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './xpl-centre-defence.js';
 import { TUNING } from '../core/xpl-tuning.js';
 import { focusOfProfile } from '../core/xpl-effect-value.js';
 import { greatWorksWaiting, hostileActs, traitEffects } from './xpl-autopilot-choices.js';
@@ -171,6 +172,7 @@ export function resetWar() {
     trainedFor.clear();
     defenderBought.clear();
     fronts.clear();
+    meleeOrders.clear();
 }
 
 const FRONT_HOLD_TURNS = 5; // a war front stays this many turns after its leader was last at war with us or a risk
@@ -2075,6 +2077,15 @@ function unitCount(test) {
     return n;
 }
 
+/** Units of a kind in our queues (not those we have). */
+function queuedCount(test) {
+    let n = 0;
+    for (const city of ownSettlements()) {
+        for (const q of safe(() => city.BuildQueue.getQueue(), []) ?? []) if (test(queueUnitDef(q))) n++;
+    }
+    return n;
+}
+
 /** Is a site known for a settler: the Settlements search's picks, or the game's suggestions from the capital? */
 export function sitesKnown() {
     if ((state.get().results?.sites?.picks?.length ?? 0) > 0) return true;
@@ -2332,23 +2343,28 @@ function unitsWanted(unitOptions) {
         if (n > 0) out.push({ test: guard, n, key: "QUEUED_GUARD", target: want, order: (city) => bestDefenderOrder(city) });
     }
     // Enemy aircraft over us with a war at our door (research/36 §7: game 29's Russian Bomber hit our centres M60-M65 and
-    // we had no aircraft): fighters, up to AIR_GUARDS_MAX, where the game lets a city train them (an Airfield or an
-    // Aerodrome stands there), before the centres' strength below. They intercept within their range from their base.
+    // we had no aircraft): fighters, up to AIR_GUARDS_MAX, before the centres' strength below. A fighter intercepts only
+    // within 3-5 tiles of its base (research/37 §3E), so only those based near a settlement the enemy aircraft reach count,
+    // and one is trained only in a city whose Airfield covers it and has a free slot, the nearest first.
     if (unitOptions.defend && war.near) {
-        const want = Math.min(AIR_GUARDS_MAX, Number(safe(() => hostileAircraftNear(), 0)) || 0);
-        const n = want - unitCount(isInterceptor);
-        if (n > 0) out.push({ test: isInterceptor, n, key: "QUEUED_INTERCEPTOR", target: want, order: (city) => strongestOrder(city, isInterceptor) });
+        const want = interceptorsWanted(unitOptions.threats ?? []);
+        if (want) out.push({ test: isInterceptor, n: want.n, key: "QUEUED_INTERCEPTOR", target: want.target, order: want.order, rank: want.rank });
     }
-    // Defence: one melee unit as strong as the best we can train, so every settlement centre
-    // defends at its strength - 10 (meleeStrength); a new one when a stronger one unlocks.
-    // Not while gold income is below zero (upkeep; seen in game 6: Horsemen trained with the treasury at 0).
-    // In the final push only under a threat or a war risk (game 16: a Landship and then a Tank took the capital's
-    // production for 15 turns in peace).
+    // Defence: every settlement centre defends at the strongest melee unit obtained this age (research/37 §2; 20 with
+    // none), whatever we carried over from the last age (game 29: carried Line Infantry met this want, and Modern's
+    // centres stood at 20 for 35 turns). One as strong as the best we can train until one is obtained this age, in a
+    // peaceful final push and at a deficit too; a stronger one later as before: not while the gold income is below zero
+    // (upkeep; game 6: Horsemen trained with the treasury at 0), and in the final push only under a threat or a war risk
+    // (game 16: a Landship and then a Tank took the capital's production for 15 turns in peace). One in a queue does. Only
+    // one stronger than the centres' defence now (a Warrior raises nothing above the base 20).
     const peacefulPush = unitOptions.strategy?.phase === "COMMIT" && (unitOptions.threats ?? []).length === 0 && !war.near && war.risk.length === 0;
-    if (unitOptions.defend && goldIncome() >= 0 && !peacefulPush) {
+    if (unitOptions.defend) {
         const best = bestTrainableMelee();
+        const obtained = meleeThisAge()?.strength ?? 0;
         const strong = (def) => best > 0 && meleeStrength(def) >= best;
-        if (best > 0 && unitCount(strong) === 0) out.push({ test: strong, n: 1, key: "QUEUED_MELEE", target: best - 10 });
+        if (best > Math.max(CENTRE_BASE, obtained) && (obtained === 0 || (goldIncome() >= 0 && !peacefulPush)) && queuedCount(strong) === 0) {
+            out.push({ test: strong, n: 1, key: "QUEUED_MELEE", target: best });
+        }
     }
     if (unitOptions.explore) {
         const n = SCOUTS_WANTED - unitCount(isScout);
@@ -2395,6 +2411,49 @@ const isSoldierDef = (def) => !!def && def.CoreClass === "CORE_CLASS_MILITARY";
 /** A fighter: it intercepts enemy aircraft within its range from its base by itself (UNIT_CLASS_INTERCEPTOR). */
 const isInterceptor = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_INTERCEPTOR");
 const AIR_GUARDS_MAX = 2; // interceptors wanted at most
+let airNoted = -1;        // the turn UI.log said no city could train a fighter where it is needed
+
+/**
+ * Fighters still wanted against the enemy aircraft in sight (hostileAircraft: those reaching our settlements), counting
+ * only ours based within their intercept range of such a settlement (fighterCover) and those queued in a city whose
+ * Airfield covers one (research/37 §3E: they were counted empire-wide and trained in any city). The order: a city whose
+ * Airfield covers a target and has a free slot (airBases), the nearest to the targets first. None: UI.log says so once a
+ * turn. @returns { n, target, order(city), rank(city) } or null
+ */
+function interceptorsWanted(threats) {
+    const enemy = safe(() => hostileAircraft(), []) ?? [];
+    const target = Math.min(AIR_GUARDS_MAX, enemy.length);
+    if (target <= 0) return null;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const targets = [...enemy.flatMap((e) => e.targets), ...threats.filter((t) => Number(t.air) > 0).map((t) => t.settlement)]
+        .filter((t, i, all) => all.findIndex((o) => o.x === t.x && o.y === t.y) === i);
+    const covers = (at, range) => targets.some((t) => dist(at, t) <= range);
+    const bases = safe(() => airBases(), []) ?? [];
+    const queuedIn = (city) => (safe(() => city.BuildQueue.getQueue(), []) ?? []).filter((q) => isInterceptor(queueUnitDef(q))).length;
+    const baseOf = (city) => bases.find((b) => b.city && sameId(b.city, city.id) && covers(b.at, b.range));
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    const have = (safe(() => fighterCover(isInterceptor), []) ?? []).filter((f) => covers(f.at, f.range)).length
+        + cities.filter((c) => baseOf(c)).reduce((n, c) => n + queuedIn(c), 0);
+    const n = target - have;
+    if (n <= 0) return null;
+    const open = (city) => {
+        const b = baseOf(city);
+        return !!b && b.free - queuedIn(city) > 0;
+    };
+    if (!cities.some(open)) {
+        if (airNoted !== Game.turn) {
+            airNoted = Game.turn;
+            const list = bases.map((b) => `${b.at.x},${b.at.y} free ${b.free} range ${b.range}`).join("; ") || "none";
+            log.warn(`air: no fighter for ${targets.map((t) => t.name ?? `${t.x},${t.y}`).join(", ")}: no Airfield of ours with a free slot covers them (bases: ${list})`);
+        }
+        return null;
+    }
+    return {
+        n, target,
+        order: (city) => (open(city) ? strongestOrder(city, isInterceptor) : null),
+        rank: (city) => Math.min(Infinity, ...targets.map((t) => dist(city.location, t))),
+    };
+}
 
 /** The strongest unit of a kind this city can train now (highest Tier, then the later one), as BUILD args. */
 function strongestOrder(city, test) {
@@ -2420,19 +2479,8 @@ function soldierRoom(perSettlement) {
     return unitCount(soldier) < perSettlement * Math.max(1, ownSettlements().length);
 }
 
-/**
- * A unit's melee strength (GameInfo.Unit_Stats Combat), 0 unless it is a land combat unit with no
- * ranged or bombard attack. A settlement centre defends at the strongest melee unit its owner has
- * trained, minus 10 (Civilopedia, walls page). Seen in game 5: only ranged units were trained after
- * Antiquity (the highest Tier was a Xunleichong, then a Mortar), so our centres defended at 20-30
- * against Line Infantry at 50 and one soldier took a town in 2 turns.
- */
-export function meleeStrength(def) {
-    if (!isMilitary(def) || (def.FormationClass && def.FormationClass !== "FORMATION_CLASS_LAND_COMBAT")) return 0;
-    const s = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
-    if (!s || Number(s.RangedCombat) > 0 || Number(s.Bombard) > 0) return 0;
-    return Number(s.Combat) || 0;
-}
+// A unit's melee strength: a settlement centre defends at the strongest melee unit obtained this age (research/37 §2).
+export { meleeStrength };
 
 /**
  * The strongest melee unit this city can train now (BUILD) or buy now within `budget` gold
@@ -2472,13 +2520,15 @@ function bestTrainableMelee() {
 
 /**
  * The strongest ranged land unit (RangedCombat; not a siege unit) this city can train now, or buy now within `budget`
- * (game 10: ships shot our towns for 20 turns and only warriors came). @returns { args, name, strength, cost } or null
+ * (game 10: ships shot our towns for 20 turns and only warriors came). Against ships (`ships`) the one with the highest
+ * Bombard, siege units too: land units fire at ships with it (research/37 §3D: a Ballista 30, an Archer 10).
+ * @returns { args, name, strength, cost } or null
  */
-function bestRangedOrder(city, { buy = false, budget = Infinity } = {}) {
+function bestRangedOrder(city, { buy = false, budget = Infinity, ships = false } = {}) {
     let best = null;
     for (const def of GameInfo.Units ?? []) {
-        if (!isRangedGuard(def) || def.CanTrain === false || def.CanTrain === "false") continue;
-        const strength = Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.RangedCombat, 0)) || 0;
+        if (!(isRangedGuard(def) || (ships && isSiegeGuard(def))) || def.CanTrain === false || def.CanTrain === "false") continue;
+        const strength = ships ? antiShipStrength(def) : Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.RangedCombat, 0)) || 0;
         if (best && strength <= best.strength) continue;
         const args = { UnitType: def.$hash };
         let cost = 0;
@@ -2601,7 +2651,9 @@ function trainDefenders(threats, used) {
         const mine = trainedFor.get(key);
         if (mine && cities.some((c) => sidOf(c) === mine.sid && queueHasUnit(c, mine.hash))) continue;
         trainedFor.delete(key);
-        const role = (def) => (need === "RANGED" ? isRangedGuard(def) : meleeStrength(def) > 0);
+        // Against ships, siege units too (their Bombard: research/37 §3D).
+        const ships = Number(t.ships) > 0;
+        const role = (def) => (need === "RANGED" ? isRangedGuard(def) || (ships && isSiegeGuard(def)) : meleeStrength(def) > 0);
         const own = (c) => c.location?.x === t.settlement.x && c.location?.y === t.settlement.y;
         // A city with space work only when no other within reach can, or for its own defence (research/34 §6: game 28's
         // capital trained Tanks for Sirjan and Ardebil, new settlements, while its Launch Pad, ordered M51, waited until M73).
@@ -2630,7 +2682,7 @@ function trainDefenders(threats, used) {
             if (used.has(sidOf(c))) continue;
             // A melee unit (it holds the centre, and the centres' defence follows it), else the strongest; ranged: the
             // strongest ranged unit.
-            const o = need === "RANGED" ? bestRangedOrder(c) ?? bestMilitaryOrder(c) : bestDefenderOrder(c) ?? bestMilitaryOrder(c);
+            const o = need === "RANGED" ? bestRangedOrder(c, { ships }) ?? bestMilitaryOrder(c) : bestDefenderOrder(c) ?? bestMilitaryOrder(c);
             if (!o) continue;
             const def = safe(() => GameInfo.Units.lookup(o.args.UnitType), null);
             // Done within MILITARY_MAX_TURNS (game 18: a Landship at 6 production a turn, 33 turns); none: the purchase
@@ -2701,6 +2753,8 @@ function unitOrder(city, test) {
  */
 function trainWantedUnits(unitOptions) {
     const used = new Set();
+    // The centres' melee unit queued before one was obtained elsewhere (a defender, a purchase): out of its queue.
+    if (unitOptions.defend) dropSpareMelee();
     // Defenders first: a settlement under threat cannot wait for scouts or settlers.
     const entries = trainDefenders(unitOptions.threats ?? [], used);
     // The city free soonest first (it would not move the unit ahead of an item with progress), then the biggest.
@@ -2725,7 +2779,15 @@ function trainWantedUnits(unitOptions) {
     const left = ageEndTurns(); // an age's last turns (the final age: all of it)
     for (const w of unitsWanted(unitOptions)) {
         let n = w.n;
-        for (const city of cities) {
+        // The centres' melee unit: the city that has it soonest, its wait plus its training (research/37 §2); a want's own
+        // order (fighters: the city nearest the targets) else.
+        const soonest = (c) => {
+            const o = unitOrder(c, w.test);
+            return o ? turnsUntilFree(c, ahead) + unitTurns(c, o.args.UnitType) : Infinity;
+        };
+        const rank = w.rank ?? (w.key === "QUEUED_MELEE" ? soonest : null);
+        const list = rank ? cities.map((c) => ({ c, t: rank(c) })).sort((a, b) => a.t - b.t).map((x) => x.c) : cities;
+        for (const city of list) {
             if (n <= 0) break;
             if (spaceUnits.has(w.key) && safe(() => spaceCity(city, unitOptions), false)) continue;
             if (used.has(sidOf(city)) || infected(city)) continue;
@@ -2740,6 +2802,7 @@ function trainWantedUnits(unitOptions) {
             if (isSoldierDef(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             if (w.key === "QUEUED_GUARD") noteGuardOrder(city, order.args.UnitType);
+            if (w.key === "QUEUED_MELEE") meleeOrders.set(sidOf(city), order.args.UnitType);
             entries.push({ key: w.key, args: [nameOf(city), Locale.compose(order.name), w.target] });
             used.add(sidOf(city));
             n--;
@@ -3055,10 +3118,10 @@ function nearestVillage(loc, villages) {
     return Math.min(Infinity, ...villages.map((v) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, v.x, v.y), Infinity)));
 }
 
-/** Is one of our soldiers on this tile or within `radius` of it? */
+/** Is one of our soldiers on this tile or within `radius` of it? Not one packed in an army, nor embarked (research/37 §3A). */
 function soldierAt(loc, radius = 1) {
     for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
-        if (u.isCommanderUnit || !isMilitary(safe(() => GameInfo.Units.lookup(u.type), null))) continue;
+        if (u.isCommanderUnit || u.isOnMap === false || afloat(u) || !isMilitary(safe(() => GameInfo.Units.lookup(u.type), null))) continue;
         if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), Infinity) <= radius) return true;
     }
     return false;
@@ -3093,10 +3156,10 @@ function defenderPurchase(city, budget, fallback = budget) {
 const defendersNoted = new Map(); // settlement -> the turn UI.log said why no defender was bought
 
 /** The cheapest unit of a defender's role the game sells here, short of gold or not: { type, cost } or null. */
-function cheapestDefender(city, ranged) {
+function cheapestDefender(city, ranged, ships = false) {
     let best = null;
     for (const def of GameInfo.Units ?? []) {
-        if (ranged ? !isRangedGuard(def) : !isMilitary(def) || isSiege(def)) continue;
+        if (ranged ? !(isRangedGuard(def) || (ships && isSiegeGuard(def))) : !isMilitary(def) || isSiege(def)) continue;
         if (def.CanTrain === false || def.CanTrain === "false") continue;
         const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { UnitType: def.$hash }, false), null);
         if (!r?.Success && !r?.InsufficientFunds) continue;
@@ -3135,6 +3198,8 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
         Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, order.args);
         b.spend(order.cost, { kind, label: `${safe(() => Locale.compose(order.name), "?")} (${nameOf(city)})` });
         bought.add(sidOf(city));
+        // A melee unit bought raises every centre's defence this age (research/37 §2).
+        noteMeleeObtained(safe(() => GameInfo.Units.lookup(order.args.UnitType), null), "bought", nameOf(city));
     };
     for (const t of threats ?? []) {
         const city = all.find((c) => c.location.x === t.settlement.x && c.location.y === t.settlement.y);
@@ -3159,9 +3224,10 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
         // game 10), else a melee one.
         const income = goldIncome();
         const pool = Math.max(0, b.all() - (income < 0 ? DEFICIT_KEEP_TURNS * -income : 0));
-        const order = need === "RANGED" ? bestRangedOrder(city, { buy: true, budget: pool }) : defenderPurchase(city, pool, pool);
+        const ships = Number(t.ships) > 0;
+        const order = need === "RANGED" ? bestRangedOrder(city, { buy: true, budget: pool, ships }) : defenderPurchase(city, pool, pool);
         if (!order) {
-            const cheapest = cheapestDefender(city, need === "RANGED");
+            const cheapest = cheapestDefender(city, need === "RANGED", ships);
             const why = !cheapest ? `the game sells no ${need === "RANGED" ? "ranged" : "land"} soldier here`
                 : `the cheapest, ${cheapest.type}, costs ${Math.round(cheapest.cost)}; ${Math.round(pool)} of ${Math.round(b.all())} gold usable${income < 0 ? ` (${DEFICIT_KEEP_TURNS} turns of the ${income} deficit kept)` : ""}`;
             noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; ${why}`);
@@ -3172,7 +3238,7 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
             const k = `${t.settlement.x},${t.settlement.y}`;
             const was = defenderBought.get(k)?.turn === Game.turn ? defenderBought.get(k) : { turn: Game.turn, melee: 0, ranged: 0 };
             const def = safe(() => GameInfo.Units.lookup(order.args.UnitType), null);
-            defenderBought.set(k, { ...was, melee: was.melee + (meleeStrength(def) > 0 ? 1 : 0), ranged: was.ranged + (isRangedGuard(def) ? 1 : 0) });
+            defenderBought.set(k, { ...was, melee: was.melee + (meleeStrength(def) > 0 ? 1 : 0), ranged: was.ranged + (isRangedGuard(def) || isSiegeGuard(def) ? 1 : 0) });
         }
         out.push({ key: "DEFENDER_BOUGHT", args: [Locale.compose(order.name), nameOf(city), Math.round(order.cost), t.count] });
     }
@@ -3189,6 +3255,92 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
         out.push({ key: "GARRISON_BOUGHT", args: [Locale.compose(order.name), nameOf(c), Math.round(order.cost)] });
     }
     return out;
+}
+
+const meleeOrders = new Map(); // city sid -> the unit type hash QUEUED_MELEE queued there (dropped once one is obtained)
+const FIRST_MELEE_SOON = 2;    // a centres' melee unit in production done within this many turns is not bought instead
+
+/**
+ * The age's first melee unit, upgraded or bought when the gold allows (research/37 §2): every centre defends at 20 until
+ * one is obtained this age, and training one takes turns. First an upgrade of one of ours to a melee type as strong as the
+ * best we can train (upgradeFirstMelee: the cheapest; probe P-DEF-3), else bought, the strongest the game offers (as strong as the best we can
+ * train: it sets every centre's defence), with all the gold less DEFICIT_KEEP_TURNS of a deficit while a settlement is
+ * threatened or exposed, else only with the free gold; in a threatened settlement first, then an exposed one (nearest a
+ * hostile village), then one with no soldier on or next to its centre, then any. Not when one is done within
+ * FIRST_MELEE_SOON turns in production. Then an unstarted one QUEUED_MELEE queued leaves the queue. @returns log entries
+ */
+export function buyFirstMelee(threats = [], { reserveTurns = 2, budget = null } = {}) {
+    const out = [];
+    if (meleeThisAge()) {
+        dropSpareMelee();
+        return out;
+    }
+    // As strong as the best we can train, and stronger than the base (a Warrior's 20 raises nothing).
+    const best = Math.max(bestTrainableMelee(), CENTRE_BASE + 1);
+    const strong = (def) => meleeStrength(def) >= best;
+    // One nearly done in production: it comes soon enough.
+    for (const c of ownSettlements()) {
+        const def = safe(() => GameInfo.Units.lookup(c.BuildQueue.currentProductionTypeHash), null);
+        const left = Number(safe(() => c.BuildQueue.currentTurnsLeft, NaN));
+        if (def && strong(def) && Number.isFinite(left) && left <= FIRST_MELEE_SOON) return out;
+    }
+    const b = budget ?? createBudget({ gold: goldBalance(), reserve: goldReserve(reserveTurns) });
+    const all = ownSettlements();
+    const hostile = hostileVillages();
+    const near = (c) => nearestVillage(c.location, hostile);
+    const threatened = all.filter((c) => (threats ?? []).some((t) => t.settlement.x === c.location.x && t.settlement.y === c.location.y));
+    const exposed = all.filter((c) => !threatened.includes(c) && near(c) <= EXPOSED_RADIUS).sort((a, b2) => near(a) - near(b2));
+    const income = goldIncome();
+    const urgent = threatened.length + exposed.length > 0;
+    const pool = urgent ? Math.max(0, b.all() - (income < 0 ? DEFICIT_KEEP_TURNS * -income : 0)) : b.free();
+    if (!(pool > 0)) return out;
+    // An upgrade of one of ours first: it costs less than a new unit.
+    const up = upgradeFirstMelee(best, pool);
+    if (up) {
+        b.spend(up.cost, { kind: "UPGRADE", label: up.entry.args[0] });
+        out.push(up.entry);
+        dropSpareMelee();
+        return out;
+    }
+    const bare = all.filter((c) => !threatened.includes(c) && !exposed.includes(c) && !soldierAt(c.location));
+    const rest = all.filter((c) => !threatened.includes(c) && !exposed.includes(c) && !bare.includes(c));
+    for (const city of [...threatened, ...exposed, ...bare, ...rest]) {
+        const order = bestDefenderOrder(city, { buy: true, budget: pool });
+        if (!order || order.strength < best) continue;
+        Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, order.args);
+        b.spend(order.cost, { kind: "DEFENDER", label: `${safe(() => Locale.compose(order.name), "?")} (${nameOf(city)})` });
+        noteMeleeObtained(safe(() => GameInfo.Units.lookup(order.args.UnitType), null), "bought", nameOf(city));
+        out.push({ key: "FIRST_MELEE_BOUGHT", args: [Locale.compose(order.name), nameOf(city), Math.round(order.cost), order.strength] });
+        dropSpareMelee();
+        break;
+    }
+    return out;
+}
+
+/**
+ * A melee unit QUEUED_MELEE queued that one obtained since has made needless (as strong or weaker) leaves its queue while
+ * nothing has gone into it: no progress at the front, or still behind other items.
+ */
+function dropSpareMelee() {
+    const obtained = meleeThisAge()?.strength ?? 0;
+    if (!(obtained > 0)) return;
+    for (const city of ownSettlements()) {
+        const hash = meleeOrders.get(sidOf(city));
+        if (hash === undefined) continue;
+        const def = safe(() => GameInfo.Units.lookup(hash), null);
+        if (!def || meleeStrength(def) > obtained) continue;
+        const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+        const i = queue.findIndex((q) => queueUnitDef(q)?.$hash === hash);
+        if (i < 0) {
+            meleeOrders.delete(sidOf(city));
+            continue;
+        }
+        if (i === 0 && (Number(safe(() => city.BuildQueue.getPercentComplete(hash), 0)) || 0) > 0) continue;
+        if (removeFromQueue(city, i)) {
+            meleeOrders.delete(sidOf(city));
+            log.info(`queue: ${nameOf(city)}: ${def.UnitType} dropped, this age's melee unit was obtained (strength ${obtained})`);
+        }
+    }
 }
 
 // ---- walls (research/23 D7) ----------------------------------------------------------------------

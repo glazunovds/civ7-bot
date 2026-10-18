@@ -1630,6 +1630,12 @@
     <Row Tag="LOC_XPL_AP_GARRISON_BOUGHT">
       <Text>{1_Name} bought in {2_City} for {3_Num}[icon:YIELD_GOLD] (an independent at war with us is near, and no soldier was there)</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_FIRST_MELEE_BOUGHT">
+      <Text>{1_Name} bought in {2_City} for {3_Num}[icon:YIELD_GOLD]: the age's first melee unit, every settlement centre now defends at {4_Num}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FIRST_MELEE_UPGRADED">
+      <Text>{1_Name} upgraded to {2_Name}: the age's first melee unit, every settlement centre should now defend at {3_Num}</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_DISPERSE_MOVE">
       <Text>{1_Name} goes to disperse {2_Name}'s empty village at {3_X},{4_Y}</Text>
     </Row>

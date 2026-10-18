@@ -153,7 +153,10 @@ test("ranged units reinforce too: an archer goes to a coast shot by ships, and b
     r = run({ threats: [army] });
     const back = moveOf(2);
     assert.ok(back, JSON.stringify(r.entries));
-    assert.ok(dist(back, { x: 18, y: 5 }) > dist(FRONT, { x: 18, y: 5 }), `behind the centre: ${JSON.stringify(back)}`);
+    // Within its range (2) of a raider, and as far from them as that allows (research/37 §3B), off the centre.
+    const gap = Math.min(dist(back, { x: 18, y: 5 }), dist(back, { x: 18, y: 6 }));
+    assert.equal(gap, 2, `in range, as far back as it allows: ${JSON.stringify(back)}`);
+    assert.ok(dist(back, FRONT) > 0);
 });
 
 test("the settlement in most danger gets the free soldier first, and a settlement with a spare guard lends it to one with none (research/36 §4)", () => {
