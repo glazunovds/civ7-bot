@@ -1599,6 +1599,18 @@
     <Row Tag="LOC_XPL_AP_RIVAL_NEAR_WIN">
       <Text>{1_Leader} is near a win ({2_Victory}): {3_Points} of {4_Goal}; we need {5_Need}</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_RIVAL_STEP_DANGER">
+      <Text>{1_Leader} nears a win ({2_Victory}) at the next step: {3_Points} of the {4_Goal} it brings (×{5_Multiple}); we need {6_Need}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_WATCH_STEP">
+      <Text>{1_Leader} nears a win ({2_Victory}) at the next step: {3_Points} of {4_Goal} once the multiple falls to ×{5_Multiple}; we need {6_Need} to hold it back</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOLD_PRESSURE">
+      <Text>Gold income below zero ({1_Num} turns): gold now weighs ×{2_Num} in every choice</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOLD_PRESSURE_OFF">
+      <Text>Gold income back above zero: gold weighs as usual again</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_RIVAL_COUNTDOWN">
       <Text>{1_Leader}'s countdown to a win ({2_Victory}) has started: {3_Turns} turn(s)</Text>
     </Row>

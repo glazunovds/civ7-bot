@@ -23,7 +23,7 @@ import { getRules } from './xpl-rules-loader.js';
 import { FOCUS_POPULATION } from '../core/xpl-town-focus.js';
 import { biasFor, biasKey, profileFor } from '../core/xpl-profiles.js';
 import { H, yieldIndex, YIELD_KEYS } from '../core/xpl-yields.js';
-import { happinessWorth, unhappinessShare } from '../core/xpl-scarcity.js';
+import { GOLD_PRESSURE, goldPressure, happinessWorth, unhappinessShare } from '../core/xpl-scarcity.js';
 const HAPPINESS = yieldIndex("YIELD_HAPPINESS");
 import { FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, REACH_MAX_TURNS, REPEATABLE_PROJECTS, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
 import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory.js';
@@ -4447,6 +4447,33 @@ function noteGoal(key) {
 export function resetGoldPlan() {
     goalMemory = {};
     lastGoalKey = null;
+    goldTrack = { turn: null, turns: [], level: 0 };
+}
+
+const GOLD_TRACK_TURNS = 8; // the gold income of this many last turns is kept (goldPressure's longest window)
+let goldTrack = { turn: null, turns: [], level: 0 }; // the gold income turn by turn, and the pressure's level
+
+/**
+ * The gold pressure this pass (core/xpl-scarcity.js goldPressure): the gold income is noted once a turn (the first
+ * pass), forgotten when the turn goes back (a new age, an earlier save). @returns { level, factor, changed, rose,
+ * deficitTurns }
+ */
+export function goldPressureNow() {
+    const turn = Number(safe(() => Game.turn, 0)) || 0;
+    if (goldTrack.turn !== null && turn < goldTrack.turn) goldTrack = { turn: null, turns: [], level: 0 };
+    let changed = false;
+    let rose = false;
+    if (goldTrack.turn !== turn) {
+        goldTrack.turns = [...goldTrack.turns, goldIncome()].slice(-GOLD_TRACK_TURNS);
+        goldTrack.turn = turn;
+        const level = goldPressure(goldTrack.turns, goldBalance(), goldTrack.level).level;
+        changed = level !== goldTrack.level;
+        rose = level > goldTrack.level;
+        goldTrack.level = level;
+    }
+    let deficitTurns = 0;
+    for (let i = goldTrack.turns.length - 1; i >= 0 && goldTrack.turns[i] < 0; i--) deficitTurns++;
+    return { level: goldTrack.level, factor: GOLD_PRESSURE.STEPS[goldTrack.level], changed, rose, deficitTurns };
 }
 
 const composeOr = (key, ...args) => safe(() => Locale.compose(key, ...args), key);
@@ -4694,11 +4721,14 @@ export function logGold(pass) {
         spent: Math.round(b.spent),
         bought: b.entries.map((e) => ({ kind: e.kind, label: e.label ?? "", cost: e.cost })),
         cheapestConversion: pass.cheapest ?? null,
+        // Gold's weight while the income stays below zero (goldPressureNow).
+        pressure: GOLD_PRESSURE.STEPS[goldTrack.level],
     };
     state.set({ autopilot: { ...(state.get().autopilot ?? {}), gold } });
     const goalText = g ? `${g.kind} ${g.label} ${gold.goal.cost} held ${gold.goal.held}${g.done ? " (bought)" : ""}` : "none";
     const spentText = gold.bought.map((e) => `${e.kind} ${e.label} ${e.cost}`).join(", ");
-    log.warn(`gold: T${gold.turn} balance ${gold.balance} income ${gold.income} reserve ${gold.reserve} (${gold.reserveTurns}t) goal ${goalText}; spent ${gold.spent} [${spentText}]; cheapest conversion ${gold.cheapestConversion ? `${gold.cheapestConversion.name} ${gold.cheapestConversion.cost}` : "-"}`);
+    const pressure = goldTrack.level > 0 ? `; gold weighs ×${GOLD_PRESSURE.STEPS[goldTrack.level]} (income below zero)` : "";
+    log.warn(`gold: T${gold.turn} balance ${gold.balance} income ${gold.income} reserve ${gold.reserve} (${gold.reserveTurns}t) goal ${goalText}; spent ${gold.spent} [${spentText}]; cheapest conversion ${gold.cheapestConversion ? `${gold.cheapestConversion.name} ${gold.cheapestConversion.cost}` : "-"}${pressure}`);
 }
 
 // ---- purchases -------------------------------------------------------------------------

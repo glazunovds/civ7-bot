@@ -43,8 +43,11 @@ export function dominanceMultiple(age, ageFrac) {
  * game's; ≤ 0: second × the table's multiple, none before Exploration 50%), share = leader ÷ G,
  * multiple = G ÷ second, need = ⌈leader × BLOCK_MARGIN ÷ multiple⌉ (the score we must hold as second),
  * level DANGER (share ≥ DANGER_SHARE or the leader's countdown runs) or WATCH (share ≥ WATCH_SHARE).
+ * In the final age the next step's lower multiple counts too (`step`, `stepGoal`): a leader that step would put nearer
+ * its goal takes that step's level now, and the block it takes is judged at that step (game 31: Augustus's culture, 220 against
+ * a goal of 284 at ×2, began its countdown when ×1.5 came at Modern's 60%, and won five turns later).
  * @param races victoryRaces() @param me our player id
- * @returns [{ cls, leader, points, goal, share, multiple, ours, need, level, countdown }]
+ * @returns [{ cls, leader, points, goal, share, multiple, ours, need, level, countdown, step, stepGoal }]
  */
 export function victoryWatch(races, me, { age = null, ageFrac = 0, military = null } = {}) {
     const out = [];
@@ -78,11 +81,20 @@ export function victoryWatch(races, me, { age = null, ageFrac = 0, military = nu
             continue;
         }
         const share = leader.points / goal;
-        const level = leader.dominant || share >= DANGER_SHARE ? "DANGER" : share >= WATCH_SHARE ? "WATCH" : null;
-        const need = Math.ceil((leader.points * BLOCK_MARGIN) / multiple);
+        // The next step's goal (the final age): the leader's share of it, when that is what puts it near its goal.
+        const next = nextDominanceMultiple(age, ageFrac);
+        const stepGoal = next && next < multiple && second > 0 ? Math.floor(second * next) : 0;
+        const stepShare = stepGoal > 0 ? leader.points / stepGoal : 0;
+        // Only when the step raises its level: a leader near the current goal is blocked now, at the current multiple.
+        const rank = (x) => (x >= DANGER_SHARE ? 2 : x >= WATCH_SHARE ? 1 : 0);
+        const atStep = !leader.dominant && rank(stepShare) > rank(share);
+        const top = atStep ? stepShare : share;
+        const level = leader.dominant || top >= DANGER_SHARE ? "DANGER" : top >= WATCH_SHARE ? "WATCH" : null;
+        const need = Math.ceil((leader.points * BLOCK_MARGIN) / (atStep ? next : multiple));
         out.push({
             cls: r.cls, leader: leader.id, points: leader.points, goal, share: Math.round(share * 100) / 100,
             multiple: Math.round(multiple * 100) / 100, ours, need,
+            step: atStep ? next : null, stepGoal: atStep ? stepGoal : null,
             // Military points are settlements, 4 each: the settlements that would hold `need` (research/31 §3: game 25 was
             // second, so its own settlements set Ashoka's goal; two more by M67 would have stopped his countdown).
             ...(r.cls === "MILITARY" ? { block: Math.ceil(Math.max(0, need - ours) / SETTLEMENT_MILITARY_POINTS) } : {}),

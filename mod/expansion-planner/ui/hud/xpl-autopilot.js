@@ -273,7 +273,7 @@ function updateFocus(target = "AUTO") {
         // The final age: the score that decides a game nobody wins (research/30 §1: lost 923 to 933, last in the economy);
         // not while the score victory is off (research/31 §1: game 26 printed «score: ours 0 …» every turn).
         if (finalAge && scoreVictoryOn()) logScore(races);
-        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.countdown != null ? ` countdown ${w.countdown}` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
+        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.step ? ` (at ×${w.step}: goal ${w.stepGoal})` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.countdown != null ? ` countdown ${w.countdown}` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
     }
     // Our countdown to a victory has just started: worth a line in the tab's log.
     const out = noteWatch(watch);
@@ -345,8 +345,15 @@ function noteWatch(watch) {
             }
             continue;
         }
+        // In danger only through the final age's next step (victoryWatch `step`): said once as such (game 31).
+        const atStep = `${w.cls}:${w.leader}:STEP`;
+        if (w.level === "DANGER" && w.step && !watchWarned.has(atStep)) {
+            watchWarned.add(atStep);
+            out.push({ key: "RIVAL_STEP_DANGER", args: [w.leaderName, victory, w.points, w.stepGoal, w.step, w.need ?? "?"] });
+            continue;
+        }
         const near = `${w.cls}:${w.leader}:DANGER`;
-        if (w.level === "DANGER" && !watchWarned.has(near)) {
+        if (w.level === "DANGER" && !w.step && !watchWarned.has(near)) {
             watchWarned.add(near);
             // A fixed score (science) has no score of ours that holds it back.
             out.push(w.fixed ? { key: "RIVAL_NEAR_WIN_FIXED", args: [w.leaderName, victory, w.points, w.goal] } : { key: "RIVAL_NEAR_WIN", args: [w.leaderName, victory, w.points, w.goal ?? "?", w.need ?? "?"] });
@@ -438,8 +445,16 @@ export async function runTurn(force = false) {
             });
         } else if (ap().strategy) setAp({ strategy: null });
         s = applyStrategy(s, plan);
-        // The balance of the focus's own (core/xpl-profiles.js biasFor): science starts with Еда ×0.7, Наука ×1.5.
-        s = { ...s, biasFocus: focus ?? "NONE" };
+        // The balance of the focus's own (core/xpl-profiles.js biasFor): science starts with Еда ×0.7, Наука ×1.5. While the
+        // gold income stays below zero, gold weighs more in every choice (steps.goldPressureNow; game 31).
+        let gold = { factor: 1 };
+        await guarded("gold", () => {
+            gold = steps.goldPressureNow();
+            // Said when it rises, and when it is over (a step down from ×2 to ×1.5 shows in UI.log's gold line).
+            if (gold.rose) record([{ key: "GOLD_PRESSURE", args: [gold.deficitTurns, gold.factor] }]);
+            else if (gold.changed && gold.level === 0) record([{ key: "GOLD_PRESSURE_OFF", args: [] }]);
+        });
+        s = { ...s, biasFocus: focus ?? "NONE", goldPressure: gold.factor };
         o = s.autopilot ?? {};
         const maxWonders = plan ? Math.max(1, Number(o.maxWonders) || 1) : wondersAtOnce(o.maxWonders ?? 1, focus);
         // Units first: a settler that founds now gives a new city (on turn 1 the capital,

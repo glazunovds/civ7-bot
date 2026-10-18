@@ -10,7 +10,8 @@
  *    multiplier = MIN + (1 - MIN) * REF / (REF + left)
  *    (left 0 -> 1.0, left 20 -> 0.65, left 140 -> 0.39)
  * Other yields (gold is the empire's, science and culture have no threshold) keep the
- * profile's weight.
+ * profile's weight; gold weighs more for the whole empire while its income stays below zero
+ * (goldPressure).
  *
  * Below zero Happiness the game itself takes a share of the settlement's other yields
  * (unhappinessDelta): a happiness cost that pushes it there costs that share too, and a
@@ -132,4 +133,34 @@ export function costValue(weights, costs, nets) {
         v += (weights[i] ?? 0) * c * m + penalty;
     });
     return v;
+}
+
+// The gold weight's multiplier by level, and the turns that raise and lower it (goldPressure).
+export const GOLD_PRESSURE = Object.freeze({ STEPS: Object.freeze([1, 1.5, 2]), START_TURNS: 3, HARD_TURNS: 8, RECOVER_TURNS: 3 });
+
+/**
+ * Gold weighs more while the treasury bleeds. Game 31: the gold income stood below zero for most of Modern (unit upkeep
+ * 90-115 a turn against 53-76 gross gold), the treasury at 0 from M24 to M43, and no settler could be bought for our own
+ * military countdown, two settlements away; every choice still weighed gold as in peace. The level rises with the
+ * deficit: START_TURNS turns in a row below zero, or a treasury that covers one more turn of it, give level 1; a deficit on
+ * all but two of the last HARD_TURNS turns, or both of the above, level 2. It falls one level at a time, only after
+ * RECOVER_TURNS turns in a row at or above zero (no thrash: the building plan replans when it changes).
+ * @param turns the gold income of the last turns, oldest first @param balance the treasury @param level the level before
+ * @returns { level, factor: the gold weight's multiplier (STEPS[level]) }
+ */
+export function goldPressure(turns, balance, level = 0) {
+    const t = (turns ?? []).map((x) => Number(x) || 0);
+    const { STEPS, START_TURNS, HARD_TURNS, RECOVER_TURNS } = GOLD_PRESSURE;
+    const income = t.length > 0 ? t[t.length - 1] : 0;
+    const last = t.slice(-START_TURNS);
+    const deficit = last.length >= START_TURNS && last.every((x) => x < 0);
+    const empty = income < 0 && (Number(balance) || 0) <= -income;
+    const recent = t.slice(-HARD_TURNS);
+    const long = recent.length >= HARD_TURNS && recent.filter((x) => x < 0).length >= HARD_TURNS - 2;
+    const want = long || (deficit && empty) ? 2 : deficit || empty ? 1 : 0;
+    const before = Math.max(0, Math.min(STEPS.length - 1, Number(level) || 0));
+    const back = t.slice(-RECOVER_TURNS);
+    const recovered = back.length >= RECOVER_TURNS && back.every((x) => x >= 0);
+    const next = want >= before ? want : recovered ? Math.max(want, before - 1) : before;
+    return { level: next, factor: STEPS[next] };
 }

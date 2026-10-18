@@ -307,7 +307,9 @@ export class AutopilotTab {
                     : compose(w.level === "DANGER" ? "LOC_XPL_AP_WATCH_FIXED_DANGER" : "LOC_XPL_AP_WATCH_FIXED", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal));
                 continue;
             }
-            line(compose(w.level === "DANGER" ? "LOC_XPL_AP_WATCH_DANGER" : "LOC_XPL_AP_WATCH", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal, w.multiple, w.need));
+            // Near its goal only at the final age's next step (victoryWatch `step`).
+            if (w.step) line(compose("LOC_XPL_AP_WATCH_STEP", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.stepGoal, w.step, w.need));
+            else line(compose(w.level === "DANGER" ? "LOC_XPL_AP_WATCH_DANGER" : "LOC_XPL_AP_WATCH", w.leaderName, compose(`LOC_XPL_FOCUS_${w.cls}`), w.points, w.goal, w.multiple, w.need));
         }
         if (focus.innovation?.target) line(compose("LOC_XPL_AP_INNOVATION_TARGET", focus.innovation.points, focus.innovation.target));
         if ((focus.off ?? []).length > 0) line(compose("LOC_XPL_AP_FOCUS_OFF", focus.off.map((c) => compose(`LOC_XPL_FOCUS_${c}`)).join(", ")));

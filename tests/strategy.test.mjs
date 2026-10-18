@@ -107,6 +107,28 @@ test("watch: a culture leader at 90% of the game's dominance goal is DANGER; our
     assert.ok(lead.every((w) => w.own), "we lead: nothing to block");
 });
 
+test("watch: in the final age a leader the next step would put near its goal is in danger now, its block judged at that step (game 31)", () => {
+    // Game 31, Modern 41%: Augustus's culture 164 against 250 (×2 the second's 125) was a WATCH; at 60% ×1.5 brought a goal
+    // of 187 he had passed by then, his countdown began, and he won five turns later.
+    const g31 = (o = {}) => race({ goal: 250, board: [{ id: 5, points: 164 }, { id: 2, points: 125 }, { id: 0, points: 95 }], ...o });
+    const [w] = victoryWatch([g31()], 0, { age: "AGE_MODERN", ageFrac: 0.41 });
+    assert.deepEqual([w.level, w.step, w.stepGoal, w.need, w.goal], ["DANGER", 1.5, 187, 126, 250], "⌈164 × 1.15 ÷ 1.5⌉ = 126");
+    // No step left (80% on), or not the final age: as before.
+    const late = victoryWatch([g31({ goal: Math.floor(125 * 1.25) })], 0, { age: "AGE_MODERN", ageFrac: 0.85 })[0];
+    assert.equal(late.step, null);
+    const before = victoryWatch([g31()], 0, { age: "AGE_EXPLORATION", ageFrac: 0.9 })[0];
+    assert.deepEqual([before.level, before.step, before.need], ["WATCH", null, 95]);
+    // Already near the current goal: blocked now, at the current multiple (no step).
+    const near = victoryWatch([g31({ board: [{ id: 5, points: 230 }, { id: 2, points: 125 }, { id: 0, points: 95 }] })], 0, { age: "AGE_MODERN", ageFrac: 0.41 })[0];
+    assert.deepEqual([near.level, near.step, near.need], ["DANGER", null, 133]);
+    // The culture overlay spends wonders only on a block within reach at that step: 95 of 126 is not (95 of 95 at ×2 was).
+    const f = facts({ age: "AGE_MODERN", finalAge: true, ageFrac: 0.41, settlements: 5 });
+    const calm = planStrategy(f, "SCIENCE");
+    assert.equal(planStrategy(f, "SCIENCE", { watch: [w] }).wonders, calm.wonders);
+    const [close] = victoryWatch([g31({ board: [{ id: 5, points: 164 }, { id: 2, points: 125 }, { id: 0, points: 100 }] })], 0, { age: "AGE_MODERN", ageFrac: 0.41 });
+    assert.equal(planStrategy(f, "SCIENCE", { watch: [close] }).wonders, calm.wonders + 1, "100 of 126: within 30");
+});
+
 test("watch: our own countdown within reach is a CHANCE: our goal = the multiple × the best of the others (research/24 F2)", () => {
     const [own] = victoryWatch([race({ board: [{ id: 0, points: 1400 }, { id: 2, points: 388 }] })], 0);
     assert.deepEqual([own?.own, own?.level, own?.ours, own?.goal, own?.need], [true, "CHANCE", 1400, 1552, 152]);

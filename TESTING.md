@@ -368,6 +368,8 @@ The mod is linked into the game with a folder junction:
 | 349 | Army member deploys | Under the Regroup age setting (or with units packed): `army: <unit> leaves the army at x,y onto x,y for <town>` and DEPLOYED; next turn it walks to the town. Send the line for probe P-A2. |
 | 350 | Fronts after an age change | WAR_RISK in a new age: STAGED soon after, with a soldier that started the age fortified; no `war front …: melee 0 of 1 … 13 free soldier(s)` for many turns. Also after a reload mid-age. |
 | 351 | Military lever at a step | Final age, our military countdown a few settlements away: after a multiple step (Modern 40%, 60%, 80%) the `military:` line keeps `our goal … at ×<the current multiple>; N settlement(s)` while N is within the room, and settlers stay the first goal (not `0 settlement(s)` judged at the next step). |
+| 352 | Gold pressure | Gold income below zero 3 turns in a row: GOLD_PRESSURE «золото весит ×1.5»; UI.log's gold line ends `gold weighs ×1.5`; gold policies, Trade towns and gold buildings come up; ×2 after a long deficit; GOLD_PRESSURE_OFF a few turns after it recovers. |
+| 353 | Rival at the next step | Final age: a rival a multiple step away from its countdown shows «… на следующем шаге …» in the tab and RIVAL_STEP_DANGER once, before the step; UI.log `victory watch: … (at ×1.5: goal N)`. |
 
 ## Memento Advisor (second mod, `mod/memento-advisor`)
 Restart the game once: new mod. Check it is enabled in Add-Ons («Советник по памятным вещам»).

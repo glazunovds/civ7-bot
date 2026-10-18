@@ -464,3 +464,64 @@ test("the final age with the score victory off has no last turns: conversions go
         delete world.finalAge;
     }
 });
+
+test("gold income below zero for 3 turns: the pass weighs gold ×1.5 (every choice and the building plan's inputs), ×2 for a long deficit, as usual once it recovers (game 31)", async () => {
+    const { biasFor, profileFor } = await import("../mod/expansion-planner/ui/core/xpl-profiles.js");
+    const { G } = await import("../mod/expansion-planner/ui/core/xpl-yields.js");
+    assert.equal(biasFor({ biasFocus: "SCIENCE", goldPressure: 1.5 }).G, 1.5);
+    assert.equal(biasFor({ biasFocus: "SCIENCE" }).G, 1);
+    assert.equal(profileFor({ profile: "SCIENCE", biasFocus: "SCIENCE", goldPressure: 2 }).y[G], profileFor({ profile: "SCIENCE", biasFocus: "SCIENCE" }).y[G] * 2);
+    steps.resetGoldPlan();
+    const turn = Game.turn;
+    const income = world.goldIncome;
+    const warns = [];
+    const warn = console.warn;
+    try {
+        world.goldIncome = -20;
+        for (let t = 1; t <= 3; t++) {
+            Game.turn = 100 + t;
+            await pass(400);
+        }
+        assert.ok(keys().includes("GOLD_PRESSURE"), JSON.stringify(keys()));
+        assert.equal(state.get().autopilot.gold.pressure, 1.5);
+        for (let t = 4; t <= 9; t++) {
+            Game.turn = 100 + t;
+            await pass(400);
+        }
+        assert.equal(state.get().autopilot.gold.pressure, 2, "8 turns below zero");
+        // The pass's own settings carry it: the economy line (every 10 turns) prints the balance in use.
+        console.warn = (...a) => warns.push(a.join(" "));
+        Game.turn = 110;
+        await pass(400);
+        console.warn = warn;
+        const economy = warns.filter((l) => l.includes("economy: T110"));
+        assert.ok(economy.some((l) => /balance \S+ \S*G2\b/.test(l)), economy.join(" | "));
+        // Recovery: after 3 turns at or above zero, one level a turn; the last one says so.
+        world.goldIncome = 10;
+        const levels = [];
+        let off = null;
+        for (let t = 11; t <= 15; t++) {
+            Game.turn = 100 + t;
+            await pass(400);
+            levels.push(state.get().autopilot.gold.pressure);
+            if (keys().includes("GOLD_PRESSURE_OFF")) off = t;
+            assert.ok(!keys().includes("GOLD_PRESSURE"), "a step down is not announced as pressure");
+        }
+        assert.deepEqual(levels, [2, 2, 1.5, 1, 1]);
+        assert.equal(off, 14);
+        // A new age (the turn starts over): the deficit's memory starts over too.
+        world.goldIncome = -20;
+        for (let t = 1; t <= 8; t++) {
+            Game.turn = 200 + t;
+            steps.goldPressureNow();
+        }
+        assert.equal(steps.goldPressureNow().level, 2);
+        Game.turn = 1;
+        assert.equal(steps.goldPressureNow().level, 0, "one turn of a new age");
+    } finally {
+        console.warn = warn;
+        Game.turn = turn;
+        world.goldIncome = income;
+        steps.resetGoldPlan();
+    }
+});

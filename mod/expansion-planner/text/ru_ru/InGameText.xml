@@ -1599,6 +1599,18 @@
     <Replace Tag="LOC_XPL_AP_RIVAL_NEAR_WIN" Language="ru_RU">
       <Text>{1_Leader} у порога победы ({2_Victory}): {3_Points} из {4_Goal}; нам нужно {5_Need}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_RIVAL_STEP_DANGER" Language="ru_RU">
+      <Text>{1_Leader} будет у порога победы ({2_Victory}) на следующем шаге: {3_Points} из {4_Goal}, которые он даст (×{5_Multiple}); нам нужно {6_Need}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WATCH_STEP" Language="ru_RU">
+      <Text>{1_Leader} будет у порога победы ({2_Victory}) на следующем шаге: {3_Points} из {4_Goal}, когда множитель упадёт до ×{5_Multiple}; чтобы сдержать, нам нужно {6_Need}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GOLD_PRESSURE" Language="ru_RU">
+      <Text>Доход золота ниже нуля (ходов: {1_Num}): золото теперь весит ×{2_Num} во всех решениях</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GOLD_PRESSURE_OFF" Language="ru_RU">
+      <Text>Доход золота снова выше нуля: золото весит как обычно</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_RIVAL_COUNTDOWN" Language="ru_RU">
       <Text>У {1_Leader} пошёл отсчёт до победы ({2_Victory}): ходов: {3_Turns}</Text>
     </Replace>

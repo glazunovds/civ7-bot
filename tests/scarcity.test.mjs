@@ -4,7 +4,7 @@
 // happiness, B adds +7 / +6 for -3 / -4; the best new tile gives +1 food +4 production.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { costMultiplier, costValue, gainMultiplier, gainValue, SCARCITY, UNHAPPINESS, unhappinessDelta, unhappinessShare } from "../mod/expansion-planner/ui/core/xpl-scarcity.js";
+import { costMultiplier, costValue, gainMultiplier, gainValue, goldPressure, SCARCITY, UNHAPPINESS, unhappinessDelta, unhappinessShare } from "../mod/expansion-planner/ui/core/xpl-scarcity.js";
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { dot } from "../mod/expansion-planner/ui/core/xpl-yields.js";
 
@@ -115,4 +115,18 @@ test("at the 80% cap a Happiness change still counts: its share of the way back 
     const mild = [0, 24, 8, 32, 16, -4, 0];
     assert.ok(Math.abs(happinessWorth(w, mild, -4, 4) + unhappinessDelta(w, mild, -4, 0)) < 1e-9, "below the cap: exactly the share");
     assert.equal(happinessWorth(w, mild, -4, 10), happinessWorth(w, mild, -4, 4), "nothing past zero");
+});
+
+test("gold pressure: 3 turns below zero (or a treasury about to run dry) weigh gold ×1.5, a long deficit ×2; down one level after 3 turns at or above zero (game 31)", () => {
+    // Game 31's Modern gold income, turn by turn from M2 (Player_Treasury.csv), with the treasury.
+    const climb = (incomes, balance) => incomes.reduce((acc, _x, i) => goldPressure(incomes.slice(0, i + 1), balance, acc.level), { level: 0 });
+    assert.equal(goldPressure([-31, -11], 400, 0).level, 0, "two turns: not yet");
+    assert.deepEqual(goldPressure([-31, -11, -20], 400, 0), { level: 1, factor: 1.5 });
+    assert.equal(goldPressure([5, 3, -40], 30, 0).level, 1, "one turn of the deficit left in the treasury");
+    assert.equal(goldPressure([-31, -11, -20], 15, 0).level, 2, "both");
+    assert.equal(climb([-31, -11, -20, -14, -14, 9, -10, -34], 300).level, 2, "6 of the last 8 below zero");
+    // It falls one level at a time, only after 3 turns at or above zero.
+    assert.equal(goldPressure([-34, -14, 9], 300, 2).level, 2, "one good turn changes nothing");
+    assert.equal(goldPressure([-14, -26, -40, -6, -9, 5, 10, 13], 0, 2).level, 1, "3 turns at or above zero: one level down");
+    assert.equal(goldPressure([-40, -6, -9, 5, 10, 13, 10, 12], 30, 1).level, 0);
 });

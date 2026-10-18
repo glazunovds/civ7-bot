@@ -84,12 +84,16 @@ export function biasKey(settings) {
     return BIAS_SETS.includes(settings?.biasFocus) ? settings.biasFocus : "NONE";
 }
 
-/** The balance in use: the focus's set (its default when unset); a single balance ({F, …}) as it is. */
+/**
+ * The balance in use: the focus's set (its default when unset); a single balance ({F, …}) as it is. While the treasury
+ * bleeds, gold's multiplier is raised by the autopilot's `settings.goldPressure` (core/xpl-scarcity.js goldPressure), so
+ * every reader of the weights (profileFor) and the building plan's inputs see it.
+ */
 export function biasFor(settings) {
     const raw = settings?.yieldBias;
-    if (isFlat(raw)) return normaliseBias(raw);
-    const key = biasKey(settings);
-    return normaliseBias(raw?.[key] ?? BIAS_DEFAULTS[key]);
+    const b = isFlat(raw) ? normaliseBias(raw) : normaliseBias(raw?.[biasKey(settings)] ?? BIAS_DEFAULTS[biasKey(settings)]);
+    const g = Number(settings?.goldPressure);
+    return g > 1 ? { ...b, G: Math.round(b.G * g * 100) / 100 } : b;
 }
 
 const biased = new Map(); // "<profile>|<bias>" -> the profile with the balance applied
