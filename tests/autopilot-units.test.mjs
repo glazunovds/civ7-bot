@@ -1430,3 +1430,34 @@ test("a settler's «no order» line judges a relaxed pick by the relaxed rules, 
         state.set({ results: { ...state.get().results, sites: picks } });
     }
 });
+
+// Game 35: Бристоль's settler stood next to its site when an independent's Warrior came within 3 tiles; it walked home and
+// founded 5 turns later.
+test("a settler next to its site with a raider near steps onto it and founds at once, not home; not with the raider next to the site", () => {
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 11, y: 5 }]);
+    run({ settlers: true });
+    assert.deepEqual(units.settlerGoals().map((g) => [g.x, g.y]), [[12, 5]], "its site");
+    // A raider 3 tiles from the settler and the site.
+    fake.sent.length = 0;
+    Object.assign(world, { ...AT_WAR, enemies: [foe(12, 2)] });
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 11, y: 5, activity: UnitActivityTypes.OPERATION }];
+    const r = run({ settlers: true });
+    assert.equal(r.entries[0]?.key, "SETTLER_DASH", JSON.stringify(r.entries));
+    assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5]);
+    // On the site a moment later: it founds in the same pass.
+    fake.sent.length = 0;
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 12, y: 5, moves: 1 }];
+    const f = units.foundArrivals();
+    assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
+    assert.equal(f[0]?.key, "SETTLE_FOUND");
+    // A raider next to the site: no step onto it.
+    units.resetUnitGoals();
+    fresh([{ id: 2, type: "UNIT_SETTLER", x: 11, y: 5 }]);
+    run({ settlers: true });
+    fake.sent.length = 0;
+    Object.assign(world, { ...AT_WAR, enemies: [foe(13, 5)] });
+    world.units = [{ id: 2, type: "UNIT_SETTLER", x: 11, y: 5, activity: UnitActivityTypes.OPERATION }];
+    const r2 = run({ settlers: true });
+    assert.ok(!r2.entries.some((e) => e.key === "SETTLER_DASH"), JSON.stringify(r2.entries));
+    delete world.wars;
+});

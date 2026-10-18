@@ -2637,10 +2637,11 @@ function unitsWanted(unitOptions) {
     // none), whatever we carried over from the last age (game 29: carried Line Infantry met this want, and Modern's
     // centres stood at 20 for 35 turns). One as strong as the best we can train until one is obtained this age, in a
     // peaceful final push and at a deficit too; a stronger one later as before: not while the gold income is below zero
-    // (upkeep; game 6: Horsemen trained with the treasury at 0), and in the final push only under a threat or a war risk
-    // (game 16: a Landship and then a Tank took the capital's production for 15 turns in peace). One in a queue does. Only
-    // one stronger than the centres' defence now (a Warrior raises nothing above the base 20).
-    const peacefulPush = unitOptions.strategy?.phase === "COMMIT" && (unitOptions.threats ?? []).length === 0 && !war.near && war.risk.length === 0;
+    // (upkeep; game 6: Horsemen trained with the treasury at 0), and in the final push only under a threat or a war at our
+    // door (game 16: a Landship and then a Tank took the capital's production for 15 turns in peace; game 35: a Tank, 65
+    // over our Cuirassier's 55, took a city kept for a Launch Pad M47-M51 against Augustus's war risk, and no war came).
+    // One in a queue does. Only one stronger than the centres' defence now (a Warrior raises nothing above the base 20).
+    const peacefulPush = unitOptions.strategy?.phase === "COMMIT" && (unitOptions.threats ?? []).length === 0 && !war.near;
     if (unitOptions.defend) {
         const best = bestTrainableMelee();
         const obtained = meleeThisAge()?.strength ?? 0;
@@ -3083,6 +3084,8 @@ function trainWantedUnits(unitOptions) {
         for (const city of list) {
             if (n <= 0) break;
             if (spaceUnits.has(w.key) && safe(() => spaceCity(city, unitOptions), false)) continue;
+            // Nor from a city kept for a Launch Pad near Rocketry, settlers aside (game 34's Antiquarian, game 35's Tank).
+            if (spaceUnits.has(w.key) && w.key !== "QUEUED_SETTLER" && padKept?.has(sidOf(city))) continue;
             if (used.has(sidOf(city)) || infected(city)) continue;
             if (w.test === isSettler && threatened.has(sidOf(city)) && (settlerElsewhere() || !guarded(city))) continue;
             if ((safe(() => city.BuildQueue.getQueue(), []) ?? []).some((q) => w.test(queueUnitDef(q)))) continue;
@@ -3093,7 +3096,7 @@ function trainWantedUnits(unitOptions) {
             if (!doneInAge(city, order.args.UnitType, left, turnsUntilFree(city, ahead))) continue;
             // Soldiers (aircraft too) only where they are done soon (game 18: 33 turns for a Landship).
             if (isSoldierDef(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
-            if (w.key === "QUEUED_EXPLORER" && (padKept?.has(sidOf(city)) || unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS)) continue;
+            if (w.key === "QUEUED_EXPLORER" && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             if (w.key === "QUEUED_GUARD") noteGuardOrder(city, order.args.UnitType);
             if (w.key === "QUEUED_MELEE") meleeOrders.set(sidOf(city), order.args.UnitType);
@@ -4983,7 +4986,8 @@ export function revoltRisks() {
 export function guardRevolts(budget = null) {
     const out = [];
     const risks = revoltRisks();
-    if (risks.length === 0) return out;
+    const crippled = crippledSettlements(risks);
+    if (risks.length === 0 && crippled.length === 0) return out;
     const b = budget ?? createBudget({ gold: goldBalance() });
     const happy = GameInfo.TypeTags?.filter((t) => t.Tag === "HAPPINESS").map((t) => safe(() => GameInfo.Constructibles.lookup(t.Type), null)).filter((d) => d && d.ConstructibleClass === "BUILDING") ?? [];
     for (const r of risks) {
@@ -4992,26 +4996,72 @@ export function guardRevolts(budget = null) {
             revoltNoted.set(sid, Game.turn);
             log.warn(`happiness: ${nameOf(r.c)} ${r.happy}${r.unrest ? `, unrest ${r.turns} turn(s)` : ""}${r.crisis ? ", a crisis is on" : ""}: a revolt may take it`);
         }
-        let best = null;
-        for (const def of happy) {
-            if (cityHas(r.c, def.ConstructibleType)) continue;
-            const probe = safe(() => Game.CityCommands.canStart(r.c.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
-            const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
-            if (!probe?.Success || plots.length === 0) continue;
-            const cost = Number(probe.Cost ?? safe(() => r.c.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
-            if (!Number.isFinite(cost) || cost <= 0 || cost > b.all()) continue;
-            if (!best || cost < best.cost) best = { def, plots, cost };
+        const best = cheapestHappiness(r.c, happy, b.all());
+        if (!best.pick || !buyHappiness(r.c, best.pick, b, "REVOLT")) continue;
+        out.push({ key: "REVOLT_GUARD", args: [nameOf(r.c), composeOr(best.pick.def.Name), Math.round(best.pick.cost)] });
+    }
+    // Crippled by unhappiness: ahead of the savings goal, from the gold above the reserve.
+    for (const r of crippled) {
+        const best = cheapestHappiness(r.c, happy, b.forGoal());
+        const lost = Math.round(unhappinessShare(r.happy) * 100);
+        if (best.pick && buyHappiness(r.c, best.pick, b, "HAPPINESS")) {
+            out.push({ key: "HAPPINESS_RESCUE", args: [nameOf(r.c), lost, r.happy, composeOr(best.pick.def.Name), Math.round(best.pick.cost)] });
+            continue;
         }
-        if (!best) continue;
-        const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(r.c, best.def.$hash, best.plots) ?? best.plots[0]), null);
-        if (!loc) continue;
-        const args = { ConstructibleType: best.def.$hash, X: loc.x, Y: loc.y };
-        if (!safe(() => Game.CityCommands.canStart(r.c.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) continue;
-        Game.CityCommands.sendRequest(r.c.id, CityCommandTypes.PURCHASE, args);
-        b.spend(best.cost, { kind: "REVOLT", key: `${sid}|${best.def.ConstructibleType}`, label: `${composeOr(best.def.Name)} (${nameOf(r.c)})` });
-        out.push({ key: "REVOLT_GUARD", args: [nameOf(r.c), composeOr(best.def.Name), Math.round(best.cost)] });
+        const sid = sidOf(r.c);
+        if (crippledNoted.get(sid) === Game.turn) continue;
+        crippledNoted.set(sid, Game.turn);
+        log.warn(`happiness: ${nameOf(r.c)} ${r.happy} (${lost}% of its yields lost): ${best.cheapest ? `${best.cheapest.def.ConstructibleType} costs ${Math.round(best.cheapest.cost)}, ${Math.round(b.forGoal())} above the reserve` : "no Happiness building to buy there"}`);
     }
     return out;
+}
+
+// A city crippled by unhappiness (the game takes 5% of its other yields a point below zero, at most 80%: gotcha 45) buys
+// a Happiness building ahead of the savings goal. Game 35: Лидс stood at about −19 from M10 (six specialists at Modern's
+// 6 Happiness each) and made 9 production and 14 science a turn instead of about 50 and 110; it built its City Park at 9 a
+// turn for 36 turns, while 400-1,740 gold waited for a Launch Pad.
+export const CRIPPLED_HAPPINESS = -10; // half of its yields lost
+const crippledNoted = new Map(); // sid -> the turn UI.log said no Happiness building was bought there
+
+/** Settlements at or below CRIPPLED_HAPPINESS that the revolt guard does not cover, and with no wonder in their queue. */
+function crippledSettlements(risks) {
+    const covered = new Set(risks.map((r) => sidOf(r.c)));
+    const out = [];
+    for (const c of ownSettlements()) {
+        if (covered.has(sidOf(c))) continue;
+        const happy = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0;
+        if (happy > CRIPPLED_HAPPINESS || holdsWonder(c)) continue;
+        out.push({ c, happy });
+    }
+    return out.sort((a, b) => a.happy - b.happy);
+}
+
+/** The cheapest Happiness building the game sells in this settlement: `pick` within `limit` gold, `cheapest` at any price. */
+function cheapestHappiness(c, defs, limit) {
+    let pick = null;
+    let cheapest = null;
+    for (const def of defs) {
+        if (cityHas(c, def.ConstructibleType)) continue;
+        const probe = safe(() => Game.CityCommands.canStart(c.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
+        const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
+        if (!(probe?.Success || probe?.InsufficientFunds) || plots.length === 0) continue;
+        const cost = Number(probe.Cost ?? safe(() => c.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
+        if (!Number.isFinite(cost) || cost <= 0) continue;
+        if (!cheapest || cost < cheapest.cost) cheapest = { def, plots, cost };
+        if (probe.Success && cost <= limit && (!pick || cost < pick.cost)) pick = { def, plots, cost };
+    }
+    return { pick, cheapest };
+}
+
+/** Buys this Happiness building in this settlement on the plan's tile (bestPlotFor) and spends it. @returns true when sent */
+function buyHappiness(c, pick, b, kind) {
+    const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(c, pick.def.$hash, pick.plots) ?? pick.plots[0]), null);
+    if (!loc) return false;
+    const args = { ConstructibleType: pick.def.$hash, X: loc.x, Y: loc.y };
+    if (!safe(() => Game.CityCommands.canStart(c.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) return false;
+    Game.CityCommands.sendRequest(c.id, CityCommandTypes.PURCHASE, args);
+    b.spend(pick.cost, { kind, key: `${sidOf(c)}|${pick.def.ConstructibleType}`, label: `${composeOr(pick.def.Name)} (${nameOf(c)})` });
+    return true;
 }
 
 /**

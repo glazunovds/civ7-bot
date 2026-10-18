@@ -426,3 +426,22 @@ test("no settler bought with a war at our door, nor where no safe site lies with
         state.set({ results: { ...state.get().results, sites } });
     }
 });
+
+// Game 35: a Tank (65 over our Cuirassier's 55) took a city kept for a Launch Pad M47-M51 in the final push, against
+// Augustus's war risk; no war came.
+test("the final push: no stronger melee unit for the centres against a war risk alone; outside it, as before", () => {
+    const warrior = GameInfo.Units.lookup("UNIT_WARRIOR");
+    try {
+        for (const commit of [true, false]) {
+            reset({ relations: { 1: "UNFRIENDLY" }, canBuild: trains("UNIT_WARRIOR", "UNIT_SPEARMAN") });
+            world.units = [{ id: 30, type: "UNIT_WARRIOR", ...LONDON }]; // the risk's guard is there
+            centres.noteMeleeObtained(warrior, "trained");
+            assert.deepEqual(steps.assessWar([]).risk, [1]);
+            const out = steps.fillProduction(new Map(), { defend: true, ...(commit ? { strategy: { phase: "COMMIT" } } : {}) });
+            assert.equal(out.some((x) => x.key === "QUEUED_MELEE"), !commit, JSON.stringify(out));
+        }
+    } finally {
+        settings.remember(gameKey(), { melee: null });
+        reset();
+    }
+});

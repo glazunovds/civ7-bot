@@ -143,6 +143,7 @@ export function resetUnitGoals() {
     hitSpots.length = 0;
     seasBlockedTurn = -1;
     foundedRoles.clear();
+    dashes.clear();
     failedSites.clear();
     losses.clear();
     walks.clear();
@@ -1191,9 +1192,47 @@ function waitAtCap(u, def, goal, past = 0) {
     return { key: "SETTLER_AT_CAP", args: [nameOf(def), goal.x, goal.y, c.n, c.cap] };
 }
 
+// A settler that steps onto its site with hostile units near founds in the same pass (settle, foundArrivals).
+const dashes = new Map(); // unit key -> { x, y, turn, role }
+
+/**
+ * May this settler step onto its site now and found there (settle)? Next to it with a move left, the site still free, no
+ * hostile unit on it or next to it, and below the settlement cap (the military lever's room past it counted).
+ */
+function dashable(u, goal, ctx) {
+    if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, goal.x, goal.y), Infinity) !== 1) return false;
+    if (!(Number(u.Movement?.movementMovesRemaining ?? 0) > 0)) return false;
+    if (!siteStillFree(goal) || tooCloseToForeign(goal, ctx) || hostileNear(goal, 1, ctx)) return false;
+    const c = settlementCount();
+    return !c || c.n < c.cap + Math.max(0, Number(ctx.pastCap) || 0);
+}
+
+/**
+ * Settlers that stepped onto their site this pass (SETTLER_DASH) found there now; one the game will not let found yet
+ * (no move left) founds on its next pass, standing on its site. @returns log entries
+ */
+export function foundArrivals() {
+    const out = [];
+    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+        const k = unitKey(u.id);
+        const d = dashes.get(k);
+        if (!d || d.turn !== Game.turn || !same(u.location, d)) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || !operate(u, "UNITOPERATION_FOUND_CITY")) continue;
+        dashes.delete(k);
+        goals.delete(k);
+        noteFounding(d);
+        if (d.role) foundedRoles.set(`${d.x},${d.y}`, d.role);
+        noteFoundingNearVillage(d);
+        out.push({ key: "SETTLE_FOUND", args: [nameOf(def), d.x, d.y] });
+    }
+    for (const [k, d] of [...dashes]) if (d.turn !== Game.turn) dashes.delete(k);
+    return out;
+}
+
 /**
  * A settler founds on its site (not at the settlement cap: waitAtCap); with hostile units near
- * it, it gets away from them first (runFromDanger); it keeps its site while the site and the way
+ * it, it steps onto its site when it is next to it (dashable), else gets away from them first (runFromDanger); it keeps its site while the site and the way
  * there stay safe, else it takes the best safe one it reaches (pickSite).
  */
 function settle(u, def, taken, ctx) {
@@ -1213,6 +1252,13 @@ function settle(u, def, taken, ctx) {
         return { key: "SETTLE_FOUND", args: [nameOf(def), goal.x, goal.y] };
     }
     if (hostileNear(u.location, DANGER_RADIUS, ctx)) {
+        // Next to its site with a move left: onto it, founding this pass (foundArrivals), not back home through the open
+        // (game 35: Бристоль's settler turned back from the tile next to its site, 2-3 tiles from an independent's Warrior,
+        // and founded 5 turns later).
+        if (goal && dashable(u, goal, ctx) && moveTo(u, goal)) {
+            dashes.set(k, { x: goal.x, y: goal.y, turn: Game.turn, role: goal.role ?? null });
+            return { key: "SETTLER_DASH", args: [nameOf(def), goal.x, goal.y] };
+        }
         // Out in the open with its site still safe: around the danger, widely, toward it (game 10: a settler went home
         // twice instead and lost 4 turns).
         if (goal && !settlementAt(u.location) && siteStillFree(goal) && siteIsSafe(goal, ctx)) {

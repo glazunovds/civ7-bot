@@ -1879,3 +1879,23 @@ test("near Rocketry a city kept for a Launch Pad starts no Radio Station either:
         paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
     }
 });
+
+// Game 35: Манчестер, kept for a Launch Pad near Rocketry, trained a Tank M47-M51; its pad ran M52-M62.
+test("near Rocketry a city kept for a Launch Pad trains none of the units the autopilot wants: the centres' melee unit comes from another city", () => {
+    const paris = world.cities[0];
+    const canBuild = world.canBuild;
+    world.canBuild = (type, id, args) => (type === "UNIT_LINE_INFANTRY" ? { Success: true } : canBuild(type, id, args));
+    const melee = () => fake.sent.filter((s) => s.kind === "operation" && steps.meleeStrength(GameInfo.Units.lookup(s.args.UnitType)) > 0).map((s) => s.id.id);
+    try {
+        settings.remember(gameKey(), { melee: null });
+        delete paris.queue;
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), { defend: true, victory: "SCIENCE", strategy: { phase: "COMMIT", pads: 1, padCitiesNoWonders: true, gate: { open: false, progress: 0.9 } } });
+        assert.ok(steps.padExclusion({ padCitiesNoWonders: true, pads: 1, gate: { open: false, progress: 0.9 } })?.has(`c:${PARIS.x}-${PARIS.y}`), "Paris is kept for a pad");
+        assert.deepEqual(melee(), [1], "Lyon");
+    } finally {
+        world.canBuild = canBuild;
+        settings.remember(gameKey(), { melee: null });
+        paris.queue = { type: "BUILDING_RAIL_STATION", turns: 4 };
+    }
+});

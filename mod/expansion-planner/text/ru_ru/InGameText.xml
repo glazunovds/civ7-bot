@@ -1623,6 +1623,9 @@
     <Replace Tag="LOC_XPL_AP_REVOLT_GUARD" Language="ru_RU">
       <Text>{1_Settlement} может восстать: там куплено «{2_Building}» ({3_Gold} золота)</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_HAPPINESS_RESCUE" Language="ru_RU">
+      <Text>{1_Settlement} теряет {2_Pct}% доходов из-за недовольства ({3_Happy}): там куплено «{4_Building}» ({5_Gold} золота), раньше накоплений</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_WAIT_DROPPED" Language="ru_RU">
       <Text>{1_City}: «{2_Wonder}» убрано из очереди, пока строится «{3_Item}» (около {4_Turns} ход.): если соперник достроит чудо, игра заберёт производство «{3_Item}»</Text>
     </Replace>
@@ -2073,6 +2076,9 @@
       <Text>Строить {1_Num} ходов: слишком долго, кто-то незамеченный может успеть раньше.</Text>
     </Replace>
     <!-- Autopilot: wide detours (game 10) -->
+    <Replace Tag="LOC_XPL_AP_SETTLER_DASH" Language="ru_RU">
+      <Text>{1_Unit}: рядом враги, но до места {2_X},{3_Y} один шаг — встаёт на него и сразу основывает поселение</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SETTLER_DETOUR" Language="ru_RU">
       <Text>{1_Unit} обходит опасность через {2_X},{3_Y} к месту {4_X},{5_Y}</Text>
     </Replace>

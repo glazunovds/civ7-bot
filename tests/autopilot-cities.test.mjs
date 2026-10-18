@@ -167,6 +167,35 @@ test("a settlement a revolt may take buys a Happiness building there from all th
     }
 });
 
+// Game 35: Лидс stood at about −19 from M10 (−80% of its yields) and built its City Park at 9 production a turn for 36 turns,
+// while 400-1,740 gold waited for a Launch Pad.
+test("a city unhappiness costs half its yields or more buys a Happiness building, ahead of the savings goal", () => {
+    const athens = world.cities[0];
+    world.canBuy = (type, id) => (type === "BUILDING_TEMPLE" && id.id === 0 ? { Success: true, Plots: [idx(A.x + 1, A.y)], Cost: 200 } : { Success: false });
+    const bought = () => fake.sent.filter((s) => s.kind === "command" && s.op === CityCommandTypes.PURCHASE && s.args.ConstructibleType === GameInfo.Constructibles.lookup("BUILDING_TEMPLE").$hash).map((s) => s.id.id);
+    const saving = (gold) => {
+        const b = createBudget({ gold, reserve: 100 });
+        b.setGoal({ kind: "PADS", key: "pads", label: "pads", cost: 450 });
+        return b;
+    };
+    try {
+        athens.happy = -5;
+        fake.sent.length = 0;
+        assert.deepEqual(steps.guardRevolts(saving(600)), [], "−5: a quarter lost");
+        athens.happy = -19;
+        fake.sent.length = 0;
+        const out = steps.guardRevolts(saving(600));
+        assert.deepEqual(bought(), [0], "500 above the reserve, though the goal holds 450");
+        assert.equal(out[0]?.key, "HAPPINESS_RESCUE");
+        assert.equal(out[0]?.args[1], 80, "80% of its yields lost");
+        fake.sent.length = 0;
+        assert.deepEqual(steps.guardRevolts(saving(250)), [], "the reserve stays");
+    } finally {
+        athens.happy = 10;
+        delete world.canBuy;
+    }
+});
+
 test("«expect to keep cities» is on: the player always takes the card that keeps them (research/39 §4.5)", () => {
     const store = globalThis.localStorage;
     const before = store.getItem("modSettings");

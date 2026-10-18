@@ -24,7 +24,7 @@ import * as steps from '../data/xpl-autopilot-steps.js';
 import { goldBalance } from '../data/xpl-city-actions.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
-import { commandUnits, disbandSurplus, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
+import { commandUnits, disbandSurplus, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
 import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryRaces } from '../data/xpl-victory.js';
@@ -579,9 +579,17 @@ export async function runTurn(force = false) {
                 victory: !!focus, distant: focus === "ECONOMIC",
             });
             record(r.entries);
+            const founded = [...r.entries];
+            // A settler that stepped onto its site past hostile units founds there now (game 35).
+            if (r.entries.some((e) => e.key === "SETTLER_DASH")) {
+                await wait(STEP_PAUSE_MS);
+                const f = foundArrivals();
+                record(f);
+                founded.push(...f);
+            }
             for (const k of r.ordered) ordered.add(k);
             for (const [k, at] of r.orderedAt ?? []) orderedAt.set(k, at);
-            if (r.entries.some((e) => e.key === "SETTLE_FOUND")) await nextEvent("CityInitialized", FOUND_WAIT_MS);
+            if (founded.some((e) => e.key === "SETTLE_FOUND")) await nextEvent("CityInitialized", FOUND_WAIT_MS);
             if (r.ordered.size > 0) await wait(STEP_PAUSE_MS);
         };
         const research = async () => {
