@@ -363,6 +363,10 @@ The mod is linked into the game with a folder junction:
 | 344 | Ships | Raiding ships: the ranged defender bought or trained is the one with the best Bombard (a Ballista or Catapult over an Archer). |
 | 345 | Enemy aircraft | Modern war: an enemy Airfield alone queues no fighter; a fighter is queued only in an Airfield city near the bombed settlement, else `air: no fighter for …`. |
 | 346 | Probes | UI.log `army:` lines on an age's first turn (members' `onMap` and tiles), `air:` lines for aircraft and Airfields, `reinforce:` lines when a unit reinforces an army. Send them for Phases 2, 3 and 5. |
+| 347 | Exposed towns | A town within 6 of a village at war with us: `defence: <town>: exposed (…): holder 0 + 1 coming` and HOLDER, or GARRISON_BOUGHT from free gold (at a deficit too), or QUEUED_HOLDER; the next turns `holder 1 + 0`. Not for a neutral village. |
+| 348 | Holder stays | A town's holder (next to its centre) is not sent to another exposed town or a front. |
+| 349 | Army member deploys | Under the Regroup age setting (or with units packed): `army: <unit> leaves the army at x,y onto x,y for <town>` and DEPLOYED; next turn it walks to the town. Send the line for probe P-A2. |
+| 350 | Fronts after an age change | WAR_RISK in a new age: STAGED soon after, with a soldier that started the age fortified; no `war front …: melee 0 of 1 … 13 free soldier(s)` for many turns. Also after a reload mid-age. |
 
 ## Memento Advisor (second mod, `mod/memento-advisor`)
 Restart the game once: new mod. Check it is enabled in Add-Ons («Советник по памятным вещам»).

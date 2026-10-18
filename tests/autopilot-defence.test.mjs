@@ -391,14 +391,21 @@ test("gold income below zero: the reserve covers 10 turns of the deficit; no new
         world.units = [{ id: 1, type: "UNIT_WARRIOR", ...LONDON }];
         steps.fillProduction(new Map(), { defend: true });
         assert.deepEqual(trained(), ["UNIT_SPEARMAN"]);
-        // An exposed settlement's garrison: not while broke.
+        // An exposed settlement's holder at a deficit: only from the gold above the reserve (10 turns of the deficit here:
+        // research/37 §4C), no longer never.
         reset();
         world.goldIncome = -13;
+        world.gold = 200;
         world.canBuy = sells({ UNIT_WARRIOR: 80 });
         world.villages = [{ owner: 5, x: LEEDS.x, y: LEEDS.y + 5 }];
         world.indepRelation = { 5: IndependentRelationship.HOSTILE };
         steps.buyDefenders([], { reserveTurns: 2 });
-        assert.deepEqual(bought(), []);
+        assert.deepEqual(bought(), [], "70 free gold");
+        world.gold = 1000;
+        steps.buyDefenders([], { reserveTurns: 2 });
+        assert.deepEqual(bought(), [["UNIT_WARRIOR", ids.Leeds]], "870 free gold");
+        fake.sent.length = 0;
+        steps.resetWar();
         // ...but a threatened settlement still buys its defender.
         steps.buyDefenders([{ settlement: { name: "Leeds", ...LEEDS }, count: 1, owners: [{ id: 5, independent: true }] }], { reserveTurns: 2 });
         assert.deepEqual(bought(), [["UNIT_WARRIOR", ids.Leeds]]);

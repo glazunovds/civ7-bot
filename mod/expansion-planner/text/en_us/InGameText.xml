@@ -1695,6 +1695,15 @@
     <Row Tag="LOC_XPL_AP_STAGED">
       <Text>{1_Unit} stands guard at {2_Name} (a war or a war risk is near)</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_HOLDER">
+      <Text>{1_Unit} goes to hold {2_Name} (an independent at war with us is near)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DEPLOYED">
+      <Text>{1_Unit} leaves its army to hold {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_HOLDER">
+      <Text>{1_City}: queued {2_Name} to hold {3_Name} (an independent at war with us is near)</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_AIR_STRIKE">
       <Text>{1_Unit} strikes {2_Unit} from the air at {3_X},{4_Y}</Text>
     </Row>

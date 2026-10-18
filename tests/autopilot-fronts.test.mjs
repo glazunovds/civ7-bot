@@ -194,6 +194,8 @@ test("a defender is bought from all the gold, ranged ones too, less 3 turns of a
 
 test("war fronts: a war risk's nearest settlement gets a guard from the army before any war, our land only; the player's own fortified units stay; a front outlives a passing warning (research/36 §2)", () => {
     // Game 29: Catherine was a war risk from M36 (gone on M50, back on M51); nothing moved before her war at M52.
+    const base = Game.turn;
+    Game.turn = 10; // not an age's first turns (research/37: soldiers resting then were carried over by the game)
     const turn = Game.turn;
     try {
         reset([{ id: 1, type: "UNIT_WARRIOR", x: 12, y: 5 }], { relations: { 1: "UNFRIENDLY" } });
@@ -229,7 +231,31 @@ test("war fronts: a war risk's nearest settlement gets a guard from the army bef
         steps.assessWar([]);
         assert.deepEqual(steps.warFronts(), []);
     } finally {
-        Game.turn = turn;
+        Game.turn = base;
+    }
+});
+
+test("war fronts take the soldiers the age change brought back fortified, and those the autopilot fortified before a reload (game 30)", async () => {
+    // Game 30: under the game's default age transition (Continuity) 11 soldiers started Modern fortified; Данди's front
+    // stood at 0 of 1 guards from M55 to M62 with 13 soldiers available, until a new Tank was trained.
+    const base = Game.turn;
+    try {
+        Game.turn = 1;
+        reset([{ id: 3, type: "UNIT_WARRIOR", x: 12, y: 5, activity: A.SLEEP }], { relations: { 1: "UNFRIENDLY" }, unitCommandOk: (_id, op) => op === "UNITCOMMAND_WAKE" });
+        steps.assessWar([]);
+        assert.deepEqual(keys(run({ fronts: steps.warFronts() })), ["STAGED"], "an age's first turn: carried over");
+        // Later in the age, one the autopilot fortified before a reload: the save remembers it.
+        Game.turn = 10;
+        reset([{ id: 3, type: "UNIT_WARRIOR", x: 12, y: 5 }], { relations: { 1: "UNFRIENDLY" }, unitCommandOk: (_id, op) => op === "UNITCOMMAND_WAKE" });
+        assert.deepEqual(keys(run({})), ["FORTIFY"]);
+        world.units[0].activity = A.SLEEP;
+        const reloaded = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js?reload");
+        steps.assessWar([]);
+        fake.sent.length = 0;
+        const r = reloaded.commandUnits(DEFAULT_SETTINGS, { defend: true, threats: [], fronts: steps.warFronts() });
+        assert.deepEqual(r.entries.map((e) => e.key), ["STAGED"], "after a reload");
+    } finally {
+        Game.turn = base;
     }
 });
 

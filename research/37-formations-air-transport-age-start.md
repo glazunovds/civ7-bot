@@ -19,6 +19,12 @@
 - the first one is bought or upgraded before training when the gold allows (`buyFirstMelee`), and a queued one that has become needless leaves its queue;
 - Ace promotions are not counted in a fighter's range, and remembering enemy air raids waits for probe P-AIR-5.
 
+**Status:** Phase 2 done on 18 October 2026 (root CLAUDE.md gotcha 63; tests in `tests/autopilot-exposure.test.mjs` and `autopilot-fronts.test.mjs`, each proven by revert). Game 30 (§11B) corrected this plan first:
+- **The game's default age transition is Continuity** (`AGE_TRANSITION_SETTING_KEEP_MORE`, `core/config/SetupParameters.xml`), and game 30 used it: every unit comes back where it stood, in its state (fortified ones fortified), and only units already packed are packed again. §5B's Regroup packing happens only when a game is set up with Regroup. So the single-member deploy is built, but most exposed towns get their holder from a reserve, a purchase or training.
+- **Fronts:** soldiers resting on an age's first two turns are the autopilot's own (Continuity brings them back fortified), and the autopilot's list of the soldiers it fortified is kept in the save (game 30's Данди stood at 0 of 1 front guards for 8 turns with 13 soldiers available).
+- Exposed settlements may wake resting soldiers, as threatened ones do; fronts still take only idle ones or the autopilot's.
+- An exposed settlement with no holder may train one (where it arrives in time), after every threatened settlement.
+
 Phases 1 and 2 answer game 29's losses with what exists, plus the one request that turns a packed unit into a town's holder. Phase 1's probes give Phases 3 and 5 the facts they lack. Phase 4 waits for the `defence:` lines of the next game, since the logs of game 29 cannot show how units stood.
 
 ## 1. Where we stand
@@ -218,7 +224,7 @@ Exposure is live state. Evaluate it every pass, like `warFronts`, and nothing ha
 - A unit's `armyId` (a ComponentID), and `Armies.get(armyId)` with `getUnitIds()`, `unitCount`, `combatUnitCapacity`, `localId` (a number) and `location`.
   - There is no `commanderId`. The game finds an army's commander by walking the player's units for `isCommanderUnit` and reading their `armyId`.
   - A member is matched by comparing its `armyId` with the commander's (`sameId`, gotcha 33).
-  - Whether `unitCount` counts the commander is unknown: the flag code and the age-transition code disagree.
+  - `unitCount` does not count the commander: game 30's empty army read `unitCount 0` and `getUnitIds()` 0 all game (probe P-A1).
 - Packed members are very likely off the map (`isOnMap` false: the game draws no flag for them), with their commander's tile as their location. A reinforcement in transit is off the map (verified).
 
 **Requests** (`Game.UnitCommands` unless noted; Plots are plot indices):
@@ -257,7 +263,7 @@ Exposure is live state. Evaluate it every pass, like `warFronts`, and nothing ha
 
 **Capacity:** 4 by default, separate military and civilian slots. Regiments (+2, and faster reinforcement) is the only land modifier; no tech or civic changes it.
 
-### B. The age change packs part of our army (the default "Regroup" setting)
+### B. The age change under Regroup packs part of our army (Continuity, the game's default, does not)
 
 The game's `age-transition-post-load.js`:
 1. **Every unit is rebuilt** from a "shadow" as the new age's tier-1 unit of its class, **with a new id**. Nothing remembered by unit id survives an age change.
@@ -266,9 +272,14 @@ The game's `age-transition-post-load.js`:
 4. **Commanders** (by XP) are moved to the settlement nearest them and filled up with the nearest remaining units, **packed**.
 5. **Every other unit is dropped.**
 
-So at an age's start the armies stand packed on settlement centres, and **small towns usually get no defender**: Ollantaytambo's case (§4). A packed army in the capital is not a garrison until deployed. The setting is `Configuration.getGame().getValue("AgeTransitionSettingName")` (`AGE_TRANSITION_SETTING_KEEP_MORE` is Continuity: units recreated in place).
+So under Regroup the armies stand packed on settlement centres at an age's start, and **small towns usually get no defender**. A packed army in the capital is not a garrison until deployed.
 
-The same script caps the treasury at 3,000 gold (game-speed adjusted; 6,000 or 9,000 under Continuity) and Influence at 500. Root gotcha 31's "gold carries over in full" holds only below the cap: correct it when Phase 3 lands.
+**The setting:** `Configuration.getGameValue("AgeTransitionSettingName")`. The game's default is `AGE_TRANSITION_SETTING_KEEP_MORE`, "Continuity" (`core/config/SetupParameters.xml`:61), and game 30 used it (Scripting.log `Age Transition Setting: AGE_TRANSITION_SETTING_KEEP_MORE`):
+- `positionUnits` recreates every unit from its shadow at its own tile (still the new age's tier-1 unit, with a new id);
+- a unit that was packed is packed again into the commander standing there; nothing else is packed, moved or dropped;
+- units keep their activity: game 30 had 11 soldiers resting at M1 before any order.
+
+**The treasury cap** (`capGold`): 3,000 gold under Regroup, 6,000 entering Exploration and 9,000 entering Modern under Continuity (game-speed adjusted); Influence 500, or 800 and 1,200. Root gotcha 31's "gold carries over in full" holds below the cap (corrected there).
 
 ### C. What to build, in order
 
@@ -694,6 +705,8 @@ Each phase:
 
 ### Phase 2: exposure
 
+**Done 18 October 2026** (see the status under the order table).
+
 **What:** §4, and §5C.2's single-member deploy (`REMOVE_FROM_ARMY`) as the first supply for an exposed town at an age's start; it needs only the packed members' inventory from §5C.1, not the rest of Phase 3.
 
 **Tests:** in §4.
@@ -792,11 +805,19 @@ All game paths are under `D:/SteamLibrary/steamapps/common/Sid Meier's Civilizat
 - CombatLog (`research/game29/evidence.zip`): our centres' DefStr 20 at A23–A25, 30 from A52, 35 from A56; 20 at M5–M6 (Ollantaytambo, the Line Infantry's 80 and 78 damage); 65 from M51.
 - UI.log: QUEUED_MELEE Tank at line 2714734 (M36); the defence lines of M4–M6 and M52–M54 (research/36).
 
+### B2. Game 30's logs (won science at M66; Continuity; `research/game30/evidence.zip`)
+
+- CombatLog: the one attack on our centres, an Archer at A57, met DefStr 25: the Spearman obtained at A42, at its full strength (§2 confirmed for a trained unit).
+- UI.log: the age's melee unit queued on each age's first pass and finished at E2 (Courser 40) and M4 (Cuirassier 55); no upgrade to the best type happened (P-DEF-3 still open).
+- `army:` lines: one commander all game, never a packed member; `unitCount 0` with it alone (P-A1: the commander is not counted); the army id was the same in all three ages. No `air:` or `reinforce:` lines: no aircraft at war, no reinforcement.
+- Scripting.log: `AGE_TRANSITION_SETTING_KEEP_MORE` at both age changes; `In commander` / `Packing` lines for the AIs' packed units at M1.
+- `defence: Данди: war front (Екатерина II): melee 0 of 1; sent []; 13 free soldier(s) left` from M55 to M62: the carried-over soldiers rested and were not the autopilot's (fixed in Phase 2).
+
 ### C. Live probes (UI.log)
 
 | Probe | Settles | Phase |
 |---|---|---|
-| P-A1 army inventory per commander, at an age's first turn and on army events: `armyId`, `localId`, `unitCount` (does it count the commander?), `combatUnitCapacity`, `location`, members' `isOnMap`, location, activity, `armyId`, moves | Packed units' state; capacity | 1 |
+| P-A1 army inventory per commander, at an age's first turn and on army events: `armyId`, `localId`, `unitCount` (does it count the commander? game 30: no), `combatUnitCapacity`, `location`, members' `isOnMap`, location, activity, `armyId`, moves | Packed units' state (still unseen: game 30 packed none); capacity | 1 |
 | P-A2 deploys: the Plots offered, the plot sent, each member's tile the next pass | Where deployed units land | 2, 3 |
 | P-A3 a reinforcement's ETA on consecutive turns, and its start location | Turns left or an absolute turn | 3 |
 | P-A4 `UnitAddedToArmy` / `UnitRemovedFromArmy` / `UnitArmyZOCChanged` payloads | Confirmation events | 3 |

@@ -1695,6 +1695,15 @@
     <Replace Tag="LOC_XPL_AP_STAGED" Language="ru_RU">
       <Text>{1_Unit} встаёт на охрану: {2_Name} (рядом война или угроза войны)</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_HOLDER" Language="ru_RU">
+      <Text>{1_Unit} идёт удерживать: {2_Name} (рядом враждебный независимый народ)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DEPLOYED" Language="ru_RU">
+      <Text>{1_Unit} покидает армию, чтобы удерживать: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_HOLDER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name}, чтобы удерживать {3_Name} (рядом враждебный независимый народ)</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_AIR_STRIKE" Language="ru_RU">
       <Text>{1_Unit} наносит удар с воздуха по {2_Unit} на {3_X},{4_Y}</Text>
     </Replace>

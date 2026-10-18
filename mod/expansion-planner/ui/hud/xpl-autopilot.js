@@ -455,6 +455,8 @@ export async function runTurn(force = false) {
                 approach: unbefriendable(), leave: released, threats: o.defend || o.roam ? threats : [], riskOwners: steps.warState().risk,
                 // Settlements facing a war or a war risk: a guard each from the army we have (research/36 §2).
                 fronts: o.defend ? steps.warFronts() : [],
+                // Settlements near a village at war with us: a holder each (research/37 §4).
+                exposed: o.defend ? steps.exposedSettlements(threats) : [],
                 settleNear: !!s.strategy?.settleNear,
                 // A countdown to block or to start: settlers with no site found wherever the game allows (research/31 §3).
                 anywhere: !!s.strategy?.settleAnywhere,
@@ -522,6 +524,7 @@ export async function runTurn(force = false) {
         if (full && o.defend && o.purchases !== false) await guarded("defenders", () => record(steps.buyFirstMelee(threats, { reserveTurns, budget })));
         const unitOptions = {
             explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, defend: !!o.defend, threats: o.defend || o.roam ? threats : [], profile: s.profile, victory: focus,
+            exposed: o.defend ? steps.exposedSettlements(threats) : [],
             explorers: o.explorers ?? !!o.explore, trainSettlers: o.trainSettlers ?? !!o.settlers, strategy: s.strategy ?? null,
         };
         const victoryQueued = new Map(); // sid -> types the victory step queued this pass (H2)
@@ -584,7 +587,7 @@ export async function runTurn(force = false) {
             // Then unit upgrades with the free gold.
             await guarded("upgrades", () => {
                 const war = steps.warState().near;
-                record(upgradeUnits(budget ?? steps.goldReserve(reserveTurns), threats, { mode: war ? "ANY" : s.strategy?.upgrades ?? "ANY", ageEnding: steps.ageEnding(), war }));
+                record(upgradeUnits(budget ?? steps.goldReserve(reserveTurns), threats, { mode: war ? "ANY" : s.strategy?.upgrades ?? "ANY", ageEnding: steps.ageEnding(), war, exposed: o.defend ? steps.exposedSettlements(threats) : [] }));
             });
         }
         // A new age's unit upkeep above the gold income: surplus soldiers disbanded (research/24 G3).

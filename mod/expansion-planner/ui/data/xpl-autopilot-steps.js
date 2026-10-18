@@ -30,7 +30,7 @@ import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory
 import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { afloat, airBases, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardsFor, guardsWanted, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
+import { afloat, airBases, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
 import { villagesOf } from './xpl-player-facts.js';
 import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './xpl-centre-defence.js';
 import { TUNING } from '../core/xpl-tuning.js';
@@ -2632,20 +2632,25 @@ const queueHasUnit = (city, hash) => (safe(() => city.BuildQueue.getQueue(), [])
  * settlement covers it while it is still in its city's queue. A city with space work comes last, unless for its own
  * defence (research/34 §6). @returns log entries
  */
-function trainDefenders(threats, used) {
+function trainDefenders(threats, used, exposed = []) {
     const out = [];
     const left = ageEndTurns(); // an age's last turns (the final age: all of it): only a defender done before it ends
     // Not in an infected city: the unit would appear on the plague (game 18).
     const cities = ownSettlements().filter((c) => !c.isTown && !infected(c));
-    if (threats.length === 0) {
-        defenderTrainers.clear();
-        trainedFor.clear();
-    }
+    if (threats.length === 0) defenderTrainers.clear();
+    if (threats.length + exposed.length === 0) trainedFor.clear();
     const claimed = new Set(); // cities whose queued soldier covers a settlement this pass
-    for (const t of threats) {
+    // Exposed settlements after the threatened ones (research/37 §4C): a holder when none is there or coming, and none was
+    // bought for it this turn; trained only where it arrives in time, like a defender.
+    const holderless = (e) => {
+        const b = defenderBought.get(`${e.settlement.x},${e.settlement.y}`);
+        const h = holderDetail(e);
+        return h.present.length + h.incoming.length === 0 && !(b?.turn === Game.turn && b.melee > 0);
+    };
+    for (const t of [...threats, ...exposed.map((e) => ({ ...e, exposed: true, count: 0 }))]) {
         // Melee guards: one per land raider, one on the centre whatever the raiders (research/24 W2); ranged ones
         // against ships (game 10), and one behind a land army's screen (research/36 §5).
-        const need = defenderNeed(t, threats);
+        const need = t.exposed ? (holderless(t) ? "MELEE" : null) : defenderNeed(t, threats);
         if (!need || !soldierRoom(WAR_SOLDIERS_PER_SETTLEMENT)) continue;
         const key = `${t.settlement.x},${t.settlement.y}`;
         const mine = trainedFor.get(key);
@@ -2682,7 +2687,8 @@ function trainDefenders(threats, used) {
             if (used.has(sidOf(c))) continue;
             // A melee unit (it holds the centre, and the centres' defence follows it), else the strongest; ranged: the
             // strongest ranged unit.
-            const o = need === "RANGED" ? bestRangedOrder(c, { ships }) ?? bestMilitaryOrder(c) : bestDefenderOrder(c) ?? bestMilitaryOrder(c);
+            // An exposed settlement's holder: a melee unit only.
+            const o = need === "RANGED" ? bestRangedOrder(c, { ships }) ?? bestMilitaryOrder(c) : bestDefenderOrder(c) ?? (t.exposed ? null : bestMilitaryOrder(c));
             if (!o) continue;
             const def = safe(() => GameInfo.Units.lookup(o.args.UnitType), null);
             // Done within MILITARY_MAX_TURNS (game 18: a Landship at 6 production a turn, 33 turns); none: the purchase
@@ -2710,7 +2716,8 @@ function trainDefenders(threats, used) {
         noteGuardOrder(city, order.args.UnitType);
         trainedFor.set(key, { sid: sidOf(city), hash: order.args.UnitType });
         log.info(`defenders: ${safe(() => GameInfo.Units.lookup(order.args.UnitType)?.UnitType, "?")} queued in ${nameOf(city)} for ${t.settlement.name}, there in ${best.eta} turn(s)`);
-        out.push({ key: "QUEUED_DEFENDER", args: [nameOf(city), Locale.compose(order.name), t.settlement.name, t.count] });
+        out.push(t.exposed ? { key: "QUEUED_HOLDER", args: [nameOf(city), Locale.compose(order.name), t.settlement.name] }
+            : { key: "QUEUED_DEFENDER", args: [nameOf(city), Locale.compose(order.name), t.settlement.name, t.count] });
         used.add(sidOf(city));
     }
     return out;
@@ -2755,8 +2762,8 @@ function trainWantedUnits(unitOptions) {
     const used = new Set();
     // The centres' melee unit queued before one was obtained elsewhere (a defender, a purchase): out of its queue.
     if (unitOptions.defend) dropSpareMelee();
-    // Defenders first: a settlement under threat cannot wait for scouts or settlers.
-    const entries = trainDefenders(unitOptions.threats ?? [], used);
+    // Defenders first: a settlement under threat cannot wait for scouts or settlers; then exposed settlements' holders.
+    const entries = trainDefenders(unitOptions.threats ?? [], used, unitOptions.defend ? unitOptions.exposed ?? [] : []);
     // The city free soonest first (it would not move the unit ahead of an item with progress), then the biggest.
     const ahead = unitsMayOvertake(unitOptions) || (expansionDeficit() && unitOptions.strategy?.phase !== "COMMIT") || leverSettlers(unitOptions);
     const cities = ownSettlements().filter((c) => !c.isTown)
@@ -3118,6 +3125,29 @@ function nearestVillage(loc, villages) {
     return Math.min(Infinity, ...villages.map((v) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, v.x, v.y), Infinity)));
 }
 
+/**
+ * Our settlements exposed to an independent's village at war with us (research/37 §4B): within EXPOSED_RADIUS of a seen
+ * one, and not threatened (a visible attacker makes a settlement threatened, with its emergency rules). Live state, made
+ * every pass like the war fronts: foundings, captures and changed relationships change it by themselves. Game 29:
+ * Ollantaytambo was exposed from M1, threatened from M4, and its centre fell at M6. @returns [{ settlement: { x, y,
+ * name }, village: { id, x, y }, d }], the nearest to a village first
+ */
+export function exposedSettlements(threats = []) {
+    const hostile = hostileVillages();
+    if (hostile.length === 0) return [];
+    const out = [];
+    for (const c of ownSettlements()) {
+        if ((threats ?? []).some((t) => t.settlement.x === c.location.x && t.settlement.y === c.location.y)) continue;
+        let near = null;
+        for (const v of hostile) {
+            const d = safe(() => GameplayMap.getPlotDistance(c.location.x, c.location.y, v.x, v.y), Infinity);
+            if (d <= EXPOSED_RADIUS && (!near || d < near.d)) near = { v, d };
+        }
+        if (near) out.push({ settlement: { x: c.location.x, y: c.location.y, name: nameOf(c) }, village: { id: near.v.id, x: near.v.x, y: near.v.y }, d: near.d });
+    }
+    return out.sort((a, b) => a.d - b.d);
+}
+
 /** Is one of our soldiers on this tile or within `radius` of it? Not one packed in an army, nor embarked (research/37 §3A). */
 function soldierAt(loc, radius = 1) {
     for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
@@ -3183,9 +3213,9 @@ function noteNoDefender(city, why) {
  * not one unit was bought all game while 230-950 gold sat in the treasury during each siege):
  *  - a threatened settlement with fewer of our soldiers around it (guardsFor) than hostile units:
  *    the strongest melee unit it can buy, with all the gold (no reserve: it cannot wait);
- *  - then an exposed one (within EXPOSED_RADIUS of a village at war with us, e.g. the previous
- *    age's city-states, back at war on turn 1 of the new age) with no soldier on or next to its
- *    centre: one, with the gold above the reserve, the nearest to a village first.
+ *  - then an exposed one (exposedSettlements: within EXPOSED_RADIUS of a village at war with us, e.g. the
+ *    previous age's city-states, back at war on turn 1 of the new age) with no holder on or next to its
+ *    centre nor coming soon (holderDetail): one, with the free gold, the nearest to a village first.
  * One a settlement a pass, while we have fewer than WAR_SOLDIERS_PER_SETTLEMENT soldiers each.
  * `budget`: the pass budget (threatened: all(); exposed: free()). @returns log entries
  */
@@ -3242,19 +3272,51 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
         }
         out.push({ key: "DEFENDER_BOUGHT", args: [Locale.compose(order.name), nameOf(city), Math.round(order.cost), t.count] });
     }
-    const hostile = hostileVillages();
-    // A garrison for an exposed settlement only while the gold income covers its upkeep.
-    if (hostile.length === 0 || goldIncome() < 0) return out;
-    const exposed = all.map((c) => ({ c, d: nearestVillage(c.location, hostile) })).filter((e) => e.d <= EXPOSED_RADIUS).sort((a, b) => a.d - b.d);
-    for (const { c } of exposed) {
-        if (bought.has(sidOf(c)) || soldierAt(c.location)) continue;
+    // An exposed settlement's holder (research/37 §4C): one with none there or coming within EXPOSED_HOLD_TURNS (a reserve on
+    // its way, a member leaving an army: commandUnits ran first) gets one bought from the free gold. Mere proximity to a
+    // village is no emergency: the purchase waits for the free gold, but a deficit no longer stops it outright (game 29's
+    // Ollantaytambo stood empty from M1 to its fall at M6). The strongest melee unit when none was obtained this age (it
+    // sets every centre's defence: research/37 §2), else the cheapest melee unit the game sells there.
+    for (const e of exposedSettlements(threats)) {
+        const c = all.find((x) => x.location.x === e.settlement.x && x.location.y === e.settlement.y);
+        if (!c || bought.has(sidOf(c))) continue;
+        // One bought this turn: the game shows it only later (a second pass of the turn buys none).
+        const done = defenderBought.get(`${e.settlement.x},${e.settlement.y}`);
+        if (done?.turn === Game.turn && done.melee > 0) continue;
+        const h = holderDetail(e);
+        if (h.present.length > 0 || h.incoming.some((x) => x.turns <= EXPOSED_HOLD_TURNS)) continue;
         if (!soldierRoom(WAR_SOLDIERS_PER_SETTLEMENT)) break;
-        const order = defenderPurchase(c, b.free());
-        if (!order) continue;
+        const free = b.free();
+        const order = (!meleeThisAge() ? bestDefenderOrder(c, { buy: true, budget: free }) : null) ?? cheapestMeleeOrder(c, free);
+        if (!order) {
+            noteNoDefender(c, `exposed (village at ${e.d} tiles), no holder: ${Math.round(free)} free gold${cheapestDefender(c, false) ? `, the cheapest ${cheapestDefender(c, false).type} at ${Math.round(cheapestDefender(c, false).cost)}` : ", none on sale"}`);
+            continue;
+        }
         buy(c, order, "GARRISON");
+        const k = `${e.settlement.x},${e.settlement.y}`;
+        const was = defenderBought.get(k)?.turn === Game.turn ? defenderBought.get(k) : { turn: Game.turn, melee: 0, ranged: 0 };
+        defenderBought.set(k, { ...was, melee: was.melee + 1 });
         out.push({ key: "GARRISON_BOUGHT", args: [Locale.compose(order.name), nameOf(c), Math.round(order.cost)] });
     }
     return out;
+}
+
+const EXPOSED_HOLD_TURNS = 3; // an exposed settlement's holder coming within this many turns: none is bought for it
+
+/** The cheapest melee unit this settlement can buy within `budget` (an exposed settlement's holder). @returns order or null */
+function cheapestMeleeOrder(city, budget) {
+    let best = null;
+    for (const def of GameInfo.Units ?? []) {
+        const strength = meleeStrength(def);
+        if (!(strength > 0) || def.CanTrain === false || def.CanTrain === "false") continue;
+        const args = { UnitType: def.$hash };
+        const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
+        if (!r?.Success) continue;
+        const cost = Number(r.Cost ?? safe(() => city.Gold.getUnitPurchaseCost(YieldTypes.YIELD_GOLD, def.UnitType), Infinity));
+        if (!Number.isFinite(cost) || cost > budget) continue;
+        if (!best || cost < best.cost || (cost === best.cost && strength > best.strength)) best = { args, name: def.Name, strength, cost };
+    }
+    return best;
 }
 
 const meleeOrders = new Map(); // city sid -> the unit type hash QUEUED_MELEE queued there (dropped once one is obtained)
