@@ -193,6 +193,11 @@ export function installFakeEngine(world, age = "antiquity") {
             isCapital: i === 0,
             population: c.pop ?? 3,
             location: { x: c.x, y: c.y },
+            // world.cities[i].originalOwner: who founded it (default its owner); justConquered: city.isJustConqueredFrom
+            originalOwner: c.originalOwner ?? owner,
+            isJustConqueredFrom: !!c.justConquered,
+            // world.cities[i].districts = [{ x, y }] (default its centre); Districts.get reads world.controlled(x, y)
+            Districts: { getIds: () => (c.districts ?? [{ x: c.x, y: c.y }]).map((d) => ({ owner, id: 90000 + d.x * 100 + d.y, type: 4 })) },
             getPurchasedPlots: () => grid.radius(grid.index(c.x, c.y), 1).map((p) => p.idx),
             Yields: {
                 // world.cities[i].nets = { YIELD_SCIENCE: 40, … }: its other net yields (default 1)
@@ -358,6 +363,12 @@ export function installFakeEngine(world, age = "antiquity") {
     }));
     // Districts / constructibles on plots: world.structures(x, y) -> { district, constructibles: [type] }
     g.Districts = {
+        // A settlement's district (world.cities[i].districts): its tile, owner and who holds it (world.controlled(x, y) -> player)
+        get: (id) => {
+            if (!(id?.id >= 90000)) return null;
+            const x = Math.floor((id.id - 90000) / 100), y = (id.id - 90000) % 100;
+            return { location: { x, y }, owner: id.owner, controllingPlayer: world.controlled?.(x, y) ?? id.owner, type: 2 };
+        },
         getAtLocation: ({ x, y }) => {
             const d = structs(x, y).district;
             return d ? { type: info.Districts.lookup(d).$hash } : null;
@@ -388,7 +399,7 @@ export function installFakeEngine(world, age = "antiquity") {
     g.ProductionKind = { CONSTRUCTIBLE: 0, UNIT: 1, PROJECT: 2 };
     g.YieldTypes = { YIELD_FOOD: 0, YIELD_PRODUCTION: 1, YIELD_GOLD: 2, YIELD_SCIENCE: 3, YIELD_CULTURE: 4, YIELD_HAPPINESS: 5, YIELD_DIPLOMACY: 6 };
     g.GrowthTypes = { EXPAND: 0, PROJECT: 1 };
-    g.CityCommandTypes = { PURCHASE: 1, CHANGE_GROWTH_MODE: 2, EXPAND: 3 };
+    g.CityCommandTypes = { PURCHASE: 1, CHANGE_GROWTH_MODE: 2, EXPAND: 3, DESTROY: 4 };
     g.PlayerOperationTypes = { ASSIGN_WORKER: 1, SET_TECH_TREE_NODE: 2, SET_CULTURE_TREE_NODE: 3, CHANGE_TRADITION: 4, CHOOSE_GOLDEN_AGE: 5, CHOOSE_NARRATIVE_STORY_DIRECTION: 6, VIEWED_ADVISOR_WARNING: 7, CONSIDER_ASSIGN_TRADITIONS: 8, CONSIDER_ASSIGN_RESOURCE: 9, CONSIDER_ASSIGN_ATTRIBUTE: 10, RESPOND_DIPLOMATIC_FIRST_MEET: 11, CHANGE_GOVERNMENT: 12, FOUND_PANTHEON: 13, RESPOND_DIPLOMATIC_ACTION: 14, SUPPORT_DIPLOMATIC_ACTION: 15, FOUND_RELIGION: 16, ADD_BELIEF: 17, MOVE_GREAT_WORK: 40, ASSIGN_RESOURCE: 41, DECLARE_WAR: 42, CANCEL_ALLIANCE: 43, BUY_ATTRIBUTE_TREE_NODE: 44, CHOOSE_SYNCRETISM_UNITS: 45, CHOOSE_SYNCRETISM_INFRASTRUCTURE: 46, CHOOSE_SYNCRETISM_SELF: 47 };
     g.SyncreticChoiceTypes = { SYNCRETIC_CHOICE_UNITS: 0, SYNCRETIC_CHOICE_INFRASTRUCTURE: 1, SYNCRETIC_CHOICE_SELF: 2 };
     g.PlayerOperationParameters = { Activate: 1, Deactivate: 2 };
@@ -667,6 +678,8 @@ export function installFakeEngine(world, age = "antiquity") {
             ? (args?.ProjectType != null ? { Success: world.canFocus?.(id, args) ?? true } : { Success: true, Projects: world.focusProjects?.(id)?.map((t) => info.Projects.lookup(t).$hash) })
             // world.expand(id) -> { Plots: [idx], ConstructibleTypes: [hash] } (growth: tiles the city may take)
             : op === g.CityCommandTypes.EXPAND ? world.expand?.(id) ?? { Success: false }
+            // Raze or keep a settlement just taken (model-city-capture-chooser.js): only for one isJustConqueredFrom
+            : op === g.CityCommandTypes.DESTROY ? { Success: !!(world.cities ?? []).filter((x) => x.owner === id?.owner)[id?.id]?.justConquered }
             : args?.ConstructibleType != null || args?.UnitType != null
             ? world.canBuy?.(typeOf(args), id, args) ?? { Success: false }
             // world.canConvert: false (no town may become a city) or (cityId) -> bool. Like the game:
@@ -750,7 +763,8 @@ export function installFakeEngine(world, age = "antiquity") {
         Districts: {
             get: () => ({
                 getDistrictHealth: (l) => world.districtHealth?.(l.x, l.y) ?? 100,
-                getDistrictMaxHealth: () => 100,
+                // world.districtMax(x, y): its full health (0: an unwalled urban district; default 100)
+                getDistrictMaxHealth: (l) => world.districtMax?.(l.x, l.y) ?? 100,
             }),
         },
         // world.treeRecs(subject) / world.buildRecs(cityId) -> the game advisor's recommendations

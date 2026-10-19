@@ -17,7 +17,7 @@ import { costMultiplier, happinessWorth } from '../core/xpl-scarcity.js';
 import { judgeDeal } from '../core/xpl-deals.js';
 import { log } from '../services/xpl-log.js';
 import { effectYields, focusOfProfile, rankGovernments } from '../core/xpl-effect-value.js';
-import { promoteUnits, threatenedSettlements } from './xpl-autopilot-units.js';
+import { campaignState, peaceIntentFor, promoteUnits, threatenedSettlements } from './xpl-autopilot-units.js';
 import { independentNameOf, villagesOf } from './xpl-player-facts.js';
 
 function safe(fn, fallback) {
@@ -1342,8 +1342,10 @@ export function answeredDealPlayers() {
 
 /** Forgets the peace asks and deals (tests: a fresh game). */
 export function resetPeace() {
-    for (const m of [peaceAsk, dealAnswers, incomingDeals, answeredDeals]) m.clear();
+    for (const m of [peaceAsk, dealAnswers, incomingDeals, answeredDeals, peaceHeld]) m.clear();
 }
+
+const peaceHeld = new Map(); // leader -> the campaign whose assault holds our peace proposals back (said once)
 
 const backoff = (refusals) => PEACE_BACKOFF[Math.max(0, Math.min(refusals, PEACE_BACKOFF.length) - 1)];
 
@@ -1390,9 +1392,11 @@ async function inspectAnswer(id, ms) {
  * settlement and at most DEAL_GIVE_SHARE of our gold and Influence (core/xpl-deals.js) is accepted, as the
  * deal screen's accept sends it (sendWorkingDeal(id, ACCEPTED)); any other deal is rejected, so it never
  * holds the turn. Read like the peace screen reads it: the working deal {OUTGOING, player1: us, player2:
- * them} (the game turned the incoming deal into one), its items by getWorkingDealItem.
+ * them} (the game turned the incoming deal into one), its items by getWorkingDealItem. With «Наступление» (research/37 §9E)
+ * a peace that does not give back the settlement our assault is retaking waits while that assault makes progress
+ * (peaceIntentFor: CONTINUE); one that gives it back is taken (no unrest either: Civilopedia 1481).
  */
-export function answerIncomingDeals() {
+export function answerIncomingDeals({ offensive = false } = {}) {
     hookStatements();
     const out = [];
     const D = globalThis.Game?.DiplomacyDeals;
@@ -1415,12 +1419,16 @@ export function answerIncomingDeals() {
             gold: Number(safe(() => Players.Treasury.get(pid()).goldBalance, null) ?? safe(() => me.Treasury.goldBalance, 0)) || 0,
             influence: Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0,
         });
-        safe(() => D.sendWorkingDeal(id, v.accept ? P.ACCEPTED : P.REJECTED), null);
+        const held = offensive && v.accept && v.gives.cities === 0 && peaceIntentFor(p.id) === "CONTINUE";
+        const accept = v.accept && !held;
+        safe(() => D.sendWorkingDeal(id, accept ? P.ACCEPTED : P.REJECTED), null);
         answeredDeals.set(p.id, Game.turn);
         incomingDeals.delete(p.id);
         const leader = safe(() => Locale.compose(p.leaderName), String(p.id));
-        log.warn(`deal: ${leader} offers ${v.peace ? "peace" : "no peace"}, asking ${v.asks.cities} settlement(s), ${v.asks.gold} gold, ${v.asks.influence} Influence: ${v.accept ? "accepted" : "rejected"}`);
-        if (v.accept) {
+        log.warn(`deal: ${leader} offers ${v.peace ? "peace" : "no peace"}, asking ${v.asks.cities} settlement(s), ${v.asks.gold} gold, ${v.asks.influence} Influence, giving ${v.gives.cities} settlement(s): ${accept ? "accepted" : held ? "rejected (our assault goes on)" : "rejected"}`);
+        if (held) {
+            out.push({ key: "PEACE_HELD", args: [leader, campaignState()?.target?.name ?? "?"] });
+        } else if (accept) {
             peaceAsk.delete(p.id);
             out.push({ key: "PEACE_ACCEPTED", args: [leader] });
         } else {
@@ -1438,9 +1446,11 @@ export function answerIncomingDeals() {
  * MAKE_PEACE} is first sent INSPECT — the AI answers privately, nothing is shown — and PROPOSED only when it
  * would accept (research/23 D2: game 8, 8 white peaces proposed blindly, 8 refusals, each one a leader's
  * dialog and a refused end of turn). A "no" waits PEACE_BACKOFF 3, 6, then 12 turns. No answer at all
- * (the game may not answer a script's inspect: probe): proposed, and the next ask waits as after a "no".
+ * (the game may not answer a script's inspect: probe): proposed, and the next ask waits as after a "no". With «Наступление»
+ * (research/37 §9E) none is proposed to a leader whose settlement our assault is retaking while it makes progress
+ * (peaceIntentFor: CONTINUE); said once a campaign.
  */
-export async function seekPeace() {
+export async function seekPeace({ offensive = false } = {}) {
     hookStatements();
     const out = [];
     const D = globalThis.Game?.DiplomacyDeals;
@@ -1450,6 +1460,16 @@ export async function seekPeace() {
     if (diplomacyScreenOpen()) return out;
     for (const p of safe(() => Players.getAlive(), []) ?? []) {
         if (!p?.isMajor || p.id === pid() || !safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+        if (offensive && peaceIntentFor(p.id) === "CONTINUE") {
+            const c = campaignState();
+            if (peaceHeld.get(p.id) !== c?.id) {
+                peaceHeld.set(p.id, c?.id);
+                const leader = safe(() => Locale.compose(p.leaderName), String(p.id));
+                log.info(`peace: not with ${leader} yet: our assault on ${c?.target?.name ?? "?"} made progress on turn ${c?.progressTurn}`);
+                out.push({ key: "PEACE_HELD", args: [leader, c?.target?.name ?? "?"] });
+            }
+            continue;
+        }
         const ask = peaceAsk.get(p.id) ?? { next: -Infinity, refusals: 0 };
         if (Game.turn < ask.next) continue;
         if (!safe(() => me.Diplomacy.canMakePeaceWith(p.id), null)?.Success) continue;
@@ -1774,8 +1794,10 @@ export async function makeChoices(settings, { retry = false } = {}) {
         await sleep(STEP_WAIT_MS);
     }
     out.push(...await foundReligion(settings));
-    out.push(...choosePantheon(), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals(), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
-    out.push(...await seekPeace());
+    // «Наступление» (research/37 Phase 7) works with «Оборона»: the peace intent is consulted only then.
+    const offensive = !!settings.autopilot?.offensive && !!settings.autopilot?.defend;
+    out.push(...choosePantheon(), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals({ offensive }), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
+    out.push(...await seekPeace({ offensive }));
     if (retry && turnBlocker()) out.push(...acknowledge(), ...considerTownProjects());
     return out;
 }

@@ -54,6 +54,7 @@
           <Item>ui/panel/xpl-panel.html</Item>
           <Item>ui/core/xpl-adjacency-rules.js</Item>
           <Item>ui/core/xpl-air.js</Item>
+          <Item>ui/core/xpl-campaign.js</Item>
           <Item>ui/core/xpl-combat.js</Item>
           <Item>ui/core/xpl-component-id.js</Item>
           <Item>ui/core/xpl-constants.js</Item>

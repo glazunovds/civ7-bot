@@ -29,6 +29,7 @@ import { estimateStrike } from '../core/xpl-combat.js';
 import { FORM, commanderTile, planFormation, sectorsOf } from '../core/xpl-formation.js';
 import { AIR, airTargetScore, planRebases } from '../core/xpl-air.js';
 import { NAVAL, isWarship, navalRole } from '../core/xpl-naval.js';
+import { CAMPAIGN, MOBILE_PROMOTIONS, campaignEnd, commanderProfile, districtStrikeWorthIt, forceEnough, peaceIntent, progressed, readyToAssault } from '../core/xpl-campaign.js';
 import { idString, sameId, validId } from '../core/xpl-component-id.js';
 import { meleeStrength, noteMeleeObtained } from './xpl-centre-defence.js';
 import { state } from '../services/xpl-state.js';
@@ -186,6 +187,7 @@ export function resetUnitGoals() {
     rebased.clear();
     rebaseRefused.clear();
     airLogged = -1;
+    resetCampaign();
 }
 
 /** restedByUs as the save keeps it (the first time in a session). */
@@ -2779,7 +2781,13 @@ export function promoteUnits() {
         // Our order (PROMOTION_PREFERENCE), the others in the game's order; commendations after promotions (they are a
         // separate pool: both are spent, one a pass).
         const isCommendation = (p) => { const d = safe(() => GameInfo.UnitPromotions.lookup(p), null); return d?.Commendation === true || d?.Commendation === "true"; };
-        const rank = (o, i) => (isCommendation(o.promotion) ? 100000 : 0) + (PROMOTION_PREFERENCE.includes(o.promotion) ? PROMOTION_PREFERENCE.indexOf(o.promotion) : 1000 + i);
+        // A campaign's commander (research/37 §9B) takes the mobile order (Initiative, Mobility, Regiments) unless it is a
+        // veteran defender already (core commanderProfile).
+        const discipline = new Map(options.map((o) => [o.promotion, o.discipline]));
+        const has = (p) => discipline.has(p) && !!safe(() => exp.hasPromotion(discipline.get(p), p), false);
+        const prefs = u.isCommanderUnit && commanderProfile(has, { leads: inCampaign(unitKey(u.id)) }) === "MOBILE"
+            ? [...MOBILE_PROMOTIONS, ...PROMOTION_PREFERENCE.filter((p) => !MOBILE_PROMOTIONS.includes(p))] : PROMOTION_PREFERENCE;
+        const rank = (o, i) => (isCommendation(o.promotion) ? 100000 : 0) + (prefs.includes(o.promotion) ? prefs.indexOf(o.promotion) : 1000 + i);
         const ordered = options.map((o, i) => ({ o, r: rank(o, i) })).sort((a, b) => a.r - b.r).map((x) => x.o);
         for (const o of ordered) {
             const promo = safe(() => GameInfo.UnitPromotions.lookup(o.promotion), null);
@@ -2792,6 +2800,503 @@ export function promoteUnits() {
             out.push({ key: "PROMOTED", args: [nameOf(def), safe(() => Locale.compose(promo.Name), o.promotion)] });
             break;
         }
+    }
+    return out;
+}
+
+// ---- campaigns (research/37 Phase 7, «Наступление», off by default) ------------------------------------------------
+
+let campaign = null;              // the running campaign, one at a time: { id, key, target, enemy, leader, started, stage, staging, members (unit keys), commander, assaultTurn, progressTurn, last }
+const campaignRetry = new Map();  // target "x,y" -> the turn it may be tried again
+let campaignNoted = -1;           // the turn UI.log described the campaign, or why none started
+let campaignSeq = 0;
+
+function resetCampaign() {
+    campaign = null;
+    campaignRetry.clear();
+    campaignNoted = -1;
+}
+
+/** The running campaign, a copy (the hud, tests). */
+export function campaignState() {
+    return campaign ? { ...campaign, members: [...campaign.members] } : null;
+}
+
+/** Peace with this leader now ("SEEK"), or continue briefly ("CONTINUE": core/xpl-campaign.js peaceIntent). */
+export function peaceIntentFor(enemy) {
+    return peaceIntent(campaign, enemy, Game.turn);
+}
+
+const leaderOf = (id) => safe(() => Locale.compose(Players.get(id).leaderName), null) ?? safe(() => Locale.compose(Players.get(id).civilizationName), String(id));
+
+/**
+ * Our settlements another player holds while we are at war with it: city.originalOwner is us (the game's own record, as
+ * its city banners and peace deal screen read it; research/37 §9D: never a name). @returns [{ x, y, name, owner, cityId }]
+ */
+function lostSettlements() {
+    const me = safe(() => Players.get(pid()), null);
+    const out = [];
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (!p || p.id === pid() || !safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+        for (const c of safe(() => p.Cities.getCities(), []) ?? []) {
+            if (c?.originalOwner !== pid() || !c.location) continue;
+            out.push({ x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?"), owner: p.id, cityId: c.id });
+        }
+    }
+    return out;
+}
+
+/**
+ * The tiles to take (Civilopedia 210, 1915): the centre and every district of the settlement with health to lose (walls,
+ * fortified wonders; other urban districts stand at 0 and fall with it), each with its health (Players.Districts of its
+ * owner, as the game's district health bars read it) and whether we hold it (district.controllingPlayer).
+ * @returns { tiles: [{ x, y, health, max, ours, centre }], health (left in all), taken (held by us) }
+ */
+function districtsToTake(t) {
+    const pd = safe(() => Players.Districts.get(t.owner), null);
+    const city = safe(() => Cities.get(t.cityId), null);
+    const tiles = [];
+    const add = (loc, d) => {
+        if (!loc || tiles.some((x) => same(x, loc))) return;
+        const centre = same(loc, t);
+        const max = Number(safe(() => pd.getDistrictMaxHealth({ x: loc.x, y: loc.y }), 0)) || 0;
+        if (!centre && !(max > 0)) return;
+        const health = Math.max(0, Number(safe(() => pd.getDistrictHealth({ x: loc.x, y: loc.y }), 0)) || 0);
+        tiles.push({ x: loc.x, y: loc.y, health, max, ours: d ? d.controllingPlayer === pid() : false, centre });
+    };
+    for (const id of safe(() => city.Districts.getIds(), []) ?? []) {
+        const d = safe(() => Districts.get(id), null);
+        add(d?.location, d);
+    }
+    if (!tiles.some((x) => x.centre)) add({ x: t.x, y: t.y }, null);
+    return { tiles, health: tiles.reduce((a, x) => a + (x.ours ? 0 : x.health), 0), taken: tiles.filter((x) => x.ours).length };
+}
+
+/** Our settlements' centres. */
+const ourCentres = () => (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location).filter(Boolean);
+const tilesAt = (loc, r) => (safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, r), []) ?? []).map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter(Boolean);
+const plotDist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+
+/** A land tile a soldier of ours may stand on: no water or river, passable, no hazard, nobody else's unit, none of our soldiers but `u`. */
+function campaignTile(loc, u = null) {
+    if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || hazardAt(loc) > 0) return false;
+    for (const id of safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []) {
+        const other = safe(() => Units.get(id), null);
+        if (!other) continue;
+        if (other.owner !== pid()) return false;
+        if (u && sameId(other.id, u.id)) continue;
+        if (isSoldier(safe(() => GameInfo.Units.lookup(other.type), null))) return false;
+    }
+    return true;
+}
+
+/**
+ * The staging area: a free land tile CAMPAIGN.STAGE_DIST from the target's centre, with no hostile soldier next to it,
+ * nearest our own settlements (our land first, then nobody's). @returns { x, y } or null
+ */
+function stagingTile(t) {
+    const ours = ourCentres();
+    let best = null;
+    for (const loc of tilesAt(t, CAMPAIGN.STAGE_DIST)) {
+        if (plotDist(loc, t) !== CAMPAIGN.STAGE_DIST || !campaignTile(loc) || hostilesAround(loc, 1).length > 0) continue;
+        const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+        const home = Math.min(Infinity, ...ours.map((c) => plotDist(c, loc)));
+        const score = home * 10 + (owner === pid() ? 0 : owner === -1 || owner === null ? 3 : 6);
+        if (!best || score < best.score) best = { loc, score };
+    }
+    return best?.loc ?? null;
+}
+
+/** A member's role: a melee soldier takes districts; ranged and siege units shoot them. */
+const campaignRanged = (def) => isRangedGuard(def) || isSiegeGuard(def);
+const unitRange = (def) => Math.max(1, Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.Range, 0)) || 2);
+
+/** Hostile soldiers near the target and their best strength. */
+function enemiesNear(t) {
+    const h = hostilesAround(t, CAMPAIGN.ENEMY_RADIUS).filter((x) => x.def && x.def.Domain === "DOMAIN_LAND");
+    return { n: h.length, best: Math.max(0, ...h.map((x) => unitStrength(x.def))) };
+}
+
+/** Our settlements are safe enough to send soldiers away: no centre damaged, every threatened one guarded or guards sent. */
+function homeUnsafe(units, ctx) {
+    for (const t of ctx.threats) {
+        if (t.damaged) return true;
+        const key = `${t.settlement.x},${t.settlement.y}`;
+        const present = safe(() => guardDetail(t, units, ctx.threats).present.length, 0);
+        const sent = [...(ctx.posts?.values() ?? [])].filter((p) => p.key === key && !p.ranged).length;
+        if (present + sent < guardsWanted(t)) return true;
+    }
+    return false;
+}
+
+/** Ends the running campaign: its members and commander go back to the other orders. */
+function endCampaign(reason, out) {
+    const c = campaign;
+    if (!c) return;
+    for (const [k, g] of [...goals.entries()]) if (g?.campaign === c.key) goals.delete(k);
+    campaign = null;
+    if (reason !== "DONE") campaignRetry.set(c.key, Game.turn + CAMPAIGN.RETRY_TURNS);
+    log.warn(`campaign: ${c.target.name} of ${c.leader}: ${reason} after ${Game.turn - c.started} turn(s) (${c.stage})`);
+    if (reason === "DONE") out.push({ key: "CAMPAIGN_DONE", args: [c.target.name] });
+    else out.push({ key: "CAMPAIGN_ABORTED", args: [c.target.name, safe(() => Locale.compose(`LOC_XPL_AP_CAMPAIGN_WHY_${reason}`), reason)] });
+}
+
+/**
+ * The running campaign's review: its members (gone, or hurt CAMPAIGN.HURT: out), progress (less health in the districts
+ * to take, or more of them ours), its end (core campaignEnd), and the assault once gathered (readyToAssault).
+ */
+function reviewCampaign(units, ctx, options, out) {
+    if (!campaign) return;
+    const c = campaign;
+    const byKey = new Map(units.map((u) => [unitKey(u.id), u]));
+    for (const k of [...c.members]) {
+        const u = byKey.get(k);
+        if (!u || (Number(u.Health?.damage) || 0) >= CAMPAIGN.HURT) {
+            c.members.delete(k);
+            if (goals.get(k)?.campaign === c.key) goals.delete(k);
+        }
+    }
+    if (c.commander && !byKey.has(c.commander)) c.commander = null;
+    const ours = ourCentres().some((l) => same(l, c.target));
+    let theirs = (safe(() => Players.get(c.enemy).Cities.getCities(), []) ?? []).some((x) => same(x.location, c.target));
+    if (!theirs && !ours) {
+        // Another enemy took it from them: still ours by origin, so the campaign follows it (research/37 §9F: a target
+        // survives an owner change).
+        const now = lostSettlements().find((t) => same(t, c.target));
+        if (now) {
+            log.warn(`campaign: ${c.target.name} passed from ${c.leader} to ${leaderOf(now.owner)}; the campaign goes on`);
+            c.enemy = now.owner;
+            c.leader = leaderOf(now.owner);
+            c.target = { ...c.target, owner: now.owner, cityId: now.cityId };
+            theirs = true;
+        }
+    }
+    const atWar = !!safe(() => Players.get(pid()).Diplomacy.isAtWarWith(c.enemy), false);
+    const now = theirs ? districtsToTake(c.target) : null;
+    if (now && progressed(c.last, now)) c.progressTurn = Game.turn;
+    if (now) c.last = { health: now.health, taken: now.taken };
+    const members = [...c.members].map((k) => byKey.get(k)).filter(Boolean);
+    const melee = members.filter((u) => isMeleeGuard(safe(() => GameInfo.Units.lookup(u.type), null))).length;
+    const end = campaignEnd(c, {
+        turn: Game.turn, ours, theirs, atWar, offensive: !!options.offensive, victoryNear: !!options.victoryNear,
+        melee, units: members.length, homeUnsafe: false,
+    });
+    if (end) {
+        endCampaign(end, out);
+        return;
+    }
+    if (c.stage === "GATHER") {
+        const arrived = members.filter((u) => u.isOnMap !== false && u.location && plotDist(u.location, c.staging) <= CAMPAIGN.NEAR_STAGE);
+        const meleeArrived = arrived.filter((u) => isMeleeGuard(safe(() => GameInfo.Units.lookup(u.type), null))).length;
+        if (readyToAssault(c, { turn: Game.turn, arrived: arrived.length, members: members.length, meleeArrived })) {
+            c.stage = "ASSAULT";
+            c.assaultTurn = Game.turn;
+            c.progressTurn = Game.turn;
+            out.push({ key: "CAMPAIGN_ASSAULT", args: [c.target.name, arrived.length] });
+        }
+    }
+}
+
+/**
+ * A campaign starts (research/37 §9C-D) for the nearest settlement of ours an enemy holds within CAMPAIGN.REACH of one of
+ * ours, when our own are safe (homeUnsafe), no victory of ours is near, and the soldiers defence leaves free (its supply
+ * less its posts: not a front's guard, not the player's own fortified ones, not packed) that reach the staging area within
+ * GATHER_TURNS are enough (core forceEnough); a land commander not posted at a threatened settlement leads it.
+ */
+function startCampaign(units, ctx, options, out) {
+    const ours = ourCentres();
+    const why = [];
+    const targets = lostSettlements()
+        .map((t) => ({ t, d: Math.min(Infinity, ...ours.map((c) => plotDist(c, t))) }))
+        .filter(({ t, d }) => {
+            if (d > CAMPAIGN.REACH) { why.push(`${t.name} ${d} tiles away`); return false; }
+            const retry = campaignRetry.get(`${t.x},${t.y}`);
+            if (retry !== undefined && Game.turn < retry) { why.push(`${t.name} again on turn ${retry}`); return false; }
+            return true;
+        })
+        .sort((a, b) => a.d - b.d);
+    const note = (text) => {
+        if (campaignNoted === Game.turn) return;
+        campaignNoted = Game.turn;
+        log.warn(`campaign: none: ${text}`);
+    };
+    if (targets.length === 0) {
+        if (why.length > 0) note(why.join("; "));
+        return;
+    }
+    const t = targets[0].t;
+    const leader = leaderOf(t.owner);
+    if (options.victoryNear) return note(`${t.name} of ${leader}: a victory of ours is near`);
+    if (homeUnsafe(units, ctx)) return note(`${t.name} of ${leader}: a settlement of ours needs its soldiers`);
+    const staging = stagingTile(t);
+    if (!staging) return note(`${t.name} of ${leader}: no staging tile ${CAMPAIGN.STAGE_DIST} tiles from it`);
+    const free = (ctx.supply ?? []).filter((c) => !ctx.posts.has(c.k) && !c.packed && c.stage && c.atFront === undefined && c.from === undefined
+        && (Number(c.u.Health?.damage) || 0) < ESCAPE_DAMAGE)
+        .map((c) => ({ ...c, turns: pathTurns(c.u, staging) }))
+        .filter((c) => c.turns !== null && c.turns <= CAMPAIGN.GATHER_TURNS)
+        .sort((a, b) => a.turns - b.turns);
+    const melee = free.filter((c) => !c.ranged).slice(0, CAMPAIGN.MAX_MEMBERS - Math.min(2, free.filter((x) => x.ranged).length));
+    // Siege units first among the shooters (Bombard: strong against districts, Civilopedia 1936).
+    const shooters = free.filter((c) => c.ranged).sort((a, b) => Number(b.siege) - Number(a.siege) || a.turns - b.turns)
+        .slice(0, Math.max(0, CAMPAIGN.MAX_MEMBERS - melee.length));
+    const picked = [...melee, ...shooters];
+    const enemy = enemiesNear(t);
+    const force = forceEnough({
+        melee: melee.length, units: picked.length, enemies: enemy.n,
+        ourBest: Math.max(0, ...picked.map((c) => unitStrength(c.def))), theirBest: enemy.best,
+    });
+    if (!force.ok) return note(`${t.name} of ${leader}: not enough force (${force.why}; ${free.length} free within ${CAMPAIGN.GATHER_TURNS} turns)`);
+    const key = `${t.x},${t.y}`;
+    campaign = {
+        id: ++campaignSeq, key, target: t, enemy: t.owner, leader, started: Game.turn, stage: "GATHER", staging,
+        members: new Set(picked.map((c) => c.k)), commander: null, assaultTurn: null, progressTurn: Game.turn, last: null,
+    };
+    for (const c of picked) goals.set(c.k, { campaign: key, turn: Game.turn });
+    // The commander: a land commander not posted at a threatened settlement, the nearest to the staging area.
+    const threatened = new Set(ctx.threats.map((x) => `${x.settlement.x},${x.settlement.y}`));
+    const cmdr = units.filter((u) => u.isCommanderUnit && u.isOnMap !== false && u.location && isLandCommander(safe(() => GameInfo.Units.lookup(u.type), null))
+        && !threatened.has(goals.get(unitKey(u.id))?.post ?? "") && !ctx.ordered.has(unitKey(u.id)))
+        .map((u) => ({ u, turns: pathTurns(u, staging) })).filter((x) => x.turns !== null && x.turns <= CAMPAIGN.GATHER_TURNS)
+        .sort((a, b) => a.turns - b.turns)[0];
+    if (cmdr) {
+        campaign.commander = unitKey(cmdr.u.id);
+        goals.set(campaign.commander, { campaign: key, turn: Game.turn });
+    }
+    const last = districtsToTake(t);
+    campaign.last = { health: last.health, taken: last.taken };
+    log.warn(`campaign: ${t.name} of ${leader} at ${t.x},${t.y}: started with ${picked.length} [${picked.map((c) => `${c.def.UnitType} in ${c.turns}t`).join(", ")}], staging ${where(staging)}, enemies near ${enemy.n} (best ${enemy.best}), commander ${cmdr ? `${typeOf(cmdr.u)} in ${cmdr.turns}t` : "none"}`);
+    out.push({ key: "CAMPAIGN_STARTED", args: [t.name, leader, picked.length] });
+}
+
+/** A free tile for a member: within `r` of `at`, the nearest to the member (reserved for this pass). */
+function campaignSpot(u, at, r, taken, accept = () => true) {
+    let best = null;
+    for (const loc of tilesAt(at, r)) {
+        const k = `${loc.x},${loc.y}`;
+        if (taken.has(k) || !accept(loc) || !campaignTile(loc, u)) continue;
+        const d = plotDist(u.location, loc);
+        if (!best || d < best.d) best = { loc, d };
+    }
+    return best?.loc ?? null;
+}
+
+/**
+ * The members' moves this pass (sent before the unit loop, like the naval guards: one order per unit). Gathering: each
+ * to a free tile next to the staging tile. The assault: a melee member next to a district still to take (the weakest
+ * first), a ranged one within its range of one (as far back as that allows, not next to a hostile soldier when it can);
+ * the commander at the staging tile, then within 2 of the centre where its radius covers the most members. A member
+ * already where it should be stays (the skip step skips it); a hurt one (ESCAPE_DAMAGE) gets the other orders (escape,
+ * heal). @returns log entries
+ */
+function moveCampaign(units, ctx) {
+    const out = [];
+    const c = campaign;
+    if (!c) return out;
+    const A = globalThis.UnitActivityTypes;
+    const taken = new Set();
+    const todo = c.stage === "ASSAULT" ? districtsToTake(c.target).tiles.filter((x) => !x.ours) : [];
+    const standing = todo.filter((x) => x.health > 0);
+    const move = (u, def, loc, key) => {
+        if (same(u.location, loc)) return;
+        wakeUnit(u);
+        if (!moveTo(u, loc)) return;
+        taken.add(`${loc.x},${loc.y}`);
+        ctx.ordered.add(unitKey(u.id));
+        out.push({ key, args: [nameOf(def), c.target.name] });
+    };
+    for (const u of units) {
+        const k = unitKey(u.id);
+        if (!c.members.has(k) || ctx.ordered.has(k) || u.isOnMap === false || !u.location) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE || u.canMove === false || u.hasMoved === true) continue;
+        if (A && u.activityType === A.HEAL) continue;
+        if (c.stage === "GATHER") {
+            if (plotDist(u.location, c.staging) <= CAMPAIGN.NEAR_STAGE) continue;
+            const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
+            if (A && u.activityType === A.OPERATION && dest && plotDist(dest, c.staging) <= 1) continue;
+            const loc = campaignSpot(u, c.staging, 1, taken);
+            if (loc) move(u, def, loc, "CAMPAIGN_GATHER");
+            continue;
+        }
+        if (campaignRanged(def)) {
+            const range = unitRange(def);
+            if (standing.some((x) => plotDist(u.location, x) <= range)) continue;
+            const aim = [...standing].sort((a, b) => a.health - b.health)[0] ?? todo[0];
+            if (!aim) continue;
+            const safeSpot = (loc) => plotDist(loc, aim) <= range && plotDist(loc, aim) >= Math.min(range, 2) && hostilesAround(loc, 1).length === 0;
+            const loc = campaignSpot(u, aim, range, taken, safeSpot) ?? campaignSpot(u, aim, range, taken, (l) => plotDist(l, aim) <= range);
+            if (loc) move(u, def, loc, "CAMPAIGN_ADVANCE");
+            continue;
+        }
+        if (todo.some((x) => plotDist(u.location, x) === 1)) continue;
+        const aim = [...todo].sort((a, b) => a.health - b.health || plotDist(u.location, a) - plotDist(u.location, b))[0];
+        if (!aim) continue;
+        const loc = campaignSpot(u, aim, 1, taken, (l) => plotDist(l, aim) === 1 && !todo.some((x) => same(x, l)));
+        if (loc) move(u, def, loc, "CAMPAIGN_ADVANCE");
+    }
+    // The commander: the staging tile while gathering; in the assault the tile within 2 of the centre where its radius (1)
+    // covers the most members, never next to a hostile soldier.
+    const cmdr = c.commander ? units.find((u) => unitKey(u.id) === c.commander) : null;
+    if (cmdr && cmdr.isOnMap !== false && cmdr.location && !ctx.ordered.has(c.commander) && readyForOrders(cmdr)) {
+        const def = safe(() => GameInfo.Units.lookup(cmdr.type), null);
+        let loc = null;
+        if (c.stage === "GATHER") loc = plotDist(cmdr.location, c.staging) <= 1 ? null : campaignSpot(cmdr, c.staging, 1, taken, () => true);
+        else {
+            const members = units.filter((u) => c.members.has(unitKey(u.id)) && u.location);
+            let best = null;
+            for (const l of tilesAt(c.target, 2)) {
+                if (plotDist(l, c.target) < 2 || taken.has(`${l.x},${l.y}`) || hostilesAround(l, 1).length > 0) continue;
+                if (onWater(l) || safe(() => GameplayMap.isImpassable(l.x, l.y), false) || hazardAt(l) > 0) continue;
+                if ((safe(() => MapUnits.getUnits(l.x, l.y), []) ?? []).some((id) => safe(() => Units.get(id), null)?.owner !== pid())) continue;
+                const covered = members.filter((u) => plotDist(u.location, l) <= 1).length;
+                const score = covered * 10 - plotDist(cmdr.location, l);
+                if (!best || score > best.score) best = { l, score };
+            }
+            loc = best && !same(best.l, cmdr.location) ? best.l : null;
+        }
+        if (loc && def) move(cmdr, def, loc, "CAMPAIGN_COMMANDER");
+    }
+    return out;
+}
+
+/** UI.log once a turn: the campaign, its members, the districts to take and its commander's experience. */
+function logCampaign(units) {
+    const c = campaign;
+    if (!c || campaignNoted === Game.turn) return;
+    campaignNoted = Game.turn;
+    const byKey = new Map(units.map((u) => [unitKey(u.id), u]));
+    const members = [...c.members].map((k) => byKey.get(k)).filter(Boolean);
+    const d = districtsToTake(c.target);
+    const cmdr = c.commander ? byKey.get(c.commander) : null;
+    const xp = cmdr?.Experience ? ` XP ${cmdr.Experience.experiencePoints ?? "?"}/${cmdr.Experience.experienceToNextLevel ?? "?"}` : "";
+    const enemy = enemiesNear(c.target);
+    log.warn(`campaign: ${c.stage} ${c.target.name} of ${c.leader} at ${where(c.target)}: staging ${where(c.staging)}; members [${members.map((u) => `${typeOf(u)} ${where(u.location)}${u.Health?.damage ? ` -${u.Health.damage}` : ""}`).join("; ")}]; districts [${d.tiles.map((x) => `${where(x)} ${x.health}/${x.max}${x.ours ? " ours" : ""}`).join("; ")}]; enemies near ${enemy.n} (best ${enemy.best}); turn ${Game.turn - c.started} of ${CAMPAIGN.MAX_TURNS}${c.assaultTurn !== null ? `, assault since T${c.assaultTurn}, progress T${c.progressTurn}` : ""}; commander ${cmdr ? `${typeOf(cmdr)} ${where(cmdr.location)}${xp}` : "none"}`);
+}
+
+/**
+ * The campaign's review, before the defence plan (so a campaign that ends gives its soldiers back to it in this pass):
+ * with «Наступление» off a running campaign ends at once; else reviewCampaign. Members keep their goal (a move the game
+ * stopped and we cancelled took it). @returns log entries
+ */
+function campaignReviewStep(units, ctx, options) {
+    const out = [];
+    if (!options.offensive) {
+        if (campaign) endCampaign("OFF", out);
+        return out;
+    }
+    reviewCampaign(units, ctx, options, out);
+    if (campaign) for (const k of [campaign.commander, ...campaign.members]) if (k && goals.get(k)?.campaign !== campaign.key) goals.set(k, { campaign: campaign.key, turn: Game.turn });
+    return out;
+}
+
+/**
+ * The campaign step of commandUnits (after the defence plan: defence comes first): a campaign whose home needs its
+ * soldiers ends (the defence plan runs again with them), else one starts, and the members move. @returns log entries
+ */
+function campaignStep(units, ctx, options) {
+    const out = [];
+    if (!options.offensive) return out;
+    // A settlement of ours needs soldiers: the members go back to the defence, this pass.
+    if (campaign && homeUnsafe(units, ctx)) {
+        endCampaign("HOME", out);
+        ctx.supply = defenceSupply(units, ctx);
+        planDefence(units, ctx);
+        return out;
+    }
+    if (!campaign) startCampaign(units, ctx, options, out);
+    if (campaign) {
+        out.push(...moveCampaign(units, ctx));
+        logCampaign(units);
+    }
+    return out;
+}
+
+/** A campaign member or its commander (the unit loop leaves it to the campaign unless it is hurt). */
+const inCampaign = (k) => !!campaign && (campaign.members.has(k) || campaign.commander === k);
+
+/**
+ * The assault's attacks (research/37 §9C), from the hud's strike step and again after the unit step (members that just
+ * came close may still attack): ranged and siege members shoot the district to take with the least health they reach
+ * (RANGE_ATTACK at its plot), melee members next to one attack it when the game's preview says it pays
+ * (districtStrikeWorthIt), and a member next to a district at 0 health moves onto it (the capture: MOVE_TO with ATTACK,
+ * as the map sends it, world-input.js). Each after the last one's Combat event. @returns log entries
+ */
+export async function campaignAssault() {
+    const out = [];
+    const c = campaign;
+    if (!c || c.stage !== "ASSAULT") return out;
+    const M = globalThis.UnitOperationMoveModifiers;
+    const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
+    const RANGE = globalThis.UnitOperationTypes?.RANGE_ATTACK ?? "UNITOPERATION_RANGE_ATTACK";
+    const none = globalThis.OperationPlotModifiers?.NONE ?? 0;
+    const members = () => (safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])
+        .filter((u) => c.members.has(unitKey(u.id)) && u.isOnMap !== false && u.location && Number(u.Combat?.attacksRemaining) > 0);
+    const before = districtsToTake(c.target);
+    // 1. Shots at the districts.
+    for (const u of members()) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || !campaignRanged(def)) continue;
+        const r = safe(() => Game.UnitOperations.canStart(u.id, RANGE, {}, false), null);
+        if (!r?.Plots?.length) continue;
+        const offered = new Set(r.Plots.filter((_p, i) => (r.Modifiers?.[i] ?? 1) !== none));
+        const aim = districtsToTake(c.target).tiles.filter((x) => !x.ours && x.health > 0 && offered.has(safe(() => GameplayMap.getIndexFromXY(x.x, x.y), -1)))
+            .sort((a, b) => a.health - b.health)[0];
+        if (!aim) continue;
+        Game.UnitOperations.sendRequest(u.id, RANGE, { X: aim.x, Y: aim.y });
+        out.push({ key: "DISTRICT_SHOT", args: [nameOf(def), c.target.name, aim.x, aim.y] });
+        await untilEvent("Combat", COMBAT_WAIT_MS);
+    }
+    // 2. Melee attacks on the districts, when the preview pays; 3. captures of those at 0.
+    if (M?.ATTACK !== undefined) {
+        for (const u of members()) {
+            const def = safe(() => GameInfo.Units.lookup(u.type), null);
+            if (!def || campaignRanged(def) || !isSoldier(def)) continue;
+            const next = districtsToTake(c.target).tiles.filter((x) => !x.ours && plotDist(u.location, x) === 1);
+            const open = next.find((x) => x.health <= 0);
+            const args = (x) => ({ X: x.x, Y: x.y, Modifiers: M.ATTACK + (M.MOVE_IGNORE_UNEXPLORED_DESTINATION ?? 0) });
+            if (open) {
+                if (!safe(() => Game.UnitOperations.canStart(u.id, MOVE, args(open), false), null)?.Success) continue;
+                Game.UnitOperations.sendRequest(u.id, MOVE, args(open));
+                out.push({ key: "DISTRICT_TAKEN", args: [nameOf(def), c.target.name, open.x, open.y] });
+                await untilEvent("Combat", COMBAT_WAIT_MS);
+                continue;
+            }
+            const aim = next.sort((a, b) => a.health - b.health)[0];
+            if (!aim || !safe(() => Game.UnitOperations.canStart(u.id, MOVE, args(aim), false), null)?.Success) continue;
+            const p = await simulateAttack(u, aim);
+            if (!p?.Attacker || !p?.Defender) continue;
+            const ourMax = Number(u.Health?.maxDamage) || 100;
+            const ok = districtStrikeWorthIt({
+                ourHealth: ourMax - (Number(u.Health?.damage) || 0), ourMax, theirHealth: aim.health,
+                dealt: Number(p.Defender.DamageTo) || 0, taken: Number(p.Attacker.DamageTo) || 0,
+            });
+            if (!ok) continue;
+            Game.UnitOperations.sendRequest(u.id, MOVE, args(aim));
+            out.push({ key: "DISTRICT_STRUCK", args: [nameOf(def), c.target.name, aim.x, aim.y] });
+            await untilEvent("Combat", COMBAT_WAIT_MS);
+        }
+    }
+    const after = districtsToTake(c.target);
+    if (out.length > 0 && progressed(before, after)) c.progressTurn = Game.turn;
+    return out;
+}
+
+/**
+ * A settlement we just took (city.isJustConqueredFrom: the game then asks raze or keep, NOTIFICATION_CONSIDER_RAZE_CITY):
+ * kept, as the capture chooser's Keep sends it (CityCommands DESTROY {Directive: 2}, model-city-capture-chooser.js); one
+ * of ours retaken is liberated (no unrest, Civilopedia 1478), and we may not raze a settlement we founded anyway.
+ * @returns log entries
+ */
+export function keepRetaken() {
+    const out = [];
+    const DESTROY = globalThis.CityCommandTypes?.DESTROY;
+    if (DESTROY === undefined) return out;
+    for (const city of safe(() => Players.get(pid()).Cities.getCities(), []) ?? []) {
+        if (!safe(() => city.isJustConqueredFrom, false)) continue;
+        const args = { Directive: 2 };
+        if (!safe(() => Game.CityCommands.canStart(city.id, DESTROY, args, false), null)?.Success) continue;
+        Game.CityCommands.sendRequest(city.id, DESTROY, args);
+        out.push({ key: "CITY_KEPT", args: [safe(() => Locale.compose(city.name), "?")] });
     }
     return out;
 }
@@ -4496,6 +5001,8 @@ export function commandUnits(settings, options) {
             garrison.add(unitKey(u.id));
         }
     }
+    // A running campaign's review first (research/37 Phase 7): one that ends gives its soldiers back to the defence below.
+    if (options.defend) entries.push(...(safe(() => campaignReviewStep(units, ctx, options), []) ?? []));
     // Who defends where (research/36 §4): with «Оборона» or «Армия».
     if (options.defend || options.roam) {
         try {
@@ -4517,6 +5024,14 @@ export function commandUnits(settings, options) {
             ctx.formations = new Map();
         }
     }
+    // Campaigns (research/37 Phase 7, «Наступление»): with the soldiers defence leaves free; off, a running one ends.
+    if (options.defend) {
+        try {
+            entries.push(...campaignStep(units, ctx, options));
+        } catch (error) {
+            log.debug("autopilot campaign failed", error);
+        }
+    }
     // Fighters rebase to cover what needs it (research/37 Phase 5); warships sail to the coasts ships attack (Phase 6).
     if (options.defend) entries.push(...(safe(() => rebaseFighters(ctx, units), []) ?? []));
     if (options.defend) entries.push(...(safe(() => planNavalGuards(units, ctx), []) ?? []));
@@ -4530,6 +5045,12 @@ export function commandUnits(settings, options) {
         // neighbour's room-making: its order stands (before, an unpacking commander could be sent to its post as well).
         if (ordered.has(unitKey(u.id))) {
             seen.push(`${what}:ordered`);
+            continue;
+        }
+        // A campaign's member or commander, not hurt: the campaign's (its moves were sent; one standing where it should is
+        // skipped by the skip step). A hurt one escapes or heals like any other.
+        if (def && inCampaign(unitKey(u.id)) && (Number(u.Health?.damage) || 0) < ESCAPE_DAMAGE) {
+            seen.push(`${what}:campaign`);
             continue;
         }
         if (options.leave?.has(unitKey(u.id))) {

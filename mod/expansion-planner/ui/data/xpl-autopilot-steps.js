@@ -2642,7 +2642,7 @@ function unitsWanted(unitOptions) {
     }
     // Warships for a lasting coastal front (research/37 §8B), from a city on the same water.
     if (unitOptions.defend) {
-        const want = warshipsWanted(unitOptions.threats ?? []);
+        const want = warshipsWanted(unitOptions.threats ?? [], unitsMayOvertake(unitOptions));
         if (want) out.push({ test: isWarshipDef, n: want.n, key: "QUEUED_WARSHIP", target: want.target, order: want.order, rank: want.rank });
     }
     // Defence: every settlement centre defends at the strongest melee unit obtained this age (research/37 §2; 20 with
@@ -2792,10 +2792,13 @@ function waterAreas(loc) {
  * in a row wants up to NAVAL.SHIPS_MAX warships, ours within WARSHIP_NEAR of it and those queued counted; one is trained
  * only in a city on the same water (a water tile next to it in an area of a water tile next to the front:
  * GameplayMap.getAreaId; a lake city's ship would never reach the ocean), the best ranged ship it can build (RangedCombat),
- * else the best screen (Combat), the nearest first; never in a space city. None: UI.log once a turn.
+ * else the best screen (Combat); never in a space city. The city where it arrives soonest (its queue's wait, its training and
+ * its sailing: game 39, Мотия's Cog for Севилья waited 20 turns behind the Tomb of Askia, a Bazaar and a Sawmill, and came
+ * after the raids had ended), within DEFENDER_ARRIVAL_TURNS. None: UI.log once a turn.
+ * @param ahead may units overtake a wonder or a project in production (unitsMayOvertake)
  * @returns { n, target, order(city), rank(city) } or null
  */
-function warshipsWanted(threats) {
+function warshipsWanted(threats, ahead = true) {
     const fronts = lastingFronts(threats).filter((t) => Number(t.ships) > 0);
     if (fronts.length === 0) return null;
     const kinds = GameInfo.Units?.filter((d) => isWarshipDef(d) && d.CanTrain !== false && d.CanTrain !== "false") ?? [];
@@ -2813,27 +2816,44 @@ function warshipsWanted(threats) {
         else for (const x of a) frontWater.add(x);
     }
     const stat = (def, k) => Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.[k], 0)) || 0;
-    const order = (city) => {
-        const mine = waterAreas(city.location);
-        if (mine === null ? !unknown : ![...mine].some((a) => frontWater.has(a))) return null;
+    // A city's best warship and when it would reach the nearest front: the wait for its queue, the training, the sailing.
+    const seen = new Map();
+    const option = (city) => {
+        const key = sidOf(city);
+        if (seen.has(key)) return seen.get(key);
         let best = null;
-        for (const def of kinds) {
-            const args = { UnitType: def.$hash };
-            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
-            const rank = shipRole(def) === "RANGED" ? 1000 + stat(def, "RangedCombat") : stat(def, "Combat");
-            if (!best || rank > best.rank) best = { args, name: def.Name, rank };
+        const mine = waterAreas(city.location);
+        if (mine === null ? unknown : [...mine].some((a) => frontWater.has(a))) {
+            for (const def of kinds) {
+                const args = { UnitType: def.$hash };
+                if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+                const rank = shipRole(def) === "RANGED" ? 1000 + stat(def, "RangedCombat") : stat(def, "Combat");
+                if (!best || rank > best.rank) best = { args, name: def.Name, rank, def };
+            }
         }
+        if (best) {
+            const sail = Math.min(Infinity, ...fronts.map((t) => travelTurns(best.def, dist(city.location, t.settlement))));
+            best.arrival = turnsUntilFree(city, ahead) + unitTurns(city, best.args.UnitType) + sail;
+        }
+        seen.set(key, best);
         return best;
+    };
+    const order = (city) => {
+        const o = option(city);
+        return o && o.arrival <= DEFENDER_ARRIVAL_TURNS ? o : null;
     };
     const cities = ownSettlements().filter((c) => !c.isTown);
     if (!cities.some((c) => order(c))) {
         if (warshipNoted !== Game.turn) {
             warshipNoted = Game.turn;
-            log.warn(`naval: no warship for ${fronts.map((t) => t.settlement.name ?? `${t.settlement.x},${t.settlement.y}`).join(", ")} (ships ${LASTING_FRONT_TURNS}+ turns): no city on that water can train one`);
+            const late = cities.map((c) => ({ c, o: option(c) })).filter((x) => x.o).sort((a, b) => a.o.arrival - b.o.arrival);
+            const why = late.length === 0 ? "no city on that water can train one"
+                : `none arrives within ${DEFENDER_ARRIVAL_TURNS} turns (${late.slice(0, 3).map((x) => `${nameOf(x.c)} ${x.o.arrival}t`).join(", ")})`;
+            log.warn(`naval: no warship for ${fronts.map((t) => t.settlement.name ?? `${t.settlement.x},${t.settlement.y}`).join(", ")} (ships ${LASTING_FRONT_TURNS}+ turns): ${why}`);
         }
         return null;
     }
-    return { n, target: NAVAL.SHIPS_MAX, order, rank: (city) => Math.min(Infinity, ...fronts.map((t) => dist(city.location, t.settlement))) };
+    return { n, target: NAVAL.SHIPS_MAX, order, rank: (city) => order(city)?.arrival ?? Infinity };
 }
 
 /**
@@ -3291,7 +3311,11 @@ export function frontLoadUnits(unitOptions = {}) {
     // Guards with a war at our door or a war risk (research/23 D3), and defenders under threat, come first.
     const guard = (def) => (war.near || war.risk.length > 0) && meleeStrength(def) > 0;
     const urgent = (def) => defender(def) || (war.near && meleeStrength(def) > 0);
+    // A warship for a lasting coastal front (warshipsWanted) moves up too (game 39: Мотия's Cog stayed behind a Bazaar and a
+    // Sawmill at the end of the queue for 20 turns; isMilitary leaves ships out).
+    const coastal = !!unitOptions.defend && lastingFronts(unitOptions.threats ?? []).some((t) => Number(t.ships) > 0);
     const wanted = (def) => defender(def) || guard(def) || (melee > 0 && meleeStrength(def) >= melee)
+        || (coastal && isWarshipDef(def))
         || (unitOptions.defend && war.near && isInterceptor(def))
         || (unitOptions.explore && isScout(def)) || (unitOptions.settlers && isSettler(def));
     const ahead = unitsMayOvertake(unitOptions);

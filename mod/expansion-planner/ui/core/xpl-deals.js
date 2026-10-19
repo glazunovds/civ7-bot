@@ -13,12 +13,15 @@ export const DEAL_GIVE_SHARE = 0.25;
 /**
  * @param items deal items
  * @param ctx { me: our player id, gold, influence, T: { AGREEMENTS, CITIES, GOLD, INFLUENCE, MAKE_PEACE } }
- * @returns { accept, peace, asks: { cities, gold, influence } }
+ * @returns { accept, peace, asks: { cities, gold, influence }, gives: { cities } } (gives: what they hand us, e.g. a settlement of
+ *   ours back: research/37 §9E)
  */
 export function judgeDeal(items, { me, gold = 0, influence = 0, T }) {
     const peace = (items ?? []).some((i) => i?.type === T.AGREEMENTS && i.subType === T.MAKE_PEACE);
     const asks = { cities: 0, gold: 0, influence: 0 };
+    const gives = { cities: 0 };
     for (const i of items ?? []) {
+        if (i && i.to === me && i.from !== me && i.type === T.CITIES) gives.cities++;
         if (!i || i.from !== me) continue;
         if (i.type === T.CITIES) asks.cities++;
         else if (i.type === T.GOLD) asks.gold += Number(i.amount) || 0;
@@ -27,5 +30,5 @@ export function judgeDeal(items, { me, gold = 0, influence = 0, T }) {
     const accept = peace && asks.cities === 0
         && asks.gold <= DEAL_GIVE_SHARE * Math.max(0, Number(gold) || 0)
         && asks.influence <= DEAL_GIVE_SHARE * Math.max(0, Number(influence) || 0);
-    return { accept, peace, asks };
+    return { accept, peace, asks, gives };
 }

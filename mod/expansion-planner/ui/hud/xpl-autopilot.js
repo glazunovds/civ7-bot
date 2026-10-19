@@ -25,7 +25,7 @@ import { goldBalance } from '../data/xpl-city-actions.js';
 import { probeDistricts } from '../data/xpl-growth-job.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
-import { commandUnits, disbandSurplus, disperseArrivals, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
+import { campaignAssault, campaignState, commandUnits, disbandSurplus, disperseArrivals, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, keepRetaken, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
 import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryRaces } from '../data/xpl-victory.js';
@@ -580,6 +580,10 @@ export async function runTurn(force = false) {
                 // The military lever's settlements past the cap (research/30 §1).
                 pastCap: s.strategy?.militaryLever ? Number(s.strategy.pastCap) || 0 : 0,
                 victory: !!focus, distant: focus === "ECONOMIC",
+                // «Наступление» (research/37 Phase 7): campaigns with the soldiers defence leaves free, none while a victory
+                // of ours other than the military one is near (a settlement retaken counts there).
+                offensive: !!o.offensive && !!o.defend,
+                victoryNear: (ap().focus?.watch ?? []).some((w) => w.own && w.cls !== "MILITARY"),
             });
             record(r.entries);
             const founded = [...r.entries];
@@ -625,9 +629,22 @@ export async function runTurn(force = false) {
             await guarded("strike", async () => {
                 const r = await strikeRaiders();
                 record(r.entries);
+                // A campaign's assault (research/37 Phase 7), after the raiders near our settlements; a settlement taken is kept.
+                if (o.offensive) {
+                    record(await campaignAssault());
+                    record(keepRetaken());
+                }
             });
         }
         await guarded("units", orderUnits);
+        // Members that came close this pass may still attack.
+        if (o.defend && o.offensive && campaignState()?.stage === "ASSAULT") {
+            await guarded("campaign", async () => {
+                await wait(STEP_PAUSE_MS);
+                record(await campaignAssault());
+                record(keepRetaken());
+            });
+        }
         if (full && o.befriend !== false && (o.explore || o.roam)) await guarded("borders", () => record(proposeOpenBorders(leadersNearExplorers({ explore: !!o.explore, roam: !!o.roam }))));
         if (full && o.settlers && o.tacks !== false) await guarded("tacks", async () => record(await placeSettleTacks(o)));
         if (o.research !== false) await guarded("research", research);

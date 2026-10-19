@@ -1369,7 +1369,7 @@
       <Text>Military: shoot or fortify</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_DEFEND_TT">
-      <Text>A military unit waiting for orders disperses an independent's village it stands on; else shoots (ranged units) at an enemy soldier next to your settlements first, then at other soldiers, the most damaged first (never at an empty tile, never a shot that would start a war); else heals when hurt; else walks onto an empty village at war with you within 4 tiles to disperse it (not a garrison; not while someone befriends it); else fortifies (or stands guard) where it stands. A melee unit (a fortified one too) attacks a hostile unit next to it near your settlements when the game's own combat preview says it clearly wins: the enemy dies or takes twice the damage it deals, and your unit keeps at least half its health; never an attack on a settlement, never one that starts a war. A settlement is threatened with 2+ hostile units within 4 tiles, or one within 2, or one within 4 while its centre is damaged (only independents at war with you count, and not a village's own units standing by it unless they are next to the settlement or attacking it): while it has fewer of your soldiers around it than hostile units, it buys its strongest melee unit at once with all the gold (towns too), the nearest city trains one first, soldiers away from it walk there, and a unit walks toward an independent we cannot befriend yet (stopping 2 tiles away). A settlement within 6 tiles of a village at war with you, with no soldier on or next to it, buys one with the gold above the reserve. One melee unit as strong as the best you can train is always kept: every settlement centre defends at the strongest melee unit you trained, minus 10. A threatened or exposed town still growing at population 7 takes the Fort Town Focus, the only way a town can buy walls, and then buys them. All defenders stay below 4 per settlement; the advisor's military units are only trained below 2 per settlement. While your gold income is below zero, no unit is added except defenders of a threatened settlement, and units are upgraded only there. When a unit shares a tile with another military unit (a new unit from the city), one of them steps to the nearest free tile, your own land first; boxed in by your own soldiers, a neighbour steps out to make room.</Text>
+      <Text>A military unit waiting for orders disperses an independent's village it stands on; else shoots (ranged units) at an enemy soldier next to your settlements first, then at other soldiers, the most damaged first (never at an empty tile, never a shot that would start a war); else heals when hurt; else walks onto an empty village at war with you within 4 tiles to disperse it (not a garrison; not while someone befriends it); else fortifies (or stands guard) where it stands. A melee unit (a fortified one too) attacks a hostile unit next to it near your settlements when the game's own combat preview says it clearly wins: the enemy dies or takes twice the damage it deals, and your unit keeps at least half its health; never an attack on a settlement, never one that starts a war. A settlement is threatened with 2+ hostile units within 4 tiles, or one within 2, or one within 4 while its centre is damaged (only independents at war with you count, and not a village's own units standing by it unless they are next to the settlement or attacking it): while it has fewer of your soldiers around it than hostile units, it buys its strongest melee unit at once with all the gold (towns too), the nearest city trains one first, soldiers away from it walk there, and a unit walks toward an independent we cannot befriend yet (stopping 2 tiles away). A settlement within 6 tiles of a village at war with you, with no soldier on or next to it, buys one with the gold above the reserve. One melee unit as strong as the best you can train is always kept: every settlement centre defends at the full strength of the strongest melee unit you trained, bought or upgraded in this age (20 with none). A threatened or exposed town still growing at population 7 takes the Fort Town Focus, the only way a town can buy walls, and then buys them. All defenders stay below 4 per settlement; the advisor's military units are only trained below 2 per settlement. While your gold income is below zero, no unit is added except defenders of a threatened settlement, and units are upgraded only there. When a unit shares a tile with another military unit (a new unit from the city), one of them steps to the nearest free tile, your own land first; boxed in by your own soldiers, a neighbour steps out to make room.</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_MERCHANTS_LABEL">
       <Text>Merchants: best trade route</Text>
@@ -1787,6 +1787,72 @@
     </Row>
     <Row Tag="LOC_XPL_AP_QUEUED_WARSHIP">
       <Text>{1_City}: queued {2_Name} against the ships raiding a lasting coastal front (wanted {3_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_OFFENSIVE_LABEL">
+      <Text>Offensive: retake our lost settlements</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_OFFENSIVE_TT">
+      <Text>With «Military: shoot or fortify» on. Off (the default) the autopilot only defends: it seeks peace whenever it can. On, in a war someone else started, it retakes a settlement of yours that the enemy holds within 10 tiles of your own: when your settlements are safe and no victory of yours is near, the soldiers the defence leaves free (at least 2 melee, 3 in all, 2 more than the enemy soldiers near it) gather 3 tiles from it with a commander, then ranged and siege units shoot its defences, melee units attack them when the game's preview says it pays, and a soldier occupies each district at 0 health; the settlement taken is kept. While that assault makes progress no white peace is proposed, and a peace that does not give the settlement back is refused; one that does is accepted. The campaign ends when the settlement is yours again, at peace, when your own settlements need the soldiers, after 25 turns or 5 without progress, or when a victory of yours is near. A commander leading it takes Initiative, Mobility and Regiments first, unless it already took a defensive promotion. Never a war of its own, never a settlement that was not yours.</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_STARTED">
+      <Text>Campaign to retake {1_Name} from {2_Leader}: {3_Num} soldiers gather</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_ASSAULT">
+      <Text>{1_Name}: the assault begins ({2_Num} soldiers there)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_DONE">
+      <Text>{1_Name} is ours again</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_ABORTED">
+      <Text>The campaign for {1_Name} ended: {2_Reason}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_GONE">
+      <Text>the settlement is no longer theirs</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_PEACE">
+      <Text>peace</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_OFF">
+      <Text>the offensive was switched off</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_VICTORY">
+      <Text>a victory of ours is near</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_LATE">
+      <Text>it took too long</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_STALL">
+      <Text>the assault made no progress</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_FORCE">
+      <Text>too few soldiers left</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_WHY_HOME">
+      <Text>our own settlements need the soldiers</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_GATHER">
+      <Text>{1_Unit} goes to the staging area for {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_ADVANCE">
+      <Text>{1_Unit} advances on {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CAMPAIGN_COMMANDER">
+      <Text>{1_Unit} leads the campaign for {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DISTRICT_SHOT">
+      <Text>{1_Unit} shoots at the defences of {2_Name} ({3_X},{4_Y})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DISTRICT_STRUCK">
+      <Text>{1_Unit} attacks the defences of {2_Name} ({3_X},{4_Y})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DISTRICT_TAKEN">
+      <Text>{1_Unit} takes a district of {2_Name} ({3_X},{4_Y})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CITY_KEPT">
+      <Text>{1_Name} is kept, not razed</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_PEACE_HELD">
+      <Text>No peace with {1_Leader} yet: the assault on {2_Name} goes on</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_MADE_ROOM">
       <Text>{1_Unit} steps out to make room for {2_Unit}</Text>

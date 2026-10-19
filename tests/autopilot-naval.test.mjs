@@ -154,3 +154,48 @@ test("a lasting coastal front gets a warship trained in a city on its water, the
         port.isTown = false;
     }
 });
+
+test("game 39: a warship goes where it arrives soonest, not to the nearest city with a busy queue, and moves up its queue", () => {
+    const threats = [{ settlement: { ...COAST, name: "Coast" }, count: 2, land: 0, ships: 2, owners: [] }];
+    const ships = (type) => (type?.startsWith?.("UNIT_") ? { Success: ["UNIT_FRIGATE", "UNIT_IRONCLAD"].includes(type) } : undefined);
+    const ordered = () => fake.sent.filter((s) => s.kind === "operation" && s.args.UnitType !== undefined).map((s) => [GameInfo.Units.lookup(s.args.UnitType)?.UnitType, Cities.get(s.id)?.name]);
+    const port = world.cities.find((c) => c.name === "Port");
+    // Port (6 tiles from Coast) builds a Factory with progress for 10 more turns; Bay (7 tiles, the same sea) has a free queue.
+    const bay = { owner: 0, x: 19, y: 1, name: "Bay", pop: 3, prod: 40 };
+    world.cities.push(bay);
+    try {
+        port.queue = { type: "BUILDING_FACTORY", turns: 10, pct: 50 };
+        reset({ canBuild: ships, costOf: () => 100 });
+        for (const turn of [20, 21, 22]) {
+            Game.turn = turn;
+            fake.sent.length = 0;
+            steps.assessWar([]);
+            steps.fillProduction(new Map(), { defend: true, threats });
+        }
+        // Two wanted against two ships: Bay's first (in 5 turns), then Port's (10 + 3 + the sail: still within 16).
+        assert.deepEqual(ordered().filter(([t]) => /FRIGATE|IRONCLAD/.test(t)), [["UNIT_FRIGATE", "Bay"], ["UNIT_FRIGATE", "Port"]]);
+        // A frigate queued in Port behind two buildings: on a lasting coastal front it moves up, behind the Factory with
+        // progress; on a front of two turns it stays.
+        delete port.queue;
+        world.cities.pop();
+        port.queue = { type: "BUILDING_FACTORY", turns: 5, pct: 50 };
+        port.queued = ["BUILDING_SCHOOLHOUSE", "UNIT_FRIGATE"];
+        const moves = () => fake.sent.filter((s) => s.kind === "operation" && s.args.InsertMode === CityOperationsParametersValues.MoveTo)
+            .map((s) => [Cities.get(s.id)?.name, s.args.QueueSourceLocation, s.args.QueueDestinationLocation]);
+        reset({ costOf: () => 100 });
+        for (const turn of [20, 21]) {
+            Game.turn = turn;
+            fake.sent.length = 0;
+            steps.frontLoadUnits({ defend: true, threats });
+        }
+        assert.deepEqual(moves(), [], "two turns: not a lasting front yet");
+        Game.turn = 22;
+        fake.sent.length = 0;
+        steps.frontLoadUnits({ defend: true, threats });
+        assert.deepEqual(moves(), [["Port", 2, 1]]);
+    } finally {
+        if (world.cities.includes(bay)) world.cities.pop();
+        delete port.queue;
+        delete port.queued;
+    }
+});

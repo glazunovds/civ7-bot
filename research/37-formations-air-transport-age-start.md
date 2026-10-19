@@ -48,6 +48,14 @@
 - no Fleet Commander work (focused sea attacks, assembly), escorts, carriers, naval formations, rivers' bottlenecks or ship upgrades by mission;
 - land guns are still sent against ships (§3D) and may stand within their reach (game 38's Field Cannons).
 
+**Status:** Phase 7 done on 20 October 2026, after game 39 (won: Modern economic; no war with a major), §9F's steps 1, 3 and 4. Root CLAUDE.md gotcha 71; tests in `tests/autopilot-campaign.test.mjs`, 28 reverts proven. Its choices beyond §9:
+- the targets come from the game's `city.originalOwner` (a research agent's reading of the game's UI, 20 October), not our own memory of locations; a target taken on by another enemy is followed;
+- one campaign at a time, the nearest target within 10 tiles, with the soldiers defence leaves free (no training, no purchases: no spending limit to watch); a settlement of ours in need ends it and gets its soldiers back in the same pass;
+- every district with health to lose is taken, by the game's preview for melee attacks; the settlement taken is kept (the capture chooser's Keep);
+- the peace intent holds our proposals and refuses a peace without the settlement only while the assault makes progress (3 turns), at most 8 turns;
+- the mobile commander's order (Initiative, Mobility, Regiments) applies to a commander leading a campaign with no defensive promotion yet;
+- not built: §9F step 2 (transport by packing, Initiative's move after unpacking), step 5 (limited advances on settlements that were not ours), war weariness, XP-seeking detours (the commander's XP is only logged).
+
 Phases 1 and 2 answer game 29's losses with what exists, plus the one request that turns a packed unit into a town's holder. Phase 1's probes give Phases 3 and 5 the facts they lack. Phase 4 waits for the `defence:` lines of the next game, since the logs of game 29 cannot show how units stood.
 
 ## 1. Where we stand
