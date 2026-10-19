@@ -164,6 +164,9 @@ export function installFakeEngine(world, age = "antiquity") {
         isNaturalWonder: (x, y) => !!tile(x, y).naturalWonder,
         getContinentType: (x, y) => tile(x, y).continent ?? 0,
         isNavigableRiver: (x, y) => tile(x, y).terrain === "TERRAIN_NAVIGABLE_RIVER",
+        // Water bodies: world.areaId(x, y) (default: every water tile in area 1, land in area 0).
+        getAreaId: (x, y) => world.areaId?.(x, y) ?? (["TERRAIN_COAST", "TERRAIN_OCEAN"].includes(tile(x, y).terrain) ? 1 : 0),
+        getAreaIsWater: (x, y) => ["TERRAIN_COAST", "TERRAIN_OCEAN"].includes(tile(x, y).terrain),
         isRiver: (x, y) => !!tile(x, y).river,
         isFreshWater: (x, y) => !!tile(x, y).river,
         getAppeal: (x, y) => tile(x, y).appeal ?? 0,
@@ -521,6 +524,7 @@ export function installFakeEngine(world, age = "antiquity") {
             if (op === g.UnitOperationTypes.MOVE_TO && args?.Modifiers & g.UnitOperationMoveModifiers.ATTACK) setImmediate(() => g.engine.trigger("Combat", {}));
             // A ranged attack fights too.
             if (op === g.UnitOperationTypes.RANGE_ATTACK && args?.X !== undefined) setImmediate(() => g.engine.trigger("Combat", {}));
+            if ((op === "UNITOPERATION_AIR_ATTACK" || op === "UNITOPERATION_NAVAL_ATTACK") && args?.X !== undefined) setImmediate(() => g.engine.trigger("Combat", {}));
         },
     };
     // Combat: world.combat(unitId, {x, y}) -> { dealt, taken } (the predicted damage to the defender

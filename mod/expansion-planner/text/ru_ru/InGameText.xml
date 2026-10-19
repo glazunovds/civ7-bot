@@ -1776,6 +1776,18 @@
     <Replace Tag="LOC_XPL_AP_QUEUED_INTERCEPTOR" Language="ru_RU">
       <Text>{1_City}: в очередь {2_Name} против вражеской авиации (нужно {3_Num})</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_FIGHTER_REBASED" Language="ru_RU">
+      <Text>{1_Unit} перебазируется, чтобы прикрыть от вражеской авиации: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_GROUND_ATTACKER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name}, чтобы бить налётчиков затяжного фронта (нужно {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NAVAL_GUARD" Language="ru_RU">
+      <Text>{1_Unit} идёт защищать от вражеских кораблей: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_WARSHIP" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} против кораблей затяжного прибрежного фронта (нужно {3_Num})</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_MADE_ROOM" Language="ru_RU">
       <Text>{1_Unit} уступает место: {2_Unit}</Text>
     </Replace>
@@ -2027,6 +2039,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_GOAL_SETTLER" Language="ru_RU">
       <Text>поселенец ({1_City})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GOAL_DEFENDER" Language="ru_RU">
+      <Text>защитника ({1_Name})</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_SITES_RELAXED" Language="ru_RU">
       <Text>мест для поселений почти не осталось: поиск повторён с мягкими правилами, найдено {1_Num}</Text>

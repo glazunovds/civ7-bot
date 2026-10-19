@@ -27,6 +27,8 @@ import { independentNameOf, villagesOf } from './xpl-player-facts.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { estimateStrike } from '../core/xpl-combat.js';
 import { FORM, commanderTile, planFormation, sectorsOf } from '../core/xpl-formation.js';
+import { AIR, airTargetScore, planRebases } from '../core/xpl-air.js';
+import { NAVAL, isWarship, navalRole } from '../core/xpl-naval.js';
 import { idString, sameId, validId } from '../core/xpl-component-id.js';
 import { meleeStrength, noteMeleeObtained } from './xpl-centre-defence.js';
 import { state } from '../services/xpl-state.js';
@@ -138,6 +140,18 @@ const unpacking = new Map();
 const unpackNoted = new Map();
 // Settlements whose formation UI.log described this turn ("x,y" -> turn).
 const formationNoted = new Map();
+// Commanders' last formation moves (unit key -> turn): none again within FORM.COMMANDER_HOLD turns (game 38).
+const commanderMoved = new Map();
+// Settlements whose naval guard UI.log described this turn ("x,y" -> turn), and ship types whose attack operations it
+// described (probe P-NAV-1, once a session).
+const navalNoted = new Map();
+const navalProbed = new Set();
+// Enemy air attacks on us (research/37 §7B): [{ x, y, turn, type, owner }], the last AIR.RAID_TURNS turns.
+const airRaids = [];
+// Our fighters' rebases (unit key -> { turn, to, from, checked }), and the bases the game would not take one to ("key|x,y" -> turn).
+const rebased = new Map();
+const rebaseRefused = new Map();
+let airLogged = -1; // the turn UI.log described the air wing
 
 export function resetUnitGoals() {
     goals.clear();
@@ -166,6 +180,12 @@ export function resetUnitGoals() {
     unpacking.clear();
     unpackNoted.clear();
     formationNoted.clear();
+    commanderMoved.clear();
+    navalNoted.clear();
+    airRaids.length = 0;
+    rebased.clear();
+    rebaseRefused.clear();
+    airLogged = -1;
 }
 
 /** restedByUs as the save keeps it (the first time in a session). */
@@ -2639,11 +2659,16 @@ function formCommander(u, def, form, ctx) {
         const turns = pathTurns(u, loc);
         return turns !== null && turns <= 1 && !startsWar(u, loc);
     };
-    const pick = commanderTile(form.f, { at: { x: u.location.x, y: u.location.y }, radius }, [...form.at.values()], tiles, reach);
+    // Moved in its formation lately: it stays (game 38: three moves on three turns in a row, the last for +20).
+    const last = commanderMoved.get(unitKey(u.id));
+    const held = last !== undefined && Game.turn - last < FORM.COMMANDER_HOLD && Game.turn >= last;
+    const pick = held ? null : commanderTile(form.f, { at: { x: u.location.x, y: u.location.y }, radius }, [...form.at.values()], tiles, reach);
     form.commander = { unit: def.UnitType, at: { x: u.location.x, y: u.location.y }, to: pick?.to ?? null, gain: pick?.gain ?? 0 };
     const stand = pick?.to ?? u.location;
     taken.add(`${stand.x},${stand.y}`);
+    if (held) form.commander.held = true;
     if (!pick || !moveTo(u, pick.to)) return null;
+    commanderMoved.set(unitKey(u.id), Game.turn);
     form.commander.sent = true;
     return { key: "FORMATION_COMMANDER", args: [nameOf(def), form.name] };
 }
@@ -2669,7 +2694,7 @@ function logFormations(ctx) {
             `moves [${moves.map((m) => `${m.unit} ${at(m.from)} -> ${at(m.loc)} ${m.role} +${Math.round(m.gain)}${m.sent ? "" : " NOT SENT"}`).join("; ")}]`,
             `stay [${stay.join("; ")}]`,
         ];
-        if (c) parts.push(`commander ${c.unit} at ${at(c.at)}${c.to ? ` -> ${at(c.to)} +${Math.round(c.gain)}${c.sent ? "" : " NOT SENT"}` : " stays"}`);
+        if (c) parts.push(`commander ${c.unit} at ${at(c.at)}${c.to ? ` -> ${at(c.to)} +${Math.round(c.gain)}${c.sent ? "" : " NOT SENT"}` : c.held ? " stays (moved lately)" : " stays"}`);
         log.info(`formation: ${form.name}: ${parts.join("; ")}; ${form.tiles} free tile(s)`);
     }
 }
@@ -3254,7 +3279,7 @@ function stayAtSea(u, def) {
 function defend(u, def, ctx) {
     if (def.CoreClass !== "CORE_CLASS_MILITARY") return null;
     // An aircraft strikes a raider near our settlements, else waits at its base.
-    if (def.Domain === "DOMAIN_AIR") return airAttack(u, def);
+    if (def.Domain === "DOMAIN_AIR") return ctx.ordered.has(unitKey(u.id)) ? null : airAttack(u, def);
     const here = disperseHere(u, def, ctx);
     if (here) return here;
     const shot = rangedAttack(u, def);
@@ -3449,6 +3474,8 @@ function airAttack(u, def) {
     const r = safe(() => Game.UnitOperations.canStart(u.id, OP, {}, false), null);
     if (!r?.Plots?.length) return null;
     const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const fighters = enemyFighterBases();
     let best = null;
     for (const idx of r.Plots) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
@@ -3456,9 +3483,13 @@ function airAttack(u, def) {
         const enemy = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null))
             .find((t) => hostileOwner(t));
         if (!enemy) continue;
-        const d = Math.min(Infinity, ...ours.map((c) => safe(() => GameplayMap.getPlotDistance(c.x, c.y, loc.x, loc.y), Infinity)));
+        const d = Math.min(Infinity, ...ours.map((c) => dist(c, loc)));
         if (!(d <= AIR_STRIKE_RADIUS)) continue;
-        const score = (d <= RANGED_GUARD_RADIUS ? 2000 : 0) + damageAt(loc) - d;
+        // Research/37 §7D: a raider next to a damaged centre (a capture to prevent), an attacker of a settlement, a kill;
+        // less where an enemy fighter's base covers it (an interception).
+        const capture = ours.some((c) => dist(c, loc) === 1 && centreDamaged(c));
+        const covered = fighters.some((f) => dist(f.at, loc) <= f.range);
+        const score = airTargetScore({ d, damage: damageAt(loc), capture, covered });
         if (!best || score > best.score) best = { loc, enemy, score };
     }
     if (!best) return null;
@@ -3507,10 +3538,10 @@ const FLIGHT_MASTERY = "NODE_TECH_MO_FLIGHT"; // ...+1 at an Airfield's commande
 const AIR_ARMY_CAPACITY = 4;         // an army's slots when the game does not say (Civilopedia: "initial capacity is 4")
 
 /**
- * Our air bases at Airfields (research/37 §3E, §7A): each Airfield's Aerodrome Commander, its tile, the city it belongs
- * to, its free slots (the army's combatUnitCapacity less our aircraft packed in it) and how far a fighter based there
- * intercepts (INTERCEPT_RANGE, +1 for the Aerodrome, +1 after Flight's mastery; Ace promotions not counted).
- * @returns [{ at, city (ComponentID), free, range }]
+ * Our air bases (research/37 §3E, §7A): each Airfield's Aerodrome Commander and each Squadron Commander, its tile, the city
+ * an Airfield belongs to, its free slots (the army's combatUnitCapacity less our aircraft packed in it), the planes in it
+ * and how far a fighter based there intercepts (INTERCEPT_RANGE, +1 for an Aerodrome, +1 after Flight's mastery; Ace
+ * promotions not counted). @returns [{ at, type, city (ComponentID) or null, free, range, planes: [type] }]
  */
 export function airBases() {
     const mine = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
@@ -3518,13 +3549,19 @@ export function airBases() {
     const out = [];
     for (const c of mine) {
         const def = safe(() => GameInfo.Units.lookup(c.type), null);
-        if (def?.UnitType !== "UNIT_AERODROME_COMMANDER") continue;
+        // An Airfield's Aerodrome Commander (+1 interception range), or a Squadron Commander (research/37 §7A).
+        const aerodrome = def?.UnitType === "UNIT_AERODROME_COMMANDER";
+        if (!aerodrome && def?.UnitType !== "UNIT_SQUADRON_COMMANDER") continue;
         const at = unitTile(c);
         if (!at) continue;
         const army = safe(() => Armies.get(c.armyId), null);
         const capacity = Number(army?.combatUnitCapacity) || AIR_ARMY_CAPACITY;
         const planes = mine.filter((u) => u !== c && isAircraft(safe(() => GameInfo.Units.lookup(u.type), null), u) && sameId(u.armyId, c.armyId)).length;
-        out.push({ at, city: safe(() => GameplayMap.getOwningCityFromXY(at.x, at.y), null), free: Math.max(0, capacity - planes), range: INTERCEPT_RANGE + 1 + mastery });
+        out.push({
+            at, type: def.UnitType, city: aerodrome ? safe(() => GameplayMap.getOwningCityFromXY(at.x, at.y), null) : null,
+            free: Math.max(0, capacity - planes), range: INTERCEPT_RANGE + (aerodrome ? 1 : 0) + mastery,
+            planes: mine.filter((u) => u !== c && sameId(u.armyId, c.armyId)).map((u) => safe(() => GameInfo.Units.lookup(u.type)?.UnitType, "?")),
+        });
     }
     return out;
 }
@@ -3546,6 +3583,288 @@ export function fighterCover(isFighter) {
         out.push({ at, range: base ? base.range : INTERCEPT_RANGE + mastery });
     }
     return out;
+}
+
+// ---- the navy (research/37 Phase 6) ----------------------------------------------------------------
+
+const tagsOfType = new Map(); // unit type -> its tags (GameInfo.TypeTags)
+
+/** A unit's naval role (core/xpl-naval.js navalRole): COMMANDER, CARRIER, CIVILIAN, SUBMARINE, RANGED, SCREEN, or null. */
+export function shipRole(def) {
+    if (!def || def.Domain !== "DOMAIN_SEA") return null;
+    if (!tagsOfType.has(def.UnitType)) tagsOfType.set(def.UnitType, (GameInfo.TypeTags?.filter((t) => t.Type === def.UnitType) ?? []).map((t) => t.Tag));
+    return navalRole(def, safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null), tagsOfType.get(def.UnitType));
+}
+
+/**
+ * A warship's attack (research/37 §8A), as the game's own click does it (world-input.js): the naval attack first
+ * (UNITOPERATION_NAVAL_ATTACK, melee ships: canStart with no target gives the Plots, then {X, Y}, as the naval attack mode
+ * sends it), when the game's preview says the trade pays (strikeWorthIt, as a land strike), else a ranged shot
+ * (RANGE_ATTACK). Only hostile units within NAVAL.STRIKE_RADIUS of one of our settlements: one next to a damaged centre
+ * first, then a settlement's attacker, then the most damaged (airTargetScore). A submarine never takes a land target. Before,
+ * only RANGE_ATTACK was asked, which melee ships very likely lack: our Galleys and Ironclads never hit anything. UI.log
+ * gives each ship type's answers once a session (probe P-NAV-1). @returns a log entry or null
+ */
+async function shipAttack(u, def) {
+    if (u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return null;
+    const role = shipRole(def);
+    if (!isWarship(role)) return null;
+    const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const RANGE = globalThis.UnitOperationTypes?.RANGE_ATTACK ?? "UNITOPERATION_RANGE_ATTACK";
+    const naval = safe(() => Game.UnitOperations.canStart(u.id, "UNITOPERATION_NAVAL_ATTACK", {}, false), null);
+    const ranged = safe(() => Game.UnitOperations.canStart(u.id, RANGE, {}, false), null);
+    if (!navalProbed.has(def.UnitType)) {
+        navalProbed.add(def.UnitType);
+        const said = (r) => `${r?.Plots?.length ?? 0} plot(s)${r?.FailureReasons?.length ? ` (${r.FailureReasons.join("; ")})` : ""}`;
+        log.info(`naval: ${def.UnitType} (${role}) at ${where(u.location)}: NAVAL_ATTACK ${said(naval)}, RANGE_ATTACK ${said(ranged)} (probe P-NAV-1)`);
+    }
+    const pick = (r) => {
+        let best = null;
+        for (const idx of r?.Plots ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc || startsWar(u, loc)) continue;
+            const enemy = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).find((t) => hostileOwner(t));
+            if (!enemy) continue;
+            if (role === "SUBMARINE" && !safe(() => GameplayMap.isWater(loc.x, loc.y), false)) continue;
+            const d = Math.min(Infinity, ...ours.map((c) => dist(c, loc)));
+            if (!(d <= NAVAL.STRIKE_RADIUS)) continue;
+            const capture = ours.some((c) => dist(c, loc) === 1 && centreDamaged(c));
+            const score = airTargetScore({ d, damage: damageAt(loc), capture });
+            if (!best || score > best.score) best = { loc, enemy, score };
+        }
+        return best;
+    };
+    const melee = pick(naval);
+    if (melee) {
+        const r = await simulateAttack(u, melee.loc);
+        const answered = !!(r?.Attacker && r?.Defender);
+        const ourMax = Number(u.Health?.maxDamage) || 100;
+        const ourHealth = ourMax - (Number(u.Health?.damage) || 0);
+        const theirMax = Number(answered ? r.Defender.MaxHitPoints : null) || Number(melee.enemy.Health?.maxDamage) || 100;
+        const theirHealth = theirMax - (Number(melee.enemy.Health?.damage) || 0);
+        const guess = answered ? null : estimateStrike(
+            { strength: Number(safe(() => u.Combat.getMeleeStrength(false), 0)) || 0, damage: Number(u.Health?.damage) || 0 },
+            { strength: enemyStrength(melee.enemy), damage: Number(melee.enemy.Health?.damage) || 0 },
+        );
+        const dealt = answered ? Number(r.Defender.DamageTo) || 0 : guess.dealt;
+        const taken = answered ? Number(r.Attacker.DamageTo) || 0 : guess.taken;
+        if ((answered || enemyStrength(melee.enemy) > 0) && strikeWorthIt({ ourHealth, ourMax, theirHealth, dealt, taken, siege: besieging(melee.loc) })) {
+            Game.UnitOperations.sendRequest(u.id, "UNITOPERATION_NAVAL_ATTACK", { X: melee.loc.x, Y: melee.loc.y });
+            const theirs = safe(() => GameInfo.Units.lookup(melee.enemy.type), null);
+            return { key: "STRUCK", args: [nameOf(def), theirs ? nameOf(theirs) : "?", melee.loc.x, melee.loc.y] };
+        }
+    }
+    const shot = pick(ranged);
+    if (!shot) return null;
+    Game.UnitOperations.sendRequest(u.id, RANGE, { X: shot.loc.x, Y: shot.loc.y });
+    return { key: "RANGED", args: [nameOf(def), shot.loc.x, shot.loc.y] };
+}
+
+/**
+ * A water tile next to a settlement for a warship (or a navigable river: ships may use one, gotcha 4), free, reached by
+ * its own path within NAVAL.POST_MAX_TURNS (a ship in another sea or a lake has none: research/37 §8B, reach is a path),
+ * the nearest to the settlement first. @returns { loc, turns } or null
+ */
+function navalPost(x, s, ctx) {
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, GUARD_RADIUS), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || ctx.stepTo.has(`${loc.x},${loc.y}`) || !standsOn(x.def, loc) || !roomForSoldier(loc) || hazardAt(loc) > 0) continue;
+        const near = safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, s.x, s.y), 9);
+        const far = safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, x.u.location.x, x.u.location.y), 99);
+        tiles.push({ loc, score: near * 100 + far });
+    }
+    tiles.sort((a, b) => a.score - b.score);
+    for (const { loc } of tiles.slice(0, REINFORCE_TRIES)) {
+        const turns = pathTurns(x.u, loc);
+        if (turns === null || turns > NAVAL.POST_MAX_TURNS || startsWar(x.u, loc)) continue;
+        return { loc, turns };
+    }
+    return null;
+}
+
+/**
+ * Warships for the settlements ships attack (research/37 §8B, §8G; Phase 6): each threatened settlement with hostile
+ * ships wants up to NAVAL.GUARDS_MAX of our warships on the water next to it (within GUARD_RADIUS), those there and those
+ * sent there counted; the free warship (awake or rested by the autopilot, unhurt enough, with every move, not guarding
+ * another such settlement) that reaches a post soonest sails there (NAVAL_GUARD). They are no land guards (guardDetail
+ * counts land units only): a coast keeps its land holder. UI.log once a turn per settlement: `naval: <name>: …`.
+ * Game 38: an independent's Frigates killed an Abambowa and two Field Cannons sent against them at Бутооло. @returns log entries
+ */
+function planNavalGuards(units, ctx) {
+    const out = [];
+    const targets = ctx.threats.filter((t) => Number(t.ships) > 0);
+    if (targets.length === 0) return out;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const A = globalThis.UnitActivityTypes;
+    const ships = [];
+    for (const u of units) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!isWarship(shipRole(def)) || u.isOnMap === false || !u.location) continue;
+        ships.push({ u, def, k: unitKey(u.id) });
+    }
+    if (ships.length === 0) return out;
+    const keyOf = (t) => `${t.settlement.x},${t.settlement.y}`;
+    const guarding = (x) => targets.find((t) => dist(x.u.location, t.settlement) <= GUARD_RADIUS);
+    const free = (x) => {
+        if (ctx.ordered.has(x.k) || x.u.canMove === false || x.u.hasMoved === true || (Number(x.u.Health?.damage) || 0) >= ESCAPE_DAMAGE) return false;
+        if (A && (x.u.activityType === A.OPERATION || x.u.activityType === A.HEAL)) return false;
+        if (resting(x.u) && !restedByUs.has(x.k)) return false;
+        return !guarding(x);
+    };
+    const used = new Set();
+    for (const t of targets) {
+        const key = keyOf(t);
+        const present = ships.filter((x) => dist(x.u.location, t.settlement) <= GUARD_RADIUS);
+        const coming = ships.filter((x) => !present.includes(x) && goals.get(x.k)?.naval && goals.get(x.k)?.guard === key);
+        let lack = Math.min(NAVAL.GUARDS_MAX, Number(t.ships)) - present.length - coming.length;
+        const sent = [];
+        while (lack > 0) {
+            let best = null;
+            for (const x of ships) {
+                if (used.has(x.k) || !free(x)) continue;
+                const post = navalPost(x, t.settlement, ctx);
+                if (post && (!best || post.turns < best.post.turns)) best = { x, post };
+            }
+            if (!best) break;
+            used.add(best.x.k);
+            wakeUnit(best.x.u);
+            if (!moveTo(best.x.u, best.post.loc)) continue;
+            goals.set(best.x.k, { guard: key, tile: best.post.loc, turn: Game.turn, naval: true });
+            restedByUs.delete(best.x.k);
+            ctx.stepTo.add(`${best.post.loc.x},${best.post.loc.y}`);
+            ctx.ordered.add(best.x.k);
+            sent.push(`${best.x.def.UnitType} from ${where(best.x.u.location)} in ${best.post.turns}t`);
+            out.push({ key: "NAVAL_GUARD", args: [nameOf(best.x.def), t.settlement.name] });
+            lack--;
+        }
+        if (navalNoted.get(key) !== Game.turn) {
+            navalNoted.set(key, Game.turn);
+            const name = (x) => x.def.UnitType;
+            log.info(`naval: ${t.settlement.name}: ships ${t.ships}; warships there [${present.map(name).join(", ")}], coming [${coming.map(name).join(", ")}]; sent [${sent.join("; ")}]; ${ships.filter((x) => !used.has(x.k) && free(x)).length} free warship(s)`);
+        }
+    }
+    return out;
+}
+
+// ---- the air wing (research/37 Phase 5) -------------------------------------------------------
+
+/**
+ * Remembers an enemy air attack on us from the game's `Combat` event (probe P-AIR-5, game 36: it carries `attacker`,
+ * `defender`, `interceptor` and `antiAir` component ids): an aircraft of another player hitting a unit or a district of
+ * ours, where it hit, for AIR.RAID_TURNS. @returns true when it was one
+ */
+export function noteAirRaid(d) {
+    const attacker = safe(() => Units.get(d?.attacker), null);
+    if (!attacker || attacker.owner === pid() || d?.defender?.owner !== pid()) return false;
+    const def = safe(() => GameInfo.Units.lookup(attacker.type), null);
+    if (!isAircraft(def, attacker)) return false;
+    const at = safe(() => Units.get(d.defender)?.location, null) ?? safe(() => Districts.get(d.defender)?.location, null);
+    if (!at || !(at.x >= 0)) return false;
+    const turn = safe(() => Game.turn, 0);
+    airRaids.push({ x: at.x, y: at.y, turn, type: def.UnitType, owner: attacker.owner });
+    while (airRaids.length > 30) airRaids.shift();
+    log.info(`air: ${def.UnitType} of p${attacker.owner} hit ours at ${at.x},${at.y} (T${turn}): fighter cover wanted there for ${AIR.RAID_TURNS} turns`);
+    return true;
+}
+
+/** Our settlements within AIR.RAID_RADIUS of an enemy air attack of the last AIR.RAID_TURNS turns. @returns [{ x, y, name }] */
+export function airRaidTargets() {
+    const turn = safe(() => Game.turn, 0);
+    const recent = airRaids.filter((r) => turn - r.turn < AIR.RAID_TURNS && turn >= r.turn);
+    if (recent.length === 0) return [];
+    return (safe(() => Players.get(pid()).Cities.getCities(), []) ?? [])
+        .filter((c) => recent.some((r) => safe(() => GameplayMap.getPlotDistance(r.x, r.y, c.location.x, c.location.y), Infinity) <= AIR.RAID_RADIUS))
+        .map((c) => ({ x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?") }));
+}
+
+/** The fighters of the majors at war with us that we see, with how far they intercept from their base (3, +1: cautious). */
+function enemyFighterBases() {
+    const VISIBLE = globalThis.RevealedStates?.VISIBLE;
+    const out = [];
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (!p?.isMajor || p.id === pid() || !safe(() => Players.get(pid()).Diplomacy.isAtWarWith(p.id), false)) continue;
+        for (const u of safe(() => p.Units.getUnits(), []) ?? []) {
+            const def = safe(() => GameInfo.Units.lookup(u.type), null);
+            if (!isAircraft(def, u) || !hasTag(def, "UNIT_CLASS_INTERCEPTOR")) continue;
+            const at = unitTile(u);
+            if (!at || (VISIBLE !== undefined && safe(() => GameplayMap.getRevealedState(pid(), at.x, at.y), VISIBLE) !== VISIBLE)) continue;
+            out.push({ at, range: INTERCEPT_RANGE + 1 });
+        }
+    }
+    return out;
+}
+
+/**
+ * Fighters rebase to cover what needs it (research/37 §7B; core/xpl-air.js planRebases): `ctx.airCover`, our settlements
+ * enemy aircraft hit lately or reach from their bases, a Launch Pad city first (steps.airCoverTargets). A fighter moves only
+ * when its base covers no wanted settlement that it alone covers, it has its attack and moves, it was not rebased within
+ * AIR.REBASE_HOLD turns, and the game offers the new base's tile (UNITOPERATION_REBASE: canStart with no target gives the
+ * Plots, then {X, Y}, as the game's rebase mode sends it); one plane a free slot. A rebase the game did not carry out (the
+ * plane is not there the next turn) keeps that base off for that plane AIR.REBASE_RETRY turns: re-planned, not resent.
+ * @returns log entries
+ */
+function rebaseFighters(ctx, units) {
+    const out = [];
+    const targets = ctx.airCover ?? [];
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const bases = safe(() => airBases(), []) ?? [];
+    const mastery = (Number(safe(() => Game.ProgressionTrees.getNode(pid(), FLIGHT_MASTERY)?.depthUnlocked, 0)) || 0) >= 2 ? 1 : 0;
+    const fighters = [];
+    for (const u of units) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!isAircraft(def, u) || !hasTag(def, "UNIT_CLASS_INTERCEPTOR")) continue;
+        const at = unitTile(u);
+        if (!at) continue;
+        const k = unitKey(u.id);
+        const sent = rebased.get(k);
+        if (sent && !sent.checked && sent.turn < Game.turn) {
+            sent.checked = true;
+            if (!same(at, sent.to)) {
+                rebaseRefused.set(`${k}|${sent.to.x},${sent.to.y}`, Game.turn);
+                log.warn(`air: ${def.UnitType} was not rebased to ${where(sent.to)} (still at ${where(at)}): that base is left out for it ${AIR.REBASE_RETRY} turns`);
+            }
+        }
+        const base = bases.find((b) => same(b.at, at));
+        // Rebased lately and there: it stays a while (no back and forth); refused: re-planned at once (another base).
+        const lately = !!sent && same(at, sent.to) && Game.turn - sent.turn < AIR.REBASE_HOLD;
+        const movable = targets.length > 0 && !lately && !ctx.ordered.has(k) && u.hasMoved !== true && !(u.Combat && !(Number(u.Combat.attacksRemaining) > 0));
+        const offered = new Set();
+        if (movable) {
+            for (const i of safe(() => Game.UnitOperations.canStart(u.id, "UNITOPERATION_REBASE", {}, false), null)?.Plots ?? []) {
+                const l = safe(() => GameplayMap.getLocationFromIndex(i), null);
+                if (l && !(Game.turn - (rebaseRefused.get(`${k}|${l.x},${l.y}`) ?? -Infinity) < AIR.REBASE_RETRY)) offered.add(`${l.x},${l.y}`);
+            }
+        }
+        fighters.push({ key: k, at, range: base ? base.range : INTERCEPT_RANGE + mastery, movable, offered, u, def });
+    }
+    ctx.airFighters = fighters;
+    if (targets.length === 0 || fighters.length === 0) return out;
+    for (const m of planRebases({ fighters, bases, targets, dist })) {
+        const f = fighters.find((x) => x.key === m.key);
+        Game.UnitOperations.sendRequest(f.u.id, "UNITOPERATION_REBASE", { X: m.to.x, Y: m.to.y });
+        rebased.set(f.key, { turn: Game.turn, to: m.to, from: f.at, checked: false });
+        ctx.ordered.add(f.key);
+        (ctx.airRebases ??= []).push(`${f.def.UnitType} ${where(f.at)} -> ${where(m.to)} for ${m.target.name ?? where(m.target)}`);
+        out.push({ key: "FIGHTER_REBASED", args: [nameOf(f.def), m.target.name ?? "?"] });
+    }
+    return out;
+}
+
+/**
+ * UI.log once a turn while we have an air base or a plane (research/37 §10, Phase 5): each base with its planes, free
+ * slots and interception range, the settlements wanting cover (why, and how many fighters cover each), and the rebases.
+ */
+function logAirWing(ctx) {
+    if (airLogged === Game.turn) return;
+    const bases = safe(() => airBases(), []) ?? [];
+    if (bases.length === 0 && !(ctx.airFighters?.length > 0)) return;
+    airLogged = Game.turn;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const fighters = ctx.airFighters ?? [];
+    const cover = (ctx.airCover ?? []).map((t) => `${t.name ?? where(t)} (${t.why ?? "?"}) covered by ${fighters.filter((f) => dist(f.at, t) <= f.range).length}`);
+    log.info(`air: bases [${bases.map((b) => `${b.type === "UNIT_SQUADRON_COMMANDER" ? "squadron" : "airfield"} ${where(b.at)} [${b.planes.join(", ")}] free ${b.free} intercepts ${b.range}`).join("; ")}]; cover wanted [${cover.join("; ")}]; rebases [${(ctx.airRebases ?? []).join("; ")}]`);
 }
 
 // ---- probes for the next phases (research/37 §3F, §11C; UI.log only) ----------------------------------
@@ -3628,6 +3947,7 @@ export function probeMilitary() {
 // P-AIR-5: what the game's Combat event carries (an enemy aircraft hitting us: does the payload say so?).
 try {
     engine.on("Combat", (d) => {
+        safe(() => noteAirRaid(d), null);
         if (!airAbout) return;
         const turn = safe(() => Game.turn, -1);
         if (combatLogged.turn !== turn) combatLogged = { turn, n: 0 };
@@ -3673,7 +3993,7 @@ async function shootRaiders(ordered) {
         if (!isSoldier(def) || u.isCommanderUnit || (!air && u.isOnMap === false) || ordered.has(unitKey(u.id)) || !shootsFromAfar(def)) continue;
         if (!(Number(u.Combat?.attacksRemaining) > 0) || (A && u.activityType === A.OPERATION)) continue;
         if (def.Domain === "DOMAIN_LAND" && !centres.has(`${u.location?.x},${u.location?.y}`) && inDanger(u, def)) continue;
-        const e = air ? airAttack(u, def) : rangedAttack(u, def, { hostileOnly: true });
+        const e = air ? airAttack(u, def) : def.Domain === "DOMAIN_SEA" ? await shipAttack(u, def) : rangedAttack(u, def, { hostileOnly: true });
         if (!e) continue;
         ordered.add(unitKey(u.id));
         out.push(e);
@@ -4156,6 +4476,8 @@ export function commandUnits(settings, options) {
         posts: new Map(), // unit key -> its post (planDefence)
         formation: new Map(), // unit key -> its move in its settlement's formation (planFormations)
         formations: new Map(), // settlement key -> its formation
+        // Our settlements wanting fighter cover, the most important first (steps.airCoverTargets; research/37 §7B).
+        airCover: options.airCover ?? [],
     };
     safe(() => noteHits(units), null);
     safe(() => logCommanderParameters(), null);
@@ -4195,12 +4517,21 @@ export function commandUnits(settings, options) {
             ctx.formations = new Map();
         }
     }
+    // Fighters rebase to cover what needs it (research/37 Phase 5); warships sail to the coasts ships attack (Phase 6).
+    if (options.defend) entries.push(...(safe(() => rebaseFighters(ctx, units), []) ?? []));
+    if (options.defend) entries.push(...(safe(() => planNavalGuards(units, ctx), []) ?? []));
     const A = globalThis.UnitActivityTypes;
     const seen = [];
     for (const u of units) {
         if (ordered.size >= MAX_UNIT_ORDERS) break;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         const what = `${def?.UnitType ?? u.type}(act=${u.activityType},move=${u.canMove},moved=${u.hasMoved})`;
+        // Ordered already in this pass, before the loop (an army's unpacking, a fighter's rebase, a warship's post) or by a
+        // neighbour's room-making: its order stands (before, an unpacking commander could be sent to its post as well).
+        if (ordered.has(unitKey(u.id))) {
+            seen.push(`${what}:ordered`);
+            continue;
+        }
         if (options.leave?.has(unitKey(u.id))) {
             // Its order did not take; stacked with another of its kind it may not skip either (root CLAUDE.md gotcha
             // 23; game 10: two settlers on the capital held the turn): it steps aside.
@@ -4436,6 +4767,7 @@ export function commandUnits(settings, options) {
         safe(() => logDefence(ctx, units), null);
         safe(() => logFormations(ctx), null);
     }
+    if (options.defend) safe(() => logAirWing(ctx), null);
     safe(() => saveRested(), null);
     // The game cuts log lines at about 1000 characters: busy units are only counted.
     const busy = seen.filter((t) => t.endsWith(":busy")).length;

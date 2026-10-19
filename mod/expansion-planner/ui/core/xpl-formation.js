@@ -29,7 +29,10 @@ export const FORM = Object.freeze({
     COVER: 20,        // a soldier of ours within the commander's radius
     CENTRE: 5,        // the commander on the centre (a tie goes to the district)
     FORTIFIED: 15,    // a fortified unit gives its fortification up to move
-    MIN_GAIN: 20,     // less than this, nobody moves
+    MIN_GAIN: 20,     // less than this, nobody moves...
+    COMMANDER_GAIN: 40, // ...and a commander moves only to cover two more soldiers (game 38: it stepped 14,19 -> 14,20 -> 15,20
+                        // -> 14,20 on three turns in a row as the soldiers around it moved, the last for +20)
+    COMMANDER_HOLD: 2,  // nor within this many turns of its last formation move
 });
 
 /**
@@ -138,17 +141,17 @@ export function planFormation(f, { tiles, movable, reach, cost = () => 0 } = {})
 /**
  * The commander's tile: covering the most soldiers (`soldiers`, their tiles after the formation's moves) within its
  * radius, never onto a tile next to a land raider (research/37 §6B: protected), the centre on a tie; a move only for
- * MIN_GAIN or more.
+ * `minGain` (COMMANDER_GAIN: two more soldiers covered) or more.
  * @param c { at, radius } @param tiles candidate tiles (free for a commander, legal) @returns { to, gain } or null (stay)
  */
-export function commanderTile(f, c, soldiers, tiles, reach) {
+export function commanderTile(f, c, soldiers, tiles, reach, minGain = FORM.COMMANDER_GAIN) {
     const dist = f.dist;
     const value = (loc) => FORM.COVER * soldiers.filter((s) => dist(loc, s) <= c.radius).length
         - FORM.EXPOSED * f.land.filter((h) => dist(loc, h) === 1).length + (same(loc, f.centre) ? FORM.CENTRE : 0);
     const now = value(c.at);
     const options = (tiles ?? []).filter((t) => !same(t, c.at) && f.land.every((h) => dist(t, h) > 1))
         .map((t) => ({ to: t, gain: value(t) - now, step: dist(c.at, t) }))
-        .filter((o) => o.gain >= FORM.MIN_GAIN)
+        .filter((o) => o.gain >= minGain)
         .sort((a, b) => b.gain - a.gain || a.step - b.step || a.to.y - b.to.y || a.to.x - b.to.x);
     const pick = options.find((o) => reach(o.to));
     return pick ? { to: pick.to, gain: pick.gain } : null;

@@ -53,6 +53,7 @@
           <Item>ui/panel/xpl-panel.css</Item>
           <Item>ui/panel/xpl-panel.html</Item>
           <Item>ui/core/xpl-adjacency-rules.js</Item>
+          <Item>ui/core/xpl-air.js</Item>
           <Item>ui/core/xpl-combat.js</Item>
           <Item>ui/core/xpl-component-id.js</Item>
           <Item>ui/core/xpl-constants.js</Item>
@@ -61,6 +62,7 @@
           <Item>ui/core/xpl-formation.js</Item>
           <Item>ui/core/xpl-heap.js</Item>
           <Item>ui/core/xpl-hex.js</Item>
+          <Item>ui/core/xpl-naval.js</Item>
           <Item>ui/core/xpl-placement-model.js</Item>
           <Item>ui/core/xpl-placement-solver.js</Item>
           <Item>ui/core/xpl-popups.js</Item>

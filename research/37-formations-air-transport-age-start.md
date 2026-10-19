@@ -17,7 +17,7 @@
 **Status:** Phase 1 done on 18 October 2026 (root CLAUDE.md gotcha 62; tests in `tests/autopilot-centres.test.mjs` and `autopilot-air.test.mjs`, each proven by revert). Its choices beyond the text below:
 - the age's first melee unit is wanted at a gold deficit too (one unit's upkeep against every centre at 20), and only when it beats the centres' defence now (a Warrior's 20 raises nothing);
 - the first one is bought or upgraded before training when the gold allows (`buyFirstMelee`), and a queued one that has become needless leaves its queue;
-- Ace promotions are not counted in a fighter's range, and remembering enemy air raids waits for probe P-AIR-5.
+- Ace promotions are not counted in a fighter's range, and remembering enemy air raids waits for probe P-AIR-5 (answered in game 36; built in Phase 5).
 
 **Status:** Phase 2 done on 18 October 2026 (root CLAUDE.md gotcha 63; tests in `tests/autopilot-exposure.test.mjs` and `autopilot-fronts.test.mjs`, each proven by revert). Game 30 (§11B) corrected this plan first:
 - **The game's default age transition is Continuity** (`AGE_TRANSITION_SETTING_KEEP_MORE`, `core/config/SetupParameters.xml`), and game 30 used it: every unit comes back where it stood, in its state (fortified ones fortified), and only units already packed are packed again. §5B's Regroup packing happens only when a game is set up with Regroup. So the single-member deploy is built, but most exposed towns get their holder from a reserve, a purchase or training.
@@ -35,6 +35,18 @@
 - approaches are single-linkage clusters of the land raiders (within 3 tiles), not sectors by direction;
 - moves go only onto tiles free now, one a unit a pass: no swaps, so a holder's tile is never left for a replacement still to come, and the unit on the centre never moves;
 - no reserve role, no room to retreat, no route scoring beyond the ring next to the centre; fixed weights (`FORM` in `core/xpl-formation.js`), to be checked against the next war's `formation:` lines.
+
+**Status:** Phase 5 done on 19 October 2026, before any game of ours had aircraft at war (games 36 and 37 ended near Modern's middle). Root CLAUDE.md gotcha 69; tests in `tests/autopilot-airwing.test.mjs`, 17 reverts proven. Probe P-AIR-5 was answered in game 36: the `Combat` event carries `attacker`, `defender`, `interceptor` and `antiAir` component ids, so raids are remembered from it. Its choices beyond §7:
+- cover is wanted for a Launch Pad city among the settlements hit lately or in an enemy plane's reach, not for every pad city in peace;
+- one fighter covers a settlement: a second one is not rebased there (several fighters for one target are not modelled);
+- the ground attacker waits for a front threatened 3 turns in a row, by independents too, and for an Airfield already standing in reach;
+- the strike preview (P-AIR-4) is not used; targets are ranked by the capture they may prevent, the settlement they attack, their damage and enemy fighters' cover;
+- no Squadron base of our own, no carriers, no focused air commands.
+
+**Status:** Phase 6 done on 19 October 2026, after game 38 (won: Modern culture; an independent's Frigates killed three units sent against them at Бутооло). Root CLAUDE.md gotcha 70; tests in `tests/autopilot-naval.test.mjs`, 11 reverts proven. Its choices beyond §8:
+- the first, defensive step only: our ships' attacks (the naval attack first, when the preview pays), the roles, naval guards at settlements ships attack (by the ships' own path), and up to two warships trained for a front ships keep raiding 3 turns, in a city on the same water (`GameplayMap.getAreaId`);
+- no Fleet Commander work (focused sea attacks, assembly), escorts, carriers, naval formations, rivers' bottlenecks or ship upgrades by mission;
+- land guns are still sent against ships (§3D) and may stand within their reach (game 38's Field Cannons).
 
 Phases 1 and 2 answer game 29's losses with what exists, plus the one request that turns a packed unit into a town's holder. Phase 1's probes give Phases 3 and 5 the facts they lack. Phase 4 waits for the `defence:` lines of the next game, since the logs of game 29 cannot show how units stood.
 

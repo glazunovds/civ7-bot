@@ -30,7 +30,8 @@ import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory
 import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { afloat, airBases, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardDetail, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
+import { afloat, airBases, airRaidTargets, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardDetail, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, shipRole, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
+import { NAVAL, isWarship } from '../core/xpl-naval.js';
 import { villagesOf } from './xpl-player-facts.js';
 import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './xpl-centre-defence.js';
 import { TUNING } from '../core/xpl-tuning.js';
@@ -175,6 +176,9 @@ export function resetWar() {
     defenderBought.clear();
     fronts.clear();
     meleeOrders.clear();
+    frontSince.clear();
+    groundNoted = -1;
+    warshipNoted = -1;
 }
 
 const FRONT_HOLD_TURNS = 5; // a war front stays this many turns after its leader was last at war with us or a risk
@@ -2629,9 +2633,17 @@ function unitsWanted(unitOptions) {
     // we had no aircraft): fighters, up to AIR_GUARDS_MAX, before the centres' strength below. A fighter intercepts only
     // within 3-5 tiles of its base (research/37 §3E), so only those based near a settlement the enemy aircraft reach count,
     // and one is trained only in a city whose Airfield covers it and has a free slot, the nearest first.
-    if (unitOptions.defend && war.near) {
-        const want = interceptorsWanted(unitOptions.threats ?? []);
-        if (want) out.push({ test: isInterceptor, n: want.n, key: "QUEUED_INTERCEPTOR", target: want.target, order: want.order, rank: want.rank });
+    const fighters = unitOptions.defend && war.near ? interceptorsWanted(unitOptions.threats ?? []) : null;
+    if (fighters) out.push({ test: isInterceptor, n: fighters.n, key: "QUEUED_INTERCEPTOR", target: fighters.target, order: fighters.order, rank: fighters.rank });
+    // A ground attacker at a lasting front (research/37 §7C, a bounded experiment), after the fighters (cover first).
+    if (unitOptions.defend && !fighters) {
+        const want = groundAttackersWanted(unitOptions.threats ?? []);
+        if (want) out.push({ test: isGroundAttacker, n: want.n, key: "QUEUED_GROUND_ATTACKER", target: want.target, order: want.order, rank: want.rank });
+    }
+    // Warships for a lasting coastal front (research/37 §8B), from a city on the same water.
+    if (unitOptions.defend) {
+        const want = warshipsWanted(unitOptions.threats ?? []);
+        if (want) out.push({ test: isWarshipDef, n: want.n, key: "QUEUED_WARSHIP", target: want.target, order: want.order, rank: want.rank });
     }
     // Defence: every settlement centre defends at the strongest melee unit obtained this age (research/37 §2; 20 with
     // none), whatever we carried over from the last age (game 29: carried Line Infantry met this want, and Modern's
@@ -2692,6 +2704,160 @@ function unitsWanted(unitOptions) {
 
 const isMilitary = (def) => !!def && def.CoreClass === "CORE_CLASS_MILITARY" && def.Domain !== "DOMAIN_SEA" && def.Domain !== "DOMAIN_AIR";
 const isSoldierDef = (def) => !!def && def.CoreClass === "CORE_CLASS_MILITARY";
+/** A ground attacker (UNIT_CLASS_GROUND_ATTACKER: Trench Fighter, Dive Bomber, Stuka): made to strike units (research/37 §7A). */
+const isGroundAttacker = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_GROUND_ATTACKER");
+const AIR_ATTACKERS_MAX = 1;   // ground attackers wanted at most (research/37 §7C: a bounded experiment)
+const LASTING_FRONT_TURNS = 3; // a settlement threatened this many turns in a row is a lasting front
+const frontSince = new Map();  // settlement "x,y" -> { first, last }: the turns it has been threatened in a row
+let groundNoted = -1;          // the turn UI.log said no Airfield could take a ground attacker for a lasting front
+
+/** The threatened settlements that have been threatened LASTING_FRONT_TURNS turns in a row (noted each pass). */
+function lastingFronts(threats) {
+    const turn = Number(Game.turn) || 0;
+    for (const t of threats) {
+        const k = `${t.settlement.x},${t.settlement.y}`;
+        const f = frontSince.get(k);
+        if (!f || f.last < turn - 1 || f.first > turn) frontSince.set(k, { first: turn, last: turn });
+        else f.last = Math.max(f.last, turn);
+    }
+    for (const [k, f] of [...frontSince]) if (f.last < turn - 1 || f.first > turn) frontSince.delete(k);
+    return threats.filter((t) => {
+        const f = frontSince.get(`${t.settlement.x},${t.settlement.y}`);
+        return !!f && turn - f.first + 1 >= LASTING_FRONT_TURNS;
+    });
+}
+
+/**
+ * A ground attacker (research/37 §7C, a bounded experiment): up to AIR_ATTACKERS_MAX of ours and queued while a settlement
+ * is a lasting front (threatened LASTING_FRONT_TURNS turns in a row by land raiders or ships), trained only in a city
+ * whose Airfield has a free slot and lies within the plane's Range of that front (no Airfield is planned for it: the
+ * science flights' Airfield is siteHelps' decision), the strongest against units (RangedCombat), the nearest first. When
+ * an Airfield exists but none is in reach, UI.log says so once a turn. @returns { n, target, order(city), rank(city) } or null
+ */
+function groundAttackersWanted(threats) {
+    const fronts = lastingFronts(threats).filter((t) => Number(t.land) > 0 || Number(t.ships) > 0);
+    if (fronts.length === 0) return null;
+    const kinds = GameInfo.Units?.filter((d) => isGroundAttacker(d) && d.CanTrain !== false && d.CanTrain !== "false") ?? [];
+    if (kinds.length === 0) return null;
+    const n = AIR_ATTACKERS_MAX - unitCount(isGroundAttacker);
+    if (n <= 0) return null;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const bases = (safe(() => airBases(), []) ?? []).filter((b) => b.city);
+    if (bases.length === 0) return null;
+    const stat = (def, k) => Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.[k], 0)) || 0;
+    const order = (city) => {
+        const base = bases.find((b) => sameId(b.city, city.id) && b.free > 0);
+        if (!base) return null;
+        let best = null;
+        for (const def of kinds) {
+            if (!fronts.some((t) => dist(base.at, t.settlement) <= (stat(def, "Range") || 8))) continue;
+            const args = { UnitType: def.$hash };
+            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+            const rank = stat(def, "RangedCombat");
+            if (!best || rank > best.rank) best = { args, name: def.Name, rank };
+        }
+        return best;
+    };
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    if (!cities.some((c) => order(c))) {
+        if (groundNoted !== Game.turn) {
+            groundNoted = Game.turn;
+            log.warn(`air: no ground attacker for ${fronts.map((t) => t.settlement.name ?? `${t.settlement.x},${t.settlement.y}`).join(", ")} (a front ${LASTING_FRONT_TURNS}+ turns): no Airfield of ours with a free slot within a ground attacker's range that can train one (bases: ${bases.map((b) => `${b.at.x},${b.at.y} free ${b.free}`).join("; ")})`);
+        }
+        return null;
+    }
+    return { n, target: AIR_ATTACKERS_MAX, order, rank: (city) => Math.min(Infinity, ...fronts.map((t) => dist(city.location, t.settlement))) };
+}
+
+/** A warship (core/xpl-naval.js: a screen, a ranged ship or a submarine). */
+const isWarshipDef = (def) => isWarship(shipRole(def));
+const WARSHIP_NEAR = 10; // our warships this close to a coastal front count against the ones it wants trained
+let warshipNoted = -1;   // the turn UI.log said no city on a coastal front's water could train a warship
+
+/** The water areas next to a tile (GameplayMap.getAreaId of its water neighbours), or null when the game gives none. */
+function waterAreas(loc) {
+    if (typeof GameplayMap.getAreaId !== "function") return null;
+    const out = new Set();
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, 1), []) ?? []) {
+        const l = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!l || !safe(() => GameplayMap.isWater(l.x, l.y), false)) continue;
+        const a = safe(() => GameplayMap.getAreaId(l.x, l.y), null);
+        if (a !== null && a !== undefined && a >= 0) out.add(a);
+    }
+    return out;
+}
+
+/**
+ * Warships for a lasting coastal front (research/37 §8B, Phase 6): a settlement threatened by ships LASTING_FRONT_TURNS turns
+ * in a row wants up to NAVAL.SHIPS_MAX warships, ours within WARSHIP_NEAR of it and those queued counted; one is trained
+ * only in a city on the same water (a water tile next to it in an area of a water tile next to the front:
+ * GameplayMap.getAreaId; a lake city's ship would never reach the ocean), the best ranged ship it can build (RangedCombat),
+ * else the best screen (Combat), the nearest first; never in a space city. None: UI.log once a turn.
+ * @returns { n, target, order(city), rank(city) } or null
+ */
+function warshipsWanted(threats) {
+    const fronts = lastingFronts(threats).filter((t) => Number(t.ships) > 0);
+    if (fronts.length === 0) return null;
+    const kinds = GameInfo.Units?.filter((d) => isWarshipDef(d) && d.CanTrain !== false && d.CanTrain !== "false") ?? [];
+    if (kinds.length === 0) return null;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const near = (safe(() => Players.get(pid()).Units.getUnits(), []) ?? []).filter((u) => isWarshipDef(safe(() => GameInfo.Units.lookup(u.type), null))
+        && !!u.location && fronts.some((t) => dist(u.location, t.settlement) <= WARSHIP_NEAR)).length;
+    const n = NAVAL.SHIPS_MAX - near - queuedCount(isWarshipDef);
+    if (n <= 0) return null;
+    const frontWater = new Set();
+    let unknown = false;
+    for (const t of fronts) {
+        const a = waterAreas(t.settlement);
+        if (a === null) unknown = true;
+        else for (const x of a) frontWater.add(x);
+    }
+    const stat = (def, k) => Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.[k], 0)) || 0;
+    const order = (city) => {
+        const mine = waterAreas(city.location);
+        if (mine === null ? !unknown : ![...mine].some((a) => frontWater.has(a))) return null;
+        let best = null;
+        for (const def of kinds) {
+            const args = { UnitType: def.$hash };
+            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+            const rank = shipRole(def) === "RANGED" ? 1000 + stat(def, "RangedCombat") : stat(def, "Combat");
+            if (!best || rank > best.rank) best = { args, name: def.Name, rank };
+        }
+        return best;
+    };
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    if (!cities.some((c) => order(c))) {
+        if (warshipNoted !== Game.turn) {
+            warshipNoted = Game.turn;
+            log.warn(`naval: no warship for ${fronts.map((t) => t.settlement.name ?? `${t.settlement.x},${t.settlement.y}`).join(", ")} (ships ${LASTING_FRONT_TURNS}+ turns): no city on that water can train one`);
+        }
+        return null;
+    }
+    return { n, target: NAVAL.SHIPS_MAX, order, rank: (city) => Math.min(Infinity, ...fronts.map((t) => dist(city.location, t.settlement))) };
+}
+
+/**
+ * Our settlements that want fighter cover (research/37 §7B), the most important first: a Launch Pad city (rank 0: the
+ * science victory needs an undamaged pad), one enemy aircraft hit lately (1: airRaidTargets), one enemy aircraft in sight
+ * reach from their base (2: hostileAircraft). @returns [{ x, y, name, why, rank }]
+ */
+export function airCoverTargets() {
+    const out = new Map();
+    const add = (s, why, rank) => {
+        const k = `${s.x},${s.y}`;
+        const o = out.get(k);
+        if (!o) out.set(k, { x: s.x, y: s.y, name: s.name, why, rank });
+        else if (rank < o.rank) Object.assign(o, { why, rank });
+    };
+    for (const r of safe(() => airRaidTargets(), []) ?? []) add(r, "hit from the air lately", 1);
+    for (const a of safe(() => hostileAircraft(), []) ?? []) for (const t of a.targets) add(t, `${a.type} in reach`, 2);
+    for (const o of out.values()) {
+        const city = ownSettlements().find((c) => c.location.x === o.x && c.location.y === o.y);
+        if (city && safe(() => cityHas(city, LAUNCH_PAD), false)) Object.assign(o, { rank: 0, why: `${o.why}, its Launch Pad` });
+    }
+    return [...out.values()].sort((a, b) => a.rank - b.rank);
+}
+
 /** A fighter: it intercepts enemy aircraft within its range from its base by itself (UNIT_CLASS_INTERCEPTOR). */
 const isInterceptor = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_INTERCEPTOR");
 const AIR_GUARDS_MAX = 2; // interceptors wanted at most
@@ -2706,10 +2872,12 @@ let airNoted = -1;        // the turn UI.log said no city could train a fighter 
  */
 function interceptorsWanted(threats) {
     const enemy = safe(() => hostileAircraft(), []) ?? [];
-    const target = Math.min(AIR_GUARDS_MAX, enemy.length);
+    // Settlements enemy aircraft hit lately count too, with none in sight (research/37 §7B: the Combat event's memory).
+    const raids = safe(() => airRaidTargets(), []) ?? [];
+    const target = Math.min(AIR_GUARDS_MAX, enemy.length + (raids.length > 0 ? 1 : 0));
     if (target <= 0) return null;
     const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
-    const targets = [...enemy.flatMap((e) => e.targets), ...threats.filter((t) => Number(t.air) > 0).map((t) => t.settlement)]
+    const targets = [...enemy.flatMap((e) => e.targets), ...raids, ...threats.filter((t) => Number(t.air) > 0).map((t) => t.settlement)]
         .filter((t, i, all) => all.findIndex((o) => o.x === t.x && o.y === t.y) === i);
     const covers = (at, range) => targets.some((t) => dist(at, t) <= range);
     const bases = safe(() => airBases(), []) ?? [];
@@ -3066,7 +3234,7 @@ function trainWantedUnits(unitOptions) {
     };
     // Units the overlays and options want (explorers, settlers, scouts, merchants) never come from a space city in the
     // final push (game 11: the capital built Antiquarians on turns 56-58 instead of science projects).
-    const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE"]);
+    const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE", "QUEUED_GROUND_ATTACKER", "QUEUED_WARSHIP"]);
     // Explorers neither from a city kept for a Launch Pad nor where they take long (game 34: Ливерпуль's Antiquarian, 400
     // at 39 a turn, took its production M14-M37, and its pad came at M47).
     const padKept = safe(() => padExclusion(unitOptions.strategy), null);
@@ -3504,6 +3672,8 @@ function defenderPurchase(city, budget, fallback = budget) {
 }
 
 const defendersNoted = new Map(); // settlement -> the turn UI.log said why no defender was bought
+const DEFENDER_SAVE_TURNS = 2;    // a defender the gold cannot buy yet but will within this many turns of income: the free gold waits
+const savingNoted = new Map();    // settlement -> the turn the autopilot's log said it saves for a defender there
 
 /** The cheapest unit of a defender's role the game sells here, short of gold or not: { type, cost } or null. */
 function cheapestDefender(city, ranged, ships = false) {
@@ -3581,6 +3751,17 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
             const why = !cheapest ? `the game sells no ${need === "RANGED" ? "ranged" : "land"} soldier here`
                 : `the cheapest, ${cheapest.type}, costs ${Math.round(cheapest.cost)}; ${Math.round(pool)} of ${Math.round(b.all())} gold usable${income < 0 ? ` (${DEFICIT_KEEP_TURNS} turns of the ${income} deficit kept)` : ""}`;
             noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; ${why}`);
+            // Save for it while the gap closes within DEFENDER_SAVE_TURNS turns of income: the free gold waits (the pass
+            // budget's goal; game 38: Бутооло's centre fell from 100 to 0 M7-M11 while 108 gold a turn bought buildings,
+            // one of them its own Harbor, and the cheapest defender, 540, stayed out of reach of 361-365 at +106 a turn).
+            if (cheapest && income > 0 && cheapest.cost - pool <= DEFENDER_SAVE_TURNS * income && !(b.goal?.kind === "DEFENDER" && !b.goal.done)) {
+                const label = composeOr("LOC_XPL_AP_GOAL_DEFENDER", nameOf(city));
+                b.setGoal({ kind: "DEFENDER", key: `defender|${sidOf(city)}`, label, cost: cheapest.cost, hold: cheapest.cost });
+                if (savingNoted.get(sidOf(city)) !== Game.turn) {
+                    savingNoted.set(sidOf(city), Game.turn);
+                    out.push({ key: "SAVING", args: [label, Math.round(cheapest.cost), Math.round(pool)] });
+                }
+            }
             continue;
         }
         buy(city, order, "DEFENDER");

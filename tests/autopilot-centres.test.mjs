@@ -258,3 +258,22 @@ test("against ships the defender is the one with the best Bombard, siege units i
     steps.fillProduction(new Map(), { threats: [ships] });
     assert.deepEqual(trained().filter((t) => t[0] !== "UNIT_WARRIOR"), [["UNIT_BALLISTA", ids.York]]);
 });
+
+test("a defender the gold cannot buy yet is saved for: the free gold waits while the gap closes within two turns of income (game 38)", () => {
+    // Game 38: Бутооло's centre fell from 100 to 0 M7-M11 while 108 gold a turn bought buildings and the cheapest
+    // defender, 540, stayed out of reach of 361-365 at +106 a turn.
+    const short = (type) => (type === "UNIT_SPEARMAN" ? { Success: false, InsufficientFunds: true, Cost: 500 } : { Success: false });
+    reset({ canBuy: short, goldIncome: 100 });
+    const budget = createBudget({ gold: 400, reserve: 0 });
+    const out = steps.buyDefenders([threat(YORK, "York")], { budget });
+    assert.deepEqual(bought(), []);
+    assert.equal(budget.goal?.kind, "DEFENDER", JSON.stringify(out));
+    assert.equal(budget.free(), 0, "the building purchases wait");
+    assert.ok(out.some((e) => e.key === "SAVING"));
+    // Out of reach for now (100 short at 10 a turn): nothing is held.
+    reset({ canBuy: short, goldIncome: 10 });
+    const far = createBudget({ gold: 400, reserve: 0 });
+    steps.buyDefenders([threat(YORK, "York")], { budget: far });
+    assert.equal(far.goal, null);
+    assert.equal(far.free(), 400);
+});

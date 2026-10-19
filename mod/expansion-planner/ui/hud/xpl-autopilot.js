@@ -572,6 +572,8 @@ export async function runTurn(force = false) {
                 fronts: o.defend ? steps.warFronts() : [],
                 // Settlements near a village at war with us: a holder each (research/37 §4).
                 exposed: o.defend ? steps.exposedSettlements(threats) : [],
+                // Settlements wanting fighter cover, a Launch Pad city first (research/37 §7B).
+                airCover: o.defend ? steps.airCoverTargets() : [],
                 settleNear: !!s.strategy?.settleNear,
                 // A countdown to block or to start: settlers with no site found wherever the game allows (research/31 §3).
                 anywhere: !!s.strategy?.settleAnywhere,

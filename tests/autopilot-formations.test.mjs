@@ -203,15 +203,32 @@ test("the commander never stands on water: the coast covering two soldiers is no
     assert.ok(r.lines.find((l) => l.includes("formation: York"))?.includes("commander UNIT_ARMY_COMMANDER at 16,8 stays"));
 });
 
-test("the commander moves where its radius covers the most soldiers, on land, when that is worth it", () => {
-    // As above on land: 17,8 and 18,8 cover both (+40, the centre's +5 lost); 17,8 is the shorter step.
+test("the commander moves where its radius covers the most soldiers, on land, when that is worth two of them; not again soon", () => {
+    // On land: 17,8 covers all three (+60, the centre's +5 lost); with two (+35) it stays (game 38: +20 moves on three
+    // turns in a row as the soldiers around it moved).
     reset({ enemies: [raider(13, 9), raider(13, 7)] });
     world.units = [
         { id: 9, type: "UNIT_ARMY_COMMANDER", ...YORK },
         { id: 1, type: "UNIT_WARRIOR", x: 17, y: 7, moved: true },
         { id: 3, type: "UNIT_WARRIOR", x: 17, y: 9, moved: true },
     ];
-    const r = run();
+    let r = run();
+    assert.deepEqual(movesOf(9), [], `two more covered: not worth a move ${JSON.stringify(r.entries)}`);
+    world.units.push({ id: 2, type: "UNIT_WARRIOR", x: 18, y: 8, moved: true });
+    r = run();
     assert.deepEqual(movesOf(9), [at(17, 8)], JSON.stringify(r.entries));
     assert.ok(formationKeys(r).includes("FORMATION_COMMANDER"));
+    // The next turn it stands at 17,8 and the three soldiers have gone west (15,8 would cover them all: +60): it stays;
+    // two turns on it may move again.
+    const west = [{ id: 1, type: "UNIT_WARRIOR", x: 15, y: 7, moved: true }, { id: 3, type: "UNIT_WARRIOR", x: 15, y: 9, moved: true }, { id: 2, type: "UNIT_WARRIOR", x: 14, y: 8, moved: true }];
+    Game.turn += 1;
+    fake.sent.length = 0;
+    world.units = [{ id: 9, type: "UNIT_ARMY_COMMANDER", x: 17, y: 8 }, ...west];
+    r = run();
+    assert.deepEqual(movesOf(9), [], JSON.stringify(r.entries));
+    assert.ok(r.lines.find((l) => l.includes("formation: York"))?.includes("stays (moved lately)"));
+    Game.turn += 1;
+    fake.sent.length = 0;
+    r = run();
+    assert.equal(movesOf(9).length, 1, JSON.stringify(r.entries));
 });

@@ -1776,6 +1776,18 @@
     <Row Tag="LOC_XPL_AP_QUEUED_INTERCEPTOR">
       <Text>{1_City}: queued {2_Name} against enemy aircraft (wanted {3_Num})</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_FIGHTER_REBASED">
+      <Text>{1_Unit} rebases to cover {2_Name} from enemy aircraft</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_GROUND_ATTACKER">
+      <Text>{1_City}: queued {2_Name} to strike the raiders of a lasting front (wanted {3_Num})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_NAVAL_GUARD">
+      <Text>{1_Unit} sails to guard {2_Name} from enemy ships</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_WARSHIP">
+      <Text>{1_City}: queued {2_Name} against the ships raiding a lasting coastal front (wanted {3_Num})</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_MADE_ROOM">
       <Text>{1_Unit} steps out to make room for {2_Unit}</Text>
     </Row>
@@ -2027,6 +2039,9 @@
     </Row>
     <Row Tag="LOC_XPL_AP_GOAL_SETTLER">
       <Text>a settler in {1_City}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GOAL_DEFENDER">
+      <Text>a defender in {1_Name}</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_SITES_RELAXED">
       <Text>few settlement sites left: searched again with looser rules, {1_Num} found</Text>
