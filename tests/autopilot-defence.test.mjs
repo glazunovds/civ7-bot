@@ -461,6 +461,48 @@ test("ships near a settlement: one melee guard for its centre, no more (research
     }
 });
 
+test("walls that hold (standing, the centre unhit, only independents around): one melee guard on the centre, none behind it; hit, unwalled or a major's army: one per raider (game 36: Манчестер)", async () => {
+    // Game 36: Манчестер, a walled town, wanted a guard per raider (4-6 Warriors that hit its centre for 8 of 200) and ended
+    // with 5 Warriors and 2 Slingers: 3 bought, 3 trained ahead of Лондон's Colossus.
+    const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
+    reset();
+    const york = () => units.threatenedSettlements().find((t) => t.settlement.name === "York");
+    const queued = (out) => out.filter((e) => e.key === "QUEUED_DEFENDER").length;
+    try {
+        world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }, { x: YORK.x + 2, y: YORK.y, owner: 5 }, { x: YORK.x, y: YORK.y - 2, owner: 5 }];
+        world.structures = (x, y) => (x === YORK.x && y === YORK.y ? { district: "DISTRICT_CITY_CENTER", constructibles: ["BUILDING_ANCIENT_WALLS"] } : undefined);
+        world.units = [{ id: 7, type: "UNIT_WARRIOR", ...YORK }];
+        world.canBuy = sells({ UNIT_WARRIOR: 80, UNIT_SLINGER: 60 });
+        world.canBuild = trains("UNIT_WARRIOR", "UNIT_SLINGER");
+        let t = york();
+        assert.equal(t?.walled, true, JSON.stringify(t));
+        assert.deepEqual([units.guardsWanted(t), units.rangedWanted(t)], [1, 0], "the guard on its centre is enough");
+        steps.buyDefenders([t], { reserveTurns: 2 });
+        let out = steps.fillProduction(new Map(), { defend: true, threats: [t] });
+        assert.deepEqual([bought(), queued(out)], [[], 0], JSON.stringify(out));
+        // A major's army at the walls (siege units): one per raider.
+        assert.equal(units.guardsWanted({ ...t, owners: [{ id: 1, independent: false }] }), 3);
+        // Its centre hit: one per raider again, and a ranged one behind them.
+        world.districtHealth = (x, y) => (x === YORK.x && y === YORK.y ? 60 : 100);
+        t = york();
+        assert.deepEqual([units.guardsWanted(t), units.rangedWanted(t)], [3, 1], "hit");
+        steps.buyDefenders([t], { reserveTurns: 2 });
+        assert.deepEqual(bought(), [["UNIT_WARRIOR", ids.York]]);
+        delete world.districtHealth;
+        // No walls: as before.
+        reset();
+        world.enemies = [{ x: YORK.x + 1, y: YORK.y, owner: 5 }, { x: YORK.x + 2, y: YORK.y, owner: 5 }, { x: YORK.x, y: YORK.y - 2, owner: 5 }];
+        world.structures = () => undefined;
+        world.units = [{ id: 7, type: "UNIT_WARRIOR", ...YORK }];
+        t = york();
+        assert.deepEqual([t.walled, units.guardsWanted(t), units.rangedWanted(t)], [false, 3, 1], "unwalled");
+    } finally {
+        delete world.structures;
+        delete world.districtHealth;
+        reset();
+    }
+});
+
 test("a growing town at population 7 in unrest takes the Focus that gives the most Happiness (research/22 A4)", () => {
     const york = world.cities[1];
     const keep = { tiles: world.tiles, structures: world.structures };

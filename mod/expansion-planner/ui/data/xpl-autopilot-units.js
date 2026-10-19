@@ -131,6 +131,10 @@ let restedLoaded = false;
 let restedSaved = "";
 // Settlements whose defence UI.log described this turn ("x,y" -> turn).
 const defenceNoted = new Map();
+// Members of an army we unpacked this pass (unit key -> { turn, key: the settlement "x,y" }): on their way there, a turn out.
+const unpacking = new Map();
+// Armies whose unpacking UI.log explained this turn (commander key -> turn).
+const unpackNoted = new Map();
 
 export function resetUnitGoals() {
     goals.clear();
@@ -156,6 +160,8 @@ export function resetUnitGoals() {
     safe(() => GameTutorial.setProperty(Database.makeHash(RESTED_KEY), null), null);
     defenceNoted.clear();
     progressMemo.clear();
+    unpacking.clear();
+    unpackNoted.clear();
 }
 
 /** restedByUs as the save keeps it (the first time in a session). */
@@ -1736,6 +1742,20 @@ function centreDamaged(loc) {
     return Number.isFinite(health) && Number.isFinite(max) && max > 0 && health < max;
 }
 
+let fortifications = null; // FORTIFICATION-tagged types (GameInfo.TypeTags)
+
+/** Walls standing on this centre: a finished, undamaged FORTIFICATION building (any age's or civilization's walls). */
+function walledCentre(loc) {
+    fortifications ??= new Set((GameInfo.TypeTags?.filter((t) => t.Tag === "FORTIFICATION") ?? []).map((t) => t.Type));
+    for (const id of safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? []) {
+        const c = safe(() => Constructibles.getByComponentID(id), null);
+        if (!c || c.complete === false || c.damaged === true) continue;
+        const d = safe(() => GameInfo.Constructibles.lookup(c.type), null);
+        if (d?.ConstructibleClass === "BUILDING" && fortifications.has(d.ConstructibleType)) return true;
+    }
+    return false;
+}
+
 /** A unit's fighting strength in GameInfo.Unit_Stats: the best of its melee, ranged and bombard strengths (0: unknown). */
 function unitStrength(def) {
     const s = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
@@ -1748,8 +1768,8 @@ function unitStrength(def) {
  * attacked), or one land raider within THREAT_RADIUS stronger than every melee guard of ours there (`strong`). Seen in game
  * 5: single Line Infantry took three settlements, which were never (or only on the turn they fell) counted as
  * threatened, and one under attack dropped off the list at 3 HP when only one rifleman was left.
- * @returns [{ settlement: { x, y, name }, count, land, ships, air, close, damaged, strong, strongest,
- *   owners: [{ id, independent }] }], most threatened first
+ * @returns [{ settlement: { x, y, name }, count, land, ships, air, close, damaged, walled, strong, strongest,
+ *   owners: [{ id, independent }] }], most threatened first (`walled`: walls stand on its centre)
  */
 export function threatenedSettlements() {
     const out = [];
@@ -1809,7 +1829,7 @@ export function threatenedSettlements() {
         if (threatened) {
             out.push({
                 settlement: { x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?") }, count: seen.size, land, ships, air, close,
-                damaged, strong, strongest: strongest?.type ?? null, owners: [...owners.values()],
+                damaged, walled: walledCentre(c.location), strong, strongest: strongest?.type ?? null, owners: [...owners.values()],
             });
         }
     }
@@ -1900,14 +1920,23 @@ export const RANGED_GUARDS_MAX = 2;
 // A land army this big gets one ranged unit behind the melee screen (research/36 §5: game 29, four melee strikes and not
 // one shot in Russia's war).
 export const RANGED_SUPPORT_LAND = 2;
-export const rangedWanted = (t, { support = true } = {}) => Math.min(RANGED_GUARDS_MAX, (Number(t?.ships) || 0) + (support && (Number(t?.land) || 0) >= RANGED_SUPPORT_LAND ? 1 : 0));
+export const rangedWanted = (t, { support = true } = {}) => Math.min(RANGED_GUARDS_MAX, (Number(t?.ships) || 0) + (support && !wallsHold(t) && (Number(t?.land) || 0) >= RANGED_SUPPORT_LAND ? 1 : 0));
+
+/**
+ * Walls that hold: standing on the centre, the centre unhit, and only independents' raiders around (a major's army brings
+ * siege units). Game 36: Манчестер, a walled town, wanted a melee guard per raider (4-6 Warriors) and ended with 5
+ * Warriors and 2 Slingers (3 bought for 60 each, 3 trained ahead of Лондон's Colossus), while the raiders' Warriors hit its
+ * centre for 8 of 200 a blow and never took it down.
+ */
+export const wallsHold = (t) => !!t?.walled && !t?.damaged && (t?.owners ?? []).every((o) => o?.independent);
 
 /**
  * Melee guards a threatened settlement wants: one per land raider, and one on its centre whatever the raiders
  * (ships too: research/24 W2, Нант fell to 2 Cogs and a Knight while a ranged unit held its centre); one more while a
- * raider is stronger than every guard there (`strong`, research/36 §3).
+ * raider is stronger than every guard there (`strong`, research/36 §3). Behind walls that hold (wallsHold) only the one
+ * on its centre (and the one against a stronger raider), and no ranged one behind them (rangedWanted).
  */
-export const guardsWanted = (t) => Math.max(Number(t?.land ?? t?.count) || 0, Number(t?.count) > 0 ? 1 : 0) + (t?.strong ? 1 : 0);
+export const guardsWanted = (t) => (wallsHold(t) ? 1 : Math.max(Number(t?.land ?? t?.count) || 0, Number(t?.count) > 0 ? 1 : 0)) + (t?.strong ? 1 : 0);
 
 const keyAt = (key) => {
     const [x, y] = String(key).split(",").map(Number);
@@ -1975,8 +2004,20 @@ export function guardDetail(threat, units = safe(() => Players.get(pid()).Units.
     const incoming = [];
     for (const u of units ?? []) {
         const kind = safe(() => GameInfo.Units.lookup(u.type), null);
-        if (u.isCommanderUnit || !u.location || u.isOnMap === false) continue;
+        if (u.isCommanderUnit) continue;
         if (!(ranged ? isRangedGuard(kind) || (antiShip && isSiegeGuard(kind)) : isMeleeGuard(kind))) continue;
+        // Off the map (research/37 §5C): unpacking from an army here this pass (a turn out), or reinforcing an army that stands
+        // here (its ETA, and a turn to deploy: a reinforcement arrives packed). Packed in an army otherwise: no guard.
+        if (u.isOnMap === false) {
+            const up = unpacking.get(unitKey(u.id));
+            if (up?.turn === Game.turn && up.key === key) incoming.push({ u, turns: 1 });
+            else {
+                const at = reinforcingAt(u, units);
+                if (at && safe(() => GameplayMap.getPlotDistance(at.x, at.y, s.x, s.y), Infinity) <= GUARD_RADIUS) incoming.push({ u, turns: reinforcementTurns(u) + 1 });
+            }
+            continue;
+        }
+        if (!u.location) continue;
         const wet = afloat(u);
         const g = goals.get(unitKey(u.id));
         if (g?.guard !== undefined && !g.front) {
@@ -2145,6 +2186,8 @@ function defenceSupply(units, ctx) {
         if (!ranged && !isMeleeGuard(def)) continue;
         const commander = commanders.find((c) => sameId(c.armyId, u.armyId));
         if (!commander?.location) continue;
+        // Its army unpacks this pass (unpackArmies): it comes out next to its commander.
+        if (unpacking.get(k)?.turn === Game.turn) continue;
         // On its way to an army as a reinforcement: not packed yet.
         if (Number(safe(() => Players.get(pid()).Armies.getUnitReinforcementCommanderId(u.id, pid()), -1)) >= 0) continue;
         out.push({ u, def, k, ranged, siege, resting: false, stage: true, packed: commander, from: undefined, atFront: undefined });
@@ -2240,6 +2283,18 @@ function planDefence(units, ctx) {
                 const post = postFor(c.u, s, ctx, { ranged: d.ranged, front: d.front, holder: !!d.exposed, from: c.packed ?? c.u });
                 if (post && (!best || post.turns < best.post.turns)) best = { c, post };
             }
+            // Far, or no way on foot: a reinforcement to our commander's army there, when it comes sooner (research/37 §5C.3).
+            const rein = d.exposed ? null : reinforcementFor(d, supply, ctx, best);
+            if (rein) {
+                const at = rein.c.u.location;
+                rein.army.reserved = (rein.army.reserved ?? 0) + 1;
+                ctx.posts.set(rein.c.k, {
+                    key: d.key, t: d.t, front: d.front, exposed: false, ranged: d.ranged, loc: rein.army.at, turns: rein.turns, resting: false,
+                    unit: rein.c.def.UnitType, at: { x: at.x, y: at.y }, from: rein.c.from, packed: null,
+                    reinforce: { at: rein.army.at, localId: rein.army.localId, walk: best?.post.turns ?? null },
+                });
+                continue;
+            }
             if (!best) break;
             ctx.stepTo.add(`${best.post.loc.x},${best.post.loc.y}`);
             if (best.c.packed) deployed.add(unitKey(best.c.packed.id));
@@ -2262,12 +2317,161 @@ function reinforce(u, def, ctx) {
     const post = ctx.posts?.get(unitKey(u.id));
     if (!post) return null;
     if (post.packed) return deployMember(u, def, post);
+    if (post.reinforce) return reinforceArmy(u, def, post);
     if (post.resting) wakeUnit(u);
     if (!moveTo(u, post.loc)) return null;
     goals.set(unitKey(u.id), { guard: post.key, tile: post.loc, turn: Game.turn, front: post.front, holder: post.exposed });
     restedByUs.delete(unitKey(u.id));
     post.sent = true;
     return { key: post.front ? "STAGED" : post.exposed ? "HOLDER" : "REINFORCE", args: [nameOf(def), post.t.settlement.name] };
+}
+
+// ---- armies (research/37 Phase 3) ----------------------------------------------------------------
+
+const ARMY_CAPACITY = 4;          // an army's combat slots when the game does not say (Regiments: +2)
+const REINFORCE_ARMY_MIN = 6;     // the game's rule text: a reinforcing unit stands at least this far from the commander
+const REINFORCE_ARMY_GAIN = 2;    // turns a reinforcement must save over walking there
+
+/** The localId of the army this unit is on its way to as a reinforcement, or -1 (player.Armies, as the army panel reads it). */
+const reinforcingTo = (u) => Number(safe(() => Players.get(pid()).Armies.getUnitReinforcementCommanderId(u.id, pid()), -1) ?? -1);
+
+/**
+ * Turns before a reinforcement reaches its army: the game's ETA read as turns left (research/37 §5A, inferred; probe P-A3
+ * logs it each turn), at least 1.
+ */
+function reinforcementTurns(u) {
+    const eta = Number(safe(() => Players.get(pid()).Armies.getUnitReinforcementETA(u.id, pid()), NaN));
+    return Number.isFinite(eta) && eta > 0 ? Math.ceil(eta) : 1;
+}
+
+/** Where the army this unit reinforces stands (its commander among `units`), or null. */
+function reinforcingAt(u, units) {
+    const to = reinforcingTo(u);
+    if (!(to >= 0)) return null;
+    const c = (units ?? []).find((x) => x.isCommanderUnit && x.isOnMap !== false && Number(safe(() => Armies.get(x.armyId)?.localId, NaN)) === to);
+    return c?.location ?? null;
+}
+
+/**
+ * Our land commanders' armies, from live state each pass (research/37 §5C.1): the commander and its tile, the army
+ * (Armies.get: localId, combatUnitCapacity), the members packed in it (off the map, carrying its armyId; not guards:
+ * §3A), and the units on their way to it as reinforcements (player.Armies.getUnitReinforcementCommanderId is its localId)
+ * with their turns. @returns [{ cmdr, def, at, army, localId, capacity, packed: [unit], incoming: [{ u, turns }] }]
+ */
+export function armyInventory(units = safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+    const out = [];
+    for (const c of units) {
+        if (!c.isCommanderUnit || c.isOnMap === false || !c.location || !validId(c.armyId)) continue;
+        const def = safe(() => GameInfo.Units.lookup(c.type), null);
+        if (!isLandCommander(def)) continue;
+        const army = safe(() => Armies.get(c.armyId), null);
+        const localId = Number(army?.localId);
+        const packed = units.filter((u) => u !== c && !u.isCommanderUnit && u.isOnMap === false && sameId(u.armyId, c.armyId) && reinforcingTo(u) < 0);
+        const incoming = Number.isFinite(localId) ? units.filter((u) => u !== c && reinforcingTo(u) === localId).map((u) => ({ u, turns: reinforcementTurns(u) })) : [];
+        out.push({ cmdr: c, def, at: c.location, army, localId: Number.isFinite(localId) ? localId : null, capacity: Number(army?.combatUnitCapacity) || ARMY_CAPACITY, packed, incoming });
+    }
+    return out;
+}
+
+/**
+ * A packed army at a threatened settlement or a war front unpacks (research/37 §5C.2): packed units cannot attack ("You
+ * must deploy your troops in order to attack"), and a reinforcement arrives packed. `UNITCOMMAND_UNPACK_ARMY` on the
+ * commander, as the army panel sends it: canStart with no target gives the Plots, then {X, Y}, the offered tile nearest the
+ * raiders there (else the settlement). One request an army a pass, its members counted as on their way there, a turn
+ * out (guardDetail). UI.log says which tiles were offered (probe P-A2) and, when none was, why (P-A6). @returns log entries
+ */
+function unpackArmies(ctx) {
+    const out = [];
+    const needs = [...ctx.threats, ...ctx.fronts];
+    if (needs.length === 0) return out;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    for (const a of ctx.armies ?? []) {
+        const soldiers = a.packed.filter((u) => isSoldier(safe(() => GameInfo.Units.lookup(u.type), null)));
+        const ck = unitKey(a.cmdr.id);
+        if (soldiers.length === 0 || ctx.ordered.has(ck) || afloat(a.cmdr)) continue;
+        // Asked this turn already (the end-of-turn retry reads the army before the game has moved them): not again.
+        if (soldiers.some((u) => unpacking.get(unitKey(u.id))?.turn === Game.turn)) continue;
+        const near = needs.map((t) => ({ t, d: dist(a.at, t.settlement) })).filter((x) => x.d <= GUARD_RADIUS).sort((x, y) => x.d - y.d)[0];
+        if (!near) continue;
+        const s = near.t.settlement;
+        const OP = "UNITCOMMAND_UNPACK_ARMY";
+        const r = safe(() => Game.UnitCommands.canStart(a.cmdr.id, OP, {}, false), null);
+        const plots = (r?.Plots ?? []).map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter((l) => l && !onWater(l));
+        if (plots.length === 0) {
+            if (unpackNoted.get(ck) !== Game.turn) {
+                unpackNoted.set(ck, Game.turn);
+                log.warn(`army: ${typeOf(a.cmdr)} at ${where(a.at)} cannot unpack ${soldiers.length} for ${s.name}: ${(r?.FailureReasons ?? []).join("; ") || "no tile offered"} (probe P-A6)`);
+            }
+            continue;
+        }
+        const raiders = hostilesAround(s, THREAT_RADIUS + 1).map((h) => h.at);
+        const score = (l) => (raiders.length > 0 ? Math.min(...raiders.map((h) => dist(l, h))) : dist(l, s));
+        const best = plots.sort((p, q) => score(p) - score(q) || dist(p, s) - dist(q, s))[0];
+        Game.UnitCommands.sendRequest(a.cmdr.id, OP, { X: best.x, Y: best.y });
+        ctx.ordered.add(ck);
+        const key = `${s.x},${s.y}`;
+        for (const u of soldiers) unpacking.set(unitKey(u.id), { turn: Game.turn, key });
+        log.info(`army: ${typeOf(a.cmdr)} at ${where(a.at)} unpacks ${soldiers.length} [${soldiers.map(typeOf).join(", ")}] toward ${where(best)} for ${s.name} (${plots.length} tile(s) offered; probes P-A2, P-A5: where they stand and what moves they have next pass)`);
+        out.push({ key: "ARMY_UNPACKED", args: [nameOf(a.def), soldiers.length, s.name] });
+    }
+    return out;
+}
+
+/**
+ * A native reinforcement for a settlement's (or a front's) lack (research/37 §5C.3): our land commander stands there
+ * (within GUARD_RADIUS) with room in its army, and a free soldier of the role wanted, idle, unhurt, with every move, on our
+ * land and at least REINFORCE_ARMY_MIN tiles away, reaches it off the map (its base moves a turn, terrain ignored, and a
+ * turn to deploy) at least REINFORCE_ARMY_GAIN turns sooner than any soldier walks there, within REINFORCE_MAX_TURNS. The
+ * game's canStart must offer the commander's tile. Never a holder or a garrison (not in the supply). @returns { c, turns,
+ * army } or null
+ */
+function reinforcementFor(d, supply, ctx, walking) {
+    const s = d.t.settlement;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const army = (ctx.armies ?? []).find((a) => dist(a.at, s) <= GUARD_RADIUS && !afloat(a.cmdr)
+        && a.capacity - a.packed.length - a.incoming.length - (a.reserved ?? 0) > 0);
+    if (!army) return null;
+    const cands = [];
+    for (const c of supply) {
+        if (ctx.posts.has(c.k) || c.packed || c.resting || c.ranged !== d.ranged || (c.siege && !d.antiShip) || c.from === d.key) continue;
+        if (d.front && !(c.stage && c.atFront === undefined)) continue;
+        const u = c.u;
+        if ((Number(u.Health?.damage) || 0) > 0 || u.hasMoved === true || !u.location || afloat(u)) continue;
+        if (safe(() => GameplayMap.getOwner(u.location.x, u.location.y), -1) !== pid()) continue;
+        const far = dist(u.location, army.at);
+        if (far < REINFORCE_ARMY_MIN) continue;
+        const turns = Math.ceil(far / Math.max(1, Number(c.def.BaseMoves) || 2)) + 1;
+        if (turns > REINFORCE_MAX_TURNS || (walking && turns + REINFORCE_ARMY_GAIN > walking.post.turns)) continue;
+        cands.push({ c, turns });
+    }
+    cands.sort((a, b) => a.turns - b.turns);
+    const at = safe(() => GameplayMap.getIndexFromXY(army.at.x, army.at.y), -1);
+    for (const x of cands.slice(0, REINFORCE_PICKS)) {
+        const r = safe(() => Game.UnitOperations.canStart(x.c.u.id, "UNITOPERATION_REINFORCE_ARMY", {}, false), null);
+        if ((r?.Plots ?? []).includes(at)) return { ...x, army };
+    }
+    return null;
+}
+
+/**
+ * Sends a reinforcement (research/37 §5C.3): `UNITOPERATION_REINFORCE_ARMY` on the soldier, as the game's reinforce mode
+ * sends it (canStart with no target gives the eligible commanders' tiles, then {X, Y} of ours). It travels off the map
+ * and counts as on its way there with the game's ETA (guardDetail); its army unpacks it on arrival (unpackArmies).
+ * @returns a log entry or null
+ */
+function reinforceArmy(u, def, post) {
+    const OP = "UNITOPERATION_REINFORCE_ARMY";
+    const at = post.reinforce.at;
+    const r = safe(() => Game.UnitOperations.canStart(u.id, OP, {}, false), null);
+    const i = safe(() => GameplayMap.getIndexFromXY(at.x, at.y), -1);
+    if (!(r?.Plots ?? []).includes(i)) {
+        log.warn(`reinforce: ${def.UnitType} cannot reinforce the army at ${where(at)} for ${post.t.settlement.name}: ${(r?.FailureReasons ?? []).join("; ") || "its tile not offered"} (probe P-A6)`);
+        return null;
+    }
+    Game.UnitOperations.sendRequest(u.id, OP, { X: at.x, Y: at.y });
+    post.sent = true;
+    log.info(`reinforce: ${def.UnitType} from ${where(u.location)} -> the army at ${where(at)} for ${post.t.settlement.name}: about ${post.turns} turn(s) with its deploying, ${post.reinforce.walk === null ? "no way" : `${post.reinforce.walk}`} on foot (probe P-A3: the game's ETA each turn)`);
+    return { key: "REINFORCE_ARMY", args: [nameOf(def), post.t.settlement.name] };
 }
 
 /**
@@ -2309,7 +2513,7 @@ function logDefence(ctx, units) {
         if (defenceNoted.get(key) === Game.turn) continue;
         defenceNoted.set(key, Game.turn);
         const sent = [...ctx.posts.values()].filter((p) => p.key === key)
-            .map((p) => `${p.unit} from ${p.at.x},${p.at.y} in ${p.turns}t${p.resting ? " (woken)" : ""}${p.packed ? " (from an army)" : ""}${p.from ? ` (spare at ${p.from})` : ""}${p.sent ? "" : " NOT SENT"}`);
+            .map((p) => `${p.unit} from ${p.at.x},${p.at.y} in ${p.turns}t${p.resting ? " (woken)" : ""}${p.packed ? " (from an army)" : ""}${p.reinforce ? " (reinforcing the army there)" : ""}${p.from ? ` (spare at ${p.from})` : ""}${p.sent ? "" : " NOT SENT"}`);
         const parts = [];
         if (ctx.threats.includes(t)) {
             const m = guardDetail(t, units, ctx.threats);
@@ -2317,7 +2521,7 @@ function logDefence(ctx, units) {
             const health = Number(safe(() => districts.getDistrictHealth(s), NaN));
             const max = Number(safe(() => districts.getDistrictMaxHealth(s), NaN));
             parts.push(`raiders ${t.count} (land ${t.land ?? "?"}, ships ${t.ships ?? 0}, air ${t.air ?? 0}, close ${t.close ?? "?"}${t.strongest ? `, strongest ${t.strongest}${t.strong ? " beats our guards there" : ""}` : ""})`);
-            parts.push(`centre ${Number.isFinite(health) ? health : "?"}/${Number.isFinite(max) ? max : "?"}`);
+            parts.push(`centre ${Number.isFinite(health) ? health : "?"}/${Number.isFinite(max) ? max : "?"}${t.walled ? `, walled${wallsHold(t) ? " (they hold: one guard)" : ""}` : ""}`);
             parts.push(`melee ${m.present.length} + ${m.incoming.length} coming of ${guardsWanted(t)} [${list(m)}]`);
             parts.push(`ranged ${r.present.length} + ${r.incoming.length} of ${rangedWanted(t)} [${list(r)}]`);
             // Units packed in an army there: not counted (research/37 §3A).
@@ -3724,6 +3928,9 @@ export function commandUnits(settings, options) {
     // Who defends where (research/36 §4): with «Оборона» or «Армия».
     if (options.defend || options.roam) {
         try {
+            // Armies (research/37 Phase 3): the inventory, and those at a threatened settlement or a front unpack first.
+            ctx.armies = armyInventory(units);
+            entries.push(...unpackArmies(ctx));
             ctx.supply = defenceSupply(units, ctx);
             planDefence(units, ctx);
         } catch (error) {

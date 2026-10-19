@@ -189,6 +189,43 @@ test("Build-up: a settler waits behind a wonder in production; a defender under 
     reset();
 });
 
+test("a defender for a settlement that holds on its own (its centre unhit, a guard there) waits behind a wonder like other units; unguarded or hit, it goes first (game 36: the Colossus)", async () => {
+    // Game 36: three Warriors for Манчестер (a town, walled, its centre never hit, guarded all along) went ahead of Лондон's
+    // Colossus T23-T28; the race became a tie with Spain's and was cashed out at T29.
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const wonders = state.get().results.wonders;
+    reset();
+    world.cities.push({ owner: 0, x: 6, y: 10, name: "Leeds", isTown: true, pop: 3 }); // Athens is its nearest city
+    const leeds = { settlement: { name: "Leeds", x: 6, y: 10 }, count: 2, land: 2, owners: [] };
+    const guard = { id: 30, type: "UNIT_WARRIOR", x: 6, y: 10 };
+    const strategy = { unitsAheadOfWonders: false }; // Build-up
+    const run = (threat, units, extra = {}) => {
+        fake.sent.length = 0;
+        world.units = units;
+        steps.frontLoadUnits({ defend: true, threats: [threat], ...extra });
+        return moves();
+    };
+    try {
+        athens.queue = { type: "WONDER_PYRAMIDS", turns: 9, pct: 60 };
+        athens.queued = ["BUILDING_MONUMENT"];
+        athens.trains = "UNIT_WARRIOR";
+        assert.deepEqual(run(leeds, [guard], { strategy }), [[0, 2, 1]], "Leeds holds: behind the wonder, like a settler in Build-up");
+        assert.deepEqual(run(leeds, [], { strategy }), [[0, 2, 0]], "no guard there: first");
+        assert.deepEqual(run({ ...leeds, damaged: true }, [guard], { strategy }), [[0, 2, 0]], "its centre hit: first");
+        // Growth (units may pass a wonder): a raced wonder still keeps the front from it.
+        state.set({ results: { ...state.get().results, wonders: { rows: [{ type: "WONDER_PYRAMIDS", rivalsSeen: 1 }] } } });
+        assert.deepEqual(run(leeds, [guard]), [[0, 2, 1]], "a rival builds the Pyramids too");
+        assert.deepEqual(run(leeds, []), [[0, 2, 0]], "unguarded: first, race or not");
+        // Not a wonder: a defender still goes ahead of a building with progress (research/23 D4).
+        athens.queue = { type: "BUILDING_LIBRARY", turns: 2, pct: 50 };
+        assert.deepEqual(run(leeds, [guard], { strategy }), [[0, 2, 0]], "a building with progress");
+    } finally {
+        state.set({ results: { ...state.get().results, wonders } });
+        world.cities.splice(2);
+        reset();
+    }
+});
+
 test("no front-loading ping-pong: a wanted settler is not moved ahead of a wanted scout already at the front; a lever building never ahead of a queued unit (research/21 H1)", () => {
     reset();
     athens.queued = ["UNIT_SCOUT", "BUILDING_MONUMENT", "UNIT_SETTLER"];

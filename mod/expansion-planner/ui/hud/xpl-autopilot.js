@@ -610,12 +610,14 @@ export async function runTurn(force = false) {
         // Other leaders: counter-spy, reconciliation, endeavors (after befriending: Influence goes there first).
         if (full && o.diplomacy) await guarded("diplomacy", () => record(tendDiplomacy(s, { threatened: threats.length > 0 })));
         if (o.settlers) await guarded("sites", async () => record(await refreshSitesIfDue(s)));
-        // Melee soldiers strike raiders next to them when the game's own prediction says it pays.
+        // Melee soldiers strike raiders next to them when the game's own prediction says it pays. Their units are not kept
+        // from the skip step: each attack was waited for (its Combat event), and one that did not happen leaves a unit the
+        // game waits for (game 36 T49: a Coordinated Attack's raider died after two of its three Warriors, and the third,
+        // never skipped, held the turn).
         if (o.defend) {
             await guarded("strike", async () => {
                 const r = await strikeRaiders();
                 record(r.entries);
-                for (const k of r.ordered) ordered.add(k);
             });
         }
         await guarded("units", orderUnits);

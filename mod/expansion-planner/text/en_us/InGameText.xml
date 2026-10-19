@@ -1746,6 +1746,12 @@
     <Row Tag="LOC_XPL_AP_HOLDER">
       <Text>{1_Unit} goes to hold {2_Name} (an independent at war with us is near)</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_ARMY_UNPACKED">
+      <Text>{1_Commander} unpacks {2_Count} unit(s) of its army to defend {3_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REINFORCE_ARMY">
+      <Text>{1_Unit} reinforces the army at {2_Name} (it travels off the map)</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_DEPLOYED">
       <Text>{1_Unit} leaves its army to hold {2_Name}</Text>
     </Row>

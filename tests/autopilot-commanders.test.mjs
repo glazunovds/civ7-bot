@@ -169,6 +169,50 @@ test("Coordinated Attack: two healthy melee units next to the raider and in the 
     }
 });
 
+test("a Coordinated Attack's unit whose attack never came (the raider died first) is skipped: it held the turn (game 36 T49)", async () => {
+    // Game 36 T49: three Warriors joined a Coordinated Attack on a raider next to Манчестер; it died after two, and the
+    // third, on the centre (no fortifying there), was kept from the skip step as ordered: «Отдать приказы юнитам».
+    const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
+    const { settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+    const C = ATHENS;
+    let target = null;
+    for (let y = C.y - 1; y <= C.y + 1 && !target; y++) for (let x = C.x - 1; x <= C.x + 1 && !target; x++) if (dist(C, { x, y }) === 1) target = { x, y };
+    const pair = [];
+    for (let y = C.y - 2; y <= C.y + 2; y++) for (let x = C.x - 2; x <= C.x + 2; x++) if (dist({ x, y }, C) === 1 && dist({ x, y }, target) === 1) pair.push({ x, y });
+    assert.equal(pair.length, 2, "a geometry for the test");
+    const result = (_id, op) => ({ Success: false, Plots: op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE" ? [idx(target.x, target.y)] : [] });
+    fresh([
+        { id: 1, type: "UNIT_ARMY_COMMANDER", ...C },
+        { id: 2, type: "UNIT_WARRIOR", ...pair[0] },
+        { id: 3, type: "UNIT_WARRIOR", ...pair[1] },
+        { id: 4, type: "UNIT_WARRIOR", ...C },
+    ], {
+        wars: [1], enemies: [{ ...target, owner: 1, type: "UNIT_WARRIOR", damage: 30 }], unitCommandResult: result,
+        combat: () => ({ dealt: 60, taken: 20 }),
+        // The game's centre: no fortifying or alert there.
+        unitCanStart: (id, op) => (id.id === 4 && /FORTIFY|ALERT/.test(op) ? { Success: false } : null),
+    });
+    // Like the game: two Warriors fight and the raider dies; the third keeps its moves and its attack.
+    const send = Game.UnitCommands.sendRequest;
+    Game.UnitCommands.sendRequest = (id, op, args) => {
+        if (/^UNITCOMMAND_FOCUSED_ATTACK/.test(op)) {
+            for (const u of world.units) if (u.id === 2 || u.id === 3) Object.assign(u, { moved: true, moves: 0, attacks: 0 });
+            world.enemies = [];
+        }
+        return send(id, op, args);
+    };
+    settings.patch({ autopilot: { defend: true, skipUnits: true, endTurn: false, replanEvery: 0, research: false, choices: false, befriend: false, growth: false, towns: false, production: false, purchases: false } });
+    try {
+        await autopilot.runTurn(true);
+        assert.ok(orders().some((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE"), JSON.stringify(orders()));
+        const third = orders().filter((s) => s.id.id === 4).map((s) => s.op);
+        assert.ok(third.includes(UnitOperationTypes.SKIP_TURN), `the third Warrior: ${JSON.stringify(third)}`);
+    } finally {
+        Game.UnitCommands.sendRequest = send;
+        settings.patch({ autopilot: { defend: false, skipUnits: false, production: true, purchases: true, research: true, choices: true, befriend: true, growth: true, towns: true, replanEvery: 5 } });
+    }
+});
+
 test("the game's experience and army parameters are logged once (their values are compiled into the game)", () => {
     GameInfo.GlobalParameters = [{ Name: "EXPERIENCE_MAX_BARB_LEVEL", Value: "2" }, { Name: "ARMY_MAX_UNITS", Value: "4" }, { Name: "CITY_MIN_RANGE", Value: "3" }];
     const warn = console.warn;

@@ -306,6 +306,13 @@ export function installFakeEngine(world, age = "antiquity") {
         isDistantLands: (l) => !!world.distantAt?.(l.x, l.y),
         // world.influence: the local player's Influence
         DiplomacyTreasury: { get diplomacyBalance() { return world.influence ?? 0; } },
+        // Reinforcements (research/37 §5C.3): world.units[i].reinforcing = { to: <the army's localId>, eta, from: {x, y} }, a unit
+        // on its way off the map (give it onMap: false); -1 when it is not reinforcing, as the game answers.
+        Armies: {
+            getUnitReinforcementCommanderId: (id) => (world.units ?? []).find((u) => u.id === id?.id)?.reinforcing?.to ?? -1,
+            getUnitReinforcementETA: (id) => (world.units ?? []).find((u) => u.id === id?.id)?.reinforcing?.eta ?? -1,
+            getUnitReinforcementStartLocation: (id) => (world.units ?? []).find((u) => u.id === id?.id)?.reinforcing?.from ?? null,
+        },
         // world.unitUpkeep(unitType) -> gold a turn for one unit of that type (getMaintenanceForAllUnitsOfType: all of them)
         Treasury: {
             getMaintenanceForAllUnitsOfType: (type) => {

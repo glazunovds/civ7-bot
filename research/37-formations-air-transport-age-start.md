@@ -25,6 +25,11 @@
 - Exposed settlements may wake resting soldiers, as threatened ones do; fronts still take only idle ones or the autopilot's.
 - An exposed settlement with no holder may train one (where it arrives in time), after every threatened settlement.
 
+**Status:** Phase 3 done on 19 October 2026, without land transport (root CLAUDE.md gotcha 67; tests in `tests/autopilot-armies.test.mjs`, 13 reverts proven). Games 30 and 36 had one commander with an empty army all game: under Continuity nothing is packed unless we pack it, so the unpacking serves Regroup games, the player's own armies and arriving reinforcements. Its choices beyond §5C:
+- an army unpacks at a threatened settlement or a war front (within GUARD_RADIUS), toward the raiders, and its members count as on their way there a turn out, so nothing is bought meanwhile;
+- a reinforcement goes only to a commander standing at the settlement in need (not to one walking there), when it saves 2 turns over walking or no way on foot exists, within 8 turns; it counts with the game's ETA (read as turns left until P-A3 says otherwise) plus a turn to deploy;
+- an exposed town keeps Phase 2's single-member deploy; transport by packing (§5C.4) is not built.
+
 Phases 1 and 2 answer game 29's losses with what exists, plus the one request that turns a packed unit into a town's holder. Phase 1's probes give Phases 3 and 5 the facts they lack. Phase 4 waits for the `defence:` lines of the next game, since the logs of game 29 cannot show how units stood.
 
 ## 1. Where we stand

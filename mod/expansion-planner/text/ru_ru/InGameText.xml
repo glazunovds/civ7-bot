@@ -1746,6 +1746,12 @@
     <Replace Tag="LOC_XPL_AP_HOLDER" Language="ru_RU">
       <Text>{1_Unit} идёт удерживать: {2_Name} (рядом враждебный независимый народ)</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_ARMY_UNPACKED" Language="ru_RU">
+      <Text>{1_Commander} разворачивает армию ({2_Count}), чтобы защищать: {3_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REINFORCE_ARMY" Language="ru_RU">
+      <Text>{1_Unit} идёт подкреплением к армии: {2_Name} (вне карты)</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_DEPLOYED" Language="ru_RU">
       <Text>{1_Unit} покидает армию, чтобы удерживать: {2_Name}</Text>
     </Replace>

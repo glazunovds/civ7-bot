@@ -30,7 +30,7 @@ import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory
 import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { afloat, airBases, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
+import { afloat, airBases, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardDetail, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
 import { villagesOf } from './xpl-player-facts.js';
 import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './xpl-centre-defence.js';
 import { TUNING } from '../core/xpl-tuning.js';
@@ -3135,6 +3135,15 @@ export function frontLoadUnits(unitOptions = {}) {
     const defenderCities = new Set((unitOptions.threats ?? []).map((t) => nearestCity(t.settlement)).filter(Boolean).map(sidOf));
     const hardPressed = war.near || (unitOptions.threats ?? []).some((t) => t.damaged);
     if (underThreat) for (const k of defenderTrainers) defenderCities.add(k);
+    // Every threatened settlement this city defends holds on its own: its centre unhit, a melee guard of ours there, no war
+    // at our door. Its defender is then no hurry ahead of a wonder or a project in production (game 36: three Warriors for
+    // Манчестер, its centre never hit and guarded all along, went ahead of Лондон's Colossus T23-T28, and the race became a
+    // tie with Spain's, cashed out at T29).
+    const units = underThreat ? safe(() => Players.get(pid()).Units.getUnits(), []) ?? [] : [];
+    const threats = unitOptions.threats ?? [];
+    const holdsOut = (city) => !war.near && threats
+        .filter((t) => (nearestCity(t.settlement) ? sidOf(nearestCity(t.settlement)) === sidOf(city) : false) || trainedFor.get(`${t.settlement.x},${t.settlement.y}`)?.sid === sidOf(city))
+        .every((t) => !t.damaged && safe(() => guardDetail(t, units, threats).present.length, 0) > 0);
     const moved = new Set();
     for (const city of ownSettlements()) {
         if (city.isTown) continue;
@@ -3148,13 +3157,15 @@ export function frontLoadUnits(unitOptions = {}) {
             // A Crewed Space Flight Preparation run nearly done keeps the front unless the centre is damaged or a war is at our
             // door (research/38 §4 E2: game 29's run at 510 of 1,000 lost to two Tanks and two walls, M53-M64).
             if (prepNearlyDone(city) && !hardPressed) return 1;
-            if (defender(def) && defenderCities.has(sidOf(city))) return 0;
+            // A defender for settlements that hold on their own goes where other units go past a wonder or a project.
+            const calm = defender(def) && wonderOrProject(safe(() => city.BuildQueue.currentProductionTypeHash, null)) && holdsOut(city);
+            if (defender(def) && defenderCities.has(sidOf(city)) && !calm) return 0;
             const s = unitSlot(city, ahead || (isSettler(def) && deficit));
             // Not ahead of walls in production (a threatened settlement's first: wallsSlot), unless urgent.
             if (s === 0 && !urgent(def) && isWallsType(safe(() => city.BuildQueue.currentProductionTypeHash, null))) return 1;
             // Not ahead of a wonder in a race or a project that would then miss the age, unless urgent (P2: a Knight for
             // a war risk ahead of the Heliocentric Model, lost by 51; a Landship ahead of the Red Fort).
-            return s === 0 && !urgent(def) && safe(() => holdsFront(city, def), false) ? 1 : s;
+            return s === 0 && (!urgent(def) || calm) && safe(() => holdsFront(city, def), false) ? 1 : s;
         };
         // Not a unit done only after a non-final age ends: its production is lost (ageEndOrder would move it back).
         const wait = (def) => (slotOf(def) > 0 ? Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0 : 0);
