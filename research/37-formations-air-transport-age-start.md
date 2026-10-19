@@ -30,6 +30,12 @@
 - a reinforcement goes only to a commander standing at the settlement in need (not to one walking there), when it saves 2 turns over walking or no way on foot exists, within 8 turns; it counts with the game's ETA (read as turns left until P-A3 says otherwise) plus a turn to deploy;
 - an exposed town keeps Phase 2's single-member deploy; transport by packing (§5C.4) is not built.
 
+**Status:** Phase 4 done on 19 October 2026, before a real war's `defence:` lines (the user's call; game 36's lines showed only independents' raids). Root CLAUDE.md gotcha 68; tests in `tests/autopilot-formations.test.mjs`, 13 reverts proven. Its choices beyond §6:
+- the formation forms only at a threatened settlement with raiders in sight; a war front with none keeps its staged guard, and its owners are not grouped (a front's raiders within THREAT_RADIUS make it a threatened settlement, whose `owners` are already a set);
+- approaches are single-linkage clusters of the land raiders (within 3 tiles), not sectors by direction;
+- moves go only onto tiles free now, one a unit a pass: no swaps, so a holder's tile is never left for a replacement still to come, and the unit on the centre never moves;
+- no reserve role, no room to retreat, no route scoring beyond the ring next to the centre; fixed weights (`FORM` in `core/xpl-formation.js`), to be checked against the next war's `formation:` lines.
+
 Phases 1 and 2 answer game 29's losses with what exists, plus the one request that turns a packed unit into a town's holder. Phase 1's probes give Phases 3 and 5 the facts they lack. Phase 4 waits for the `defence:` lines of the next game, since the logs of game 29 cannot show how units stood.
 
 ## 1. Where we stand

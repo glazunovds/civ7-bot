@@ -1755,6 +1755,18 @@
     <Replace Tag="LOC_XPL_AP_DEPLOYED" Language="ru_RU">
       <Text>{1_Unit} покидает армию, чтобы удерживать: {2_Name}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_FORMATION_HOLD" Language="ru_RU">
+      <Text>{1_Unit} занимает центр поселения: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FORMATION_SCREEN" Language="ru_RU">
+      <Text>{1_Unit} переходит на лучшую позицию в заслоне: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FORMATION_RANGED" Language="ru_RU">
+      <Text>{1_Unit} занимает огневую позицию: {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FORMATION_COMMANDER" Language="ru_RU">
+      <Text>{1_Commander} встаёт так, чтобы его радиус охватывал больше защитников: {2_Name}</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_QUEUED_HOLDER" Language="ru_RU">
       <Text>{1_City}: в очередь {2_Name}, чтобы удерживать {3_Name} (рядом враждебный независимый народ)</Text>
     </Replace>

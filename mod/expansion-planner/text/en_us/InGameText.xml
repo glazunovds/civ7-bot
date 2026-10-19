@@ -1755,6 +1755,18 @@
     <Row Tag="LOC_XPL_AP_DEPLOYED">
       <Text>{1_Unit} leaves its army to hold {2_Name}</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_FORMATION_HOLD">
+      <Text>{1_Unit} holds the centre of {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FORMATION_SCREEN">
+      <Text>{1_Unit} takes a better post in the screen of {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FORMATION_RANGED">
+      <Text>{1_Unit} takes a firing post at {2_Name}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_FORMATION_COMMANDER">
+      <Text>{1_Commander} stands where its radius covers more of the defenders of {2_Name}</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_QUEUED_HOLDER">
       <Text>{1_City}: queued {2_Name} to hold {3_Name} (an independent at war with us is near)</Text>
     </Row>

@@ -26,6 +26,7 @@ import { angersVillage } from '../core/xpl-site-scorer.js';
 import { independentNameOf, villagesOf } from './xpl-player-facts.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { estimateStrike } from '../core/xpl-combat.js';
+import { FORM, commanderTile, planFormation, sectorsOf } from '../core/xpl-formation.js';
 import { idString, sameId, validId } from '../core/xpl-component-id.js';
 import { meleeStrength, noteMeleeObtained } from './xpl-centre-defence.js';
 import { state } from '../services/xpl-state.js';
@@ -135,6 +136,8 @@ const defenceNoted = new Map();
 const unpacking = new Map();
 // Armies whose unpacking UI.log explained this turn (commander key -> turn).
 const unpackNoted = new Map();
+// Settlements whose formation UI.log described this turn ("x,y" -> turn).
+const formationNoted = new Map();
 
 export function resetUnitGoals() {
     goals.clear();
@@ -162,6 +165,7 @@ export function resetUnitGoals() {
     progressMemo.clear();
     unpacking.clear();
     unpackNoted.clear();
+    formationNoted.clear();
 }
 
 /** restedByUs as the save keeps it (the first time in a session). */
@@ -2498,6 +2502,178 @@ function deployMember(u, def, post) {
     return { key: "DEPLOYED", args: [nameOf(def), post.t.settlement.name] };
 }
 
+// ---- formations (research/37 Phase 4) ------------------------------------------------------------
+
+/** A tile's terrain defence for a unit standing there: its feature's and its terrain's DefenseModifier (forest +2, marsh -2). */
+function terrainDefence(loc) {
+    const f = safe(() => GameInfo.Features.lookup(GameplayMap.getFeatureType(loc.x, loc.y))?.DefenseModifier, 0);
+    const t = safe(() => GameInfo.Terrains.lookup(GameplayMap.getTerrainType(loc.x, loc.y))?.DefenseModifier, 0);
+    return (Number(f) || 0) + (Number(t) || 0);
+}
+
+/** Resting (fortified, asleep, on alert): not idle, not awake, not on its way, not healing. */
+function resting(u) {
+    const A = globalThis.UnitActivityTypes;
+    const act = u.activityType;
+    return !!A && act !== undefined && act !== A.NONE && act !== A.AWAKE && act !== A.OPERATION && act !== A.HEAL;
+}
+
+/**
+ * Why a soldier of a formation may not move this pass, or null when it may: sent elsewhere or ordered, hurt (it heals
+ * where it stands), moved already, on its way or healing, or resting by the player's own order (the autopilot's own
+ * fortified soldiers may move: restedByUs).
+ */
+function formationStill(u, ctx) {
+    const k = unitKey(u.id);
+    if (ctx.posts.has(k) || ctx.ordered.has(k)) return "ordered";
+    if ((Number(u.Health?.damage) || 0) > 0) return "hurt";
+    if (u.canMove === false || u.hasMoved === true || !u.location || afloat(u)) return "moved";
+    const A = globalThis.UnitActivityTypes;
+    if (A && (u.activityType === A.OPERATION || u.activityType === A.HEAL)) return "busy";
+    if (resting(u) && !restedByUs.has(k)) return "the player's";
+    return null;
+}
+
+/**
+ * Formations (research/37 Phase 4; the scoring in core/xpl-formation.js). At each threatened settlement with raiders in
+ * sight, after planDefence has sent who goes where, the soldiers standing there (guardDetail's `present`, melee and
+ * ranged) improve their posts: a melee unit onto an empty centre (the one on it never leaves), melee units screening
+ * each approach, ranged units within range of a raider and not next to a land raider. Only moves worth FORM.MIN_GAIN
+ * (a fortified one's fortification counts against it), onto tiles free now, within GUARD_RADIUS and nearest this
+ * settlement (they stay its guards), on our land or nobody's, reached this turn; the most threatened settlement first.
+ * The commander's tile comes later, from postCommander (formCommander). Fills ctx.formation (unit key -> its move) and
+ * ctx.formations (settlement key -> the formation, for the commander and UI.log).
+ */
+function planFormations(units, ctx) {
+    ctx.formation = new Map();
+    ctx.formations = new Map();
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    ctx.threats.forEach((t, rank) => {
+        const s = t.settlement;
+        const key = `${s.x},${s.y}`;
+        // Raiders in sight: land ones are screened, and any of them (ships too) is a ranged unit's target; aircraft aside.
+        const hostiles = hostilesAround(s, THREAT_RADIUS + 1).filter((h) => h.def?.Domain !== "DOMAIN_AIR");
+        if (hostiles.length === 0) return;
+        const land = hostiles.filter((h) => h.def?.Domain === "DOMAIN_LAND").map((h) => ({ x: h.at.x, y: h.at.y }));
+        const members = [];
+        for (const ranged of [false, true]) {
+            for (const u of guardDetail(t, units, ctx.threats, { ranged }).present) {
+                const k = unitKey(u.id);
+                if (ctx.posts.has(k)) continue; // a spare guard leaving for another post
+                const def = safe(() => GameInfo.Units.lookup(u.type), null);
+                const range = ranged ? Math.max(1, Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.Range, 0)) || 2) : 0;
+                members.push({ key: k, role: ranged ? "ranged" : "melee", range, at: { x: u.location.x, y: u.location.y }, u, def, still: formationStill(u, ctx) });
+            }
+        }
+        if (members.length === 0) return;
+        const f = { centre: { x: s.x, y: s.y }, land, targets: hostiles.map((h) => ({ x: h.at.x, y: h.at.y })), sectors: sectorsOf(land, dist), members, dist, defence: terrainDefence };
+        // Free tiles a soldier may stand on and still guard this settlement (its nearest threatened one, the first listed
+        // on a tie, as guardDetail counts it).
+        const tiles = [];
+        for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, GUARD_RADIUS), []) ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc || ctx.stepTo.has(`${loc.x},${loc.y}`) || !roomForSoldier(loc)) continue;
+            if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || hazardAt(loc) > 0) continue;
+            const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+            if (owner !== -1 && owner !== null && owner !== pid()) continue;
+            const d = dist(loc, s);
+            if (ctx.threats.some((o, i) => i !== rank && (dist(loc, o.settlement) < d || (dist(loc, o.settlement) === d && i < rank)))) continue;
+            tiles.push({ x: loc.x, y: loc.y });
+        }
+        const byKey = new Map(members.map((m) => [m.key, m]));
+        const reached = new Map();
+        const reach = (k, loc) => {
+            const memo = `${k}|${loc.x},${loc.y}`;
+            if (!reached.has(memo)) {
+                const u = byKey.get(k).u;
+                const turns = pathTurns(u, loc);
+                reached.set(memo, turns !== null && turns <= 1 && !startsWar(u, loc));
+            }
+            return reached.get(memo);
+        };
+        const movable = new Set(members.filter((m) => m.still === null).map((m) => m.key));
+        const plan = planFormation(f, { tiles, movable, reach, cost: (k) => (resting(byKey.get(k).u) ? FORM.FORTIFIED : 0) });
+        for (const mv of plan.moves) {
+            const m = byKey.get(mv.key);
+            ctx.stepTo.add(`${mv.to.x},${mv.to.y}`);
+            const role = m.role === "ranged" ? "RANGED" : same(mv.to, s) ? "HOLD" : "SCREEN";
+            ctx.formation.set(mv.key, { key, name: s.name, role, from: mv.from, loc: mv.to, gain: mv.gain, unit: m.def?.UnitType ?? "?" });
+        }
+        ctx.formations.set(key, { f, at: plan.at, name: s.name, tiles: tiles.length, commander: null });
+    });
+}
+
+/** A soldier's move in its settlement's formation, woken first when the autopilot had fortified it. @returns a log entry or null */
+function formMove(u, def, ctx) {
+    const k = unitKey(u.id);
+    const m = ctx.formation.get(k);
+    if (!m) return null;
+    wakeUnit(u);
+    if (!moveTo(u, m.loc)) return null;
+    restedByUs.delete(k);
+    m.sent = true;
+    return { key: `FORMATION_${m.role}`, args: [nameOf(def), m.name] };
+}
+
+/**
+ * A land commander at a threatened settlement (postCommander): the tile within GUARD_RADIUS where its radius (1, +1 with
+ * Merit) covers the most of the formation's soldiers (their tiles after this pass's moves), never next to a land raider,
+ * on our land or nobody's, with room for a commander (a soldier may share it), reached this turn; it stays put unless
+ * that covers FORM.MIN_GAIN more. @returns a log entry or null (it stays: the skip step skips its turn)
+ */
+function formCommander(u, def, form, ctx) {
+    const s = form.f.centre;
+    const merit = safe(() => u.Experience?.hasPromotion("DISCIPLINE_ARMY_COMMENDATION_MERIT", "PROMOTION_COMMENDATION_ARMY_MERIT"), false);
+    const radius = 1 + (merit ? 1 : 0);
+    const taken = ctx.commanderTiles ??= new Set();
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, GUARD_RADIUS), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || taken.has(`${loc.x},${loc.y}`) || !roomFor(def, loc)) continue;
+        if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || hazardAt(loc) > 0) continue;
+        const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+        if (owner !== -1 && owner !== null && owner !== pid()) continue;
+        tiles.push({ x: loc.x, y: loc.y });
+    }
+    const reach = (loc) => {
+        const turns = pathTurns(u, loc);
+        return turns !== null && turns <= 1 && !startsWar(u, loc);
+    };
+    const pick = commanderTile(form.f, { at: { x: u.location.x, y: u.location.y }, radius }, [...form.at.values()], tiles, reach);
+    form.commander = { unit: def.UnitType, at: { x: u.location.x, y: u.location.y }, to: pick?.to ?? null, gain: pick?.gain ?? 0 };
+    const stand = pick?.to ?? u.location;
+    taken.add(`${stand.x},${stand.y}`);
+    if (!pick || !moveTo(u, pick.to)) return null;
+    form.commander.sent = true;
+    return { key: "FORMATION_COMMANDER", args: [nameOf(def), form.name] };
+}
+
+/**
+ * UI.log, once a turn for each formation (research/37 §10, Phase 4): its sectors (the approaches), who holds the centre,
+ * the moves (with their gains, NOT SENT when the game refused), the soldiers who stay and why, and the commander.
+ */
+function logFormations(ctx) {
+    const at = (l) => (l ? `${l.x},${l.y}` : "?");
+    for (const [key, form] of ctx.formations ?? []) {
+        if (formationNoted.get(key) === Game.turn) continue;
+        formationNoted.set(key, Game.turn);
+        const { f } = form;
+        const moves = [...ctx.formation.values()].filter((m) => m.key === key);
+        const moved = new Set([...ctx.formation.entries()].filter(([, m]) => m.key === key).map(([k]) => k));
+        const holder = f.members.find((m) => m.role === "melee" && same(m.at, f.centre));
+        const stay = f.members.filter((m) => !moved.has(m.key)).map((m) => `${m.def?.UnitType ?? "?"} at ${at(m.at)} (${same(m.at, f.centre) ? "on the centre" : m.still ?? "no better post"})`);
+        const c = form.commander;
+        const parts = [
+            `sectors ${f.sectors.length} [${f.sectors.map((sec) => `${sec.length} near ${at(sec[0])}`).join("; ")}]${f.targets.length > f.land.length ? `, ships ${f.targets.length - f.land.length}` : ""}`,
+            `centre ${holder ? `held by ${holder.def?.UnitType ?? "?"}` : "not held"}`,
+            `moves [${moves.map((m) => `${m.unit} ${at(m.from)} -> ${at(m.loc)} ${m.role} +${Math.round(m.gain)}${m.sent ? "" : " NOT SENT"}`).join("; ")}]`,
+            `stay [${stay.join("; ")}]`,
+        ];
+        if (c) parts.push(`commander ${c.unit} at ${at(c.at)}${c.to ? ` -> ${at(c.to)} +${Math.round(c.gain)}${c.sent ? "" : " NOT SENT"}` : " stays"}`);
+        log.info(`formation: ${form.name}: ${parts.join("; ")}; ${form.tiles} free tile(s)`);
+    }
+}
+
 /**
  * UI.log, once a turn for each threatened settlement and war front (research/36 §10): the raiders and the strongest of
  * them, the centre's health, our guards there and on their way (with their turns), and who was sent from where.
@@ -2663,28 +2839,52 @@ function isLandCommander(def) {
     return def?.Domain === "DOMAIN_LAND" && (def.PromotionClass === "PROMOTION_CLASS_LAND_COMMANDER" || hasTag(def, "UNIT_CLASS_ARMY_COMMANDER"));
 }
 
+const COMMANDER_THREAT_TURNS = 6; // a threatened settlement draws a land commander that reaches it within this many turns...
+const COMMANDER_PEACE_TURNS = 4;  // ...an unhappy one in peace, this many
+const COMMANDER_UNHAPPY_GAIN = 3; // in peace a commander leaves a centre only for a settlement this much unhappier (below zero)
+
 /**
- * Where a land commander should stand: the centre of our most threatened settlement (its radius covers the
- * defenders around it; the district takes the attacks), each commander its own; in peace it stays on a centre unless
- * a settlement is unhappy (net Happiness below 0: the commander cuts its unhappiness), the unhappiest first; off any
- * centre it goes to the nearest one. @returns { loc, name } or null
+ * Where a land commander should stand: the centre of our most threatened settlement it reaches within
+ * COMMANDER_THREAT_TURNS (its radius covers the defenders around it; the district takes the attacks), each commander its
+ * own, its own post first while that stays threatened; in peace it stays on a centre unless a settlement within
+ * COMMANDER_PEACE_TURNS is COMMANDER_UNHAPPY_GAIN unhappier and below zero (the commander cuts its unhappiness), the
+ * unhappiest first; on its way to an unhappy one it keeps that post; off any centre it goes to the nearest one.
+ * Game 37: in Exploration it was re-posted seven times between three cities about 5 turns apart (E36-E61) as a raid came
+ * and went and a crisis moved their Happiness by a point or two, so it rarely arrived; in Modern it walked 18 turns to a
+ * far town (M9-M27) that a purchase had secured at M17. Its post is kept in its goal ({post: "x,y"}). @returns { c } or null
  */
 function commanderPost(u, ctx) {
     const cities = safe(() => Players.get(pid()).Cities.getCities(), []) ?? [];
     const here = u.location;
     const taken = ctx.commanderPosts ??= new Set();
-    const free = (c) => !taken.has(`${c.location.x},${c.location.y}`);
+    const keyOf = (c) => `${c.location.x},${c.location.y}`;
+    const free = (c) => !taken.has(keyOf(c));
     const dist = (c) => safe(() => GameplayMap.getPlotDistance(here.x, here.y, c.location.x, c.location.y), Infinity);
+    const turns = new Map();
+    const reaches = (c, max) => {
+        if (same(c.location, here)) return true;
+        if (!turns.has(keyOf(c))) turns.set(keyOf(c), pathTurns(u, c.location));
+        const t = turns.get(keyOf(c));
+        return t !== null && t <= max;
+    };
+    const kept = goals.get(unitKey(u.id))?.post;
     const at = (t) => cities.find((c) => c.location.x === t.settlement.x && c.location.y === t.settlement.y);
-    for (const t of [...ctx.threats].sort((a, b) => b.count - a.count)) {
-        const c = at(t);
-        if (c && free(c)) return { c };
-    }
+    const threatened = ctx.threats.map((t) => ({ t, c: at(t) })).filter((x) => x.c && free(x.c));
+    const own = threatened.find((x) => keyOf(x.c) === kept);
+    if (own && reaches(own.c, COMMANDER_THREAT_TURNS)) return { c: own.c };
+    for (const x of [...threatened].sort((a, b) => b.t.count - a.t.count)) if (reaches(x.c, COMMANDER_THREAT_TURNS)) return { c: x.c };
     const happiness = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0;
-    const unhappy = cities.filter((c) => free(c) && happiness(c) < 0).sort((a, b) => happiness(a) - happiness(b) || dist(a) - dist(b));
     const on = cities.find((c) => same(c.location, here));
-    if (on && free(on) && (unhappy.length === 0 || happiness(on) < 0)) return { c: on };
+    const going = cities.find((c) => keyOf(c) === kept && free(c) && !same(c.location, here));
+    if (going && happiness(going) < 0) return { c: going };
+    const unhappy = cities.filter((c) => free(c) && happiness(c) < 0 && !same(c.location, here) && reaches(c, COMMANDER_PEACE_TURNS))
+        .sort((a, b) => happiness(a) - happiness(b) || dist(a) - dist(b));
+    if (on && free(on)) {
+        const best = unhappy[0];
+        return best && happiness(best) <= Math.min(happiness(on), 0) - COMMANDER_UNHAPPY_GAIN ? { c: best } : { c: on };
+    }
     if (unhappy.length > 0) return { c: unhappy[0] };
+    if (going) return { c: going };
     const nearest = cities.filter(free).sort((a, b) => dist(a) - dist(b))[0];
     return nearest ? { c: nearest } : null;
 }
@@ -2695,6 +2895,10 @@ function postCommander(u, def, ctx) {
     if (!post) return null;
     const loc = post.c.location;
     ctx.commanderPosts.add(`${loc.x},${loc.y}`);
+    goals.set(unitKey(u.id), { post: `${loc.x},${loc.y}`, turn: Game.turn });
+    // At a threatened settlement its formation places it (research/37 §6B: where its radius covers the most of them).
+    const form = ctx.formations?.get(`${loc.x},${loc.y}`);
+    if (form && safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), Infinity) <= GUARD_RADIUS) return formCommander(u, def, form, ctx);
     if (same(u.location, loc)) return null; // at its post: the skip step skips its turn
     const p = pathTo(u, loc);
     if (!p || !wayIsSafe(u, p, 1, ctx) || startsWar(u, loc) || !moveTo(u, loc)) return null;
@@ -2823,10 +3027,10 @@ function dispersible(v) {
  * village in game 5, though villages were often empty (their units out raiding).
  */
 function disperseHere(u, def, ctx) {
-    if (def.CoreClass !== "CORE_CLASS_MILITARY" || def.Domain !== "DOMAIN_LAND" || u.isCommanderUnit) return null;
+    if (def.CoreClass !== "CORE_CLASS_MILITARY" || def.Domain !== "DOMAIN_LAND" || u.isCommanderUnit || !u.location) return null;
     ctx.villages ??= safe(() => villagesOf(pid()), []) ?? [];
     const here = ctx.villages.find((v) => same(v, u.location));
-    if (!here || !operate(u, "UNITOPERATION_DISPERSE_INDEPENDENT")) return null;
+    if (!here || !dispersible(here) || !operate(u, "UNITOPERATION_DISPERSE_INDEPENDENT")) return null;
     goals.delete(unitKey(u.id));
     return { key: "DISPERSED", args: [nameOf(def), indepName(here.id)] };
 }
@@ -2849,13 +3053,54 @@ function goDisperse(u, def, ctx) {
         const turns = pathTurns(u, v);
         if (turns === null || turns > DISPERSE_MAX_TURNS || !moveTo(u, { x: v.x, y: v.y })) continue;
         ctx.dispersing.add(`${v.x},${v.y}`);
-        goals.set(unitKey(u.id), { disperse: `${v.x},${v.y}` });
+        goals.set(unitKey(u.id), { disperse: `${v.x},${v.y}`, turn: Game.turn });
         return { key: "DISPERSE_MOVE", args: [nameOf(def), indepName(v.id), v.x, v.y] };
     }
     return null;
 }
 
-const HEAL_SAFE_RADIUS = 2; // a hurt soldier with a hostile unit this close steps back before it heals
+/**
+ * Soldiers sent to disperse a village this turn (goDisperse) that stand on it now disperse it at once, as the hud's unit
+ * step calls this right after their moves (dispersing needs no moves left). Game 37 T62: a Warrior walked onto Тичитты's
+ * empty village and stood there through the night; their Archer hit it for 30, and the next turn it withdrew instead.
+ * @returns log entries
+ */
+export function disperseArrivals() {
+    const out = [];
+    const ctx = {};
+    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+        const g = goals.get(unitKey(u.id));
+        if (!g?.disperse || g.turn !== Game.turn || !u.location || `${u.location.x},${u.location.y}` !== g.disperse) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const e = def ? safe(() => disperseHere(u, def, ctx), null) : null;
+        if (e) out.push(e);
+    }
+    return out;
+}
+
+const HEAL_SAFE_RADIUS = 2; // a hurt soldier with a hostile unit this close steps back before it heals...
+const REACH_LOOK = 6;       // ...and away from our settlements, one whose next turn reaches it (hostile soldiers this far are looked at)
+
+/**
+ * Hostile soldiers (not aircraft) whose next turn reaches this tile: a melee one within its moves + 1, a ranged one (ships
+ * too) within its moves + its range; terrain is not counted (the cautious side). Game 37 E8: a hurt Swordsman healing in
+ * the field with no raider within HEAL_SAFE_RADIUS was shot by a Heavy Archer (2 moves, range 2) that walked up.
+ */
+function hostilesInReach(loc) {
+    return hostilesAround(loc, REACH_LOOK).filter((h) => {
+        if (!h.def || h.def.Domain === "DOMAIN_AIR") return false;
+        const st = safe(() => GameInfo.Unit_Stats.lookup(h.def.UnitType), null);
+        const ranged = Number(st?.RangedCombat) > 0 || Number(st?.Bombard) > 0;
+        const reach = Math.max(1, Number(h.def.BaseMoves) || 2) + (ranged ? Math.max(1, Number(st?.Range) || 1) : 1);
+        return safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, h.at.x, h.at.y), Infinity) <= reach;
+    });
+}
+
+/** Within GUARD_RADIUS of one of our settlements' centres (a guard heals at its post: the old radius alone counts there). */
+function nearOwnCentre(loc, ctx) {
+    ctx.centres ??= (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location).filter(Boolean);
+    return ctx.centres.some((c) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, c.x, c.y), Infinity) <= GUARD_RADIUS);
+}
 
 // ---- surplus soldiers (research/24 G3) ------------------------------------------------------------
 
@@ -3017,7 +3262,9 @@ function defend(u, def, ctx) {
     if (Number(u.Health?.damage) > 0) {
         // Not within reach of hostile units (ships too): a step back first, garrisons aside (research/23 D11:
         // game 8, a Mamluk healed on the coast next to two Cogs and was killed the next turn).
-        if (!ctx.garrison.has(unitKey(u.id)) && hostileNear(u.location, HEAL_SAFE_RADIUS, ctx)) {
+        // Away from our settlements, also when a raider's next turn reaches it (hostilesInReach; game 37 E8).
+        if (!ctx.garrison.has(unitKey(u.id)) && (hostileNear(u.location, HEAL_SAFE_RADIUS, ctx)
+            || (!nearOwnCentre(u.location, ctx) && hostilesInReach(u.location).length > 0))) {
             const back = stepAway(u, def, ctx, "WITHDRAW");
             if (back) return back;
         }
@@ -3907,6 +4154,8 @@ export function commandUnits(settings, options) {
         // Settlements near a village at war with us, not threatened: a holder each (research/37 §4B).
         exposed: (options.exposed ?? []).filter((e) => !(options.threats ?? []).some((t) => same(t.settlement, e.settlement))),
         posts: new Map(), // unit key -> its post (planDefence)
+        formation: new Map(), // unit key -> its move in its settlement's formation (planFormations)
+        formations: new Map(), // settlement key -> its formation
     };
     safe(() => noteHits(units), null);
     safe(() => logCommanderParameters(), null);
@@ -3937,6 +4186,14 @@ export function commandUnits(settings, options) {
             log.debug("autopilot defence plan failed", error);
             ctx.posts = new Map();
         }
+        // Formations (research/37 Phase 4): the soldiers already at a threatened settlement improve their posts.
+        try {
+            planFormations(units, ctx);
+        } catch (error) {
+            log.debug("autopilot formations failed", error);
+            ctx.formation = new Map();
+            ctx.formations = new Map();
+        }
     }
     const A = globalThis.UnitActivityTypes;
     const seen = [];
@@ -3956,6 +4213,17 @@ export function commandUnits(settings, options) {
             }
             seen.push(`${what}:left`);
             continue;
+        }
+        // Standing on a village at war with us: dispersed first, hurt or not, moves left or not (game 37 T63: a Warrior on
+        // Тичитты's empty village, hit for 30 the night before, withdrew instead and the village kept raiding).
+        if (def && (options.defend || options.roam) && u.isOnMap !== false) {
+            const e = safe(() => disperseHere(u, def, ctx), null);
+            if (e) {
+                seen.push(`${what}:${e.key}`);
+                entries.push(e);
+                ordered.add(unitKey(u.id));
+                continue;
+            }
         }
         // On deep ocean while it hurts (moving or not): to the nearest coast or land first.
         if (def && u.isOnMap !== false && u.canMove !== false && u.hasMoved !== true && roughSeas() && isOcean(u.location)) {
@@ -4009,6 +4277,16 @@ export function commandUnits(settings, options) {
         // A defender for a threatened settlement or a war front (planDefence), woken when it sleeps or is fortified.
         if (def && ctx.posts.has(unitKey(u.id))) {
             const e = safe(() => reinforce(u, def, ctx), null);
+            if (e) {
+                seen.push(`${what}:${e.key}`);
+                entries.push(e);
+                ordered.add(unitKey(u.id));
+                continue;
+            }
+        }
+        // A better post in its settlement's formation (research/37 Phase 4), woken first when the autopilot fortified it.
+        if (def && ctx.formation.has(unitKey(u.id))) {
+            const e = safe(() => formMove(u, def, ctx), null);
             if (e) {
                 seen.push(`${what}:${e.key}`);
                 entries.push(e);
@@ -4154,7 +4432,10 @@ export function commandUnits(settings, options) {
             ordered.add(unitKey(u.id));
         }
     }
-    if (options.defend || options.roam) safe(() => logDefence(ctx, units), null);
+    if (options.defend || options.roam) {
+        safe(() => logDefence(ctx, units), null);
+        safe(() => logFormations(ctx), null);
+    }
     safe(() => saveRested(), null);
     // The game cuts log lines at about 1000 characters: busy units are only counted.
     const busy = seen.filter((t) => t.endsWith(":busy")).length;

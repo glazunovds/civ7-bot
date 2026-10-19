@@ -58,6 +58,7 @@
           <Item>ui/core/xpl-constants.js</Item>
           <Item>ui/core/xpl-deals.js</Item>
           <Item>ui/core/xpl-effect-value.js</Item>
+          <Item>ui/core/xpl-formation.js</Item>
           <Item>ui/core/xpl-heap.js</Item>
           <Item>ui/core/xpl-hex.js</Item>
           <Item>ui/core/xpl-placement-model.js</Item>

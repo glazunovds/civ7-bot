@@ -264,7 +264,8 @@ test("dispersing: a soldier walks onto an empty village at war with us, and disp
         // Another leader is befriending it (−30 relationship with them): no.
         ({ move } = order({ events: { 5: [{ initialPlayer: 3, targetPlayer: 5, actionType: DiplomacyActionTypes.DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN }] } }));
         assert.equal(move, undefined, "someone befriends it");
-        // Standing on it: dispersed.
+        // Standing on it: dispersed (nobody befriends it now).
+        delete world.events;
         reset();
         units.resetUnitGoals();
         world.units = [{ id: 20, type: "UNIT_WARRIOR", ...LONDON }, { id: 21, type: "UNIT_WARRIOR", x: village.x, y: village.y }];
@@ -275,6 +276,97 @@ test("dispersing: a soldier walks onto an empty village at war with us, and disp
         assert.equal(r.entries.find((e) => e.key === "DISPERSED")?.args[1], "Hittites");
     } finally {
         delete world.events;
+        reset();
+    }
+});
+
+test("a hurt soldier standing on an empty village at war with us disperses it instead of withdrawing; not one another leader befriends (game 37 T63)", async () => {
+    // Game 37: a Warrior sent to Тичитты's empty village stood on it at T62's end; their Archer hit it for 30 that night,
+    // and at T63 the escape step (hurt 30, a raider within 2) took it away instead: the village kept raiding Шеффилд.
+    const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
+    const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+    const village = { owner: 5, x: LONDON.x + 4, y: LONDON.y };
+    const order = (extra = {}) => {
+        reset();
+        units.resetUnitGoals();
+        world.units = [{ id: 20, type: "UNIT_WARRIOR", ...LONDON }, { id: 21, type: "UNIT_WARRIOR", x: village.x, y: village.y, damage: 30 }];
+        world.villages = [village];
+        world.indepRelation = { 5: IndependentRelationship.HOSTILE };
+        world.enemies = [{ owner: 5, x: village.x + 2, y: village.y, type: "UNIT_ARCHER" }];
+        Object.assign(world, extra);
+        const r = units.commandUnits(DEFAULT_SETTINGS, { defend: true });
+        return { r, ops: fake.sent.filter((s) => s.id?.id === 21).map((s) => s.op) };
+    };
+    try {
+        let { r, ops } = order();
+        assert.ok(ops.includes("UNITOPERATION_DISPERSE_INDEPENDENT"), JSON.stringify(r.entries));
+        assert.ok(!ops.includes(UnitOperationTypes.MOVE_TO), `it stays and disperses: ${JSON.stringify(ops)}`);
+        assert.equal(r.entries.find((e) => e.key === "DISPERSED")?.args[1], "Hittites");
+        // Another leader is befriending it (−30 relationship with them): it is not dispersed.
+        ({ r, ops } = order({ events: { 5: [{ initialPlayer: 3, targetPlayer: 5, actionType: DiplomacyActionTypes.DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN }] } }));
+        assert.ok(!ops.includes("UNITOPERATION_DISPERSE_INDEPENDENT"), JSON.stringify(r.entries));
+    } finally {
+        delete world.events;
+        reset();
+    }
+});
+
+test("a hurt soldier in the field steps back from a raider whose next turn reaches it; at its post it heals (game 37 E8)", async () => {
+    // Game 37 E8: a Swordsman healing in the field, no raider within 2, was shot by a Heavy Archer (2 moves, range 2)
+    // that walked up from 3 tiles away.
+    const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
+    const { DEFAULT_SETTINGS } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+    const order = (at, enemy) => {
+        reset();
+        units.resetUnitGoals();
+        world.units = [{ id: 20, type: "UNIT_WARRIOR", ...LONDON }, { id: 21, type: "UNIT_WARRIOR", ...at, damage: 20 }];
+        world.enemies = [{ owner: 5, ...enemy }];
+        const r = units.commandUnits(DEFAULT_SETTINGS, { defend: true });
+        return { r, ops: fake.sent.filter((s) => s.id?.id === 21).map((s) => s.op) };
+    };
+    try {
+        const field = { x: 20, y: 4 };
+        // An Archer 3 tiles away: its 2 moves and range 2 reach the soldier: it steps back, it does not rest.
+        let { r, ops } = order(field, { x: 23, y: 4, type: "UNIT_ARCHER" });
+        assert.ok(ops.includes(UnitOperationTypes.MOVE_TO) && !ops.includes("UNITOPERATION_REST_UNTIL_HEALED"), JSON.stringify(r.entries));
+        assert.ok(r.entries.some((e) => e.key === "WITHDRAW"));
+        // A Warrior 4 tiles away (2 moves, then a melee attack: 3): out of reach, it heals.
+        ({ r, ops } = order(field, { x: 24, y: 4, type: "UNIT_WARRIOR" }));
+        assert.ok(ops.includes("UNITOPERATION_REST_UNTIL_HEALED") && !ops.includes(UnitOperationTypes.MOVE_TO), JSON.stringify(r.entries));
+        // Next to York's centre, the Archer 3 tiles away: a guard heals at its post (only HEAL_SAFE_RADIUS counts there).
+        ({ r, ops } = order({ x: YORK.x + 1, y: YORK.y }, { x: YORK.x + 4, y: YORK.y, type: "UNIT_ARCHER" }));
+        assert.ok(ops.includes("UNITOPERATION_REST_UNTIL_HEALED") && !ops.includes(UnitOperationTypes.MOVE_TO), JSON.stringify(r.entries));
+    } finally {
+        reset();
+    }
+});
+
+test("a soldier that reaches an empty village at war with us disperses it in the same pass, before its raiders come home (game 37 T62)", async () => {
+    const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
+    const units = await import("../mod/expansion-planner/ui/data/xpl-autopilot-units.js");
+    // North of London, far from York and Leeds (no other settlement near it wants a holder).
+    const village = { owner: 5, x: LONDON.x + 1, y: LONDON.y - 3 };
+    reset();
+    units.resetUnitGoals();
+    world.units = [{ id: 20, type: "UNIT_WARRIOR", ...LONDON }, { id: 21, type: "UNIT_WARRIOR", x: LONDON.x + 1, y: LONDON.y - 1 }];
+    world.villages = [village];
+    world.indepRelation = { 5: IndependentRelationship.HOSTILE };
+    // Like the game: the move is carried out at once, and the soldier stands on the village with no moves left.
+    const send = Game.UnitOperations.sendRequest;
+    Game.UnitOperations.sendRequest = (id, op, args) => {
+        if (id?.id === 21 && op === UnitOperationTypes.MOVE_TO && args?.X === village.x && args?.Y === village.y) {
+            Object.assign(world.units.find((u) => u.id === 21), { x: village.x, y: village.y, moved: true, moves: 0 });
+        }
+        return send(id, op, args);
+    };
+    settings.patch({ autopilot: { defend: true, skipUnits: false, endTurn: false, replanEvery: 0, research: false, choices: false, befriend: false, growth: false, towns: false, production: false, purchases: false } });
+    try {
+        await autopilot.runTurn(true);
+        const ops = fake.sent.filter((s) => s.id?.id === 21).map((s) => s.op);
+        assert.deepEqual(ops, [UnitOperationTypes.MOVE_TO, "UNITOPERATION_DISPERSE_INDEPENDENT"], JSON.stringify(fake.sent.filter((s) => s.id?.id === 21)));
+    } finally {
+        Game.UnitOperations.sendRequest = send;
+        settings.patch({ autopilot: { defend: false, skipUnits: false, production: true, purchases: true, research: true, choices: true, befriend: true, growth: true, towns: true, replanEvery: 5 } });
         reset();
     }
 });

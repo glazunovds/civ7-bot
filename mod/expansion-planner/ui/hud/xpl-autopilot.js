@@ -25,7 +25,7 @@ import { goldBalance } from '../data/xpl-city-actions.js';
 import { probeDistricts } from '../data/xpl-growth-job.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
-import { commandUnits, disbandSurplus, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
+import { commandUnits, disbandSurplus, disperseArrivals, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
 import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryRaces } from '../data/xpl-victory.js';
@@ -587,6 +587,11 @@ export async function runTurn(force = false) {
                 const f = foundArrivals();
                 record(f);
                 founded.push(...f);
+            }
+            // A soldier that reached an empty village at war with us disperses it now, before its raiders come home (game 37).
+            if (r.entries.some((e) => e.key === "DISPERSE_MOVE")) {
+                await wait(STEP_PAUSE_MS);
+                record(disperseArrivals());
             }
             for (const k of r.ordered) ordered.add(k);
             for (const [k, at] of r.orderedAt ?? []) orderedAt.set(k, at);

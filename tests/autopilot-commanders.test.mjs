@@ -101,6 +101,48 @@ test("a land commander takes a post: the most threatened settlement, in peace th
     assert.deepEqual(orders(), []);
 });
 
+test("a far threatened settlement does not draw the commander (game 37: an 18-turn walk to a town a purchase had secured)", () => {
+    // A town of ours 23 tiles east of Athens (12 turns) is threatened; Sparta (−3) is 4 turns away.
+    const far = { owner: 0, x: 28, y: 5, name: "Rhodes" };
+    world.cities.push(far);
+    try {
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }]);
+        run({ threats: [{ settlement: { x: far.x, y: far.y }, count: 3, land: 3 }] });
+        assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [SPARTA.x, SPARTA.y], JSON.stringify(orders()));
+    } finally {
+        world.cities.pop();
+    }
+});
+
+test("in peace a commander leaves its centre only for a settlement 3 points unhappier, and keeps its post on the way (game 37)", () => {
+    // Game 37 E36-E61: re-posted seven times between three cities about 5 turns apart as their Happiness moved a point.
+    const [athens, sparta, corinth] = world.cities;
+    try {
+        sparta.happy = 1;
+        // On Athens (+2) with Corinth at −1: it stays.
+        corinth.happy = -1;
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }]);
+        run({});
+        assert.deepEqual(orders(), [], "−1 is not worth the walk");
+        // Corinth at −4: it goes.
+        corinth.happy = -4;
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }]);
+        run({});
+        assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [CORINTH.x, CORINTH.y]);
+        // Stopped on its way, with Corinth back at −1 and Athens, two turns back, now at −5: Corinth stays its post.
+        corinth.happy = -1;
+        athens.happy = -5;
+        fake.sent.length = 0;
+        world.units = [{ id: 1, type: "UNIT_ARMY_COMMANDER", x: 5, y: 8, moved: true }];
+        run({});
+        assert.deepEqual([moveOf(1)?.X, moveOf(1)?.Y], [CORINTH.x, CORINTH.y], JSON.stringify(orders()));
+    } finally {
+        athens.happy = 2;
+        sparta.happy = -3;
+        corinth.happy = -1;
+    }
+});
+
 test("a commander the game stopped on its way (moved, moves left) gets its post again", () => {
     fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", x: 5, y: 8, moved: true }]);
     run({ threats: [{ settlement: CORINTH, count: 2, land: 2 }] });
