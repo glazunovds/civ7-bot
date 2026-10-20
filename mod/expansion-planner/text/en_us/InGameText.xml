@@ -2277,5 +2277,24 @@
     <Row Tag="LOC_XPL_AP_STRATEGY_TT_CITY_TARGET">
       <Text>Towns become cities up to {1_Num} cities while every city stands at or above zero Happiness (conversions cost far less now than in the next age)</Text>
     </Row>
+    <!-- After the win (game 40) -->
+    <Row Tag="LOC_XPL_AP_VICTORY_SECURED">
+      <Text>{1_Name} victory secured: its goal is reached and the countdown runs ({2_Num} turn(s) left). No more work toward any victory: balanced play, every other technology and civic before Future Tech</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_VICTORY_WON">
+      <Text>{1_Victory} won: playing on without chasing victories (balanced play, every other technology and civic before Future Tech)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GAME_DECIDED">
+      <Text>The game is decided: playing on without chasing victories</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_VICTORY_WORK_DROPPED">
+      <Text>{1_City}: «{2_Item}» leaves the queue: no victory to chase</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_REMAINING">
+      <Text>{1_City}: «{2_Building}» queued (after the win every building is built)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SATELLITE_QUEUED">
+      <Text>{1_City}: «{2_Project}» queued: the satellite reveals the whole map</Text>
+    </Row>
   </EnglishText>
 </Database>

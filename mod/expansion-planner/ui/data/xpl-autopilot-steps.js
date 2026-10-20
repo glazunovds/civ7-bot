@@ -744,10 +744,15 @@ export function chooseResearch(kind, settings, focus = null) {
         const node = def ? safe(() => Game.ProgressionTrees.getNode(pid(), def.ProgressionTreeNodeType)?.nodeType, null) : r.recommendedType;
         return available.has(node) ? node : null;
     };
-    const usable = recs.filter((r) => toNode(r) !== null);
+    // After the win (the hud's outcome; game 40: Future Tech at M45 and M49 with four masteries left): every other
+    // technology, civic and mastery first, the advisor's among them, else the quickest; a repeatable node (Future Tech,
+    // Future Civic) only when nothing else is left.
+    const rest = settings?.afterWin ? researchCandidates(holder, available).filter((c) => !c.repeat).map((c) => c.node) : [];
+    const pool = rest.length > 0 ? new Set(rest) : available;
+    const usable = recs.filter((r) => toNode(r) !== null && pool.has(toNode(r)));
     const pick = pickRecommendation(usable, settings.profile);
     // No advice: the quickest available one.
-    const nodeType = pick ? toNode(pick) : [...available].sort((a, b) => (safe(() => holder.getTurnsForNode(a), 99) - safe(() => holder.getTurnsForNode(b), 99)))[0];
+    const nodeType = pick ? toNode(pick) : [...pool].sort((a, b) => (safe(() => holder.getTurnsForNode(a), 99) - safe(() => holder.getTurnsForNode(b), 99)))[0];
     const args = { ProgressionTreeNodeType: nodeType };
     const ok = safe(() => Game.PlayerOperations.canStart(pid(), op, args, false), null);
     if (!ok?.Success) return null;
@@ -2574,6 +2579,72 @@ export function pushOperationIvy(strategy) {
     return [{ key: "VICTORY_WORK", args: [nameOf(at.city), safe(() => Locale.compose(def.Name), OPERATION_IVY)] }];
 }
 
+// ---- after the win (game 40) ---------------------------------------------------------------------------------------
+
+// What serves only a victory: the science projects (Innovation) and Operation Ivy (military points). Not Launch Satellite,
+// which reveals the whole map (launchSatellite), nor the Launch Pad, a building like any other once the race is over (+18
+// Science; buildings.xml).
+const SATELLITE = "PROJECT_LAUNCH_SATELLITE";
+const VICTORY_ONLY = new Set([...SCIENCE_PROJECTS, ...STANDING_SITE_PROJECTS, OPERATION_IVY].filter((t) => t !== SATELLITE));
+/** Does this item (a hash or a type name) serve only a victory? */
+const victoryOnly = (t) => VICTORY_ONLY.has(typeNameOf(t));
+
+/**
+ * After the win (the hud's outcome: SECURED, WON or DECIDED): a queued project that serves only a victory leaves its queue,
+ * one a city a pass (root gotcha 54), progress or not: nothing it brings counts any more. Alone in its queue, the plan's next
+ * building (else the cheapest the city can place) is appended first: an empty queue holds the turn. Game 40: from M49, with
+ * 107 of 100 Innovation and the countdown running, 1,518 production went into Preparation, the Radio Telescope, a satellite,
+ * a flight and two Launch Pads. @returns log entries
+ */
+export function dropVictoryWork() {
+    const out = [];
+    const plans = state.get().results?.plans;
+    for (const city of ownSettlements()) {
+        if (city.isTown) continue;
+        const types = queueTypes(city);
+        const i = types.findIndex(victoryOnly);
+        if (i < 0) continue;
+        if (types.every(victoryOnly)) {
+            const r = plans ? queueNextBuildings(plans, sidOf(city), 1, { skip: victoryOnly }) : { queued: [] };
+            if (r.queued.length === 0) {
+                const fallback = cheapestBuilding(city, { skip: victoryOnly });
+                if (!fallback) continue;
+                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, fallback.args);
+            }
+        }
+        if (removeFromQueue(city, i)) {
+            log.info(`queue: ${nameOf(city)}: ${typeNameOf(types[i])} leaves the queue, no victory to chase (queue was [${types.map(typeNameOf).join(", ")}])`);
+            out.push({ key: "VICTORY_WORK_DROPPED", args: [nameOf(city), itemName(types[i])] });
+        }
+    }
+    return out;
+}
+
+/**
+ * Playing on after the game is decided (the hud's outcome WON or DECIDED): Launch Satellite once, which reveals the whole map
+ * (MOD_LAUNCH_SATELLITE_REWARD_FROM_PROJECT, REVEAL_TYPE_ALL; MaxPlayerInstances 1: the game refuses it once done), at the end
+ * of the queue of the city with a Launch Pad that runs it soonest. Nothing while it is queued or running somewhere.
+ * @returns log entries
+ */
+export function launchSatellite() {
+    const def = safe(() => GameInfo.Projects.lookup(SATELLITE), null);
+    if (!def) return [];
+    let best = null;
+    for (const c of ownSettlements()) {
+        if (c.isTown) continue;
+        if (queueTypes(c).includes(def.$hash) || builtThisPass(c).has(SATELLITE)) return [];
+        const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ProjectType: def.$hash }, false), null);
+        if (r?.InProgress || r?.InQueue) return [];
+        if (!r?.Success) continue;
+        const turns = itemTurns(c, def.$hash) + Number(safe(() => c.BuildQueue.currentTurnsLeft, 0) || 0);
+        if (!best || turns < best.turns) best = { city: c, turns };
+    }
+    if (!best) return [];
+    Game.CityOperations.sendRequest(best.city.id, CityOperationTypes.BUILD, { ProjectType: def.$hash });
+    noteBuilt(best.city, SATELLITE);
+    return [{ key: "SATELLITE_QUEUED", args: [nameOf(best.city), safe(() => Locale.compose(def.Name), SATELLITE)] }];
+}
+
 /** Below the settlement cap (plus `extra` the military lever goes past it): a settler would be wanted? */
 export function belowSettlementCap(extra = 0) {
     const stats = safe(() => Players.get(pid()).Stats, null);
@@ -3601,9 +3672,10 @@ function cheapestBuilding(city, { skip = null } = {}) {
  * cheapest project the city may start, else its strongest soldier, else any unit but a settler;
  * an empty queue must never hold the turn. @returns { args, name } or null
  */
-function lastResort(city) {
+function lastResort(city, { skip = null } = {}) {
     let best = null;
     for (const def of GameInfo.Projects ?? []) {
+        if (skip?.(def.ProjectType)) continue;
         const args = { ProjectType: def.$hash };
         if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
         const cost = Number(safe(() => city.Production.getProjectProductionCost(def.ProjectType), def.Cost ?? 999)) || 999;
@@ -4408,6 +4480,13 @@ function wonderSlot(city) {
 
 // A wonder option taking longer than this is not started (research/24 P5).
 export const WONDER_MAX_TURNS = 15;
+// After the win (game 40): wonders in production at once, the longest build taken, and the weight of a race only its length
+// makes LOW (no rival seen or queued: core raceLabel's LOC_XPL_WONDER_R_SLOW). A lost race still returns half its progress,
+// and the cash-out guards it (root gotcha 53).
+export const AFTER_WIN_WONDERS = 3;
+export const AFTER_WIN_WONDER_TURNS = 30;
+const SLOW_RACE_FACTOR = 0.4;
+const slowOnly = (race) => race?.label === "LOW" && (race.reasons ?? []).some((x) => x.key === "LOC_XPL_WONDER_R_SLOW");
 
 // A rival finishing a wonder that waits in our queue takes the progress of our item in production with it: the game drops
 // the wonder (NOTIFICATION_PRODUCTION_INVALIDATED, «0 returned») and the item starts over. Game 34: Лондон's Chart the
@@ -4488,13 +4567,14 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
     const innovation = innovationWonders();
     const science = focusOfProfile(settings?.profile) === "SCIENCE";
     const onlyInnovation = settings?.strategy?.wonderKind === "INNOVATION";
+    const playOn = !!settings?.afterWin;
     const building = w.rows.filter((r) => r.status === "IN_PROGRESS").length + pending.types.size;
     let room = Math.max(0, maxWonders - building);
     const busyCities = new Set([...w.rows.filter((r) => r.inQueue).map((r) => r.inQueue.cityKey), ...pending.cities]);
     // Every (wonder, city) pair: the second wonder can go to the second-fastest city.
     let pairs = [];
     for (const r of w.rows) {
-        const factor = RACE_FACTOR[r.race?.label];
+        const factor = RACE_FACTOR[r.race?.label] ?? (playOn && slowOnly(r.race) ? SLOW_RACE_FACTOR : undefined);
         if (r.status !== "AVAILABLE" || !factor) continue;
         for (const o of r.options) {
             if (excludeCities?.has(o.cityKey)) continue;
@@ -4502,7 +4582,7 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
             if (!plot || !(o.turns > 0)) continue;
             if (w.ageTurnsLeft !== null && o.turns > w.ageTurnsLeft - WONDER_AGE_MARGIN) continue;
             // A wonder that takes too long there is lost to someone unseen (research/24 P5: 29-30 turns, both lost).
-            if (o.turns > WONDER_MAX_TURNS) continue;
+            if (o.turns > (playOn ? AFTER_WIN_WONDER_TURNS : WONDER_MAX_TURNS)) continue;
             // A rival near a culture win: each wonder we build is one it cannot (the strategy's denyWonders).
             const legacy = WONDER_LEGACY_VALUE * (settings?.strategy?.denyWonders ? 2 : 1);
             const bonus = science && innovation.has(r.type) ? INNOVATION_WONDER_VALUE : 0;
@@ -4610,6 +4690,8 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         const military = skipsMilitaryBuildings(unitOptions) ? isMilitaryBuilding : null;
         const sites = space ? new Set(scienceSites(currentAge(), { pads: unitOptions.strategy?.pads ?? null }).map((x) => x.type).filter((t) => siteIn(city, t))) : null;
         const inAge = (t) => doneInAge(city, t, left);
+        // After the win: no project that serves only a victory (dropVictoryWork would take it out again).
+        const over = (t) => !!unitOptions.afterWin && victoryOnly(t);
         // The path's buildings only where they are built soon, as the victory step queues them (leverSoon; game 16's
         // Laboratories took 25-36 turns in weak cities): a slower city leaves them to the purchases. The plan and the
         // advisor queued them anyway (a 40-turn Laboratory the victory step had refused).
@@ -4626,8 +4708,17 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
                 continue;
             }
         }
-        const order = advisorOrder(city, { ...unitOptions, onlyProjects: space, fits: (t) => inAge(t) && !slowLever(t) && !padWait?.(t) });
-        const fallback = order ? null : cheapestBuilding(city, { skip }) ?? lastResort(city);
+        // After the win every building is built (the user, game 40): the plan places them all, each on its best tile
+        // (placeEvenIfNegative); what it leaves out (no tile in its model) comes next, cheapest first, on the plan's tile or the
+        // game's best of the tiles the plan leaves free (bestPlotFor), before the advisor's units and projects.
+        const remaining = unitOptions.afterWin ? cheapestBuilding(city, { skip }) : null;
+        if (remaining) {
+            Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, remaining.args);
+            out.push({ key: "QUEUED_REMAINING", args: [nameOf(city), Locale.compose(remaining.name)] });
+            continue;
+        }
+        const order = advisorOrder(city, { ...unitOptions, onlyProjects: space, fits: (t) => inAge(t) && !slowLever(t) && !padWait?.(t) && !over(t) });
+        const fallback = order ? null : cheapestBuilding(city, { skip }) ?? lastResort(city, { skip: over });
         if (order) {
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             out.push({ key: "QUEUED_ADVISOR", args: [nameOf(city), Locale.compose(order.name)] });
@@ -5007,12 +5098,12 @@ export const LATE_CONVERSION_TURNS = 10;
 export const FINAL_CONVERSION_TURNS = 25;
 
 /** Towns that may become cities now (conversionRule, canConvert, calmEnough), best first (rankConversions). */
-function conversionsFrom(rows, focus, { minCities = 0, cityTarget = 0, ctx = null } = {}) {
+function conversionsFrom(rows, focus, { minCities = 0, cityTarget = 0, ctx = null, afterWin = false } = {}) {
     if (ctx && !ctx.isFinalAge && !ctx.expectKeepCities && Number(ctx.ageTurnsLeft) <= LATE_CONVERSION_TURNS) return [];
     if (ctx?.isFinalAge && Number(ctx.ageTurnsLeft) <= FINAL_CONVERSION_TURNS) return [];
     const stats = safe(() => Players.get(pid()).Stats, null);
     const healthy = citiesHealthy();
-    const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities, cityTarget, healthy, finalAge: !!ctx?.isFinalAge && focus === "SCIENCE" });
+    const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities, cityTarget, healthy, finalAge: !!ctx?.isFinalAge && focus === "SCIENCE", afterWin });
     // A new age's first turn: last age's cities come back with the card the player takes (turn 2); paying for one now
     // also makes every other town dearer (game 33: Брэдфорд for 150 at M1, Манчестер the goal at E1; research/39 §2A).
     const returning = ctx?.expectKeepCities ? lastAgeCities() : null;
@@ -5051,7 +5142,7 @@ function noteNoConversion(rows, rule, healthy) {
  */
 export function conversionCandidates(settings, focus = null) {
     const towns = safe(() => runTownAdvisor(settings), null);
-    return conversionsFrom(towns?.rows ?? [], focus, { minCities: Number(settings?.strategy?.minCities) || 0, cityTarget: Number(settings?.strategy?.cityTarget) || 0, ctx: towns?.ctx ?? null });
+    return conversionsFrom(towns?.rows ?? [], focus, { minCities: Number(settings?.strategy?.minCities) || 0, cityTarget: Number(settings?.strategy?.cityTarget) || 0, ctx: towns?.ctx ?? null, afterWin: !!settings?.afterWin });
 }
 
 /** Is a crisis on (its policy slots: the age's last stage)? */
@@ -5374,7 +5465,7 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     const goldTurns = (cost) => (cost <= budget.free() ? 0 : income > 0 ? (cost - budget.free()) / income : Infinity);
     const towns = safe(() => runTownAdvisor(settings), null);
     const rows = towns?.rows ?? [];
-    const conversions = conversionsFrom(rows, focus, { minCities: Number(settings?.strategy?.minCities) || 0, cityTarget: Number(settings?.strategy?.cityTarget) || 0, ctx: towns?.ctx ?? null });
+    const conversions = conversionsFrom(rows, focus, { minCities: Number(settings?.strategy?.minCities) || 0, cityTarget: Number(settings?.strategy?.cityTarget) || 0, ctx: towns?.ctx ?? null, afterWin: !!settings?.afterWin });
     const cheapest = rows.filter((r) => r.town.canConvert && r.town.cost > 0).sort((a, b) => a.town.cost - b.town.cost)[0] ?? null;
     const kinds = [...(order ?? settings?.strategy?.goals ?? ["CONVERT", ...(focus ? ["LEVER"] : [])])];
     const pads = Number(settings?.strategy?.pads) || 0;

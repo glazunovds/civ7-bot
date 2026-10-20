@@ -238,6 +238,26 @@ test("a wonder is not started where it takes over 15 turns, though a faster city
     }
 });
 
+// Game 40, playing on after the win: nothing else waits for the production, so a long build nobody races for is taken too
+// (up to 30 turns), several at once; a race a rival is ahead in never.
+test("after the win, a wonder only its length makes a lost race is started, up to 30 turns, several at once; never one a rival finishes first", () => {
+    const costOf = world.costOf;
+    const won = { ...DEFAULT_SETTINGS, afterWin: "WON" };
+    const keys = (picks) => [...picks.values()].map((p) => `${p.cityKey === `c:${A.x}-${A.y}` ? "Athens" : "Sparta"} ${p.type}`).sort();
+    try {
+        world.costOf = (type) => (type.startsWith("WONDER_") ? 600 : 100); // Athens 20 turns, Sparta 30
+        assert.equal(steps.chooseWonders(DEFAULT_SETTINGS, 3).size, 0, "before the win: over 15 turns, a race lost to someone unseen");
+        assert.equal(steps.chooseWonders(won, 3).size, 2, JSON.stringify(keys(steps.chooseWonders(won, 3))));
+        // Omniscient: Babylon finishes the Pyramids in 2 turns; the Hanging Gardens nobody builds.
+        const picks = steps.chooseWonders({ ...won, wonders: { omniscient: true } }, 3);
+        assert.deepEqual([...picks.values()].map((p) => p.type), ["WONDER_HANGING_GARDENS"]);
+        world.costOf = (type) => (type.startsWith("WONDER_") ? 700 : 100); // Athens 24 turns, Sparta 35
+        assert.deepEqual(keys(steps.chooseWonders(won, 3)).map((k) => k.split(" ")[0]), ["Athens"], "Sparta: over 30 turns");
+    } finally {
+        world.costOf = costOf;
+    }
+});
+
 // Game 21 (research/28 §1): wonders that waited behind other items left the queue unbuilt, each with nothing in it
 // (the Emile Bell three times, the Mausoleum of Theodoric once), and the end-of-turn retry ordered the Emile Bell twice.
 test("a wonder waiting in a queue goes to the very front, ahead of a building with progress; not ahead of a wonder in production nor of an item done this turn (research/28 §1)", () => {

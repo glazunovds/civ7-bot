@@ -18,6 +18,9 @@ export const TOWN_SHARE = 0.5;        // towns' plan purchases take at most this
 export const GOAL_FAIL_TURNS = 3;     // a goal bought this many turns in a row and still there: the game refuses it...
 export const GOAL_COOLDOWN = 5;       // ...dropped for this many turns
 export const CONVERT_VERDICTS_PAST_FLOOR = Object.freeze(["CONVERT"]);
+// After the win (game 40) the gold has nothing left to wait for: a town whose conversion pays back slowly (CONSIDER) becomes a
+// city too; a feeder (KEEP) and one to grow first (WAIT) stay towns.
+export const AFTER_WIN_VERDICTS = Object.freeze(["CONVERT", "CONSIDER"]);
 
 /**
  * @param { gold, reserve, spent = 0, bought = Set of "sid|type" }
@@ -153,12 +156,12 @@ export function noteGoalBought(memory, key, turn) {
  * the age: research/35) while every city stands at or above zero Happiness (`healthy`: the cities we have come first,
  * research/34 §2). @returns { floor, verdicts or null (any) }
  */
-export function conversionRule({ cities = 0, towns = 0, minCities = 0, cityTarget = 0, healthy = true, finalAge = false } = {}) {
+export function conversionRule({ cities = 0, towns = 0, minCities = 0, cityTarget = 0, healthy = true, finalAge = false, afterWin = false } = {}) {
     if (towns <= 0) return { floor: false, verdicts: [] };
     const target = healthy && cities < cityTarget;
     // `finalAge` (the science focus's final age): towns outnumbering cities is no floor there; a 2,500 conversion makes
     // ~20 production for the rest of the game, a Launch Pad bought with it runs the space work (research/39 §4.6).
-    return (towns > cities && !finalAge) || cities < minCities || target ? { floor: true, verdicts: null } : { floor: false, verdicts: CONVERT_VERDICTS_PAST_FLOOR };
+    return (towns > cities && !finalAge) || cities < minCities || target ? { floor: true, verdicts: null } : { floor: false, verdicts: afterWin ? AFTER_WIN_VERDICTS : CONVERT_VERDICTS_PAST_FLOOR };
 }
 
 const VERDICT_RANK = { CONVERT: 0, CONSIDER: 1, WAIT: 2, KEEP: 3 };

@@ -70,6 +70,9 @@ test("which towns may become cities: any while towns outnumber cities; at 1:1 or
     // The science focus's final age (research/39 §4.6): towns outnumbering cities is no floor; a city a Launch Pad needs is.
     assert.deepEqual(conversionRule({ cities: 4, towns: 7, finalAge: true }), { floor: false, verdicts: ["CONVERT"] });
     assert.deepEqual(conversionRule({ cities: 4, towns: 7, minCities: 5, finalAge: true }), { floor: true, verdicts: null });
+    // After the win (game 40): a slow payback (CONSIDER) is converted too; a feeder (KEEP) and one to grow first (WAIT) are not.
+    assert.deepEqual(conversionRule({ cities: 3, towns: 2, afterWin: true }), { floor: false, verdicts: ["CONVERT", "CONSIDER"] });
+    assert.deepEqual(conversionRule({ cities: 1, towns: 2, afterWin: true }), { floor: true, verdicts: null });
 });
 
 test("conversion order: a planned city site, then the verdict; science and economy take the most production, culture the cheapest", () => {

@@ -438,6 +438,8 @@ function inputSignature(target, settings, selected, lockedSet, rules) {
         bs,
         rules: `${rules.age}|${rules.civ}|${rules.uniqueQuarters.map((q) => q.type).join(",")}`,
         selected: [...selected].sort(),
+        // After the win every building is placed, its gain or not (game 40): another plan.
+        everything: !!settings.afterWin,
         // Locked buildings are planned anyway (later); an unlock changes the game's answers of every city instead.
         locked: bs.includeLocked === false ? [...lockedSet].sort() : [],
     });
@@ -716,7 +718,9 @@ export function startBuildingPlan(target, settings, options = {}) {
 
     function* job() {
         yield* setup();
-        return yield* solveLayout(ctx.planState, ctx.adjacencySelection, ctx.warehouseSelection, { selectionFor: ctx.selectionFor, dirty: ctx.dirty, seed: ctx.seed, clock: now });
+        // After the win (the autopilot's pass settings: game 40) every building goes on its best tile, gain or not: the
+        // greedy step's best is then the least loss, after every building that gains.
+        return yield* solveLayout(ctx.planState, ctx.adjacencySelection, ctx.warehouseSelection, { selectionFor: ctx.selectionFor, dirty: ctx.dirty, seed: ctx.seed, clock: now, placeEvenIfNegative: !!settings.afterWin });
     }
 
     state.set({ status: { busy: true, progress: 0, message: "" } });

@@ -28,7 +28,7 @@ import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeCh
 import { campaignAssault, campaignState, commandUnits, disbandSurplus, disperseArrivals, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, keepRetaken, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
 import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
-import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryRaces } from '../data/xpl-victory.js';
+import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryOutcomeNow, victoryRaces } from '../data/xpl-victory.js';
 import { applyStrategy, planStrategy, strategyLines } from '../core/xpl-strategy.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
@@ -385,6 +385,22 @@ function updateFocus(target = "AUTO") {
 }
 
 /**
+ * After the win (core victoryOutcome; game 40): kept in state.autopilot.outcome. A log entry when it becomes SECURED, WON or
+ * DECIDED, and a UI.log line whenever it changes (a secured victory is open again when its Launch Pad is damaged or a rival's
+ * countdown would end sooner). @returns log entries
+ */
+function noteOutcome(outcome) {
+    const before = ap().outcome?.state ?? "OPEN";
+    setAp({ outcome: { state: outcome.state, cls: outcome.cls, turnsLeft: outcome.turnsLeft } });
+    if (before === outcome.state) return [];
+    log.warn(`outcome: ${outcome.state}${outcome.cls ? ` (${outcome.cls}${outcome.turnsLeft !== null ? `, ${outcome.turnsLeft} turn(s) left` : ""})` : ""}, was ${before}: ${outcome.state === "OPEN" ? "the victory work goes on" : "no work toward any victory; research takes everything else before Future Tech"}`);
+    if (outcome.state === "SECURED") return [{ key: "VICTORY_SECURED", args: [compose(`LOC_XPL_FOCUS_${outcome.cls}`), outcome.turnsLeft] }];
+    if (outcome.state === "WON") return [{ key: "VICTORY_WON", args: [compose(outcome.name ?? `LOC_XPL_FOCUS_${outcome.cls}`)] }];
+    if (outcome.state === "DECIDED") return [{ key: "GAME_DECIDED", args: [] }];
+    return [];
+}
+
+/**
  * The strategy of this pass (core/xpl-strategy.js; research/21 §3): kept in state.autopilot.strategy
  * for the tab ({ phase, age, focus, lines }) and the next pass (phases only move forward within an
  * age); UI.log once a turn. @returns log entries (PHASE when the phase, age or focus changes)
@@ -503,13 +519,23 @@ export async function runTurn(force = false) {
     try {
         let s = settings.get();
         let o = s.autopilot ?? {};
+        // After the win (game 40): our countdown to a fixed-score victory runs with its goal reached, or the game is decided
+        // (a victory awarded, a game played on): no focus, strategy, victory work or space push; research takes everything
+        // else before Future Tech, and what serves only a victory leaves the queues (steps.dropVictoryWork).
+        let outcome = { state: "OPEN", cls: null, turnsLeft: null };
+        await guarded("outcome", () => {
+            outcome = victoryOutcomeNow();
+            record(noteOutcome(outcome));
+        });
+        const chasing = outcome.state === "OPEN";
+        const decided = outcome.state === "WON" || outcome.state === "DECIDED";
         // Victory focus: this pass follows its path's priority profile (research and production
         // advice, buildings, policies, growth, purchases); culture also builds one more wonder at a time.
         let focus = null;
-        if (o.focus) {
+        if (o.focus && !decided) {
             await guarded("focus", () => {
                 record(updateFocus(o.victory ?? "AUTO"));
-                focus = ap().focus?.cls ?? null;
+                focus = chasing ? ap().focus?.cls ?? null : null;
             });
         } else if (ap().focus) setAp({ focus: null });
         if (focus) {
@@ -554,9 +580,10 @@ export async function runTurn(force = false) {
             if (push.changed && push.level === "FULL") record([{ key: "SPACE_PUSH", args: [] }]);
             else if (push.changed && push.level === "HALF") record([{ key: "SPACE_PUSH_HALF", args: [] }]);
         });
-        s = { ...s, biasFocus: focus ?? "NONE", goldPressure: gold.factor, spacePush: push.level };
+        s = { ...s, biasFocus: focus ?? "NONE", goldPressure: gold.factor, spacePush: push.level, afterWin: chasing ? null : outcome.state };
         o = s.autopilot ?? {};
-        const maxWonders = plan ? Math.max(1, Number(o.maxWonders) || 1) : wondersAtOnce(o.maxWonders ?? 1, focus);
+        // After the win, several wonders at once (game 40: nothing else waits for the production).
+        const maxWonders = !chasing ? Math.max(steps.AFTER_WIN_WONDERS, Number(o.maxWonders) || 1) : plan ? Math.max(1, Number(o.maxWonders) || 1) : wondersAtOnce(o.maxWonders ?? 1, focus);
         // Units first: a settler that founds now gives a new city (on turn 1 the capital,
         // before which nothing can be researched or built) handled by the steps below.
         const ordered = new Set();
@@ -679,6 +706,7 @@ export async function runTurn(force = false) {
             explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, defend: !!o.defend, threats: o.defend || o.roam ? threats : [], profile: s.profile, victory: focus,
             exposed: o.defend ? steps.exposedSettlements(threats) : [],
             explorers: o.explorers ?? !!o.explore, trainSettlers: o.trainSettlers ?? !!o.settlers, strategy: s.strategy ?? null,
+            afterWin: s.afterWin,
         };
         const produce = async () => {
             // sid -> types the victory step queued in this run (H2: the game's isEmpty is stale until it handles them). Fresh for
@@ -688,6 +716,10 @@ export async function runTurn(force = false) {
             record(await replanIfDue(s));
             // An item the game does not complete gives way first (game 33: Брэдфорд's City Park at 945 of 451).
             record(steps.unstickQueues());
+            // After the win: what serves only a victory leaves the queues.
+            if (!chasing) record(steps.dropVictoryWork());
+            // Playing on after the game is decided: the satellite once, which reveals the map.
+            if (decided) record(steps.launchSatellite());
             // The victory focus's own work first (science projects and a Launch Pad; the path's buildings of this age).
             if (focus) record(steps.pushVictoryWork(focus, { settlers: !!o.settlers, pads: s.strategy?.pads ?? null, queued: victoryQueued, strategy: s.strategy ?? null }));
             // Operation Ivy when the settlements alone fall short of our military countdown (research/26 §3.4).

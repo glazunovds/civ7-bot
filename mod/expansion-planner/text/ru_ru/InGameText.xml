@@ -2277,5 +2277,24 @@
     <Replace Tag="LOC_XPL_AP_STRATEGY_TT_CITY_TARGET" Language="ru_RU">
       <Text>Городки становятся городами, пока городов меньше {1_Num} и каждый город не ниже нуля по довольству (сейчас преобразование стоит намного дешевле, чем в следующей эпохе)</Text>
     </Replace>
+    <!-- After the win (game 40) -->
+    <Replace Tag="LOC_XPL_AP_VICTORY_SECURED" Language="ru_RU">
+      <Text>Победа ({1_Name}) обеспечена: цель достигнута, идёт обратный отсчёт (осталось ходов: {2_Num}). Больше никакой работы на победу: сбалансированная игра, все оставшиеся технологии и институты раньше «Технологии будущего»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VICTORY_WON" Language="ru_RU">
+      <Text>{1_Victory}: игра продолжается без гонки за победами (сбалансированно, все оставшиеся технологии и институты раньше «Технологии будущего»)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GAME_DECIDED" Language="ru_RU">
+      <Text>Игра решена: дальше без гонки за победами</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VICTORY_WORK_DROPPED" Language="ru_RU">
+      <Text>{1_City}: «{2_Item}» убрано из очереди: гнаться за победой больше незачем</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_REMAINING" Language="ru_RU">
+      <Text>{1_City}: в очередь «{2_Building}» (после победы строятся все здания)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SATELLITE_QUEUED" Language="ru_RU">
+      <Text>{1_City}: в очередь «{2_Project}»: спутник откроет всю карту</Text>
+    </Replace>
   </LocalizedText>
 </Database>

@@ -11,7 +11,7 @@
  *    (ui-next/screens/legacies/legacies-model.js);
  *  - the leader's preferred victory: GameInfo.LeaderTraits TRAIT_<AQ|EX|MO>_<path>_VICTORY.
  */
-import { FOCUS_CLASSES } from '../core/xpl-victory-focus.js';
+import { FOCUS_CLASSES, victoryOutcome } from '../core/xpl-victory-focus.js';
 import { gameKey, settings } from '../services/xpl-settings.js';
 import { log } from '../services/xpl-log.js';
 
@@ -143,6 +143,33 @@ export function victoryRaces() {
 
 const RACE_CLASSES = [...FOCUS_CLASSES, "MILITARY"];
 const FIXED_SCORE = "COUNTDOWN_VICTORY_SCORING_TYPE_FIXED_SCORE";
+
+/**
+ * The victories the game has awarded (Game.VictoryManager.getVictories: { victory, team, place }, as the end-game screen and
+ * the victories screen read them): their class, type, name and whether our team won it. [] before anyone wins.
+ */
+export function gameVictories() {
+    const list = safe(() => Game.VictoryManager.getVictories(), null) ?? [];
+    const team = safe(() => Players.get(pid()).team, null);
+    const out = [];
+    for (const v of list) {
+        const def = safe(() => GameInfo.Victories.lookup(v.victory), null);
+        const cls = String(def?.VictoryClassType ?? "").replace("VICTORY_CLASS_", "") || null;
+        out.push({ cls, type: def?.VictoryType ?? null, name: def?.Name ?? null, place: v.place ?? null, ours: team !== null && v.team === team });
+    }
+    return out;
+}
+
+/** After the win (core victoryOutcome): the game's victories, our races and whether the game is played on past its end. */
+export function victoryOutcomeNow() {
+    let races = [];
+    try {
+        races = victoryRaces();
+    } catch (error) {
+        log.debug("victory outcome: races unknown", error);
+    }
+    return victoryOutcome(races, pid(), { victories: gameVictories(), extended: !!safe(() => Game.AgeProgressManager.isExtendedGame, false) });
+}
 
 /** The science victory's Innovation: { ours, goal, need: what is still missing } or null (no such victory known). */
 export function innovationNeed() {

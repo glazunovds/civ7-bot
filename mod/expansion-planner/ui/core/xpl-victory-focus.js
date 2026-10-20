@@ -353,3 +353,37 @@ export function chooseFocus(scores, previous = {}, { target = "AUTO", finalAge =
     if (streak >= SWITCH_STREAK) return { cls: best.cls, candidate: null, streak: 0, changed: true };
     return { cls: previous.cls, candidate: best.cls, streak, changed: false };
 }
+
+// ---- after the win (game 40) ----------------------------------------------------------------------------------------
+//
+// Game 40 (Ada, science, won at M55): Innovation stood at 107 of 100 from M49 and the countdown ran, yet the space work went on
+// to the end (1,518 production in projects and Launch Pads, a pad bought for 252, Future Tech researched with four masteries
+// left, settlers for a military countdown). And after a victory the player may play on («Ещё один ход»).
+
+/**
+ * Is there a victory left to chase? WON: the game has awarded a victory to our team (`victories`: data gameVictories, ours
+ * flagged); DECIDED: to another team, or a game played on past its end (`extended`); SECURED: our own countdown runs in a
+ * fixed-score race (science: 100 Innovation, an undamaged Launch Pad) whose goal we hold, so nobody's score can move it, and
+ * no rival's countdown ends sooner (one ending the same turn shares the first place: game 16); OPEN otherwise. A dominance
+ * countdown of ours is never SECURED: the second place may still rise past its share.
+ * @param races victoryRaces() @param me our player id @param options { victories: [{ cls, name, ours }], extended }
+ * @returns { state: "OPEN"|"SECURED"|"WON"|"DECIDED", cls, name, turnsLeft }
+ */
+export function victoryOutcome(races, me, { victories = [], extended = false } = {}) {
+    const list = victories ?? [];
+    const won = list.find((v) => v.ours);
+    if (won) return { state: "WON", cls: won.cls ?? null, name: won.name ?? null, turnsLeft: null };
+    if (list.length > 0 || extended) return { state: "DECIDED", cls: list[0]?.cls ?? null, name: list[0]?.name ?? null, turnsLeft: null };
+    const enabled = (races ?? []).filter((r) => r.enabled !== false);
+    let rival = Infinity;
+    for (const r of enabled) {
+        for (const b of r.board ?? []) if (b.id !== me && b.dominant && Number.isFinite(Number(b.turns)) && b.turns !== null) rival = Math.min(rival, Number(b.turns));
+    }
+    for (const r of enabled) {
+        if (r.scoring !== FIXED_SCORE || r.turnsLeft === null || r.turnsLeft === undefined) continue;
+        const goal = Number(r.goal) || 0;
+        if (!(goal > 0) || !((Number(r.points) || 0) >= goal) || rival < r.turnsLeft) continue;
+        return { state: "SECURED", cls: r.cls, name: null, turnsLeft: r.turnsLeft };
+    }
+    return { state: "OPEN", cls: null, name: null, turnsLeft: null };
+}
