@@ -122,7 +122,7 @@ test("after the win, the projects that serve only a victory leave the queues, on
     }
 });
 
-test("after the win, research takes every other technology and mastery before Future Tech, the advisor's first, else the quickest", () => {
+test("research takes every other technology and mastery before Future Tech (after the win too), the advisor's first, else the quickest", () => {
     const S = { ...DEFAULT_SETTINGS, afterWin: "WON" };
     try {
         world.research = { tech: { available: [N("NODE_TECH_MO_FUTURE_TECH"), N("NODE_TECH_MO_MOBILIZATION"), N("NODE_TECH_MO_URBANIZATION")] }, culture: { available: [] },
@@ -131,7 +131,7 @@ test("after the win, research takes every other technology and mastery before Fu
         world.treeRecs = () => [{ recommendedType: N("NODE_TECH_MO_FUTURE_TECH"), whichAdvisors: [] }];
         fake.sent.length = 0;
         steps.chooseResearch("tech", DEFAULT_SETTINGS, null);
-        assert.deepEqual(researched(), ["NODE_TECH_MO_FUTURE_TECH"], "before the win: the advisor's");
+        assert.deepEqual(researched(), ["NODE_TECH_MO_URBANIZATION"], "before the win too (game 41: Future Civic while Rome Reborn waited)");
         fake.sent.length = 0;
         steps.chooseResearch("tech", S, null);
         assert.deepEqual(researched(), ["NODE_TECH_MO_URBANIZATION"], "Urbanization's mastery: the quickest of the rest");

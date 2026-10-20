@@ -793,17 +793,21 @@ export function chooseGovernment(settings = {}) {
 /**
  * Syncretism (research/31 §5): a Time-Tested civilization adopts another civilization's units or infrastructure, or keeps
  * its own (traditions and a culture slot); NOTIFICATION_CHOOSE_SYNCRETISM holds the turn until it chooses (game 26, M84).
- * Only while that notice waits and no choice is made (`Identity.getSyncreticCivType()`). The pick: its own when that brings
- * a culture slot (one more policy card), else the infrastructure with a unique quarter, then the most buildings, else the
- * first offered (units last). Sent like the screen's confirm (syncretism-screen-model.js syncretizeSelection):
- * CHOOSE_SYNCRETISM_SELF / _INFRASTRUCTURE / _UNITS {CivilizationType}, after canStart.
+ * While that notice waits, once a turn (the notice stays until the game handles the choice; the game's canStart refuses a
+ * second one). Game 41 held the turn twice (Exploration and Modern) with nothing chosen: the old test, any value from
+ * `Identity.getSyncreticCivType()` = chosen, read the game's "none" as a choice; the game's own screen counts a choice
+ * only when that type is a civilization (syncretism-screen-model.js getSyncretizedInfo). The pick: its own when that
+ * brings a culture slot (one more policy card), else the infrastructure with a unique quarter, then the most buildings,
+ * else the first offered (units last). Sent like the screen's confirm (syncretizeSelection):
+ * CHOOSE_SYNCRETISM_SELF / _INFRASTRUCTURE / _UNITS {CivilizationType}, after canStart. UI.log says why nothing was sent.
  */
+let syncretismTurn = null; // the turn a choice was sent
 export function chooseSyncretism() {
     if (!waiting("NOTIFICATION_CHOOSE_SYNCRETISM")) return [];
     const T = globalThis.SyncreticChoiceTypes;
     const ops = globalThis.PlayerOperationTypes;
     if (!T || !ops) return [];
-    if (safe(() => Players.get(pid()).Identity.getSyncreticCivType(), null)) return []; // chosen already
+    if (syncretismTurn === Game.turn) return [];
     const offered = (flag) => [...(safe(() => Game.Unlocks.getSyncreticCivUnlocksForChoice(pid(), flag), []) ?? [])];
     const civType = (civ) => safe(() => GameInfo.LegacyCivilizationTraits.lookup(civ)?.CivilizationType, null) ?? safe(() => GameInfo.Civilizations.lookup(civ)?.CivilizationType, null) ?? "";
     const kinds = (list, kind) => (list ?? []).filter((x) => x?.kind === kind).length;
@@ -819,14 +823,21 @@ export function chooseSyncretism() {
     for (const civ of offered(T.SYNCRETIC_CHOICE_UNITS)) options.push({ civ, flag: T.SYNCRETIC_CHOICE_UNITS, op: ops.CHOOSE_SYNCRETISM_UNITS, label: "LOC_UI_SYNCRETISM_UNITS", score: 0 });
     // The best first; ties keep the game's order (sort is stable).
     options.sort((a, b) => b.score - a.score);
+    const refused = [];
     for (const o of options) {
         if (o.op === undefined) continue;
         const args = { CivilizationType: o.civ };
-        if (!safe(() => Game.PlayerOperations.canStart(pid(), o.op, args, false), null)?.Success) continue;
+        const ok = safe(() => Game.PlayerOperations.canStart(pid(), o.op, args, false), null);
+        if (!ok?.Success) {
+            refused.push(`${civType(o.civ) || o.civ} ${o.label.replace("LOC_UI_SYNCRETISM_", "")}: ${JSON.stringify(ok?.FailureReasons ?? ok ?? null)}`);
+            continue;
+        }
         Game.PlayerOperations.sendRequest(pid(), o.op, args);
+        syncretismTurn = Game.turn;
         const name = safe(() => Locale.compose(GameInfo.Civilizations.lookup(civType(o.civ))?.Name ?? civType(o.civ)), civType(o.civ));
         return [{ key: "SYNCRETISM", args: [name, safe(() => Locale.compose(o.label), o.label)] }];
     }
+    log.warn(`syncretism: nothing sent; ${options.length} option(s)${refused.length ? `, refused [${refused.join("; ")}]` : ""}; chosen ${safe(() => Players.get(pid()).Identity.getSyncreticCivType(), "?")}`);
     return [];
 }
 

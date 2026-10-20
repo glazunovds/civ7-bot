@@ -93,6 +93,33 @@ test("science: the civics toward Social Class (Innovation by itself) come first,
     }
 });
 
+// Game 41 (Rome, Exploration, the culture focus): Future Civic three times, the game's advisor's pick, while Rome Reborn (a
+// tradition slot, +1 settlement cap), Syncretism, Hierarchy and the Colonialism and Imperialism masteries waited.
+test("civics: the Test of Time tree's nodes and the masteries come before Future Civic, whatever the advisor names", () => {
+    const CIVIC = PlayerOperationTypes.SET_CULTURE_TREE_NODE;
+    const N = (t) => GameInfo.ProgressionTreeNodes.lookup(t).$hash;
+    const chosen = () => fake.sent.filter((s) => s.op === CIVIC).map((s) => GameInfo.ProgressionTreeNodes.lookup(s.args.ProgressionTreeNodeType)?.ProgressionTreeNodeType);
+    world.research = {
+        tech: { available: [] },
+        culture: { available: [N("NODE_CIVIC_EX_MAIN_FUTURE_CIVIC"), N("NODE_CIVIC_EX_SYNCRETISM_CHOICE"), N("NODE_CIVIC_EX_MAIN_COLONIALISM")] },
+        depth: { NODE_CIVIC_EX_MAIN_COLONIALISM: 1 },
+        turns: { NODE_CIVIC_EX_MAIN_FUTURE_CIVIC: 3, NODE_CIVIC_EX_SYNCRETISM_CHOICE: 2, NODE_CIVIC_EX_MAIN_COLONIALISM: 4 },
+    };
+    world.treeRecs = () => [{ recommendedType: N("NODE_CIVIC_EX_MAIN_FUTURE_CIVIC"), whichAdvisors: [] }];
+    try {
+        fake.sent.length = 0;
+        steps.chooseResearch("culture", DEFAULT_SETTINGS, "CULTURE");
+        assert.deepEqual(chosen(), ["NODE_CIVIC_EX_SYNCRETISM_CHOICE"], "the quickest of the rest");
+        world.research.culture.available = [N("NODE_CIVIC_EX_MAIN_FUTURE_CIVIC")];
+        fake.sent.length = 0;
+        steps.chooseResearch("culture", DEFAULT_SETTINGS, "CULTURE");
+        assert.deepEqual(chosen(), ["NODE_CIVIC_EX_MAIN_FUTURE_CIVIC"], "nothing else is left");
+    } finally {
+        delete world.research;
+        delete world.treeRecs;
+    }
+});
+
 test("a settler whose only sites lie across rough seas says why, and research goes to Shipbuilding first (research/22 A1: idle 28 turns in game 7)", () => {
     const N = (t) => GameInfo.ProgressionTreeNodes.lookup(t).$hash;
     const tiles = world.tiles;

@@ -651,10 +651,26 @@ export function chooseResearch(kind, settings, focus = null) {
     const tree = safe(() => Game.ProgressionTrees.getTree(pid(), treeType), null);
     const active = tree && tree.activeNodeIndex >= 0 ? tree.nodes?.[tree.activeNodeIndex]?.nodeType : undefined;
     const op = kind === "tech" ? PlayerOperationTypes.SET_TECH_TREE_NODE : PlayerOperationTypes.SET_CULTURE_TREE_NODE;
+    // A non-final age's last turns: research the age ends with is lost (the next age has other trees), and a Future Tech or
+    // Civic done then also brings the end nearer (+10 age progress). Only what is done in time, while anything is: the
+    // research in progress gives way to such a node, and a new pick comes from them (the user, game 41: a third Future Civic
+    // about three turns before Antiquity's end, never finished; game 40, Exploration: a second Future Tech).
+    const ageLeft = researchAgeLeft();
+    const inTime = (n) => {
+        if (ageLeft === null) return true;
+        const t = Number(safe(() => holder.getTurnsForNode(n), NaN));
+        return Number.isFinite(t) && t > 0 && t <= ageLeft - AGE_END_MARGIN;
+    };
+    const offered = new Set(safe(() => holder.getAllAvailableNodeTypes(), []) ?? []);
+    const timely = ageLeft === null ? offered : new Set([...offered].filter((n) => n !== active && inTime(n)));
     // Already researching something: kept, except that a war at our door takes the walls' way at once (research/24
-    // W4: game 9 chose Castles at E51, four turns into the war, when a slot came free).
-    if (active !== undefined && active !== null) return kind === "tech" && war.near ? safe(() => wallsNow(holder, active, op), null) : null;
-    const available = new Set(safe(() => holder.getAllAvailableNodeTypes(), []) ?? []);
+    // W4: game 9 chose Castles at E51, four turns into the war, when a slot came free), and that in an age's last turns
+    // research not done in time gives way to a node that is.
+    if (active !== undefined && active !== null) {
+        if (ageLeft === null || inTime(active) || timely.size === 0) return kind === "tech" && war.near ? safe(() => wallsNow(holder, active, op), null) : null;
+        log.info(`research: ${safe(() => GameInfo.ProgressionTreeNodes.lookup(active)?.ProgressionTreeNodeType, active)} is not done before the age ends (${ageLeft} turn(s) left); ${timely.size} node(s) are`);
+    }
+    const available = timely.size > 0 ? timely : offered;
     if (available.size === 0) return null;
     // Walls under a lasting threat or a war at our door, when their tech is available or one step away
     // (research/23 D7: game 8, 72 turns of `walls: none` in a war; Exploration's walls need Castles).
@@ -744,10 +760,12 @@ export function chooseResearch(kind, settings, focus = null) {
         const node = def ? safe(() => Game.ProgressionTrees.getNode(pid(), def.ProgressionTreeNodeType)?.nodeType, null) : r.recommendedType;
         return available.has(node) ? node : null;
     };
-    // After the win (the hud's outcome; game 40: Future Tech at M45 and M49 with four masteries left): every other
-    // technology, civic and mastery first, the advisor's among them, else the quickest; a repeatable node (Future Tech,
-    // Future Civic) only when nothing else is left.
-    const rest = settings?.afterWin ? researchCandidates(holder, available).filter((c) => !c.repeat).map((c) => c.node) : [];
+    // Every other technology, civic and mastery before a repeatable node (Future Tech, Future Civic), which waits for nothing:
+    // the advisor's among them, else the quickest. Game 40: Future Tech at M45 and M49 with four masteries left. Game 41: Rome's
+    // Exploration took Future Civic three times (each one also brings the age's end nearer) while Rome Reborn (1 turn: a
+    // tradition slot, +1 settlement cap), Syncretism, Hierarchy and two masteries waited; the advisor named Future Civic. The
+    // path's own choices above (a gate, Innovation, the bonus research) still take a repeatable node on purpose.
+    const rest = researchCandidates(holder, available).filter((c) => !c.repeat).map((c) => c.node);
     const pool = rest.length > 0 ? new Set(rest) : available;
     const usable = recs.filter((r) => toNode(r) !== null && pool.has(toNode(r)));
     const pick = pickRecommendation(usable, settings.profile);
@@ -4763,6 +4781,14 @@ function holdsPadRoom(city, t, gateEta) {
 // in unfinished items, six Launch Pads among them).
 export const AGE_END_TURNS = 12;
 const AGE_END_MARGIN = 1;
+
+/** A non-final age's turns left while within AGE_END_TURNS (the research then is lost at the age change), else null. */
+function researchAgeLeft() {
+    const o = safe(() => ageOutlook(), null);
+    if (!o || o.isFinalAge) return null;
+    const left = Number(o.turnsLeft);
+    return Number.isFinite(left) && left <= AGE_END_TURNS ? left : null;
+}
 
 /** Turns left before the age ends: a non-final age's while within AGE_END_TURNS, the final age's always; else null. */
 export function ageEndTurns() {

@@ -371,3 +371,45 @@ test("the age's last turn buys from the reserve too, not while a settlement is t
         reset();
     }
 });
+
+// The user (game 41): a third Future Civic about three turns before Antiquity's end was never finished; the culture was lost
+// with the age. In an age's last turns research goes to what is done before the age ends.
+test("an age's last turns: research only what is done before the age ends; the research in progress gives way to it; not in the final age", () => {
+    const N = (t) => GameInfo.ProgressionTreeNodes.lookup(t).$hash;
+    const TECH = PlayerOperationTypes.SET_TECH_TREE_NODE;
+    const chosen = () => fake.sent.filter((s) => s.op === TECH).map((s) => GameInfo.ProgressionTreeNodes.lookup(s.args.ProgressionTreeNodeType)?.ProgressionTreeNodeType);
+    const DEFAULTS = { profile: "BALANCED" };
+    try {
+        world.research = { tech: { available: [N("NODE_TECH_AQ_IRON_WORKING"), N("NODE_TECH_AQ_WHEEL")] }, culture: { available: [] },
+            turns: { NODE_TECH_AQ_IRON_WORKING: 6, NODE_TECH_AQ_WHEEL: 2 } };
+        world.treeRecs = () => [{ recommendedType: N("NODE_TECH_AQ_IRON_WORKING"), whichAdvisors: [] }];
+        ageLeft(40);
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULTS, null);
+        assert.deepEqual(chosen(), ["NODE_TECH_AQ_IRON_WORKING"], "far from the end: the advisor's");
+        ageLeft(4);
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULTS, null);
+        assert.deepEqual(chosen(), ["NODE_TECH_AQ_WHEEL"], "4 turns left: Iron Working (6) would be lost");
+        // In progress: Iron Working gives way to the Wheel; nothing else in time: it stays.
+        world.research.tech.active = N("NODE_TECH_AQ_IRON_WORKING");
+        world.research.tech.available = [N("NODE_TECH_AQ_WHEEL")];
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULTS, null);
+        assert.deepEqual(chosen(), ["NODE_TECH_AQ_WHEEL"]);
+        world.research.turns.NODE_TECH_AQ_WHEEL = 5;
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULTS, null);
+        assert.deepEqual(chosen(), [], "nothing done in time: kept");
+        // The final age ends the game: research is not cut there.
+        world.research.turns.NODE_TECH_AQ_WHEEL = 2;
+        ageLeft(4, { final: true });
+        fake.sent.length = 0;
+        steps.chooseResearch("tech", DEFAULTS, null);
+        assert.deepEqual(chosen(), []);
+    } finally {
+        delete world.research;
+        delete world.treeRecs;
+        reset();
+    }
+});

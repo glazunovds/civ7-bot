@@ -860,8 +860,9 @@ test("story options with no icons are valued by their rewards' yields: +Happines
     }
 });
 
-test("syncretism: its own civilization when that brings a culture slot, else the infrastructure with a unique quarter; only while the game asks, once (research/31 §5: game 26 held at M84)", async () => {
+test("syncretism: its own civilization when that brings a culture slot, else the infrastructure with a unique quarter; only while the game asks, once a turn (research/31 §5: game 26 held at M84; game 41: twice, with nothing chosen)", async () => {
     reset();
+    const turn = Game.turn;
     const unlocks = Game.Unlocks;
     const identity = Players.get(0).Identity;
     const civ = (t) => GameInfo.Civilizations.lookup(t).$hash;
@@ -881,16 +882,32 @@ test("syncretism: its own civilization when that brings a culture slot, else the
         const out = await choices.makeChoices(DEFAULT_SETTINGS);
         assert.deepEqual(picked(), [[PlayerOperationTypes.CHOOSE_SYNCRETISM_SELF, civ("CIVILIZATION_GREECE")]], "the choices pass answers it");
         assert.ok(out.some((e) => e.key === "SYNCRETISM"));
+        // Once a turn: the notice stays until the game handles the choice.
+        fake.sent.length = 0;
+        assert.deepEqual(choices.chooseSyncretism(), []);
+        assert.deepEqual(picked(), []);
         // Its own without a culture slot: the infrastructure with a unique quarter (Egypt over Rome's two buildings).
         Game.Unlocks.getSelfChoiceSyncreticUnlocks = () => [{ kind: "KIND_TRADITION", typeHash: 1 }];
+        Game.turn += 1;
         fake.sent.length = 0;
         choices.chooseSyncretism();
         assert.deepEqual(picked(), [[PlayerOperationTypes.CHOOSE_SYNCRETISM_INFRASTRUCTURE, civ("CIVILIZATION_EGYPT")]]);
-        // Chosen already: nothing more.
-        Players.get(0).Identity = { ...identity, getSyncreticCivType: () => civ("CIVILIZATION_EGYPT") };
+        // Game 41: the game answers "none" (-1) before a choice; the notice waits: the choice is made.
+        Players.get(0).Identity = { ...identity, getSyncreticCivType: () => -1 };
+        Game.turn += 1;
+        fake.sent.length = 0;
+        assert.ok(choices.chooseSyncretism().some((e) => e.key === "SYNCRETISM"));
+        assert.equal(picked().length, 1);
+        // The game refuses (a choice made): nothing sent, UI.log says why.
+        const canStart = Game.PlayerOperations.canStart;
+        Game.PlayerOperations.canStart = () => ({ Success: false, FailureReasons: ["LOC_ALREADY"] });
+        Game.turn += 1;
         fake.sent.length = 0;
         assert.deepEqual(choices.chooseSyncretism(), []);
+        Game.PlayerOperations.canStart = canStart;
+        assert.deepEqual(picked(), []);
     } finally {
+        Game.turn = turn;
         Game.Unlocks = unlocks;
         if (identity === undefined) delete Players.get(0).Identity;
         else Players.get(0).Identity = identity;
