@@ -194,10 +194,22 @@ const RESEARCH_TARGETS = {
     SCIENCE: [
         INNOVATION_WONDER,                         // research unlocking a wonder that grants Innovation (steps marks it)
         /CODEX/,                                   // MOD_AQ_CODEX(_REDUX), MOD_AQ_MATHEMATICS_CODEX, MOD_AQ_CODEX_CIVIC
-        "MOD_EX_SPECIALIST_CAP_INCREASE",          // Education, Urban Planning: one more specialist per tile
+        // One more specialist per tile, every age's (research/40 A1: not only Exploration's Education and Urban Planning, also
+        // Antiquity's Currency, Modern's Electricity and Capitalism, and the Test of Time's for a tall civilization).
+        /SPECIALIST_CAP_INCREASE$/,
         ...SCIENCE_PROJECTS, LAUNCH_PAD,
         ...Object.values(LEVER_BUILDINGS.SCIENCE).flat(),
         ...Object.values(SCIENCE_SITES).flat().map((site) => site.type),
+    ],
+    // The culture path's research (research/40 B9: the culture focus had none, every civic came from the advisor): wonders
+    // (Antiquity's path), relics and their slots (Exploration's: Theology, the masteries' relics), artifacts (Modern's:
+    // Natural History's Explorers and Museums, Hegemony's archaeology), and the masteries granting culture points.
+    CULTURE: [
+        /^WONDER_/,
+        /RELIC/,
+        /ARCHAEOLOGY$/,
+        "UNIT_EXPLORER", "BUILDING_MUSEUM",
+        /_(CULTURE|TOURISM)_VP(_UI)?$/,
     ],
     ECONOMIC: [
         "UNIT_MERCHANT",                           // trade routes import resources
@@ -271,6 +283,9 @@ export function pickVictoryResearch(focus, candidates) {
 // the path's research (Rocketry is 14 techs deep) gates far more.
 const BONUS_TARGETS = {
     SCIENCE: [/_SCIENCE_VP$/],
+    // Culture (research/40 B9): Future Civic's culture points (Modern: +10 and an artifact, about 15 points, more than a
+    // Modern wonder's 12) once nothing else of the path is left.
+    CULTURE: [/_(CULTURE|TOURISM)_VP$/, "MOD_MO_ARTIFACT"],
 };
 
 /** The quickest candidate whose next research grants the focus's victory points, or null. */
@@ -278,7 +293,7 @@ export function pickBonusResearch(focus, candidates) {
     const wanted = BONUS_TARGETS[focus] ?? [];
     let best = null;
     for (const c of candidates ?? []) {
-        if (!(c.targets ?? []).some((t) => wanted.some((w) => w.test(String(t))))) continue;
+        if (!(c.targets ?? []).some((t) => wanted.some((w) => (typeof w === "string" ? w === t : w.test(String(t)))))) continue;
         if (!best || (c.turns ?? 99) < (best.turns ?? 99)) best = c;
     }
     return best;

@@ -129,7 +129,7 @@ export function probeDistricts() {
     return line;
 }
 
-export function growthAdvice(cityID, settings, { focusKind = null, victory = null } = {}) {
+export function growthAdvice(cityID, settings, { focusKind = null, victory = null, resourceTrait = false } = {}) {
     const city = safe(() => Cities.get(cityID), null);
     if (!city) return null;
     const pid = GameContext.localPlayerID;
@@ -137,7 +137,9 @@ export function growthAdvice(cityID, settings, { focusKind = null, victory = nul
     // Victory focus: economy values a tile with a resource (improving it gains the resource);
     // science values specialists that take an urban tile to the age's next mark (40 total yield,
     // then 75, in the Exploration age; highYieldTarget).
-    const resourceValue = victory === "ECONOMIC" ? RESOURCE_TILE_VALUE : 0;
+    // Also any focus for a civilization or leader paid per resource (`resourceTrait`, research/40 C: America's gold per improved
+    // resource, Amina's resource cap).
+    const resourceValue = victory === "ECONOMIC" || resourceTrait ? RESOURCE_TILE_VALUE : 0;
     const threshold = victory === "SCIENCE" ? highYieldTarget(safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, ""), urbanTotals(pid)) : 0;
     const centre = safe(() => GameplayMap.getIndexFromXY(city.location.x, city.location.y), -1);
     const planned = plannedTiles();

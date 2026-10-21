@@ -63,13 +63,18 @@ test("research: the path's unlocks first (a codex mastery once the base is resea
         assert.deepEqual(chosen(TECH), [N("NODE_TECH_AQ_POTTERY")], "no focus: the advisor's");
         // Civics: Literacy (a codex) for science, Code of Laws (merchants) for economy; Foundation's
         // codex needs a scientific attribute trait, so it is not counted.
+        // Code of Laws also grants a tradition slot (research/40 A1): as quick as Literacy, it goes first for every focus.
         world.research = { tech: { available: [] }, culture: { available: [N("NODE_CIVIC_AQ_MAIN_MYSTICISM"), N("NODE_CIVIC_AQ_MAIN_LITERACY"), N("NODE_CIVIC_AQ_MAIN_CODE_OF_LAWS"), N("NODE_CIVIC_AQ_FOUNDATION")] } };
         fake.sent.length = 0;
-        assert.equal(steps.chooseResearch("culture", DEFAULT_SETTINGS, "SCIENCE")?.key, "VICTORY_CIVIC");
-        assert.deepEqual(chosen(CIVIC), [N("NODE_CIVIC_AQ_MAIN_LITERACY")]);
+        assert.equal(steps.chooseResearch("culture", DEFAULT_SETTINGS, "SCIENCE")?.key, "STRUCTURAL_CIVIC");
+        assert.deepEqual(chosen(CIVIC), [N("NODE_CIVIC_AQ_MAIN_CODE_OF_LAWS")]);
         fake.sent.length = 0;
         steps.chooseResearch("culture", DEFAULT_SETTINGS, "ECONOMIC");
         assert.deepEqual(chosen(CIVIC), [N("NODE_CIVIC_AQ_MAIN_CODE_OF_LAWS")]);
+        world.research.culture.available = [N("NODE_CIVIC_AQ_MAIN_MYSTICISM"), N("NODE_CIVIC_AQ_MAIN_LITERACY"), N("NODE_CIVIC_AQ_FOUNDATION")];
+        fake.sent.length = 0;
+        assert.equal(steps.chooseResearch("culture", DEFAULT_SETTINGS, "SCIENCE")?.key, "VICTORY_CIVIC");
+        assert.deepEqual(chosen(CIVIC), [N("NODE_CIVIC_AQ_MAIN_LITERACY")]);
         world.research.culture.available = [N("NODE_CIVIC_AQ_MAIN_MYSTICISM"), N("NODE_CIVIC_AQ_FOUNDATION")];
         fake.sent.length = 0;
         steps.chooseResearch("culture", DEFAULT_SETTINGS, "SCIENCE");
@@ -215,6 +220,25 @@ test("growth, economy: a tile with a resource beats a slightly richer one", () =
         assert.equal(a.best.resource, true);
         a = growthAdvice(athens().id, DEFAULT_SETTINGS, { victory: "SCIENCE" });
         assert.deepEqual([a.best.x, a.best.y], [PLAIN.x, PLAIN.y], "science: no resource bonus");
+        // A civilization paid per resource (research/40 C: America's gold per improved resource): any focus.
+        a = growthAdvice(athens().id, DEFAULT_SETTINGS, { victory: "SCIENCE", resourceTrait: true });
+        assert.deepEqual([a.best.x, a.best.y], [WINE.x, WINE.y]);
+        const tables = Object.fromEntries(["CivilizationTraits", "TraitModifiers", "Modifiers", "DynamicModifiers", "ModifierArguments"].map((t) => [t, GameInfo[t]]));
+        const civType = Players.get(0).civilizationType;
+        const civ = GameInfo.Civilizations.find(() => true);
+        try {
+            assert.equal(steps.resourcesPay(), false);
+            Players.get(0).civilizationType = civ.$hash;
+            GameInfo.CivilizationTraits = [{ CivilizationType: civ.CivilizationType, TraitType: "TRAIT_TEST_RES" }];
+            GameInfo.TraitModifiers = [{ TraitType: "TRAIT_TEST_RES", ModifierId: "MOD_TEST_RES" }];
+            GameInfo.Modifiers = [{ ModifierId: "MOD_TEST_RES", ModifierType: "MT_RES" }];
+            GameInfo.DynamicModifiers = [{ ModifierType: "MT_RES", EffectType: "EFFECT_ADJUST_PLAYER_YIELD_FOR_RESOURCE" }];
+            GameInfo.ModifierArguments = [];
+            assert.equal(steps.resourcesPay(), true);
+        } finally {
+            for (const [t, v] of Object.entries(tables)) GameInfo[t] = v;
+            Players.get(0).civilizationType = civType;
+        }
     } finally {
         delete world.expand;
     }
@@ -279,6 +303,24 @@ test("merchants, economy: trained while trade routes are open, up to 2 at a time
         fake.sent.length = 0;
         steps.fillProduction(new Map(), { ...options, victory: "SCIENCE" });
         assert.equal(merchants(), 0, "not for science");
+        // A civilization trade routes pay (research/40 A5: Chola's gold and influence per route): any focus.
+        const tables = Object.fromEntries(["CivilizationTraits", "TraitModifiers", "Modifiers", "DynamicModifiers", "ModifierArguments"].map((t) => [t, GameInfo[t]]));
+        const civType = Players.get(0).civilizationType;
+        const civ = GameInfo.Civilizations.find(() => true);
+        try {
+            Players.get(0).civilizationType = civ.$hash;
+            GameInfo.CivilizationTraits = [{ CivilizationType: civ.CivilizationType, TraitType: "TRAIT_TEST_TRADE" }];
+            GameInfo.TraitModifiers = [{ TraitType: "TRAIT_TEST_TRADE", ModifierId: "MOD_TEST_TRADE" }];
+            GameInfo.Modifiers = [{ ModifierId: "MOD_TEST_TRADE", ModifierType: "MT_TRADE" }];
+            GameInfo.DynamicModifiers = [{ ModifierType: "MT_TRADE", EffectType: "EFFECT_PLAYER_ADJUST_YIELD_PER_NUM_TRADE_ROUTES" }];
+            GameInfo.ModifierArguments = [];
+            fake.sent.length = 0;
+            steps.fillProduction(new Map(), { ...options, victory: "SCIENCE" });
+            assert.equal(merchants(), 1, "trade routes pay us: for science too");
+        } finally {
+            for (const [t, v] of Object.entries(tables)) GameInfo[t] = v;
+            Players.get(0).civilizationType = civType;
+        }
         fake.sent.length = 0;
         steps.fillProduction(new Map(), { ...options, merchants: false });
         assert.equal(merchants(), 0, "not without the merchants option");

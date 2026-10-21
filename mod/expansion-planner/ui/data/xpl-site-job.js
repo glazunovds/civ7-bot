@@ -96,14 +96,7 @@ function buildSiteContext(settings) {
         aiPicks: new Map(),
         ownedResources: settlements.ownedResources,
         siteRoles: rolesOf(settings.siteRoles),
-        // Natural wonders are culture victory points (research/26 §4.5): valued while the culture victory is on.
-        naturalWonders: (() => {
-            try {
-                return !disabledVictories().has("CULTURE");
-            } catch (_e) {
-                return false;
-            }
-        })(),
+        naturalWonders: naturalWondersValued(rules),
         continentOf: (idx) => {
             const { x, y } = engineMap.location(idx);
             try {
@@ -124,6 +117,20 @@ function buildSiteContext(settings) {
  * City or town: the better job for a planned site (scored like the site search does).
  * Used for city-centre tacks placed by hand or before roles were remembered.
  */
+
+/**
+ * Natural wonders are culture victory points (research/26 §4.5): valued in site scores while the culture victory is on, and
+ * always for a civilization or leader whose trait pays for them (research/40 C: Isabella; rules.naturalWonderTrait).
+ */
+export function naturalWondersValued(rules) {
+    if (rules?.naturalWonderTrait) return true;
+    try {
+        return !disabledVictories().has("CULTURE");
+    } catch (_e) {
+        return false;
+    }
+}
+
 export function siteRoleAt(x, y, settings) {
     try {
         const { ctx, engineMap } = buildSiteContext(settings);

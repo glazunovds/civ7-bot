@@ -27,6 +27,8 @@ const MASTERY_SHARE = 0.3;          // research (or civics) going into masteries
 const PURCHASE_SHARE = 0.5;         // gold spent on buildings
 const DEFAULT_MASTERIES = 5;        // masteries completed, when not known
 const TAG_OF_FOCUS = { SCIENCE: "SCIENCE", ECONOMIC: "GOLD", CULTURE: "CULTURE" };
+// A building of ours damaged: its repair and the yields lost meanwhile, as production a turn. Never worth a card's yields.
+export const DAMAGED_BUILDING_PRODUCTION = 15;
 
 /**
  * Production going into projects, and what it is worth against plain production: the science
@@ -87,6 +89,12 @@ export function effectYields(effects, ctx = {}) {
                 break;
             case "EFFECT_ADJUST_PLAYER_OR_CITY_BUILDING_PURCHASE_EFFICIENCY":
                 add("YIELD_GOLD", percent * Math.max(0, Number(ctx.gold) || 0) * PURCHASE_SHARE);
+                break;
+            case "EFFECT_CITY_DAMAGE_CONSTRUCTIBLES":
+                // Our own buildings damaged (research/40 A2): the religious crisis's Ius Reformandi damages 3 in every
+                // settlement of ours newly following our religion. Game 41 slotted it, valued "?" (unknown = 0 in a
+                // crisis slot); it did no harm only because nothing was converted.
+                add("YIELD_PRODUCTION", -(Number(args.Amount) || 1) * DAMAGED_BUILDING_PRODUCTION);
                 break;
             default:
                 break;

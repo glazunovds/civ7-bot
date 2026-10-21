@@ -10,7 +10,7 @@ A Civilization VII **UI mod** (mod id `expansion-planner`, in `mod/expansion-pla
 - **Towns:** convert a town to a city or keep it, and which Town Focus to pick (with a «Выбрать» button that sets it).
 - **Wonders:** where to build each wonder, its tier (what its effect is worth), and the race against rivals.
 - **Empire:** every settlement on one page (city strengths, town Focus, food sent/received, plan left), plus the «Сеть еды» food-network map lens.
-- **Autopilot:** for stepping away (online turn timers): each turn it chooses research and civics (game advisor), makes the choices that hold the turn (policies valued by Policy Yield Previews when installed, celebrations, story events, pantheon, government, city-state bonuses), fills empty production queues (a wonder it can win, by tier and value per turn, on the plan's tile; else the plan, warehouses too; else the advisor; whatever it orders goes on the plan's tile; a chosen wonder goes straight to the front; a wonder race it will lose gets a building ahead of it, and a big building stands behind every wonder; in an age's last turns (the final age: all of it, while the score victory ends the game there) only what is done before the age ends, and a nearly done building is bought on a non-final age's last turn), places new citizens (counting what a city loses below zero Happiness, a new citizen's own yields too), sets town Focus, values policies and buildings by what their Happiness does to each settlement's yields, buys planned buildings above a gold reserve (one budget a pass; gold saved for a town conversion or the victory path's next building before small purchases; no building bought in a city while a wonder waits in its queue; a gold line in the tab and UI.log), recalculates the plan, optionally skips idle units and ends the turn (not while a choice holds it). Units move only with their own opt-in options: scouts explore (2 trained first), settlers are trained and found on the Settlements tab's sites (searched by itself; cities and towns 1 to 1 as a floor, then towns converted by their yields), idle military shoots or fortifies or explores (one garrison per city stays; hurt units escape onto shallow water from land melee raiders), merchants take the best trade route. Also befriends independents, spends leader attribute points, promotes commanders (Bastion first, commendations spent; with «Оборона» they stand in the most threatened settlement they reach within 6 turns, in peace keep their post unless one within 4 turns is 3 points unhappier, and lead Focus Fire / Coordinated Attack on raiders), places the plan's map tacks, puts archived great works on display, assigns resources, and (opt-in) explorers dig artifacts, a victory focus steers toward the closest legacy path, by phases (Growth, Build-up, Final push: «Стратегия по фазам») (with its triumphs; research, buildings, growth, merchants and resources serve the science or economic path of each age; the government suits the focus; the Autopilot tab shows each victory's points and countdown and which victories are off; the final age's score race goes to UI.log, and settlers go past the settlement cap when that starts our military countdown, and settle wherever the game allows when a rival's must be blocked; space work runs in parallel and in one order per city, production buildings first, then the Launch Pad and Crewed Space Flight Preparation (near the goal a one-off first when it wins sooner), and the Airfield and a Radio Station only where no Launch Pad is, as soon as they are unlocked; the race counts the Innovation research brings, Launch Pads are banked for before Rocketry and bought at it (under way too), and Exploration's last turns bank gold for Modern; a rival's science countdown is the game's end), ranged soldiers shoot raiders (from their post too) and melee soldiers strike them when the game's own attack preview says it pays, defence against independents (no site near their villages, befriending one at a time, melee defenders bought where raiders are, a holder kept in each settlement near a village at war with us, empty villages dispersed, walls first in a threatened city's queue, Fort Town walls), the army sent where the danger is greatest (guards on their way count only when in time, sleeping reserves woken, ranged units too, a guard at each war front before the war, a packed army unpacks at a threatened settlement and a far soldier reinforces the army of our commander there, the guards there take better posts (a melee unit on the centre, screens facing each approach, ranged units in range, the commander covering the most of them), aircraft strike raiders, a raider about to take a damaged centre first, fighters rebase to cover the settlements enemy aircraft hit lately or reach (a Launch Pad city first) and one ground attacker is trained at a lasting front, warships attack the game's way, guard the coasts ships raid and are trained on the same water, the age's first melee unit, which every settlement centre's defence follows, trained, upgraded or bought; with «Наступление», off by default, a settlement of ours an enemy took in a war it started is retaken with the soldiers defence leaves free, and peace waits only while that assault makes progress), and diplomacy (counter-spy, reconciliation, initiatives). Off at every load (it switches itself on again in a new age's first turn, after the dedications, when it was on at the last age's end or was switched on before them; while the dedications wait it converts the towns that are cheapest then, never last age's cities, which the card brings back), and switched off when anyone wins or we are defeated; after the win (our science countdown with its goal reached, or a game played on after a victory) nothing chases a victory any more: balanced play, every other technology and civic before Future Tech, victory projects out of the queues, every remaining building on its best tile, three wonders at a time, idle gold for conversions and buildings, and the satellite that reveals the map. An item the game leaves at 100% gives way to the next. Towns are converted by production per gold, the chosen town kept as the savings goal; a settlement a revolt may take buys a Happiness building. Plus an experimental single-player «ИИ играет N ходов» (the game's own Autoplay).
+- **Autopilot:** for stepping away (online turn timers): each turn it chooses research and civics (game advisor), makes the choices that hold the turn (policies valued by Policy Yield Previews when installed, celebrations, story events, pantheon, government, city-state bonuses), fills empty production queues (a wonder it can win, by tier and value per turn, on the plan's tile; else the plan, warehouses too; else the advisor; whatever it orders goes on the plan's tile; a chosen wonder goes straight to the front; a wonder race it will lose gets a building ahead of it, and a big building stands behind every wonder; in an age's last turns (the final age: all of it, while the score victory ends the game there) only what is done before the age ends, and a nearly done building is bought on a non-final age's last turn), places new citizens (counting what a city loses below zero Happiness, a new citizen's own yields too), sets town Focus, values policies and buildings by what their Happiness does to each settlement's yields, buys planned buildings above a gold reserve (one budget a pass; gold saved for a town conversion or the victory path's next building before small purchases; no building bought in a city while a wonder waits in its queue; a gold line in the tab and UI.log), recalculates the plan, optionally skips idle units and ends the turn (not while a choice holds it). Units move only with their own opt-in options: scouts explore (2 trained first), settlers are trained and found on the Settlements tab's sites (searched by itself; cities and towns 1 to 1 as a floor, then towns converted by their yields), idle military shoots or fortifies or explores (one garrison per city stays; hurt units escape onto shallow water from land melee raiders), merchants take the best trade route. Also befriends independents, spends leader attribute points, promotes commanders (Bastion first, commendations spent; with «Оборона» they stand in the most threatened settlement they reach within 6 turns, in peace keep their post unless one within 4 turns is 3 points unhappier, and lead Focus Fire / Coordinated Attack on raiders), places the plan's map tacks, puts archived great works on display, assigns resources, and (opt-in) explorers dig artifacts, a victory focus steers toward the closest victory (re-decided from the victories' own points in each age's first turns), by phases (Growth, Build-up, Final push: «Стратегия по фазам») (with its triumphs; research, buildings, growth, merchants and resources serve the science or economic path of each age; the government suits the focus; the Autopilot tab shows each victory's points and countdown and which victories are off; the final age's score race goes to UI.log, and settlers go past the settlement cap when that starts our military countdown, and settle wherever the game allows when a rival's must be blocked; space work runs in parallel and in one order per city, production buildings first, then the Launch Pad and Crewed Space Flight Preparation (near the goal a one-off first when it wins sooner), and the Airfield and a Radio Station only where no Launch Pad is, as soon as they are unlocked; the race counts the Innovation research brings, Launch Pads are banked for before Rocketry and bought at it (under way too), and Exploration's last turns bank gold for Modern; a rival's science countdown is the game's end), ranged soldiers shoot raiders (from their post too) and melee soldiers strike them when the game's own attack preview says it pays, defence against independents (no site near their villages, befriending one at a time, melee defenders bought where raiders are, a holder kept in each settlement near a village at war with us, empty villages dispersed, walls first in a threatened city's queue, Fort Town walls), the army sent where the danger is greatest (guards on their way count only when in time, sleeping reserves woken, ranged units too, a guard at each war front before the war, a packed army unpacks at a threatened settlement and a far soldier reinforces the army of our commander there, the guards there take better posts (a melee unit on the centre, screens facing each approach, ranged units in range, the commander covering the most of them), aircraft strike raiders, a raider about to take a damaged centre first, fighters rebase to cover the settlements enemy aircraft hit lately or reach (a Launch Pad city first) and one ground attacker is trained at a lasting front, warships attack the game's way, guard the coasts ships raid and are trained on the same water, the age's first melee unit, which every settlement centre's defence follows, trained, upgraded or bought; with «Наступление», off by default, a settlement of ours an enemy took in a war it started is retaken with the soldiers defence leaves free, and peace waits only while that assault makes progress), and diplomacy (counter-spy, reconciliation, initiatives). Off at every load (it switches itself on again in a new age's first turn, after the dedications, when it was on at the last age's end or was switched on before them; while the dedications wait it converts the towns that are cheapest then, never last age's cities, which the card brings back), and switched off when anyone wins or we are defeated; after the win (our science countdown with its goal reached, or a game played on after a victory) nothing chases a victory any more: balanced play, every other technology and civic before Future Tech, victory projects out of the queues, every remaining building on its best tile, three wonders at a time, idle gold for conversions and buildings, and the satellite that reveals the map. An item the game leaves at 100% gives way to the next and leaves the queue after 3 turns, and the plan orders only on the tiles the game offers (gotcha 77). Towns are converted by production per gold, the chosen town kept as the savings goal; a settlement a revolt may take buys a Happiness building. It also researches the slots, caps and specialist caps the game's advisor never names, and the civics whose policy cards beat the weakest ones slotted (gotcha 76), picks the pantheon and beliefs by value and spreads our religion to our own settlements with Missionaries, trains and uses our civilization's great people and unique improvements, uses the endeavors the game offers (Lafayette's Reform), steals research and levies or incorporates city-states, and buys settlers toward the Homeland triumph (research/40; gotcha 73). One order per tile (a wonder never shares its tile with another order of ours), and under a military countdown settlers take dangerous or far sites (gotcha 74). Plus an experimental single-player «ИИ играет N ходов» (the game's own Autoplay).
 
 There are also tack pills in the city production menu and growth hints (map marks while the game asks where a new citizen goes). The user plays in **ru_RU**: every string ships in English and Russian.
 
@@ -137,7 +137,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
       - **The rule:** they go to the very front, ahead of an item with progress. They stay behind an item done this turn, repairs and a unit at the front. Unless the centre is damaged or a war is at our door, they also stay behind a wonder in a race or a science project that would then miss the age (`holdsFront`, counting the walls' own turns).
       - **Walls at the front keep it:** `toFront` never passes them, and of the units only defenders under threat go ahead of walls in production (`frontLoadUnits`).
       - **UI.log:** `queue: <city>: <walls> moved ahead of <item> with N production in it`, a probe of this gotcha's rule (`CityBuildQueue.csv` shows whether the item keeps its progress).
-    - **An item the game does not complete gives way** (game 33; gotcha 55): one at 100% since an earlier turn has the next item moved ahead of it (`unstickQueues`, the production step's first edit; QUEUE_UNSTUCK), or, alone, a building queued for that (QUEUE_UNSTUCK_QUEUED). Moves may go ahead of it (`frontSlot` 0), and `toFront` neither brings it back to the front nor keeps a move behind it.
+    - **An item the game does not complete gives way** (game 33; gotcha 55): one at 100% since an earlier turn has the next item moved ahead of it (`unstickQueues`, the production step's first edit; QUEUE_UNSTUCK), or, alone, a building queued for that (QUEUE_UNSTUCK_QUEUED); a stuck wonder gets the building that keeps the most of it (gotcha 74); never its own type nor an item on its tile, and one stuck 3 turns leaves the queue (gotcha 77). Moves may go ahead of it (`frontSlot` 0), and `toFront` neither brings it back to the front nor keeps a move behind it.
     - **A lost wonder pours half its progress plus that turn's production into the next item**, its overflow capped (game 9: the Red Fort's 300 into a 15-cost Scout). A building, not a unit, stands right behind a wonder in production (`guardWonderRefund`).
     - **New units:** wanted units go to the city whose queue is free soonest.
 21. **Victory data spans every age.**
@@ -277,7 +277,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **Blocking a rival's countdown** (research/31 §3).
       - **Seen in game 25:** Ashoka's military countdown ran from M58, broke at M61 when we founded a settlement, ran again from M67 and won at M72. We were second, so our own settlements set his goal: two more by M67 would have stopped it. A settler stood idle 23 turns while the sites ran out.
       - **The block:** the victory watch's MILITARY entry carries `block`, the settlements that would hold `need`.
-      - **Settling anywhere:** in the final age the MILITARY overlay (a rival's DANGER or WATCH; our own lever too) sets `settleAnywhere`. A settler with no site for `ANYWHERE_IDLE_TURNS` 3 then takes the nearest tile within `ANYWHERE_RADIUS` 8 that the game accepts (`anySite`, log SETTLE_ANYWHERE):
+      - **Settling anywhere:** in the final age the MILITARY overlay (a rival's DANGER or WATCH; our own lever too) sets `settleAnywhere`. A settler with no site for `ANYWHERE_IDLE_TURNS` 1 (3 before game 42) then takes the nearest tile within `ANYWHERE_RADIUS` 8 that the game accepts (`anySite`, log SETTLE_ANYWHERE); a settler is bold then (gotcha 74):
         - `isValidLandClaimLocation`, on revealed land;
         - our own spacing aside, but never within `ANYWHERE_VILLAGE` 3 of a village, never into danger, never a war;
         - the goal carries `any`, which `tooCloseToForeign` lets through.
@@ -311,6 +311,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **The problem:** the autopilot's state starts afresh each age, and at an age's first turn every new legacy path is at 0, so the leader's leaning (+0.15) alone chose the focus. Seen in game 19: Ada's culture leaning took Modern from science (26 Innovation) to culture (46 against the leader's 117); the game was lost to culture with 30 Innovation.
     - **Memory:** the focus is kept in the save (GameTutorial `_XPL_OBJ_FOCUS`, `savedFocus` / `saveFocus` in data/xpl-victory.js) and, since the save's properties do not outlive an age change (gotcha 57), in the settings' memory of this game; it is the `previous` of a new age.
     - **Leaning:** the leader's leaning picks a first focus but never makes a switch (`lean`, left out of the switch margin).
+    - **The victories' points** decide it since games 42-43 (legacy paths read 0), and only in an age's first 15% (gotcha 74).
     - **The final age** keeps the focus unless our own countdown is within reach in another victory (its CHANCE in the victory watch, `chooseFocus(…, {chances})`).
 48. **The building solver anneals** (research/27 §2).
     - **The problem:** a far tile takes a building only once a chain of urban tiles reaches it, and each link alone loses value. Greedy and local search therefore kept whole quarters around the Palace at +0 while +3/+4 tiles two rings out stayed empty. `tools/bench-optimality.mjs` measured our layouts 4.5% below the best layout of the same model on average, 16.5% at worst (time-aware Antiquity).
@@ -379,7 +380,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **Seen in game 21:** the Emile Bell left Carthage's queue unbuilt three times (T32–T35) while it waited behind other items, and the Mausoleum of Theodoric once (T46). Each had nothing in it, so the game's notice said 0 production returned. We sent no removal (`net_message_debug.log`); why the game dropped them is not known yet. Every wonder that went straight to the front was built.
     - **The rule** (`wonderSlot`): a wonder waiting in a queue goes to position 0, ahead of a building with progress (under either rule of gotcha 20 nothing is lost: each item keeps its own, or the wonder absorbs the building's). Behind a wonder in production, behind an item done this turn, behind repairs, wanted units and projects.
     - **No wonder waits behind a project or a wonder in production** (game 34; `frontHeld`, `WONDER_WAIT_TURNS` 1). A rival finishing a wonder that waits in our queue takes the progress of our item in production: the game drops the wonder (NOTIFICATION_PRODUCTION_INVALIDATED, «0 returned») and that item starts over. Лондон's Chart the Stars lost 78 at A39 to the Colossus and 181 at A57 to the Ha'amonga a Maui (London made 10-21 a turn; the project ran A32-A69); game 25's Spherical Earth lost 187 to the Pyramid of the Sun. A wonder never passes a project, so a chosen wonder is not ordered where a project or a wonder in production holds the front more than a turn (UI.log `wonders: X not ordered in <city>: …`), and one waiting there with nothing in it leaves the queue (WONDER_WAIT_DROPPED).
-    - **Orders** (`wonderOrders`): an order of this turn counts as started until the game's queue shows it. Game 21: the end-of-turn retry, three seconds after the order, did not see it and ordered the Emile Bell again.
+    - **Orders** (`wonderOrders`): an order of this turn counts as started until the game's queue shows it; one we take out of a queue ourselves is forgotten (`removeFromQueue`; game 44's dropped Oxford University was logged as gone unbuilt). Game 21: the end-of-turn retry, three seconds after the order, did not see it and ordered the Emile Bell again.
     - **Tiles:** the game may refuse the planner's tile by then: the next tiles are tried (`orderWonder`), and UI.log says when none is taken (`wonders: … could not order`). Before, nothing was said; the Mausoleum was never ordered again.
     - **UI.log** (the evidence the next game needs): `wonders: X left <city>'s queue unbuilt (ordered T…, last seen T…); queue now […]; that tile now: <the game's answer>; game notices: …`, and `game notice: NOTIFICATION_PRODUCTION_INVALIDATED | NOTIFICATION_WONDER_FAILED: <text>`.
     - **The queue probe** (research/31 §5; `probeQueues`, from `chooseWonders`). Once a turn, UI.log gets a line for each city whose queue holds a wonder, or whose item in production has stood at 100% since an earlier turn: `queue probe: <city>: [TYPE pct%*, …]; TYPE at 100% since T…; bought here T…` (purchases from the game's CityMadePurchase).
@@ -581,6 +582,157 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **Defence is unchanged:** the science victory needs its Launch Pad undamaged through the countdown; a damaged pad very likely stops the countdown (its prerequisite, `REQSET_MODERN_VICTORY_SCIENCE_PREREQ`; not seen yet), the outcome is then OPEN again, and the victory work and repairs come back.
     - **Logs:** UI.log `outcome: <STATE> (<class>, N turn(s) left), was <STATE>: …` when it changes; the tab's VICTORY_SECURED, VICTORY_WON, GAME_DECIDED, VICTORY_WORK_DROPPED, QUEUED_REMAINING, SATELLITE_QUEUED.
     - **Not built:** switching itself on again after «Ещё один ход» (it still switches off at the victory), peace with everyone, the army's upkeep.
+
+73. **What research/40 found the autopilot left on the table** (research/40-hidden-value.md, its five notes; the game-41 session's
+    audit, built in the next one).
+    - **Structural research first** (A1; core/xpl-research-value.js `pickStructural`, steps `structuralStep`). The game's advisor
+      names only MILITARY, CULTURE, SCIENCE and ECONOMIC nodes (advisory.xml): 101 of 106 Test of Time nodes, every
+      Exploration civilization tree, Irrigation, Entertainment and Globalism came last (game 41: Rome Reborn waited from E1 to
+      about E60). A node whose next research gives a tradition slot, a specialist cap (1 for science, else 0.5), a syncretic
+      choice, a city limit or a settlement cap with `CAP_ROOM` 2 or fewer settlements of room (1 each; by the modifier's effect,
+      `modifierEffect`, else its name) goes before the advisor's pick, the most per turn within max(8, 2 × the median node's
+      turns), and before the path's own research when no slower (or within `STRUCTURE_QUICK_TURNS` 3); a gate keeps its way
+      first. Unlock rows that need a trait count when the trait is ours (`rowOurs`, `ourTraits`: Hierarchy, Foundation,
+      Administration). Every age's specialist cap is the science path's (`/SPECIALIST_CAP_INCREASE$/`). UI.log probe P-RES-1.
+    - **Religion** (A2, A3, B1, C). `REQUIREMENT_CITY_FOLLOWS_RELIGION` and `…_IS_DISTANT_LANDS` are settlement tests of the
+      card valuation (Tolerance, Zeal, Liturgical Disputes, Schism, Jizya); `EFFECT_CITY_DAMAGE_CONSTRUCTIBLES` is −15
+      production a building (`DAMAGED_BUILDING_PRODUCTION`: Ius Reformandi, slotted in game 41, goes last). Pantheons and
+      beliefs by our empire's numbers (core/xpl-religion.js `PANTHEON_YIELDS`, `BELIEF_YIELDS`; choices `pantheonFacts`
+      projects tiles to the cap and 2 quarters a city; `beliefFacts` counts every settlement of ours as a follower). Missionaries
+      (data/xpl-missions.js): trained where the game allows (a Temple) while 2 of ours do not follow (QUEUED_MISSIONARY, up to 2,
+      by charges), each converts the most urgent (the crisis's unhappy ones, then those of no religion, then others; urban
+      half from the centre, rural from another tile), then the city-states we are suzerain of; none while Ius Reformandi is
+      slotted (`iusReformandiActive`), none trained in an age's last 8 turns, and a tile or settlement the game refuses is left a
+      while (gotcha 74). Religion reads: data/xpl-player-facts.js `ourReligion`, `followsOurReligion`.
+    - **Diplomacy** (A4, B6, B7): endeavors from the game's offer (`endeavorsOffered`, `ENDEAVOR_VALUE`: Lafayette's Reform
+      100, the priority's own +10), to a leader not approached this age first (`endeavorTargets` in the settings' game memory:
+      Gregarious Animal); `startReforms` and `sabotageSpace` (a science rival at WATCH or DANGER) whatever «Дипломатия» says;
+      a leader's Reform is supported; the science (culture) focus steals a technology (civic) from the Neutral-or-better leader
+      with the most science (`STEAL_FOR_FOCUS`, one at a time); city-states we are suzerain of (`player.isMinor`,
+      `Influence.getSuzerain()`): `levyDefenders` (the strongest soldier of one within 8 for a threatened settlement short of
+      guards against land raiders; args `Unit` = targetList2's targetID) and `incorporateCityState` (while settlements count and the cap has room).
+      Diplomatic actions start through `startAction` (the panel's quick start).
+    - **Units** (A5, B4, C): merchants with any focus when trade pays us (`tradePays`); our civilization's great people one at a
+      time within 8 turns (`isOurGreatPerson`, QUEUED_GREAT_PERSON) and activated where the game lists them
+      (`unit.getActivationPlots`, `useGreatPerson`, probe P-GP-1); a Legatus with a land-claim charge (canStart(FOUND_CITY,
+      …, true), the panel's own test) founds a town on a known site in peace (`commanderSpecial`, probe P-LEG-2); a commander
+      converts independents (`UNITOPERATION_CONVERT_BARBARIANS`), finishes a raider hurt 50+ (COMMANDER_ATTACK) or sets a
+      Defensive Perimeter; a merchant in a city builds a road to a town of 7+ with no city connected (`roadToTown`).
+    - **Production and towns** (A6, B5, B8, C): Factory Town (FOCUS FACTORY, `FACTORY_GOLD` 4 a factory resource; the
+      economic final push leans to it); unique improvements paying back within `UQI_PAYBACK_TURNS` 15 on a tile the plan
+      leaves free and no other order takes, never next to its own kind when `SameAdjacentValid` is false, a cancelled order's
+      tile off 20 turns (`queueUniqueImprovements`, probe P-UQI-1; gotcha 74); a town plans what the game's PURCHASE answer lets it buy
+      (building-job `townSelection(sid)`); growth takes resource tiles with any focus when resources pay us (`resourcesPay`);
+      Inca mountains are workable (rules `mountainsWorkable`) and a natural-wonder trait values them in sites
+      (`naturalWondersValued`).
+    - **Legacy** (B2, B9, C; core/xpl-legacy.js): Exploration's 16 Homeland settlements (a triumph: +2 cap in Modern) within the
+      cap's room buys and saves for settlers (`settlementMilestoneNow`), not in its last 5 turns, one a pass; legacy path
+      milestones count nothing in this game version, so B3 (another path's first milestone) and Antiquity's military path are
+      gone (gotcha 74); the culture focus's research levers (wonders, relics, archaeology, museums; Future Civic as its bonus);
+      a crisis story's option with the crisis tag +3; the Autopilot tab's triumphs under way in an age's last turns
+      (`legacySummary`). UI.log `legacy: triumphs …; settlements N/cap; age P/max (+d …)` once a turn (probes P-INC-1,
+      P-AGE-1), `legacy points at the age change` (P-LEG-1), `reform: …` (P-REF-1).
+    - **Future Tech's clock** (A7): each adds 10 age points (`FUTURE_AGE_POINTS`, HumanOnly); in the final age the race plans and
+      the path takes one only when done before the end it brings nearer (`futureClock`, `futureInTime`).
+    - **Not built:** Gaul's spacing, Nepal's Sherpa, converting rival settlements (opt-in), leaders rewarded for conquest (the
+      defensive decision).
+74. **One order per tile; legacy paths count nothing; blocking settlers are bold** (games 42-43; research/game42, research/game43).
+    - **One order per tile** (`tileTaken`, `notePlotOrder`, `plotOrders` in data/xpl-autopilot-steps.js). Game 42 lost three
+      wonders at 100% (Battersea Power Station twice, Doi Suthep; ~2,400 production): each crossed its cost (757 of 750, 830,
+      843) and never completed after a Pairidaeza of ours was queued on its tile (a repair 50 s before Battersea in Парса; the
+      unique improvement step in Гордион, once in the same second), while the growth step placed citizens on 32,36 under a wonder
+      "in production"; the same wonder on a tile with no other order completed (Doi Suthep at 43,35), and no rival's building
+      or wonder ever stalled in 16 games. The production list hides what is queued (production-chooser-helpers.js); our BUILD
+      with X, Y did not check. Now no order goes to a tile a queued item of ours targets (the queue entries' `location`, as the
+      game's placement manager reads them), one ordered this turn, or one a wonder of ours was ordered on: `orderWonder` tries
+      the next tile (UI.log `could not order …: x,y: <type> is queued there`), `queueUniqueImprovements` and the repair step skip
+      it, and growth places a citizen under a queued wonder only when nothing else is offered (a new citizen holds the turn).
+    - **A stuck wonder** (`unstickWonder`): once it leaves the queue, all it holds goes into the item in production and what
+      exceeds that item's cost is lost (game 42: a Military Academy got 1,110 of a 441 cost). The building that keeps the most
+      goes ahead (`bestAbsorber`, as the cash-out of a lost race), else the plan's or the costliest is queued to go next pass.
+      `probeStuckTile` writes once a turn what stands on its tile, the game's answer there and every queued item's tile.
+    - **Legacy paths count nothing in this game version.** `player.LegacyPaths.getScore` read 0 for every path in every age of
+      games 42-43 (the game's own victory-manager.js reads it the same way) while triumphs came (Player_Legacies.csv), and every
+      age lasted 70 turns at one point a turn: no path milestone moved the clock. So `legacyStandings` is gone; the victory focus
+      scores the victories' own points (core `raceStandings`: no class has a goal until every dominance race has one, then the
+      game's goals; with none each is scored by its lead over the best met rival, against at least `LEAD_FLOOR`), and the focus
+      may change only in an age's first `FOCUS_CHANGE_SHARE` 15% (`chooseFocus(…, {mayChange})`; replayed over both games'
+      races, mid-age switching would have taken game 43 off the economy that won it at A41 and back at E36). The off-focus
+      milestone wants (research/40 B3: a wonder's +8, a codex's research, district specialists, all on all game) and the
+      Antiquity military milestone are gone; the Homeland triumph (16, a real triumph) stays, not in Exploration's last
+      `MILESTONE_LATE_TURNS` 5, one settler a pass (`buySettlers` and `buyGoal`: game 43 bought two at E69). The tab's legacy
+      summary and UI.log's `legacy:` line show the triumphs under way (core `triumphsUnderWay`, `triumphLine`).
+    - **Blocking settlers are bold** (`asSettler` sets `ctx.bold` with the strategy's settleAnywhere). Game 42: Tubman's
+      military countdown won at M62 while two settlers stood ~25 turns with room for 6 under the cap: 4-5 of 7-8 sites
+      «DANGER», 2 «FAR»; one or two settlements would have raised her goal past her 79. Under a countdown to block or to start:
+      only live hostile units are danger (`dangerNear` leaves out the hit and loss marks), a walk up to `BOLD_MAX_TURNS` 15,
+      «settle anywhere» after one idle turn (`ANYWHERE_IDLE_TURNS` 1), and a settler is bought with no safe site known
+      (`settlerOffer({anywhere})`). The `settler: no order` line names what makes the sites dangerous (`dangerWhy`: the units'
+      owners, or "marks").
+    - **Also:** a Missionary the game refuses on a tile keeps off it `MISSION_REFUSED_TURNS` 10, and off a settlement refused
+      twice (game 43: one walked 73,20 ↔ 74,20 E55-E69; UI.log `mission: … refused: …`); none trained in an age's last
+      `MISSION_LATE_TURNS` 8; a unique improvement that may not stand next to its own kind (`SameAdjacentValid` false:
+      Pairidaeza, Stepwell, Caravanserai) keeps off its kind's neighbours, standing, queued or ordered, an order gone unbuilt
+      keeps its tile off `UQI_RETRY_TURNS` 20 (game 42 ordered one tile of Парса seven times), `OnePerSettlement` once a
+      settlement; a levy only against land raiders (game 42's five answered ships), the city-state named by its city.
+    - **Kept as it was:** city-states' unique improvements (Shore Battery, Hillfort, Kasbah) count as ours when a suzerain
+      bonus makes them buildable (`ourUniqueImprovements` reads `TraitType` only).
+75. **Some engine calls crash the game itself; `safe()` cannot catch that** (20 October, game 44: research/game44).
+    - **Seen:** our first Missionary of the game finished at E20, and on its first order the game crashed (`AppCrash` in
+      Telemetry.log; the minidump in `Base\Binaries\Win64\Civ7_Win64_DX12_FinalRelease.exe.dmp`: an access violation reading
+      0x60 at `exe+0xdd0bba`, called from v8 and cohtml, i.e. from UI script). `spreadReligion` had just called
+      `unit.getActivationPlots("UNITOPERATION_SPREAD_RELIGION", false)`: it takes a unit command (`UNITCOMMAND_*`), and the game's
+      unit panel asks only after `unit.shouldShowActivationPlots(command)` (unit-actions.js). Asked for an operation it reads a
+      null definition. A native crash kills the process: a JS try/catch never sees it.
+    - **The rule:** call an engine function only the way the game's own UI calls it (the same kind of argument, the same guard
+      first); grep the base game's UI JS before using a function new to us. `useGreatPerson` now asks `shouldShowActivationPlots`
+      first; `spreadReligion` uses our own tile rule. The fake engine records a `getActivationPlots` call with anything but a unit
+      command in `world.crashes` (and throws), which the Missionary tests check.
+    - **Reading a crash:** the game writes the minidump above (overwritten by the next crash: copy it), Telemetry.log ends with
+      `PublishAppSessionStatusTelemetry: AppCrash`, and net_message_debug.log's last SEND with no RECV is what the game was handling;
+      scratchpad crash1/mdmp.py reads the exception and lists the module frames on the crashing thread's stack.
+76. **Research for its policy cards** (20 October, game 44 E53: the user). Reformation, 2 turns away, unlocks Religious Orders
+    (+32 Culture, +52 Happiness in our settlements following our religion, by Policy Yield Previews) and Rationalism (+19 Gold,
+    +10 Science), each worth more than the weakest cards slotted; the culture focus walked the main tree toward Future Civic
+    (+7 culture points each) and Reformation, a branch civic the game's advisor never names, came last (E61). The game's own AI
+    puts Theology and Reformation first on Exploration's culture path (victories.xml
+    `LegacyPathStrategyCultureFilledProgressionTreeNodeBiases` 1000).
+    - **The rule** (steps `cardStep`, core `pickCardResearch`): a node's new cards are valued as the policy step values cards
+      (choices `cardGains`: `cardValue`, Policy Yield Previews previewing a card not unlocked yet, as its civic tooltips do; the
+      slotted ones at what taking them out would cost), each against the weakest card it may replace (core `cardSwapGain`: a free
+      slot 0; a tradition card only a tradition slot, a policy card any; only swaps the policy step would make, `swapWorth`).
+      The node winning the most a turn of research, at least `CARD_GAIN_MIN` 10 and slotted `CARD_USE_TURNS` 5 before the age
+      ends, goes after the structural node and before the path's research when no slower than it (or within
+      `STRUCTURE_QUICK_TURNS` 3), before the advisor's pick always; a gate keeps its way first. Crisis cards, cards unlocked
+      already and cards of unknown value count nothing; without Policy Yield Previews nothing changes.
+    - **UI.log:** `research: <node> for its cards (N turn(s)): <card> v over <card> w, …; +G a turn`; the tab's CARD_CIVIC /
+      CARD_TECH.
+    - **Not valued:** what the previews cannot see (Evangelism's missionary charge and movement), the diplomatic action a civic
+      unlocks (Reformation's Conversion of the Population).
+77. **The plan orders only on tiles the game offers; a stuck item leaves the queue** (game 45: research/game45).
+    - **Seen:** four buildings stood at 100% and never completed, about 1,700 production: Экбатана's Monument (281 of 67,
+      A50-A69), Патрагада's University (825 of 437, E59-E70), Кадис's Granary and Памплона's Grocer (1,232 of 267, M10-M41).
+      All four were the plan's orders (`queueNextBuildings` → `orderAtTack`), each the second building on a tile whose first
+      one had been bought; but 37 other such tiles completed, and 38 tiles with two of our queued buildings too. No AI city's
+      item stood past its cost on consecutive turns. The cause is not proven.
+    - **Offered tiles only** (`tileOffered` in data/xpl-tack-orders.js): the game's placement screen lets a player click only
+      the tiles of `canStart` without a tile (`Plots`, `ExpandUrbanPlots`: building-placement-manager.js
+      `isPlotIndexSelectable`) and then sends X and Y; `orderAtTack` asked only `canStart` with X and Y. Now it refuses a
+      tile the game does not list for that building (UI.log `not queued: <type> at x,y: the game does not offer that tile for
+      it now`), as the plan's queue, its purchases and the Buildings tab's buttons go through it; with no tile listed at all
+      the X and Y answer decides. The plan's outer tiles are ordered once their connector stands.
+    - **A stuck item** (gotcha 20): the item moved ahead of it is never its own type, an item on its tile or another stuck
+      one; queued to go ahead, never one already queued (`cheapestBuilding` skips `InQueue`; game 45: Памплона's Grocer got
+      a second Grocer on its own tile and the two swapped places 24 times). One stuck `STUCK_DROP_TURNS` 3 since it first
+      stood at 100% leaves the queue (`dropStuck`, QUEUE_STUCK_DROPPED; wonders aside: `unstickWonder`), and that building
+      keeps off that tile `STUCK_TILE_TURNS` 20 (`stuckOff`: `pickPlot`'s `blockedPlot`, the plan's queue skip). One found
+      stuck is stuck again at once when it is back at the front (`stuckFirst`).
+    - **One order per tile** (gotcha 74), more of it: walls go to an offered tile no other order of ours takes, the centre
+      first (Экбатана's walls were queued on its Monument's tile ten seconds after it); `pickPlot` never takes a tile a wonder
+      of ours or a stuck item stands on (the callers no longer fall back to the first tile: `bestLocFor`); the plan's orders
+      of a pass are noted on their tiles (`notePlotOrder`), as the queues show them only next pass.
+    - **The stuck probe** (UI.log `queue: <city>: stuck since …`) now says whether the game offers that tile (`offered yes|no
+      (N tile(s))`): the next game shows whether a stuck item still comes from a tile the game does not offer.
 
 ## Conventions
 - **Layering:**

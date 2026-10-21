@@ -75,6 +75,26 @@ function playerContext() {
 }
 
 /**
+ * What our traits change about tiles (research/40 C, civ notes G7): mountains are workable when a trait unlocks an
+ * improvement that stands on them (the Inca's Apus: IMPROVEMENT_INCA_MOUNTAIN), and natural wonders are worth a site
+ * whatever the victories when a trait pays for them (Isabella: their yields doubled, gold on finding one).
+ */
+export function traitTileRules(traits, info = GameInfo) {
+    const mods = new Set();
+    for (const r of info.TraitModifiers ?? []) if (traits.has(r.TraitType)) mods.add(r.ModifierId ?? r.ModifierID);
+    const onMountains = new Set();
+    for (const r of info.Constructible_ValidTerrains ?? []) if (r.TerrainType === "TERRAIN_MOUNTAIN") onMountains.add(r.ConstructibleType);
+    let mountainsWorkable = false;
+    for (const a of info.ModifierArguments ?? []) if (mods.has(a.ModifierId) && a.Name === "ConstructibleType" && onMountains.has(a.Value)) mountainsWorkable = true;
+    const typeOf = new Map();
+    for (const m of info.Modifiers ?? []) if (mods.has(m.ModifierId)) typeOf.set(m.ModifierId, m.ModifierType);
+    const effects = new Set();
+    for (const d of info.DynamicModifiers ?? []) if ([...typeOf.values()].includes(d.ModifierType)) effects.add(String(d.EffectType ?? ""));
+    const naturalWonderTrait = [...effects].some((e) => /NATURAL_WONDER|FIND_WONDER/.test(e));
+    return { mountainsWorkable, naturalWonderTrait };
+}
+
+/**
  * The rule book for the current age and player. Rebuilt (about 10 ms) whenever what it
  * depends on can have changed: a new turn (techs and civics activate adjacencies) or a
  * different set of unique quarters (Syncretism adopts one mid-turn).
@@ -94,6 +114,7 @@ export function getRules() {
         appealCharming: globalNumber("APPEAL_FOR_HAPPINESS_TILE_YIELD", 3),
         appealBreathtaking: globalNumber("APPEAL_FOR_DOUBLE_HAPPINESS_TILE_YIELD", 5),
         oceanWorkable: age !== "AGE_ANTIQUITY",
+        ...traitTileRules(player.traits),
     };
     if (book.ruleErrors.size > 0) log.debug(`skipped ${book.ruleErrors.size} adjacency rules`, [...book.ruleErrors.entries()].slice(0, 10));
     log.info(`rules loaded for ${age} / ${player.civ}: ${book.buildings.length} common buildings, ${book.uniques.length} uniques, ${book.uniqueQuarters.length} unique quarters, ${book.warehouses.length} warehouses, CITY_MIN_RANGE=${cache.minSpacing} (${Date.now() - started} ms)`);

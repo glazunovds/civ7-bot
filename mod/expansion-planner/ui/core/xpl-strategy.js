@@ -80,7 +80,7 @@ const BUILD = {
 };
 const COMMIT = {
     SCIENCE: { reserveTurns: 1, townShare: 0, planBuys: "CITIES", wonders: 1, wonderKind: "INNOVATION", padCitiesNoWonders: true, explorers: false, advisorSoldiers: false, militaryBuildings: false, townFocusBias: { URBAN: 6, FARM: 3 } },
-    ECONOMIC: { reserveTurns: 1, goals: ["LEVER", "CONVERT"], townShare: 0.5, wonders: 1, wonderKind: "ANY", explorers: false, advisorSoldiers: false, militaryBuildings: false, townFocusBias: { TRADE: 3, MINE: 2 } },
+    ECONOMIC: { reserveTurns: 1, goals: ["LEVER", "CONVERT"], townShare: 0.5, wonders: 1, wonderKind: "ANY", explorers: false, advisorSoldiers: false, militaryBuildings: false, townFocusBias: { TRADE: 3, MINE: 2, FACTORY: 4 } },
     CULTURE: { reserveTurns: 1, goals: [], townShare: 0.5, wonders: 3, wonderKind: "ANY", explorers: true, advisorSoldiers: true, militaryBuildings: true, townFocusBias: { RESORT: 4 } },
 };
 

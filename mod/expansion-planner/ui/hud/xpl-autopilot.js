@@ -24,11 +24,11 @@ import * as steps from '../data/xpl-autopilot-steps.js';
 import { goldBalance } from '../data/xpl-city-actions.js';
 import { probeDistricts } from '../data/xpl-growth-job.js';
 import { createBudget } from '../core/xpl-savings.js';
-import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, makeChoices, nextEvent, proposeOpenBorders, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
+import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, incorporateCityState, levyDefenders, makeChoices, nextEvent, proposeOpenBorders, sabotageSpace, startReforms, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
 import { campaignAssault, campaignState, commandUnits, disbandSurplus, disperseArrivals, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, keepRetaken, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
-import { chooseFocus, closeTriumphs, FOCUS_CLASSES, militaryOutlook, profileForFocus, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
+import { chooseFocus, closeTriumphs, FOCUS_CHANGE_SHARE, FOCUS_CLASSES, militaryOutlook, profileForFocus, raceStandings, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
-import { disabledVictories, leaderLeaning, legacyStandings, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryOutcomeNow, victoryRaces } from '../data/xpl-victory.js';
+import { disabledVictories, leaderLeaning, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryOutcomeNow, victoryRaces } from '../data/xpl-victory.js';
 import { applyStrategy, planStrategy, strategyLines } from '../core/xpl-strategy.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
@@ -152,6 +152,8 @@ export function resetFirstTurnWindow() {
 export async function convertBeforeDedications() {
     if (windowTurn === Game.turn) return [];
     windowTurn = Game.turn;
+    // Probe P-LEG-1 (research/40): the legacy points the age change gives us, by class, while the dedications wait.
+    safe(() => steps.probeLegacyPoints(), null);
     const o = settings.get().autopilot ?? {};
     if (o.focus === false || o.towns === false || o.purchases === false) return [];
     const budget = createBudget({ gold: goldBalance(), reserve: steps.goldReserve(Number(o.reserveTurns ?? 2)) });
@@ -301,24 +303,23 @@ function compose(key, ...args) {
  */
 function updateFocus(target = "AUTO") {
     const all = triumphs();
-    const standings = legacyStandings();
     let disabled = disabledVictories();
     // Every path ruled out cannot be right (the user won a culture victory with "nothing" on): ignore it.
     if (FOCUS_CLASSES.every((c) => disabled.has(c))) disabled = new Set();
-    // The final age: a completed path is kept (its victory goes on past the path).
     let finalAge = false;
     try {
         finalAge = !!Game.AgeProgressManager.isFinalAge;
     } catch (_e) {
         finalAge = false;
     }
-    const scores = scoreFocus(standings, leaderLeaning(), all, { disabled, finalAge });
     let races = [];
     try {
         races = victoryRaces();
     } catch (error) {
         log.debug("autopilot: victory races unknown", error);
     }
+    // The victories' own points (legacy paths count nothing in this game version: games 42-43).
+    const scores = scoreFocus(raceStandings(races), leaderLeaning(), all, { disabled });
     const before = ap().focus?.races ?? [];
     // Rivals near a dominance victory that is switched on (research/21 §3.4; decision 6).
     let watch = [];
@@ -338,14 +339,15 @@ function updateFocus(target = "AUTO") {
     // The focus survives the age change (the save), and the final age keeps it unless our own countdown elsewhere is near.
     const previous = ap().focus?.cls ? ap().focus : { cls: savedFocus() };
     const chances = new Set(watch.filter((w) => w.own && w.level === "CHANCE").map((w) => w.cls));
-    const pick = chooseFocus(scores, previous, { target, finalAge, chances });
+    // A new age's first turns re-decide it; then it stays (FOCUS_CHANGE_SHARE).
+    const pick = chooseFocus(scores, previous, { target, finalAge, chances, mayChange: ageFrac < FOCUS_CHANGE_SHARE });
     if (pick.cls) saveFocus(pick.cls);
     const close = closeTriumphs(all);
     const kind = TRIUMPH_CATEGORY[pick.cls];
     setAp({
         focus: {
             cls: pick.cls, candidate: pick.candidate, streak: pick.streak,
-            scores: scores.map(({ cls, ours, rival, goal, done }) => ({ cls, ours, rival, goal, done })),
+            scores: scores.map(({ cls, score }) => ({ cls, score: Math.round(score * 100) / 100 })),
             races: races.filter((r) => r.enabled && r.focusable !== false).map(({ cls, points, goal, rival, turnsLeft }) => ({ cls, points, goal, rival, turnsLeft })),
             watch,
             // Only the victories the focus can take (seen in game: DOMINATION, not a countdown race, showed as a raw key).
@@ -647,6 +649,19 @@ export async function runTurn(force = false) {
         if (full && o.befriend !== false) await guarded("befriend", () => record(befriendIndependents(threats)));
         // Other leaders: counter-spy, reconciliation, endeavors (after befriending: Influence goes there first).
         if (full && o.diplomacy) await guarded("diplomacy", () => record(tendDiplomacy(s, { threatened: threats.length > 0 })));
+        // Lafayette's Reform: a policy slot for good per leader, whatever «Дипломатия» says (research/40 A4).
+        if (full && o.befriend !== false) await guarded("reform", () => record(startReforms({ threatened: threats.length > 0 })));
+        // A rival near the science victory: our spies sabotage its space program (research/40 B6).
+        if (full && o.befriend !== false) await guarded("sabotage", () => record(sabotageSpace(ap().focus?.watch ?? [])));
+        // City-states we are suzerain of (research/40 B7): a soldier for a threatened settlement short of guards; incorporated
+        // while settlements count (the final age's fill of the cap, the military lever, a settlement milestone).
+        if (full && o.defend) await guarded("levy", () => record(levyDefenders(threats)));
+        if (full && o.befriend !== false) await guarded("incorporate", () => {
+            const stats = Players.get(GameContext.localPlayerID)?.Stats;
+            const room = (Number(stats?.settlementCap) || 0) - (Number(stats?.numSettlements) || 0);
+            const want = !!s.strategy?.fillCap || !!s.strategy?.militaryLever || !!steps.settlementMilestoneNow();
+            record(incorporateCityState({ want, room }));
+        });
         if (o.settlers) await guarded("sites", async () => record(await refreshSitesIfDue(s)));
         // Melee soldiers strike raiders next to them when the game's own prediction says it pays. Their units are not kept
         // from the skip step: each attack was waited for (its Combat event), and one that did not happen leaves a unit the
@@ -730,6 +745,8 @@ export async function runTurn(force = false) {
             // A race we can see we lose: a building takes the wonder's progress (research/27 §6).
             if (o.wonders !== false) record(steps.cashOutLostWonders());
             record(steps.fillProduction(wonders, { ...unitOptions, queued: victoryQueued }));
+            // Our civilization's unique improvements, where one pays back soon (research/40 B5).
+            record(steps.queueUniqueImprovements(s));
             // A non-final age's last turns: what is not done before the age ends gives way (game 22: 732 production lost).
             record(steps.ageEndOrder());
             record(steps.frontLoadUnits(unitOptions));
@@ -769,7 +786,7 @@ export async function runTurn(force = false) {
                 // A goal no other step buys (a settler far below the cap, the GDP building), then a settler
                 // from the free gold while far below the cap (past it for the military lever).
                 if (budget) record(steps.buyGoal(budget));
-                if (budget && (o.trainSettlers ?? o.settlers)) record(steps.buySettlers(budget, threats, { fill: !!s.strategy?.fillCap, past: s.strategy?.militaryLever ? Number(s.strategy.pastCap) || 0 : 0 }));
+                if (budget && (o.trainSettlers ?? o.settlers)) record(steps.buySettlers(budget, threats, { fill: !!s.strategy?.fillCap, past: s.strategy?.militaryLever ? Number(s.strategy.pastCap) || 0 : 0, anywhere: !!s.strategy?.settleAnywhere }));
                 if (focus) record(steps.buyVictoryWork(focus, reserveTurns, purchases, { pads: s.strategy?.pads ?? null, commit: s.strategy?.phase === "COMMIT" }));
                 record(steps.buyBuildings(s, reserveTurns, purchases));
                 await wait(STEP_PAUSE_MS);
@@ -802,6 +819,10 @@ export async function runTurn(force = false) {
         if (full) await guarded("probes", () => probeMilitary());
         // How close our urban districts come to the age's science triumph mark (growth.probeDistricts; game 35).
         if (full) await guarded("probes", () => probeDistricts());
+        // Every legacy path's points, the settlement milestone and the cheap ones off the focus (research/40 B2, B3).
+        if (full) await guarded("probes", () => steps.logLegacy());
+        // The legacy summary for the tab in an age's last turns (research/40 C).
+        if (full) await guarded("legacy", () => setAp({ legacy: steps.legacySummary() }));
         // For the next age's first turn: this age's cities (its cheap conversions) and that the autopilot was on (it switches
         // itself on again there: resumeAfterAgeChange).
         if (full) await guarded("memory", () => {

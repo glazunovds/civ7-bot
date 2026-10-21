@@ -47,3 +47,15 @@ test("a science lean picks Urban Center for a town that could buy a Library ther
     assert.equal(recommendFocus({ ...base, farm: 3, urbanBuys: 1 }, SCIENCE).best.key, "FARM", "no lean: as before");
     assert.equal(recommendFocus({ ...base, farm: 3, urbanBuys: 1 }, SCIENCE).options.some((o) => o.key === "URBAN"), false);
 });
+
+// Research/40 A6: the Modern Factory Town was missing from the Focus table.
+test("Factory Town (Modern): an option where an improved factory resource stands, once the game offers it; the economic lean takes it", () => {
+    const GOLD = getProfile("GOLD").y;
+    const offered = new Set(["PROJECT_TOWN_GRANARY", "PROJECT_TOWN_TRADE", "PROJECT_TOWN_FACTORY"]);
+    const town = { ...base, farm: 4, resources: 3, factory: 2, available: offered };
+    const r = recommendFocus(town, GOLD, { TRADE: 3, MINE: 2, FACTORY: 4 });
+    assert.equal(r.best.key, "FACTORY", JSON.stringify(r.options.map((o) => [o.key, o.value])));
+    assert.equal(r.best.project, "PROJECT_TOWN_FACTORY");
+    assert.equal(recommendFocus({ ...town, factory: 0 }, GOLD).options.some((o) => o.key === "FACTORY"), false, "no factory resource: no option");
+    assert.equal(recommendFocus({ ...town, available: null }, GOLD).options.find((o) => o.key === "FACTORY").availableNow, false, "unknown offer: not now");
+});

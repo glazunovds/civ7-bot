@@ -138,9 +138,40 @@ export function explainTack(city, def, tacks) {
     return { ...out, reason: "NOT_YET", detail: r?.FailureReasons?.[0] ?? null };
 }
 
-/** Sends the same request the placement mode sends after a tile click. */
+/**
+ * Does the game offer this tile for this building now? The game's placement screen lets a player click only the tiles of
+ * `canStart` without a tile (Plots and ExpandUrbanPlots: building-placement-manager.js isPlotIndexSelectable) and then sends
+ * the order with X and Y, so a tile outside them never reaches the game from its own UI. Game 45: four buildings the plan
+ * queued on its own tiles (`canStart` with X and Y said yes) stood at 100% and never completed, about 1,700 production
+ * (Памплона's Grocer took 1,232 for a cost of 267). @returns true, false, or null when the game lists no tile at all
+ */
+export function tileOffered(cityID, def, spot, purchase) {
+    const args = { ConstructibleType: def.$hash };
+    const r = purchase
+        ? safe(() => Game.CityCommands.canStart(cityID, CityCommandTypes.PURCHASE, args, false), null)
+        : safe(() => Game.CityOperations.canStart(cityID, CityOperationTypes.BUILD, args, false), null);
+    const plots = plotSet(r);
+    if (plots.size === 0) return null;
+    return plots.has(safe(() => GameplayMap.getIndexFromXY(spot.x, spot.y), -1));
+}
+
+const notOffered = new Map(); // "city|type|x,y" -> the turn UI.log said so
+
+/**
+ * Sends the same request the placement mode sends after a tile click, on a tile the game offers for this building now
+ * (tileOffered; the game's own screen offers no other).
+ */
 export function orderAtTack(cityID, def, spot, purchase) {
     const args = { ConstructibleType: def.$hash, X: spot.x, Y: spot.y };
+    if (tileOffered(cityID, def, spot, purchase) === false) {
+        const k = `${cityID?.owner}:${cityID?.id}|${def.ConstructibleType}|${spot.x},${spot.y}`;
+        const turn = safe(() => Game.turn, 0);
+        if (notOffered.get(k) !== turn) {
+            notOffered.set(k, turn);
+            log.info(`${purchase ? "not bought" : "not queued"}: ${def.ConstructibleType} at ${spot.x},${spot.y}: the game does not offer that tile for it now (game 45)`);
+        }
+        return false;
+    }
     if (purchase) {
         const r = Game.CityCommands.canStart(cityID, CityCommandTypes.PURCHASE, args, false);
         if (!r?.Success) return false;

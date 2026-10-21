@@ -182,7 +182,7 @@ function urbanBuys(have, focus) {
 
 /** What a Town Focus would act on, counted on the town's own tiles. */
 function townFocusFacts(city, facts, rules, focus = null) {
-    const out = { farm: 0, mine: 0, appealing: 0, quarters: 0, buildings: 0, resources: 0 };
+    const out = { farm: 0, mine: 0, appealing: 0, quarters: 0, buildings: 0, resources: 0, factory: 0 };
     const have = new Set();
     const charming = rules.appealCharming ?? 3;
     for (const plot of safe(() => city.getPurchasedPlots(), []) ?? []) {
@@ -204,6 +204,8 @@ function townFocusFacts(city, facts, rules, focus = null) {
         const urban = s.district === "DISTRICT_URBAN" || s.district === "DISTRICT_CITY_CENTER";
         if (!urban && (s.appeal ?? 0) >= charming) out.appealing++;
         if (s.resource) out.resources++;
+        // An improved factory resource (Factory Town needs one: research/40 A6).
+        if (s.resourceClass === "RESOURCECLASS_FACTORY" && (s.constructibles ?? []).some((c) => c.cls === "IMPROVEMENT")) out.factory++;
     }
     out.urbanBuys = urbanBuys(have, focus);
     return out;

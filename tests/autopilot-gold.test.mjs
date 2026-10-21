@@ -399,6 +399,33 @@ test("the final age fills the settlement cap: a settler bought one below the cap
     }
 });
 
+// Game 42: Tubman's military countdown won at M62; every site was «DANGER» or too far and no settler was bought (none without a
+// safe site in reach). A countdown to block or to start (the strategy's settleAnywhere) buys one anyway: it settles anywhere.
+test("a military countdown (settleAnywhere): a settler is bought with no site known; without it none", () => {
+    steps.resetGoldPlan();
+    world.aiSuggestions = () => [];
+    world.canBuy = (type, _id, args) => (type === "UNIT_SETTLER" ? { Success: true, Cost: 300 } : { Success: args.X !== undefined, Cost: 250 });
+    const sites = state.get().results.sites;
+    state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+    try {
+        world.finalAge = true;
+        world.agePoints = 50;
+        world.settlementCap = 4;
+        world.gold = 1000;
+        assert.deepEqual(steps.buySettlers(steps.goldPlan({ ...settings.get(), strategy: { goals: [] } }, { reserveTurns: 0 }).budget, [], { fill: true }), [], "no site known");
+        fake.sent.length = 0;
+        const out = steps.buySettlers(steps.goldPlan({ ...settings.get(), strategy: { goals: [] } }, { reserveTurns: 0 }).budget, [], { fill: true, anywhere: true });
+        assert.equal(out[0]?.key, "SETTLER_BOUGHT");
+    } finally {
+        state.set({ results: { ...state.get().results, sites } });
+        delete world.finalAge;
+        delete world.agePoints;
+        delete world.settlementCap;
+        delete world.aiSuggestions;
+        world.canBuy = (_type, _id, args) => ({ Success: args.X !== undefined, Cost: 250 });
+    }
+});
+
 test("a savings goal more than 12 turns of income away is not saved for; nor a lever its own city builds sooner (research/23 S6)", () => {
     steps.resetGoldPlan();
     world.canConvert = false;

@@ -76,3 +76,18 @@ test("without purchases nothing is bought; without production nothing is queued"
     steps.repairBuildings({ buy: false, queue: false });
     assert.deepEqual(fake.sent, []);
 });
+
+// Game 42: a Pairidaeza's repair queued on 43,35, then Battersea ordered there; the wonder never completed. One order per tile:
+// no repair is queued under a wonder of ours.
+test("no repair is queued on a tile a wonder of ours is queued on (one order per tile: game 42)", () => {
+    fake.sent.length = 0;
+    world.gold = 100;
+    world.cities[0].queued = [{ type: "WONDER_PYRAMIDS", x: 4, y: 3 }];
+    try {
+        steps.repairBuildings();
+        assert.deepEqual(sent("operation").filter((s) => s.args.ConstructibleType === LIBRARY), []);
+    } finally {
+        delete world.cities[0].queued;
+        world.gold = 500;
+    }
+});

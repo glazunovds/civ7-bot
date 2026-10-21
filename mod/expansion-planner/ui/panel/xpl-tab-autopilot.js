@@ -234,7 +234,7 @@ export class AutopilotTab {
         const lost = isControlLost();
         this.lostBox?.classList.toggle("hidden", !lost);
         this.renderGold(ap.gold);
-        this.renderFocus(ap.focus, ap.strategy);
+        this.renderFocus(ap.focus, ap.strategy, ap.legacy ?? null);
         if (!this.logBox) return;
         this.logBox.innerHTML = "";
         const entries = ap.log ?? [];
@@ -266,21 +266,24 @@ export class AutopilotTab {
     }
 
     /** The victory focus: the chosen path, each path against the best rival, the close triumphs. */
-    renderFocus(focus, strategy = null) {
+    renderFocus(focus, strategy = null, legacy = null) {
         if (!this.focusBox) return;
         this.focusBox.innerHTML = "";
-        this.focusBox.classList.toggle("hidden", !focus);
-        if (!focus) return;
+        this.focusBox.classList.toggle("hidden", !focus && !legacy);
         const line = (text) => this.focusBox.appendChild(el("div", "xpl-ap-focus-row", text));
+        // The age's last turns: the triumphs under way, for the player's cards (research/40 C; legacy paths count nothing in this
+        // game version: games 42-43).
+        if (legacy) {
+            const open = (legacy.triumphs ?? []).map((t) => compose("LOC_XPL_AP_LEGACY_TRIUMPH", compose(t.name), t.current, t.total));
+            line(compose("LOC_XPL_AP_LEGACY_SUMMARY", legacy.turnsLeft, open.join("; ")));
+        }
+        if (!focus) return;
         line(compose("LOC_XPL_AP_FOCUS_NOW", focus.cls ? compose(`LOC_XPL_FOCUS_${focus.cls}`) : compose("LOC_XPL_AP_FOCUS_NONE")));
         // The strategy's phase, with what it changes this pass in the tooltip (core/xpl-strategy.js strategyLines).
         if (strategy?.phase) {
             const row = line(compose("LOC_XPL_AP_STRATEGY_NOW", compose(`LOC_XPL_AP_PHASE_${strategy.phase}`), compose(`LOC_XPL_FOCUS_${strategy.focus}`)));
             const tip = (strategy.lines ?? []).map((l) => compose(l.key, ...(l.args ?? []))).join("[N]");
             if (tip) row.setAttribute("data-tooltip-content", tip);
-        }
-        for (const p of focus.scores ?? []) {
-            line(compose(p.done ? "LOC_XPL_AP_FOCUS_PATH_DONE" : "LOC_XPL_AP_FOCUS_PATH", compose(`LOC_XPL_FOCUS_${p.cls}`), p.ours, p.goal, p.rival));
         }
         // The victories themselves (Innovation, GDP…), once they have points or a goal.
         for (const r of focus.races ?? []) {

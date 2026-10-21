@@ -1356,7 +1356,7 @@ test("foundings ordered in a pass count toward the cap: one below it, one settle
     }
 });
 
-test("a countdown to block (the strategy's settleAnywhere) and no site for 3 turns: the settler founds on the nearest tile the game accepts, our spacing aside, never on a village's doorstep (research/31 §3: game 25's settler stood idle 23 turns)", () => {
+test("a countdown to block (the strategy's settleAnywhere) and no site for a turn: the settler founds on the nearest tile the game accepts, our spacing aside, never on a village's doorstep (research/31 §3: game 25's settler stood idle 23 turns; game 42: 3 idle turns came at M53)", () => {
     const picks = state.get().results.sites;
     const turn = Game.turn;
     state.set({ results: { ...state.get().results, sites: { picks: [] } } });
@@ -1365,12 +1365,12 @@ test("a countdown to block (the strategy's settleAnywhere) and no site for 3 tur
     try {
         let r = null;
         fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], extra);
-        for (let t = 1; t <= 4; t++) {
+        for (let t = 1; t <= 2; t++) {
             Game.turn = turn + t;
             fake.sent.length = 0;
             world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
             r = run({ settlers: true, anywhere: true });
-            if (t < 4) assert.deepEqual(orderOf(2).filter((s) => s.op === UnitOperationTypes.MOVE_TO), [], `turn ${t}: it waits`);
+            if (t < 2) assert.deepEqual(orderOf(2).filter((s) => s.op === UnitOperationTypes.MOVE_TO), [], `turn ${t}: it waits`);
         }
         assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [17, 6], JSON.stringify(r.entries));
         assert.ok(r.entries.some((e) => e.key === "SETTLE_ANYWHERE"));
@@ -1393,7 +1393,7 @@ test("a countdown to block (the strategy's settleAnywhere) and no site for 3 tur
         }
         assert.deepEqual(orderOf(2).filter((s) => s.op === UnitOperationTypes.MOVE_TO), [], "a village's doorstep");
         fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], extra);
-        for (let t = 1; t <= 4; t++) {
+        for (let t = 1; t <= 2; t++) {
             Game.turn = turn + 30 + t;
             fake.sent.length = 0;
             world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
@@ -1407,6 +1407,50 @@ test("a countdown to block (the strategy's settleAnywhere) and no site for 3 tur
         run({ settlers: true, anywhere: true });
         assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
     } finally {
+        Game.turn = turn;
+        state.set({ results: { ...state.get().results, sites: picks } });
+    }
+});
+
+// Game 42: two settlers stood ~25 turns with 4-5 of 7-8 sites «DANGER» (and 2 «FAR») while Tubman's military countdown ran,
+// which one or two settlements would have broken. With a countdown to block or to start (settleAnywhere) a settler is bold:
+// only live hostile units are danger (not where ours were hit lately), and it walks up to 15 turns. The log says what is danger.
+test("a military countdown makes settlers bold: a site near a hit mark only, and one 15 turns away, are taken; the log names the danger", () => {
+    const picks = state.get().results.sites;
+    const turn = Game.turn;
+    const lines = [];
+    const warn = console.warn;
+    const warrior = (damage) => ({ id: 7, type: "UNIT_WARRIOR", x: 12, y: 6, damage, activity: UnitActivityTypes.SLEEP });
+    try {
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 12, y: 5, rank: 1 }] } } });
+        // Our Warrior next to the site is hit: that tile is danger for a few turns (game 10's marks).
+        fresh([warrior(0)]);
+        Game.turn = turn + 1;
+        run({});
+        world.units = [warrior(20)];
+        Game.turn = turn + 2;
+        run({});
+        console.warn = (...a) => lines.push(a.join(" "));
+        world.units = [{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }, warrior(20)];
+        fake.sent.length = 0;
+        run({ settlers: true });
+        assert.equal(moveOf(2), undefined, "a hit next to the site: not without a countdown");
+        assert.ok(lines.some((l) => l.includes("settler: no order") && l.includes('danger {"marks":1}')), lines.join("\n"));
+        fake.sent.length = 0;
+        run({ settlers: true, anywhere: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [12, 5], "bold: only live hostile units are danger");
+        // A site 11-15 turns away: too far, unless bold.
+        state.set({ results: { ...state.get().results, sites: { picks: [{ x: 24, y: 18, rank: 1 }] } } });
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }]);
+        const turns = Units.getPathTo({ owner: 0, id: 2 }, { x: 24, y: 18 })?.turns?.at(-1);
+        assert.ok(turns > 10 && turns <= 15, `${turns} turns`);
+        run({ settlers: true });
+        assert.equal(moveOf(2), undefined, "FAR");
+        fake.sent.length = 0;
+        run({ settlers: true, anywhere: true });
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [24, 18]);
+    } finally {
+        console.warn = warn;
         Game.turn = turn;
         state.set({ results: { ...state.get().results, sites: picks } });
     }

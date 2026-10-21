@@ -289,32 +289,52 @@ export function closeTriumphs(triumphs) {
         .sort((a, b) => fraction(b) - fraction(a) || (a.total - a.current) - (b.total - b.current));
 }
 
+// Below these points a lead is noise (a wonder or two, a codex, a market's GDP): a class with no goal yet is scored by its lead
+// against at least this many points.
+export const LEAD_FLOOR = Object.freeze({ CULTURE: 10, SCIENCE: 5, ECONOMIC: 100 });
+// The focus may change only in an age's first share of turns (games 42-43: within an age the lead in victory points went back
+// and forth, and game 43 would have left the economic focus that won it at A41 and come back at E36).
+export const FOCUS_CHANGE_SHARE = 0.15;
+
 /**
- * @param standings [{ cls, ours, rival, goal }] (this age's legacy paths)
+ * The focus's standings: the victories themselves (data victoryRaces: our points, the best rival's we have met, the goal).
+ * Legacy paths count nothing in this game version (games 42-43: `player.LegacyPaths.getScore` read 0 for every path in every
+ * age while triumphs came, and no path milestone moved the age's clock). Until every focusable dominance race has its goal
+ * (the game's comes at Exploration 50%), none carries one, so every class is scored alike, by its lead (scoreFocus).
+ * @returns [{ cls, ours, rival, goal }]
+ */
+export function raceStandings(races) {
+    const list = (races ?? []).filter((r) => r.enabled !== false && r.focusable !== false && FOCUS_CLASSES.includes(r.cls));
+    const goals = list.every((r) => r.scoring === FIXED_SCORE || Number(r.goal) > 0);
+    return list.map((r) => ({ cls: r.cls, ours: Number(r.points) || 0, rival: Number(r.rival) || 0, goal: goals ? Math.max(0, Number(r.goal) || 0) : 0 }));
+}
+
+/**
+ * @param standings [{ cls, ours, rival, goal }] (raceStandings; goal 0: none yet)
  * @param leaning the leader's preferred class, or null
  * @param triumphs as for closeTriumphs
- * @param options { disabled: Set of classes whose victory is switched off in this game,
- *                  finalAge: the age the victories are won in (a completed path keeps its score) }
- * @returns [{ cls, score, progress, lead, done, ours, rival, goal }] in FOCUS_CLASSES order (paths we know)
+ * @param options { disabled: Set of classes whose victory is switched off in this game }
+ * @returns [{ cls, score, progress, lead, ours, rival, goal, lean }] in FOCUS_CLASSES order (classes we know)
  */
-export function scoreFocus(standings, leaning = null, triumphs = [], { disabled = new Set(), finalAge = false } = {}) {
+export function scoreFocus(standings, leaning = null, triumphs = [], { disabled = new Set() } = {}) {
     const close = closeTriumphs(triumphs);
     const out = [];
     for (const cls of FOCUS_CLASSES) {
         if (disabled.has(cls)) continue;
-        // The class's path with a goal this age (other ages' paths have none here).
-        const s = (standings ?? []).find((x) => x.cls === cls && x.goal > 0);
+        const s = (standings ?? []).find((x) => x.cls === cls);
         if (!s) continue;
         const ours = Number(s.ours) || 0;
         const rival = Number(s.rival) || 0;
-        const progress = Math.min(1, ours / s.goal);
-        const lead = Math.max(-1, Math.min(1, (ours - rival) / s.goal));
-        const done = ours >= s.goal;
+        const goal = Number(s.goal) || 0;
+        // Along the way to the goal and ahead of the best rival in goals; with no goal yet, the lead alone against the larger
+        // score (at least LEAD_FLOOR).
+        const progress = goal > 0 ? Math.min(1, ours / goal) : 0;
+        const scale = goal > 0 ? goal : Math.max(ours, rival, LEAD_FLOOR[cls] ?? 1);
+        const lead = Math.max(-1, Math.min(1, (ours - rival) / scale));
         const kind = TRIUMPH_CATEGORY[cls];
         const bonus = Math.min(TRIUMPH_BONUS_MAX, TRIUMPH_BONUS * close.filter((t) => t.category === kind).length);
         const lean = leaning === cls ? LEANING_BONUS : 0;
-        const score = done && !finalAge ? -1 : progress + LEAD_WEIGHT * lead + lean + bonus;
-        out.push({ cls, score, progress, lead, done, ours, rival, goal: s.goal, lean: done && !finalAge ? 0 : lean });
+        out.push({ cls, score: progress + LEAD_WEIGHT * lead + lean + bonus, progress, lead, ours, rival, goal, lean });
     }
     return out;
 }
@@ -323,13 +343,14 @@ export function scoreFocus(standings, leaning = null, triumphs = [], { disabled 
  * @param scores from scoreFocus
  * @param previous { cls, candidate, streak } from the last check (or the focus kept across the age change)
  * @param options { target: one of VICTORY_TARGETS (the player's choice; AUTO = choose here),
- *                  finalAge: a completed path is kept (its victory goes on); there the focus the age began with is kept
- *                  unless another victory's own countdown is within reach (`chances`: classes with our CHANCE in the
- *                  victory watch) — game 19: at Modern turn 1 every new path stood at 0 and Ada's leaning took the focus
- *                  from science (26 Innovation) to culture (46 against the leader's 117) }
+ *                  finalAge: there the focus the age began with is kept unless another victory's own countdown is within
+ *                  reach (`chances`: classes with our CHANCE in the victory watch) — game 19: at Modern turn 1 every new
+ *                  path stood at 0 and Ada's leaning took the focus from science (26 Innovation) to culture (46 against
+ *                  the leader's 117),
+ *                  mayChange: false past an age's first FOCUS_CHANGE_SHARE (the hud) }
  * @returns { cls, candidate, streak, changed } (cls null when no path is known)
  */
-export function chooseFocus(scores, previous = {}, { target = "AUTO", finalAge = false, chances = new Set() } = {}) {
+export function chooseFocus(scores, previous = {}, { target = "AUTO", finalAge = false, chances = new Set(), mayChange = true } = {}) {
     const none = { cls: previous.cls ?? null, candidate: null, streak: 0, changed: false };
     if (!scores?.length) return none;
     // The player's target, while its path is known (and its victory switched on).
@@ -344,8 +365,10 @@ export function chooseFocus(scores, previous = {}, { target = "AUTO", finalAge =
         return { cls: previous.cls, candidate: null, streak: 0, changed: false };
     }
     if (best.cls === previous.cls) return { cls: previous.cls, candidate: null, streak: 0, changed: false };
-    // The current path is unknown now or already completed this age (before the final age): switch at once.
-    if (!current || (current.done && !finalAge)) return { cls: best.cls, candidate: null, streak: 0, changed: true };
+    // The current victory is unknown now (switched off): switch at once.
+    if (!current) return { cls: best.cls, candidate: null, streak: 0, changed: true };
+    // Past an age's first turns the focus stays.
+    if (!mayChange) return { cls: previous.cls, candidate: null, streak: 0, changed: false };
     // The leader's leaning picks a first focus, it never makes a switch (at an age's start every path is at 0).
     const base = (s) => s.score - (s.lean ?? 0);
     if (base(best) - base(current) < SWITCH_MARGIN) return { cls: previous.cls, candidate: null, streak: 0, changed: false };

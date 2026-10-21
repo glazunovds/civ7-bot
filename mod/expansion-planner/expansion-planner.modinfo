@@ -63,12 +63,15 @@
           <Item>ui/core/xpl-formation.js</Item>
           <Item>ui/core/xpl-heap.js</Item>
           <Item>ui/core/xpl-hex.js</Item>
+          <Item>ui/core/xpl-legacy.js</Item>
           <Item>ui/core/xpl-naval.js</Item>
           <Item>ui/core/xpl-placement-model.js</Item>
           <Item>ui/core/xpl-placement-solver.js</Item>
           <Item>ui/core/xpl-popups.js</Item>
           <Item>ui/core/xpl-profiles.js</Item>
           <Item>ui/core/xpl-purchase-advisor.js</Item>
+          <Item>ui/core/xpl-religion.js</Item>
+          <Item>ui/core/xpl-research-value.js</Item>
           <Item>ui/core/xpl-rule-book.js</Item>
           <Item>ui/core/xpl-savings.js</Item>
           <Item>ui/core/xpl-scarcity.js</Item>
@@ -97,6 +100,7 @@
           <Item>ui/data/xpl-engine-map.js</Item>
           <Item>ui/data/xpl-growth-job.js</Item>
           <Item>ui/data/xpl-map-facts.js</Item>
+          <Item>ui/data/xpl-missions.js</Item>
           <Item>ui/data/xpl-player-facts.js</Item>
           <Item>ui/data/xpl-rules-loader.js</Item>
           <Item>ui/data/xpl-settle-oracle.js</Item>

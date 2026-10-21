@@ -619,3 +619,120 @@ test("a stuck item alone in its queue: a building is queued to go ahead of it ne
         reset();
     }
 });
+
+// Game 45: Памплона's Grocer stood at 100% alone in its queue; the item queued to go ahead of it was a second Grocer on its own
+// tile (the cheapest building, already queued), and the two swapped places 24 times (M10-M41, 1,232 of 267).
+test("a stuck item's give-way is never its own type nor on its tile", () => {
+    reset();
+    steps.resetStuckItems();
+    const turn = Game.turn;
+    const sparta = world.cities[1];
+    const tile = { x: 15, y: 6 };
+    const other = { x: 13, y: 6 };
+    world.canBuild = (type) => (type === undefined ? { Success: true }
+        : type === "BUILDING_LIBRARY" ? { Success: true, InQueue: true, Plots: [idx(tile.x, tile.y), idx(15, 7)] } // its tile, and another
+            : type === "BUILDING_GRANARY" ? { Success: true, Plots: [idx(tile.x, tile.y), idx(other.x, other.y)] } : { Success: false, Plots: [] });
+    world.costOf = (type) => ({ BUILDING_LIBRARY: 10, BUILDING_GRANARY: 60 })[type] ?? 100;
+    const built = () => fake.sent.filter((s) => s.kind === "operation" && s.id.id === 1 && s.args.ConstructibleType !== undefined && s.args.InsertMode === undefined)
+        .map((s) => [GameInfo.Constructibles.lookup(s.args.ConstructibleType).ConstructibleType, s.args.X, s.args.Y]);
+    try {
+        sparta.queue = { type: "BUILDING_LIBRARY", turns: 1, pct: 100, ...tile };
+        steps.unstickQueues();
+        Game.turn = turn + 1;
+        const out = steps.unstickQueues();
+        assert.deepEqual(built(), [["BUILDING_GRANARY", other.x, other.y]], "not a second Library, not on its tile");
+        assert.equal(out[0]?.key, "QUEUE_UNSTUCK_QUEUED");
+        // A second Library queued behind it is not the item moved ahead of it either.
+        sparta.queued = [{ type: "BUILDING_LIBRARY", ...tile }, "BUILDING_GRANARY"];
+        fake.sent.length = 0;
+        Game.turn = turn + 2;
+        steps.unstickQueues();
+        assert.deepEqual(moves(), [[1, 2, 0]]);
+    } finally {
+        Game.turn = turn;
+        steps.resetStuckItems();
+        delete world.costOf;
+        reset();
+    }
+});
+
+// Game 45: each time the item moved ahead of a stuck one was done, the stuck one came back to the front and took a turn's
+// production again (Патрагада's University 464 → 825 of 437, E59-E70).
+test("an item stuck three turns since it first stood at 100% leaves the queue, and its building keeps off that tile", async () => {
+    const { state } = await import("../mod/expansion-planner/ui/services/xpl-state.js");
+    const results = state.get().results;
+    reset();
+    steps.resetStuckItems();
+    const turn = Game.turn;
+    const sparta = world.cities[1];
+    const tile = { x: 15, y: 6 };
+    const other = { x: 13, y: 6 };
+    world.canBuild = (type) => (type === undefined ? { Success: true }
+        : type === "BUILDING_LIBRARY" ? { Success: true, Plots: [idx(tile.x, tile.y), idx(other.x, other.y)] } : { Success: false, Plots: [] });
+    const removals = () => fake.sent.filter((s) => s.args.InsertMode === CityOperationsParametersValues.RemoveAt).map((s) => [s.id.id, s.args.QueueLocation]);
+    try {
+        sparta.queue = { type: "BUILDING_LIBRARY", turns: 1, pct: 100, ...tile };
+        sparta.queued = ["BUILDING_GRANARY", "BUILDING_MONUMENT"];
+        steps.unstickQueues(); // first seen at 100%
+        Game.turn = turn + 1;
+        assert.equal(steps.unstickQueues()[0]?.key, "QUEUE_UNSTUCK", "the Granary goes ahead of it");
+        // The Granary done, the Library at the front again: it gives way again.
+        sparta.queued = ["BUILDING_MONUMENT"];
+        fake.sent.length = 0;
+        Game.turn = turn + 2;
+        assert.equal(steps.unstickQueues()[0]?.key, "QUEUE_UNSTUCK");
+        assert.deepEqual(moves(), [[1, 1, 0]]);
+        // The Monument in production, the Library behind it: three turns since it first stood at 100%, it leaves the queue.
+        sparta.queue = { type: "BUILDING_MONUMENT", turns: 3, pct: 10 };
+        sparta.queued = [{ type: "BUILDING_LIBRARY", ...tile }];
+        fake.sent.length = 0;
+        Game.turn = turn + 3;
+        const out = steps.unstickQueues();
+        assert.equal(out[0]?.key, "QUEUE_STUCK_DROPPED", JSON.stringify(out));
+        assert.deepEqual(removals(), [[1, 1]]);
+        // Ordered again, from the plan (its tile there is the old one) or not, it takes another tile.
+        state.set({ results: { ...results, plans: { placements: [{ sid: "c:14-6", type: "BUILDING_LIBRARY", x: tile.x, y: tile.y, locked: false }] } } });
+        sparta.queue = null;
+        sparta.queued = [];
+        fake.sent.length = 0;
+        steps.fillProduction(new Map(), {});
+        const lib = GameInfo.Constructibles.lookup("BUILDING_LIBRARY").$hash;
+        const orders = fake.sent.filter((s) => s.kind === "operation" && s.id.id === 1 && s.args.ConstructibleType === lib).map((s) => [s.args.X, s.args.Y]);
+        assert.deepEqual(orders, [[other.x, other.y]], JSON.stringify(fake.sent.filter((s) => s.id?.id === 1)));
+    } finally {
+        state.set({ results });
+        Game.turn = turn;
+        steps.resetStuckItems();
+        reset();
+    }
+});
+
+// Game 42: Парса's Battersea Power Station stood at 100% (757 of 750) and never completed; the give-way rule moved the next
+// item ahead, the wonder left the queue, and its 835 went into a Military Academy of 441 (and Гордион's 830 into an Opera
+// House). The costliest building takes what it holds.
+test("a wonder the game does not complete: the costliest queued building goes ahead of it, and UI.log names its tile and what stands there", () => {
+    reset();
+    steps.resetStuckItems();
+    const turn = Game.turn;
+    const lines = [];
+    const warn = console.warn;
+    world.canBuild = (type) => (type === undefined ? { Success: true } : { Success: true, Plots: [] });
+    world.costOf = (type) => ({ WONDER_PYRAMIDS: 800, BUILDING_MONUMENT: 50, BUILDING_GRANARY: 60, BUILDING_LIBRARY: 150 })[type] ?? 100;
+    console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        athens.queue = { type: "WONDER_PYRAMIDS", turns: 1, pct: 100, x: 7, y: 6 };
+        athens.queued = ["BUILDING_MONUMENT", "BUILDING_GRANARY", "BUILDING_LIBRARY"];
+        steps.unstickQueues();
+        Game.turn = turn + 1;
+        const out = steps.unstickQueues();
+        assert.deepEqual(moves(), [[0, 3, 0]], "the Library (150), not the Monument (50)");
+        assert.equal(out[0]?.key, "QUEUE_UNSTUCK");
+        assert.ok(lines.some((l) => /stuck since T\d+ at 7,6; there \[/.test(l) && /queue \[WONDER_PYRAMIDS@7,6, BUILDING_MONUMENT/.test(l)), lines.join("\n"));
+    } finally {
+        console.warn = warn;
+        Game.turn = turn;
+        steps.resetStuckItems();
+        delete world.costOf;
+        reset();
+    }
+});

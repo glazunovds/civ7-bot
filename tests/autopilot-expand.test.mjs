@@ -422,6 +422,33 @@ test("under threat: walls on the settlement's centre, bought when the gold cover
     }
 });
 
+// Game 45: Экбатана's walls were queued on 74,46, where the plan's Monument had been queued ten seconds before; the Monument
+// stood at 100% A50-A69 and never completed (281 of 67).
+test("walls go to a tile no other order of ours takes, when the game offers one", () => {
+    const WALLS = GameInfo.Constructibles.lookup("BUILDING_ANCIENT_WALLS").$hash;
+    const london = world.cities[0];
+    const keep = { queue: london.queue, queued: london.queued };
+    const beside = GameplayMap.getIndexFromXY(LONDON.x + 1, LONDON.y);
+    const below = GameplayMap.getIndexFromXY(LONDON.x, LONDON.y + 1);
+    world.canBuy = () => ({ Success: false });
+    world.canBuild = (type) => (type === undefined ? { Success: true } : type === "BUILDING_ANCIENT_WALLS" ? { Success: true, Plots: [beside, below], ExpandUrbanPlots: [] } : { Success: false, Plots: [] });
+    const london3 = [{ settlement: { name: "London", x: LONDON.x, y: LONDON.y }, count: 3 }];
+    try {
+        london.queue = { type: "BUILDING_MONUMENT", turns: 5, pct: 0, x: LONDON.x + 1, y: LONDON.y };
+        london.queued = [];
+        fake.sent.length = 0;
+        steps.fortifyThreatened(london3);
+        const walls = fake.sent.filter((s) => s.kind === "operation" && s.args.ConstructibleType === WALLS).map((s) => [s.args.X, s.args.Y]);
+        assert.deepEqual(walls, [[LONDON.x, LONDON.y + 1]], "not on the Monument's tile");
+    } finally {
+        london.queue = keep.queue;
+        london.queued = keep.queued;
+        delete world.canBuy;
+        delete world.canBuild;
+        steps.resetWonderOrders();
+    }
+});
+
 test("a threatened settlement's walls go to the very front, ahead of an item with progress (the user, game 27: Ханькоу's walls waited 10 turns behind a Laboratory); not ahead of an item done this turn, nor, the centre undamaged, of a raced wonder", () => {
     const london = world.cities[0];
     const keep = { queue: london.queue, queued: london.queued };
@@ -775,6 +802,39 @@ test("a new citizen is always placed: a town takes a tile even when a specialist
     delete leeds.readyToGrow;
     delete world.expand;
     delete world.workers;
+});
+
+// Game 42: the growth step placed citizens on Гордион's 32,36 while Battersea was "in production" there, and it never completed
+// (one order per tile). A queued wonder's tile is the last resort, never the first (a new citizen holds the turn until placed).
+test("a new citizen goes elsewhere than a tile a wonder of ours is queued on; there only when nothing else is offered", () => {
+    reset();
+    const london = world.cities.find((c) => c.name === "London");
+    london.readyToGrow = true;
+    const a = GameplayMap.getIndexFromXY(9, 8), b = GameplayMap.getIndexFromXY(7, 8);
+    world.expand = () => ({ Success: true, Plots: [a, b], ConstructibleTypes: [] });
+    world.workers = () => [];
+    const placed = () => fake.sent.filter((s) => s.op === CityCommandTypes.EXPAND).map((s) => [s.args.X, s.args.Y]);
+    try {
+        steps.placeGrowth(DEFAULT_SETTINGS);
+        const first = placed()[0];
+        assert.ok(first, "a tile");
+        london.queued = [{ type: "WONDER_PYRAMIDS", x: first[0], y: first[1] }];
+        london.readyToGrow = true; // the fake takes the citizen placed
+        fake.sent.length = 0;
+        steps.placeGrowth(DEFAULT_SETTINGS);
+        assert.equal(placed().length, 1);
+        assert.notDeepEqual(placed()[0], first, "not under the wonder");
+        world.expand = () => ({ Success: true, Plots: [GameplayMap.getIndexFromXY(first[0], first[1])], ConstructibleTypes: [] });
+        london.readyToGrow = true;
+        fake.sent.length = 0;
+        steps.placeGrowth(DEFAULT_SETTINGS);
+        assert.deepEqual(placed(), [first], "the only tile offered");
+    } finally {
+        delete london.readyToGrow;
+        delete london.queued;
+        delete world.expand;
+        delete world.workers;
+    }
 });
 
 test("upgrades: military units the game allows, threatened ones first, while gold stays above the reserve", () => {

@@ -15,7 +15,10 @@
  *   HUB       PROJECT_TOWN_INN                 +1 Influence per connected settlement
  *   RELIGIOUS PROJECT_TOWN_TEMPLE              +2 Happiness per building (+ relic slots)
  *   TRADE     PROJECT_TOWN_TRADE               +1 Happiness per resource tile (+5 trade range; distant lands)
- * Fort Town (and Factory Town) add no yields we can weigh: never recommended by value.
+ *   FACTORY   PROJECT_TOWN_FACTORY             Modern: +1 resource slot, +100% gold toward its Factory, Port or Rail
+ *                                              Station, more Gold buildings to buy; needs an improved factory resource
+ *                                              there (research/40 A6: FACTORY_GOLD a turn per such resource)
+ * Fort Town adds no yields we can weigh: never recommended by value.
  */
 import { dot, F, G, S, C, H, I } from './xpl-yields.js';
 
@@ -27,7 +30,11 @@ export const FOCUS_PROJECTS = Object.freeze({
     HUB: ["PROJECT_TOWN_INN"],
     RELIGIOUS: ["PROJECT_TOWN_TEMPLE"],
     TRADE: ["PROJECT_TOWN_TRADE"],
+    FACTORY: ["PROJECT_TOWN_FACTORY"],
 });
+
+// Factory Town: an improved factory resource's slot and the halved Factory, Port and Rail Station, as gold a turn.
+export const FACTORY_GOLD = 4;
 
 export const FOCUS_POPULATION = 7;
 
@@ -65,6 +72,7 @@ export function recommendFocus(t, weights, bias = null) {
         { key: "HUB", count: t.connectedSettlements ?? 0, gain: gainVector([[I, t.connectedSettlements ?? 0]]) },
         { key: "RELIGIOUS", count: t.buildings ?? 0, gain: gainVector([[H, 2 * (t.buildings ?? 0)]]) },
         { key: "TRADE", count: t.resources ?? 0, gain: gainVector([[H, t.resources ?? 0]]) },
+        { key: "FACTORY", count: t.factory ?? 0, gain: gainVector([[G, FACTORY_GOLD * (t.factory ?? 0)]]) },
     ];
     const available = t.available ?? null;
     const options = defs.map((d) => {
@@ -76,7 +84,7 @@ export function recommendFocus(t, weights, bias = null) {
             // The strategy's lean (core/xpl-strategy.js townFocusBias: Growth leans to farming, science to Urban Center...).
             value: Math.round((dot(weights, d.gain) + (d.count > 0 || d.opens > 0 ? Number(bias?.[d.key]) || 0 : 0)) * 10) / 10,
             // Unknown availability (no list from the game): assume the common ones exist.
-            availableNow: available ? usable.length > 0 : !["HUB", "RELIGIOUS", "TRADE"].includes(d.key),
+            availableNow: available ? usable.length > 0 : !["HUB", "RELIGIOUS", "TRADE", "FACTORY"].includes(d.key),
             current: projects.includes(t.current),
         };
     }).filter((o) => o.count > 0 || o.opens > 0 || o.current);

@@ -121,7 +121,8 @@ export class FactsCache {
         const feature = featureDef?.FeatureType ?? null;
         const featureClass = featureDef?.FeatureClassType ?? null;
         const resource = resourceDef?.ResourceType ?? null;
-        const workable = !isMountain && !terrainImpassable && !featureImpassable && (!isOcean || this.rules.oceanWorkable);
+        // Mountains when a trait of ours unlocks an improvement on them (the Inca: research/40 C).
+        const workable = (!isMountain || !!this.rules.mountainsWorkable) && (!terrainImpassable || (isMountain && !!this.rules.mountainsWorkable)) && !featureImpassable && (!isOcean || this.rules.oceanWorkable);
         const r = this.rules;
         return {
             idx,

@@ -290,3 +290,23 @@ test("a commander's radius is the game's own (Units.getCommandRadiusPlots): an a
         delete world.commandRadius;
     }
 });
+
+// Research/40 C: commands a commendation unlocks and we never used.
+test("a commander finishes a half-dead raider with its own attack; with raiders close and nothing else it sets a Defensive Perimeter", async () => {
+    const raider = { x: 6, y: 5, owner: 1, type: "UNIT_WARRIOR", damage: 70 };
+    const result = (_id, op) => (op === "UNITCOMMAND_COMMANDER_ATTACK" ? { Success: false, Plots: [idx(raider.x, raider.y)] }
+        : op === "UNITCOMMAND_DEFENSIVE_PERIMETER" ? { Success: true } : { Success: false, Plots: [] });
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [raider], unitCommandResult: result });
+    let r = await units.strikeRaiders();
+    const cmd = orders().find((s) => s.op === "UNITCOMMAND_COMMANDER_ATTACK");
+    assert.deepEqual([cmd?.id.id, cmd?.args.X, cmd?.args.Y], [1, raider.x, raider.y], JSON.stringify(orders()));
+    assert.ok(r.entries.some((e) => e.key === "COMMANDER_ATTACK"));
+    // A fresh raider: not worth risking the commander; it fortifies the units around it instead.
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [{ ...raider, damage: 10 }], unitCommandResult: result });
+    r = await units.strikeRaiders();
+    assert.deepEqual(orders().map((s) => s.op), ["UNITCOMMAND_DEFENSIVE_PERIMETER"]);
+    // Nobody near: nothing.
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [{ ...raider, x: 20, y: 15 }], unitCommandResult: result });
+    await units.strikeRaiders();
+    assert.deepEqual(orders(), []);
+});

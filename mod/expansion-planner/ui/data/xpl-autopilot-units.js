@@ -24,6 +24,7 @@ import { growthAdvice } from './xpl-growth-job.js';
 import { siteTuning, TUNING } from '../core/xpl-tuning.js';
 import { angersVillage } from '../core/xpl-site-scorer.js';
 import { independentNameOf, villagesOf } from './xpl-player-facts.js';
+import { conversionTargets, isMissionary, iusReformandiActive, SPREAD } from './xpl-missions.js';
 import { createBudget } from '../core/xpl-savings.js';
 import { estimateStrike } from '../core/xpl-combat.js';
 import { FORM, commanderTile, planFormation, sectorsOf } from '../core/xpl-formation.js';
@@ -38,6 +39,7 @@ import { log } from '../services/xpl-log.js';
 // The parameters the game's unit panel sends for an untargeted operation (unit-actions.js).
 export const NO_TARGET = Object.freeze({ X: -9999, Y: -9999, UnitAbilityType: -1 });
 const SETTLE_MAX_TURNS = 10;     // a site further away than this is not walked to...
+const BOLD_MAX_TURNS = 15;       // ...this with a military countdown to block or to start (asSettler: ctx.bold)
 const SETTLE_NEAR_TURNS = 5;     // ...this while we have fewer than NEAR_SETTLEMENTS (research/22 A1: game 7 walks of 6-10 turns)
 const NEAR_SETTLEMENTS = 3;
 const SETTLE_TURN_WEIGHT = 4;    // a site's value per turn of walking: value / (1 + turns / this)
@@ -187,6 +189,8 @@ export function resetUnitGoals() {
     rebased.clear();
     rebaseRefused.clear();
     airLogged = -1;
+    missionRefused.clear();
+    missionCities.clear();
     resetCampaign();
 }
 
@@ -493,7 +497,26 @@ function noteHits(units) {
  * hit spots within `radius` of it do not count (a unit hit where it stands must be able to walk away).
  */
 function dangerNear(loc, radius, ctx, from = null) {
-    return hostileNear(loc, radius, ctx) || marksNear(loc, radius, from);
+    return hostileNear(loc, radius, ctx) || (!ctx?.bold && marksNear(loc, radius, from));
+}
+
+/**
+ * What makes a tile danger, for the log: the owners of the hostile units within `radius` ("p7", "independent 13") or "marks"
+ * (ours hit or lost here lately). @returns an array (empty: none)
+ */
+function dangerWhy(loc, radius, ctx) {
+    const owners = new Set();
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, radius), []) ?? []) {
+        const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        for (const id of (at ? safe(() => MapUnits.getUnits(at.x, at.y), []) : null) ?? []) {
+            const unit = safe(() => Units.get(id), null);
+            if (!unit || !(hostileOwner(unit) || riskArmy(unit, ctx))) continue;
+            const p = safe(() => Players.get(unit.owner), null);
+            owners.add(p?.isIndependent ? `independent ${unit.owner}` : `p${unit.owner}`);
+        }
+    }
+    if (owners.size === 0 && !ctx?.bold && marksNear(loc, radius)) owners.add("marks");
+    return [...owners];
 }
 
 /** Where our units died (their targets' losses) or were hit lately, within `radius` (not counting those near `from`). */
@@ -805,14 +828,22 @@ function hostileNear(loc, radius, ctx) {
     return false;
 }
 
-/** Runs `fn` with a settler's view of danger (ctx.riskCalm: hostileNear). */
+/**
+ * Runs `fn` with a settler's view of danger (ctx.riskCalm: hostileNear). With a military countdown to block or to start
+ * (ctx.anywhere, the strategy's settleAnywhere) the settler is bold (ctx.bold): only live hostile units are danger, not the
+ * tiles where ours were hit or lost lately (dangerNear), and it walks up to BOLD_MAX_TURNS. Game 42: two settlers stood ~25
+ * turns with 4-5 of 7-8 sites «DANGER» while Tubman's military countdown, which one or two settlements would have broken, ran.
+ */
 function asSettler(ctx, fn) {
     const before = ctx.riskCalm;
+    const bold = ctx.bold;
     ctx.riskCalm = true;
+    ctx.bold = !!ctx.anywhere;
     try {
         return fn();
     } finally {
         ctx.riskCalm = before;
+        ctx.bold = bold;
     }
 }
 
@@ -849,7 +880,7 @@ function tooCloseToForeign(loc, ctx) {
 // to start (the strategy's settleAnywhere) a settler with no site for ANYWHERE_IDLE_TURNS takes the nearest tile within
 // ANYWHERE_RADIUS where the game accepts a settlement (isValidLandClaimLocation), our own spacing aside: never next to a
 // village (it turns hostile at once within ANYWHERE_VILLAGE: root gotcha 27), never into danger, never a war.
-const ANYWHERE_IDLE_TURNS = 3;
+const ANYWHERE_IDLE_TURNS = 1; // game 42: at 3 the detours kept resetting the count, and it came at M53
 const ANYWHERE_RADIUS = 8;
 const ANYWHERE_PATHS = 12; // ways looked at, the nearest tiles first
 const ANYWHERE_VILLAGE = 3;
@@ -878,7 +909,7 @@ function anySite(u, taken, ctx) {
         if (same(here, loc)) return { ...loc, turns: 0, source: "ANY", role: null };
         if (++paths > ANYWHERE_PATHS) break;
         const p = pathTo(u, loc);
-        if (!p || p.turns > SETTLE_MAX_TURNS || !wayIsSafe(u, p, PATH_DANGER, ctx)) continue;
+        if (!p || p.turns > maxWalk(ctx) || !wayIsSafe(u, p, PATH_DANGER, ctx)) continue;
         return { ...loc, turns: p.turns, source: "ANY", role: null };
     }
     return null;
@@ -917,10 +948,14 @@ function siteVerdict(u, loc, taken, ctx, wayDanger, limit) {
     return { turns: p.turns };
 }
 
-/** The farthest walk to a site: SETTLE_NEAR_TURNS below NEAR_SETTLEMENTS settlements, else SETTLE_MAX_TURNS. */
-function siteLimit() {
+/** The farthest walk a settler takes when it waited or walked too long: SETTLE_MAX_TURNS, BOLD_MAX_TURNS when bold. */
+const maxWalk = (ctx) => (ctx?.bold ? BOLD_MAX_TURNS : SETTLE_MAX_TURNS);
+
+/** The farthest walk to a site: BOLD_MAX_TURNS when bold, else SETTLE_NEAR_TURNS below NEAR_SETTLEMENTS settlements, else SETTLE_MAX_TURNS. */
+function siteLimit(ctx = null) {
+    if (ctx?.bold) return BOLD_MAX_TURNS;
     const n = Number(safe(() => Players.get(pid()).Stats.numSettlements, 0)) || 0;
-    return n < NEAR_SETTLEMENTS ? SETTLE_NEAR_TURNS : SETTLE_MAX_TURNS;
+    return n < NEAR_SETTLEMENTS ? SETTLE_NEAR_TURNS : maxWalk(ctx);
 }
 
 /** The best free site this settler reaches in time by a safe way (every step further than
@@ -929,7 +964,7 @@ function siteLimit() {
 function pickSite(u, taken, ctx, wayDanger = PATH_DANGER, { nearest = false, maxTurns = null } = {}) {
     // Few settlements: only near sites (research/22 A1); a long walk is a lost settler or a lost decade. The nearest
     // site any distance up to SETTLE_MAX_TURNS (research/24 X2: below 3 settlements the give-up never found one).
-    const limit = maxTurns ?? (nearest ? SETTLE_MAX_TURNS : siteLimit());
+    const limit = maxTurns ?? (nearest ? maxWalk(ctx) : siteLimit(ctx));
     // The turns to a site it may go for (siteVerdict), or null.
     const reachable = (loc, within = limit) => {
         const v = siteVerdict(u, loc, taken, ctx, wayDanger, within);
@@ -996,7 +1031,7 @@ function pickSite(u, taken, ctx, wayDanger = PATH_DANGER, { nearest = false, max
  * turns with no word). When some site would be reachable but for rough seas, the research step goes to
  * Shipbuilding first (seasBlocked).
  */
-function noteNoSite(u, ctx, taken = new Set(), limit = siteLimit()) {
+function noteNoSite(u, ctx, taken = new Set(), limit = siteLimit(ctx)) {
     const k = unitKey(u.id);
     if (settlerNoOrder.get(k) === Game.turn) return;
     settlerNoOrder.set(k, Game.turn);
@@ -1004,14 +1039,16 @@ function noteNoSite(u, ctx, taken = new Set(), limit = siteLimit()) {
     settlerIdle.set(k, { count: idle && idle.lastTurn === Game.turn - 1 ? idle.count + 1 : 1, lastTurn: Game.turn });
     const picks = state.get().results.sites?.picks ?? [];
     const why = {};
+    const danger = {}; // what makes the DANGER sites so (game 42 said only «DANGER»: 5)
     for (const p of picks) {
         // A relaxed pick by the relaxed rules, as pickSite judges it (research/31 §3: game 25 reported them FOREIGN).
         const v = siteVerdict(u, { x: p.x, y: p.y, relaxed: !!p.relaxed }, taken, ctx, PATH_DANGER, limit);
         const r = v.reason ?? "OK";
         why[r] = (why[r] ?? 0) + 1;
+        if (r === "DANGER") for (const w of dangerWhy(p, DANGER_RADIUS, ctx)) danger[w] = (danger[w] ?? 0) + 1;
     }
     if (why.SEAS > 0) seasBlockedTurn = Game.turn;
-    log.warn(`settler: no order at ${u.location.x},${u.location.y} (${settlerIdle.get(k).count} turns): ${picks.length} sites known, limit ${limit}t ${JSON.stringify(why)}`);
+    log.warn(`settler: no order at ${u.location.x},${u.location.y} (${settlerIdle.get(k).count} turns): ${picks.length} sites known, limit ${limit}t ${JSON.stringify(why)}${why.DANGER ? `; danger ${JSON.stringify(danger)}` : ""}${ctx.bold ? "; bold (a military countdown)" : ""}`);
 }
 
 /** A settler found no site on SETTLER_IDLE_TURNS turns in a row (the hud's relaxed search runs: research/24 X3). */
@@ -1353,7 +1390,7 @@ function settle(u, def, taken, ctx) {
     // settlements a site 6+ turns away was never taken; idle 13+ turns with sites known).
     const idle = settlerIdle.get(k);
     const starved = !!idle && idle.count >= SETTLER_IDLE_TURNS && Game.turn - idle.lastTurn <= 1;
-    if (!goal && starved) goal = pickSite(u, taken, ctx, PATH_DANGER, { maxTurns: SETTLE_MAX_TURNS });
+    if (!goal && starved) goal = pickSite(u, taken, ctx, PATH_DANGER, { maxTurns: maxWalk(ctx) });
     // A countdown to block or to start (settlements are military points) and still no site: anywhere the game allows.
     let anywhere = null;
     if (!goal && ctx.anywhere && !!idle && idle.count >= ANYWHERE_IDLE_TURNS && Game.turn - idle.lastTurn <= 1) {
@@ -1362,7 +1399,7 @@ function settle(u, def, taken, ctx) {
     }
     if (!goal) {
         goals.delete(k);
-        noteNoSite(u, ctx, taken, starved ? SETTLE_MAX_TURNS : siteLimit());
+        noteNoSite(u, ctx, taken, starved ? maxWalk(ctx) : siteLimit(ctx));
         return null; // nothing reachable safely: left to the player
     }
     settlerIdle.delete(k);
@@ -3524,9 +3561,38 @@ async function commanderAttacks(units, M) {
             await untilEvent("Combat", COMBAT_WAIT_MS);
             break; // one focused attack per commander a pass
         }
+        if (ordered.has(unitKey(cmdr.id))) continue;
+        // Its own commands (research/40 C: unlocked by commendations and never used): Commander Attack finishes a raider
+        // already half dead, from the plots the game offers; Defensive Perimeter fortifies every unit in its radius while
+        // raiders stand within 2 of it.
+        const finish = (safe(() => Game.UnitCommands.canStart(cmdr.id, COMMANDER_ATTACK, {}, false), null)?.Plots ?? [])
+            .map((idx) => {
+                const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+                const enemy = loc ? (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).find((e) => hostileOwner(e)) : null;
+                return { loc, enemy, damage: Number(enemy?.Health?.damage) || 0 };
+            })
+            .filter((t) => t.enemy && t.damage >= COMMANDER_FINISH_DAMAGE)
+            .sort((a, b) => b.damage - a.damage)[0];
+        if (finish) {
+            Game.UnitCommands.sendRequest(cmdr.id, COMMANDER_ATTACK, { X: finish.loc.x, Y: finish.loc.y });
+            ordered.add(unitKey(cmdr.id));
+            entries.push({ key: "COMMANDER_ATTACK", args: [nameOf(def), finish.loc.x, finish.loc.y] });
+            await untilEvent("Combat", COMBAT_WAIT_MS);
+            continue;
+        }
+        const raidersNear = !!safe(() => hostileNear(cmdr.location, 2, { hostileAt: new Map() }), false);
+        if (raidersNear && safe(() => Game.UnitCommands.canStart(cmdr.id, DEFENSIVE_PERIMETER, NO_TARGET, false), null)?.Success) {
+            Game.UnitCommands.sendRequest(cmdr.id, DEFENSIVE_PERIMETER, { ...NO_TARGET });
+            ordered.add(unitKey(cmdr.id));
+            entries.push({ key: "DEFENSIVE_PERIMETER", args: [nameOf(def)] });
+        }
     }
     return { entries, ordered };
 }
+
+const COMMANDER_ATTACK = "UNITCOMMAND_COMMANDER_ATTACK";
+const DEFENSIVE_PERIMETER = "UNITCOMMAND_DEFENSIVE_PERIMETER";
+const COMMANDER_FINISH_DAMAGE = 50; // a commander attacks only a raider at least this hurt (a commander is precious)
 
 // ---- dispersing villages ----------------------------------------------------------------------
 
@@ -4775,6 +4841,158 @@ function deliverTreasure(u, def, ctx) {
     return null;
 }
 
+/** Is this tile an urban district of a settlement (its centre or an urban quarter)? */
+function urbanAt(loc) {
+    const d = safe(() => Districts.getAtLocation({ x: loc.x, y: loc.y }), null);
+    const type = d ? safe(() => GameInfo.Districts.lookup(d.type)?.DistrictType, null) : null;
+    return type === "DISTRICT_CITY_CENTER" || type === "DISTRICT_URBAN";
+}
+
+const MISSION_REFUSED_TURNS = 10; // a tile the game refused to spread on stays off this long...
+const MISSION_CITY_REFUSALS = 2;  // ...and a settlement refused this many times within it
+const missionRefused = new Map(); // "x,y" -> the turn the game refused a spread there
+const missionCities = new Map();  // settlement key -> { n, turn }: refusals there lately
+
+/**
+ * A Missionary converts our own settlements (research/40 B1; data/xpl-missions.js): where it stands on a settlement of ours
+ * to convert, on the half that still needs our religion (urban or rural; any tile when it follows none), it spreads our
+ * religion (UNITOPERATION_SPREAD_RELIGION, untargeted, as the unit panel sends it); else it walks there by a safe way, the
+ * most urgent settlement no other Missionary walks to (goal `{mission}`). Nothing while Ius Reformandi is slotted.
+ */
+function spreadReligion(u, def, ctx) {
+    if (iusReformandiActive()) return null;
+    const keyOf = (c) => `${c.location.x},${c.location.y}`;
+    // Not a settlement the game refused us twice lately (game 43: a Missionary walked 73,20 ↔ 74,20 E55-E69, refused on both
+    // tiles of Нехеб, its urban half back to Buddhism and its rural half ours).
+    const targets = conversionTargets().filter((t) => (missionCities.get(keyOf(t.city))?.n ?? 0) < MISSION_CITY_REFUSALS);
+    if (targets.length === 0) return null;
+    const tileKey = (l) => `${l.x},${l.y}`;
+    const refused = (l) => Game.turn - (missionRefused.get(tileKey(l)) ?? -Infinity) < MISSION_REFUSED_TURNS;
+    // A settlement of no religion anywhere in it, else the half that still needs ours. Never unit.getActivationPlots here: it
+    // takes a unit command, and asked for this operation it crashed the game (a native null read, 20 October: our first
+    // Missionary's first order; gotcha 74).
+    const fits = (t, loc) => !refused(loc) && (t.none || (t.urban ? urbanAt(loc) : !urbanAt(loc)));
+    const hereId = safe(() => GameplayMap.getOwningCityFromXY(u.location.x, u.location.y), null);
+    const here = hereId ? safe(() => Cities.get(hereId), null) : null;
+    const t0 = here ? targets.find((t) => keyOf(t.city) === keyOf(here)) : null;
+    if (t0 && fits(t0, u.location)) {
+        if (operate(u, SPREAD, NO_TARGET)) {
+            goals.delete(unitKey(u.id));
+            return { key: "MISSION_SPREAD", args: [nameOf(def), safe(() => Locale.compose(t0.city.name), "?")] };
+        }
+        // Refused: this tile is off, and a settlement refused twice is left for MISSION_REFUSED_TURNS.
+        missionRefused.set(tileKey(u.location), Game.turn);
+        const c = missionCities.get(keyOf(t0.city));
+        missionCities.set(keyOf(t0.city), { n: c && Game.turn - c.turn < MISSION_REFUSED_TURNS ? c.n + 1 : 1, turn: Game.turn });
+        const r = safe(() => Game.UnitOperations.canStart(u.id, SPREAD, NO_TARGET, false), null);
+        log.info(`mission: ${def.UnitType} at ${u.location.x},${u.location.y} in ${safe(() => Locale.compose(t0.city.name), "?")} refused: ${JSON.stringify(r?.FailureReasons ?? [])}; urban ${t0.urban}, rural ${t0.rural}, none ${t0.none} (probe)`);
+    }
+    // Where to go: its own goal while that settlement still needs it, else the first no other Missionary walks to.
+    const own = goals.get(unitKey(u.id))?.mission;
+    const walking = new Set([...goals].filter(([k, g]) => k !== unitKey(u.id) && g?.mission).map(([, g]) => g.mission));
+    const ordered = [...targets.filter((t) => keyOf(t.city) === own), ...targets.filter((t) => keyOf(t.city) !== own && !walking.has(keyOf(t.city)))];
+    const dist = (l) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, l.x, l.y), Infinity);
+    for (const t of ordered.slice(0, 4)) {
+        const plots = (safe(() => t.city.getPurchasedPlots(), []) ?? [])
+            .map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null))
+            .filter((l) => l && !safe(() => GameplayMap.isWater(l.x, l.y), false) && fits(t, l))
+            .sort((a, b) => dist(a) - dist(b));
+        for (const p of plots.slice(0, 6)) {
+            if (same(u.location, p)) continue;
+            const way = pathTo(u, p);
+            if (!way || !wayIsSafe(u, way, 1, ctx) || !moveTo(u, p)) continue;
+            goals.set(unitKey(u.id), { mission: keyOf(t.city) });
+            return { key: "MISSION_MOVE", args: [nameOf(def), safe(() => Locale.compose(t.city.name), "?")] };
+        }
+    }
+    return null;
+}
+
+const FOUND = "UNITOPERATION_FOUND_CITY";
+const CONVERT_INDEPENDENTS = "UNITOPERATION_CONVERT_BARBARIANS";
+const LEGATUS_MAX_TURNS = 6; // a Legatus walks at most this far to found a town
+
+/**
+ * A commander's own powers (research/40 C, civ notes G9), before its post:
+ *  - Rome's Legatus (UNIT_CLASS_ALTERNATE_SETTLE) gets a land-claim charge every 3 promotions. With one (the unit panel's own
+ *    test: canStart(FOUND_CITY, …, true), the action applies) and «Поселенцы», in peace (no threatened settlement), it founds
+ *    a town where it stands on a known site, else walks there by a safe way, the nearest site no settler goes to, within
+ *    LEGATUS_MAX_TURNS. Game 41's Legatus stood at its post all game.
+ *  - A commander that may convert independents' units (Genghis: UNITOPERATION_CONVERT_BARBARIANS) does so where the game
+ *    offers it, with «Оборона».
+ * UI.log says what the game answered the first time (probe P-LEG-2). @returns a log entry or null
+ */
+function commanderSpecial(u, def, ctx, options) {
+    const convert = options.defend ? safe(() => Game.UnitOperations.canStart(u.id, CONVERT_INDEPENDENTS, {}, false), null) : null;
+    if (convert?.Success) {
+        const plot = (convert.Plots ?? [])[0];
+        const loc = plot !== undefined ? safe(() => GameplayMap.getLocationFromIndex(plot), null) : null;
+        if (operate(u, CONVERT_INDEPENDENTS, loc ? { X: loc.x, Y: loc.y } : NO_TARGET)) return { key: "INDEPENDENTS_CONVERTED", args: [nameOf(def)] };
+    }
+    if (!options.settlers || !hasTag(def, "UNIT_CLASS_ALTERNATE_SETTLE") || (ctx.threats ?? []).length > 0) return null;
+    const charge = safe(() => Game.UnitOperations.canStart(u.id, FOUND, NO_TARGET, true), null);
+    if (!legatusProbed.has(unitKey(u.id))) {
+        legatusProbed.add(unitKey(u.id));
+        log.info(`legatus: ${def.UnitType} at ${u.location?.x},${u.location?.y}: a town ${JSON.stringify({ applies: charge?.Success, here: safe(() => Game.UnitOperations.canStart(u.id, FOUND, NO_TARGET, false), null)?.Success })} (probe P-LEG-2)`);
+    }
+    if (!charge?.Success) return null;
+    const picks = (state.get().results.sites?.picks ?? []).map((p) => ({ x: p.x, y: p.y }));
+    const sameSite = (a, b) => a.x === b.x && a.y === b.y;
+    if (picks.some((p) => sameSite(p, u.location)) && operate(u, FOUND, NO_TARGET)) {
+        goals.delete(unitKey(u.id));
+        return { key: "LEGATUS_FOUNDED", args: [nameOf(def), u.location.x, u.location.y] };
+    }
+    const taken = new Set([...goals].filter(([k, g]) => k !== unitKey(u.id) && g?.x !== undefined).map(([, g]) => `${g.x},${g.y}`));
+    const dist = (l) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, l.x, l.y), Infinity);
+    for (const p of picks.filter((x) => !taken.has(`${x.x},${x.y}`)).sort((a, b) => dist(a) - dist(b)).slice(0, 4)) {
+        const way = pathTo(u, p);
+        if (!way || way.turns > LEGATUS_MAX_TURNS || !wayIsSafe(u, way, 1, ctx) || !moveTo(u, p)) continue;
+        goals.set(unitKey(u.id), { x: p.x, y: p.y, legatus: true });
+        return { key: "LEGATUS_MOVE", args: [nameOf(def), p.x, p.y] };
+    }
+    return null;
+}
+
+const legatusProbed = new Set();
+
+const ACTIVATE_GP = "UNITCOMMAND_ACTIVATE_GREAT_PERSON";
+const GP_MAX_TURNS = 10;       // a great person walks at most this far to a tile where it works
+const gpProbed = new Set();    // unit types whose activation answer UI.log has shown (probe P-GP-1)
+
+/**
+ * Our civilization's great people (research/40 B4: Tjaty, Logios, Shi Dafu, 'Alim, Conquistador, Jacobin…; free techs, +200
+ * production on a wonder, yields on the Palace): activated where they stand when the game allows it
+ * (UNITCOMMAND_ACTIVATE_GREAT_PERSON, untargeted, as the unit panel sends it), else they walk by a safe way to the nearest
+ * tile the game lists for them (unit.getActivationPlots, as the panel shows them) within GP_MAX_TURNS. None listed: they
+ * wait (a wonder great person waits for a wonder in production). Before, only the Great Banker was ever activated.
+ */
+function useGreatPerson(u, def, ctx) {
+    const here = safe(() => Game.UnitCommands.canStart(u.id, ACTIVATE_GP, NO_TARGET, false), null);
+    // As the unit panel asks (unit-actions.js): a command's activation tiles only where it shows them (an operation's ask
+    // crashed the game: spreadReligion).
+    const shown = !!safe(() => u.shouldShowActivationPlots(ACTIVATE_GP), false);
+    const plots = (shown ? safe(() => u.getActivationPlots(ACTIVATE_GP, false), []) ?? [] : [])
+        .map((p) => (typeof p === "number" ? safe(() => GameplayMap.getLocationFromIndex(p), null) : p))
+        .filter((l) => l && Number.isFinite(l.x));
+    if (!gpProbed.has(def.UnitType)) {
+        gpProbed.add(def.UnitType);
+        log.info(`great person: ${def.UnitType} at ${u.location?.x},${u.location?.y}: here ${JSON.stringify({ Success: here?.Success, FailureReasons: here?.FailureReasons })}, ${plots.length} tile(s) listed (probe P-GP-1)`);
+    }
+    if (here?.Success) {
+        Game.UnitCommands.sendRequest(u.id, ACTIVATE_GP, { ...NO_TARGET });
+        goals.delete(unitKey(u.id));
+        return { key: "GREAT_PERSON_USED", args: [nameOf(def)] };
+    }
+    const dist = (l) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, l.x, l.y), Infinity);
+    for (const p of plots.filter((l) => !same(l, u.location)).sort((a, b) => dist(a) - dist(b)).slice(0, 6)) {
+        const way = pathTo(u, p);
+        if (!way || way.turns > GP_MAX_TURNS || !wayIsSafe(u, way, 1, ctx) || !moveTo(u, p)) continue;
+        goals.set(unitKey(u.id), { gp: `${p.x},${p.y}` });
+        return { key: "GREAT_PERSON_MOVE", args: [nameOf(def)] };
+    }
+    return null;
+}
+
 // Owners whose capital already has our World Bank office ("done"), or refused it (turn tried).
 const bankDone = new Set();
 const bankTried = new Map();
@@ -4856,8 +5074,36 @@ function capacityLeft(owner, sentTo) {
     return Number.isFinite(cap) ? cap - used - pending : 1 - pending;
 }
 
+const ROAD = "UNITCOMMAND_CONNECT_WITH_ROAD";
+const ROAD_TOWN_POPULATION = 7; // a town this big takes a Focus, which needs a connected city (root gotcha 12)
+
+/**
+ * A town big enough for a Focus with no city connected to it (root gotcha 12: its Focus would feed nobody, so it keeps
+ * growing) gets a road from the merchant standing in one of our cities, when the game offers that town's tile («Build
+ * Road to Settlement», UNITCOMMAND_CONNECT_WITH_ROAD: canStart {} → Plots, then {X, Y}, as its interface mode sends it;
+ * it uses the merchant up). Research/40 C. @returns a log entry or null
+ */
+function roadToTown(u, def) {
+    const towns = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).filter((c) => c.isTown && (Number(c.population) || 0) >= ROAD_TOWN_POPULATION
+        && !(safe(() => c.getConnectedCities(), []) ?? []).some((id) => safe(() => Cities.get(id)?.isTown === false, false)));
+    if (towns.length === 0) return null;
+    const plots = new Set(safe(() => Game.UnitCommands.canStart(u.id, ROAD, {}, false), null)?.Plots ?? []);
+    if (plots.size === 0) return null;
+    for (const t of towns) {
+        const at = safe(() => GameplayMap.getIndexFromXY(t.location.x, t.location.y), -1);
+        if (!plots.has(at)) continue;
+        Game.UnitCommands.sendRequest(u.id, ROAD, { X: t.location.x, Y: t.location.y });
+        goals.delete(unitKey(u.id));
+        return { key: "ROAD_BUILT", args: [nameOf(def), safe(() => Locale.compose(t.name), "?")] };
+    }
+    return null;
+}
+
 function trade(u, def, ctx) {
     if (!truthy(def.MakeTradeRoute)) return null;
+    // A town that cannot take its Focus for want of a road first (research/40 C).
+    const road = safe(() => roadToTown(u, def), null);
+    if (road) return road;
     const k = unitKey(u.id);
     const routes = ctx.routes();
     // Its own goal is not taken by "another" merchant.
@@ -5233,6 +5479,17 @@ export function commandUnits(settings, options) {
             seen.push(`${what}:busy`);
             continue;
         }
+        // A commander's own powers first (research/40 C): Rome's Legatus founds a town with its land-claim charge, Genghis's
+        // commander converts independents' units next to it.
+        if (def && u.isCommanderUnit && isLandCommander(def) && readyForOrders(u)) {
+            const e = safe(() => commanderSpecial(u, def, ctx, options), null);
+            if (e) {
+                seen.push(`${what}:${e.key}`);
+                entries.push(e);
+                ordered.add(unitKey(u.id));
+                continue;
+            }
+        }
         // A land commander (research/25) stands where its radius helps: the most threatened settlement's centre, in peace
         // the unhappiest one (−10% unhappiness, +10% per promotion); before this it stood idle all game.
         if (def && u.isCommanderUnit && (options.defend || options.roam) && isLandCommander(def) && readyForOrders(u)) {
@@ -5263,6 +5520,10 @@ export function commandUnits(settings, options) {
             } else if (options.settlers && hasTag(def, "UNIT_CLASS_POPULATION")) e = resettle(u, def, ctx);
             // Treasure convoys go home and unload whatever options are on (else they wait forever).
             else if (def.UnitType === "UNIT_TREASURE_FLEET") e = deliverTreasure(u, def, ctx);
+            // Missionaries convert our own settlements whatever options are on (research/40 B1; else they idle for ever).
+            else if (isMissionary(def)) e = spreadReligion(u, def, ctx);
+            // Our civilization's great people are activated where they work (research/40 B4), whatever options are on.
+            else if (hasTag(def, "UNIT_CLASS_GREATPERSON") && !truthy(def.VictoryUnit)) e = useGreatPerson(u, def, ctx);
             else if (options.victory && truthy(def.VictoryUnit) && truthy(def.AllowTeleportToOtherPlayerCapitals)) e = openWorldBanks(u, def, ctx);
             else if (options.explore && truthy(def.ExtractsArtifacts)) e = excavate(u, def, ctx);
             else if (options.merchants && truthy(def.MakeTradeRoute)) e = trade(u, def, ctx);

@@ -34,6 +34,18 @@ The short answer: a lot. Most of it falls into four patterns.
   Future node done at the end shortens the age further.
 - The syncretism choice no longer holds the turn (gotcha 13).
 
+## Built (the next session, 20 October)
+Every Tier A, B and C proposal below is in the autopilot (root CLAUDE.md gotcha 73), each with a test proven to fail without it,
+except: Gaul's 6-tile spacing and Nepal's Sherpa (C-G7, C-G9), converting rival settlements (G4, opt-in: only the city-states we
+are suzerain of are converted), and leaders rewarded for conquest (out of the defensive design). B5 is v1 (queued on the game's
+tiles by payback; the solver does not place them). The probes are in UI.log: P-RES-1, P-UQI-1, P-GP-1, P-REF-1, P-INC-1, P-LEG-1,
+P-AGE-1, and P-LEG-2 (the Legatus's land-claim charge). What the next game should show: TESTING rows 414-432.
+
+Games 42-43 (research/game42, research/game43; root CLAUDE.md gotcha 74): legacy paths read 0 in every age and their milestones
+count nothing in this game version, so B3 and Antiquity's military milestone were withdrawn (B2 keeps the Homeland triumph) and
+the victory focus scores the victories' own points; the unique improvement step put Pairidaezas on wonder tiles (one order per tile
+now), and Missionaries, levies and settler purchases got their fixes.
+
 ## Ranked proposals
 Value: what a good player gains (H/M/L). Effort: XS < S < M < L. Sources: R = research-trees, C = civ-leader-uniques,
 A = unused-actions, L = legacy-and-ages, G = religion (rule numbers as in each note).

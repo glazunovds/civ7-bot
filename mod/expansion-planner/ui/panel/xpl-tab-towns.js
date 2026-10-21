@@ -40,7 +40,7 @@ export function focusName(o) {
 /** "+6 [food] to connected cities (6 farms, pastures, ...)" for one Focus. */
 export function focusGain(o) {
     const n = o.count;
-    const args = { FARM: [n], MINE: [2 * n, n], RESORT: [n], URBAN: [n], HUB: [n], RELIGIOUS: [2 * n, n], TRADE: [n] }[o.key] ?? [n];
+    const args = { FARM: [n], MINE: [2 * n, n], RESORT: [n], URBAN: [n], HUB: [n], RELIGIOUS: [2 * n, n], TRADE: [n], FACTORY: [n] }[o.key] ?? [n];
     return compose(`LOC_XPL_FOCUS_GAIN_${o.key}`, ...args);
 }
 

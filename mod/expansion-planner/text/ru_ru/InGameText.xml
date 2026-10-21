@@ -1635,6 +1635,9 @@
     <Replace Tag="LOC_XPL_AP_QUEUE_UNSTUCK_QUEUED" Language="ru_RU">
       <Text>{1_City}: «{2_Item}» уже не первый ход стоит на 100%, и игра его не завершает: в очередь поставлено «{3_Other}», чтобы строиться раньше</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUE_STUCK_DROPPED" Language="ru_RU">
+      <Text>{1_City}: «{2_Item}» убрано из очереди: стоит на 100% с хода {3_Num}, игра его не достраивает</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SPACE_PUSH_HALF" Language="ru_RU">
       <Text>Ракетная техника изучена, космодром стоит или строится: производство теперь весит ×1.25, наука ÷1.25 (полный перевес — после мастерств с Инновациями)</Text>
     </Replace>
@@ -1922,12 +1925,6 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_FOCUS_NONE" Language="ru_RU">
       <Text>пока не выбран</Text>
-    </Replace>
-    <Replace Tag="LOC_XPL_AP_FOCUS_PATH" Language="ru_RU">
-      <Text>{1_Name}: {2_Num}/{3_Num} (лучший соперник: {4_Num})</Text>
-    </Replace>
-    <Replace Tag="LOC_XPL_AP_FOCUS_PATH_DONE" Language="ru_RU">
-      <Text>{1_Name}: пройден ({2_Num}/{3_Num})</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_FOCUS_TRIUMPHS" Language="ru_RU">
       <Text>Близкие триумфы: {1_List}</Text>
@@ -2295,6 +2292,99 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_SATELLITE_QUEUED" Language="ru_RU">
       <Text>{1_City}: в очередь «{2_Project}»: спутник откроет всю карту</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCTURAL_TECH" Language="ru_RU">
+      <Text>исследование: {1_Name} (даёт: {2_Gains})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCTURAL_CIVIC" Language="ru_RU">
+      <Text>цивик: {1_Name} (даёт: {2_Gains})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CARD_TECH" Language="ru_RU">
+      <Text>исследование: {1_Name} ради карточек политик ({2_Cards}: +{3_Num} в ход против тех, что они заменят)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CARD_CIVIC" Language="ru_RU">
+      <Text>цивик: {1_Name} ради карточек политик ({2_Cards}: +{3_Num} в ход против тех, что они заменят)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCT_CAP" Language="ru_RU">
+      <Text>+1 к лимиту поселений</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCT_SLOT" Language="ru_RU">
+      <Text>ячейку политики</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCT_SPECIALIST" Language="ru_RU">
+      <Text>+1 специалиста на клетку</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCT_SYNCRETIC" Language="ru_RU">
+      <Text>выбор синкретизма</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCT_CITY_LIMIT" Language="ru_RU">
+      <Text>+1 к лимиту городов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REFORM" Language="ru_RU">
+      <Text>Реформа с лидером {1_Leader}: ячейка политики навсегда</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_FACTORY" Language="ru_RU">
+      <Text>Фабричный городок</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_FOCUS_GAIN_FACTORY" Language="ru_RU">
+      <Text>улучшенных ресурсов для фабрик: {1_N}; +1 ячейка ресурса, фабрика, порт и вокзал за полцены</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MISSION_SPREAD" Language="ru_RU">
+      <Text>{1_Unit}: наша религия распространена в {2_City}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MISSION_MOVE" Language="ru_RU">
+      <Text>{1_Unit} идёт в {2_City} распространять нашу религию</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_MISSIONARY" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (наших поселений не нашей веры: {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GREAT_PERSON_USED" Language="ru_RU">
+      <Text>{1_Unit}: великий человек применён</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GREAT_PERSON_MOVE" Language="ru_RU">
+      <Text>{1_Unit} идёт туда, где может применить способность</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_GREAT_PERSON" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (великий человек нашей цивилизации)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_UNIQUE_IMPROVEMENT" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (наше уникальное улучшение, окупится за ходов: {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ESPIONAGE_STEAL" Language="ru_RU">
+      <Text>шпионаж: {1_Action} у лидера {2_Leader}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SABOTAGE_SPACE" Language="ru_RU">
+      <Text>шпионы саботируют космическую программу лидера {1_Leader} (он близок к научной победе)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_INCORPORATE" Language="ru_RU">
+      <Text>{1_Name}: начато присоединение (поселения сейчас приносят очки)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LEVIED" Language="ru_RU">
+      <Text>{1_Unit} призван из {2_Name} на защиту {3_City}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_INDEPENDENTS_CONVERTED" Language="ru_RU">
+      <Text>{1_Unit} переманивает соседние отряды независимых</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LEGATUS_FOUNDED" Language="ru_RU">
+      <Text>{1_Unit} основывает городок на {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LEGATUS_MOVE" Language="ru_RU">
+      <Text>{1_Unit} идёт на {2_X},{3_Y} основать городок</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COMMANDER_ATTACK" Language="ru_RU">
+      <Text>{1_Unit} добивает налётчика на {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DEFENSIVE_PERIMETER" Language="ru_RU">
+      <Text>{1_Unit}: оборонительный периметр (налётчики рядом)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROAD_BUILT" Language="ru_RU">
+      <Text>{1_Unit} прокладывает дорогу к {2_Town} (не связан с городом: его специализация никого не кормила бы)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LEGACY_SUMMARY" Language="ru_RU">
+      <Text>Триумфы в работе, до конца эпохи ходов: {1_Num}: {2_List}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LEGACY_TRIUMPH" Language="ru_RU">
+      <Text>{1_Name} {2_Num}/{3_Num}</Text>
     </Replace>
   </LocalizedText>
 </Database>

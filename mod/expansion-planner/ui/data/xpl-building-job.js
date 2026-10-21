@@ -689,9 +689,11 @@ export function startBuildingPlan(target, settings, options = {}) {
         const warehouseSelection = selected.filter((t) => warehouseTypes.has(t) && (includeLocked || !lockedSet.has(t)));
         const locked = includeLocked ? [] : [...lockedSet];
 
-        // A town only gets what a town can buy (Altar, warehouses); a city everything selected.
-        const townSelection = adjacencySelection.filter((t) => rules.placementOf(t).town);
-        const selectionFor = (sid) => [...(roleBySid.get(sid) === "TOWN" ? townSelection : adjacencySelection), ...anchorsOf(sid).map((a) => a.type)];
+        // A town only gets what it can buy: the Buildings.Town types (Altar, warehouses), and those the game's PURCHASE answer
+        // allows that town (research/40 B8: Augustus's culture buildings, Carthage's and Joseon's, an Urban Center's science
+        // buildings); a city everything selected.
+        const townSelection = (sid) => adjacencySelection.filter((t) => rules.placementOf(t).town || !!validity.get(sid)?.buildable.has(t));
+        const selectionFor = (sid) => [...(roleBySid.get(sid) === "TOWN" ? townSelection(sid) : adjacencySelection), ...anchorsOf(sid).map((a) => a.type)];
 
         // Incremental: same target and settings, recent plan -> re-solve only changed settlements.
         const memberSigs = Object.fromEntries(settlements.map((st) => [st.id, `${planState.settlementSignature(st.id)}/${engineSigs.get(st.id) ?? ""}/${memberSignature(st, roleBySid.get(st.id), anchors)}`]));

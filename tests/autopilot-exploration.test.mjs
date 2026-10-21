@@ -84,10 +84,20 @@ test("science: the civics toward Social Class (Innovation by itself) come first,
         fake.sent.length = 0;
         steps.chooseResearch("culture", DEFAULT_SETTINGS, "SCIENCE");
         assert.deepEqual(chosen(), [N("NODE_CIVIC_EX_MAIN_SOCIAL_CLASS")]);
+        // Social Class also raises the settlement cap: within 2 of it (2 settlements of 4) it goes before the advisor's pick
+        // (research/40 A1); far from it, the advisor's. (Culture's own research, Mercantilism's wonder, is quicker: B9.)
         fake.sent.length = 0;
-        steps.chooseResearch("culture", DEFAULT_SETTINGS, "CULTURE");
-        assert.deepEqual(chosen(), [N("NODE_CIVIC_EX_MAIN_MERCANTILISM")], "another focus: the advisor's");
+        assert.equal(steps.chooseResearch("culture", DEFAULT_SETTINGS, null)?.key, "STRUCTURAL_CIVIC");
+        assert.deepEqual(chosen(), [N("NODE_CIVIC_EX_MAIN_SOCIAL_CLASS")]);
+        fake.sent.length = 0;
+        assert.equal(steps.chooseResearch("culture", DEFAULT_SETTINGS, "CULTURE")?.key, "VICTORY_CIVIC");
+        assert.deepEqual(chosen(), [N("NODE_CIVIC_EX_MAIN_MERCANTILISM")], "culture: the Tomb of Askia, quicker");
+        world.settlementCap = 8;
+        fake.sent.length = 0;
+        steps.chooseResearch("culture", DEFAULT_SETTINGS, null);
+        assert.deepEqual(chosen(), [N("NODE_CIVIC_EX_MAIN_MERCANTILISM")], "no focus: the advisor's");
     } finally {
+        delete world.settlementCap;
         delete world.research;
         delete world.treeRecs;
     }

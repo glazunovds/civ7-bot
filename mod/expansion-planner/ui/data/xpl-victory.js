@@ -1,10 +1,9 @@
 /**
- * Victory paths and triumphs as the game reports them (engine adapter for the autopilot's
+ * Victories and triumphs as the game reports them (engine adapter for the autopilot's
  * victory focus, core/xpl-victory-focus.js). Same calls as the game's own screens:
- *  - legacy paths: GameInfo.LegacyPaths (this age's, EnabledByDefault), each player's
- *    player.LegacyPaths.getScore(type), the goal = RequiredPathPoints of the path's final
- *    GameInfo.AgeProgressionMilestones row (ui/victory-manager/victory-manager.js); rivals are
- *    the majors we have met, as that screen shows them;
+ *  - the victories (victoryRaces, below); legacy paths are not read: `player.LegacyPaths.getScore`
+ *    answered 0 for every path in every age of games 42-43, and their milestones count nothing in
+ *    this game version (the focus scores the victories' own points: core raceStandings);
  *  - triumphs: GameInfo.Legacies rows the player's Legacies.isValidLegacy, getProgress(type) →
  *    { progress: [{ current, total }], raceWinner }, isTriggered(type); "taken by a rival" =
  *    FirstPlayerOnly and raceWinner another player; the kind from GameInfo.TypeTags
@@ -28,43 +27,6 @@ const pid = () => GameContext.localPlayerID;
 const truthy = (v) => v === true || v === 1 || v === "true";
 const AGE_PREFIX = { AGE_ANTIQUITY: "AQ", AGE_EXPLORATION: "EX", AGE_MODERN: "MO" };
 const TRIUMPH_KINDS = new Set(["CULTURAL", "SCIENTIFIC", "ECONOMIC", "MILITARISTIC", "EXPANSIONIST", "DIPLOMATIC", "CRISIS"]);
-
-/** @returns [{ cls: "CULTURE"|"SCIENCE"|"ECONOMIC"|"MILITARY", path, name, ours, rival, goal }] */
-export function legacyStandings() {
-    const me = safe(() => Players.get(pid()), null);
-    if (!me?.LegacyPaths) return [];
-    const rivals = (safe(() => Players.getAlive(), []) ?? []).filter((p) => p?.isMajor && p.id !== pid() && safe(() => me.Diplomacy.hasMet(p.id), false));
-    // A path switched off in the game setup keeps its row (EnabledByDefault): the player's
-    // enabled paths are the truth (panel-age-rankings.js getEnabledLegacyPaths).
-    // Matched by path or by class (the tutorial panel matches classes): after an age change the list
-    // may still name the paths of the age the game was set up in (in game no path of the new age
-    // was found and the focus stayed off in Exploration and Modern).
-    const list = safe(() => me.LegacyPaths.getEnabledLegacyPaths(), null) ?? [];
-    const enabled = new Set(list.map((e) => e.legacyPath));
-    const classes = new Set(list.map((e) => e.legacyPathClass).filter((c) => c !== undefined && c !== null));
-    // GameInfo.LegacyPaths holds every age's paths (seen in game: in Exploration the Antiquity ones
-    // came first, with no goal there, and no path was chosen): this age's only (their Age column).
-    const age = safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, null);
-    const paths = [];
-    for (const path of GameInfo.LegacyPaths ?? []) {
-        if (!truthy(path.EnabledByDefault)) continue;
-        if (age && path.Age && path.Age !== age) continue;
-        paths.push(path);
-    }
-    // A filter that would leave nothing is not believed (the list is then unknown, not empty).
-    const kept = paths.filter((path) => enabled.has(Database.makeHash(path.LegacyPathType)) || classes.has(Database.makeHash(path.LegacyPathClassType)));
-    const out = [];
-    for (const path of kept.length > 0 ? kept : paths) {
-        const cls = String(path.LegacyPathClassType ?? "").replace("LEGACY_PATH_CLASS_", "");
-        let goal = 0;
-        for (const m of GameInfo.AgeProgressionMilestones ?? []) {
-            if (truthy(m.FinalMilestone) && m.LegacyPathType === path.LegacyPathType) goal = Number(m.RequiredPathPoints) || 0;
-        }
-        const score = (p) => Number(safe(() => p.LegacyPaths.getScore(path.LegacyPathType), 0)) || 0;
-        out.push({ cls, path: path.LegacyPathType, name: path.Name, ours: score(me), rival: rivals.reduce((m, p) => Math.max(m, score(p)), 0), goal });
-    }
-    return out;
-}
 
 /**
  * Classes ("CULTURE", "SCIENCE", "ECONOMIC", "MILITARY") whose victory is switched off in this

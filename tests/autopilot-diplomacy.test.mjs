@@ -110,7 +110,7 @@ test("an endeavor that fits the priority, with the leader we stand worst with (n
     assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 3]], "equal standing: the nearest; science first");
     reset({ projects, relations: { 2: "NEUTRAL", 3: "NEUTRAL" }, wars: [3] });
     choices.tendDiplomacy({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
-    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2]], "never with a leader at war with us");
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 1]], "never with a leader at war with us; Carthage not approached this age before Pericles (research/40 A4)");
     reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2, 300)] } });
     choices.tendDiplomacy(DEFAULT_SETTINGS);
     assert.deepEqual(started(), [], "not enough Influence");
@@ -337,5 +337,138 @@ test("counter-spy renewed against a leader whose spy hit us within 30 turns, onc
         assert.equal(counter(), 0, "no spy for 60 turns");
     } finally {
         Game.turn = turn;
+    }
+});
+
+// Research/40 A4: endeavors from what the game offers, not a list of six; Lafayette's Reform; a leader per endeavor.
+const { gameKey, settings } = await import("../mod/expansion-planner/ui/services/xpl-settings.js");
+const forgetTargets = () => settings.remember(gameKey(), { endeavors: "" });
+
+test("endeavors: the one worth most of those the game offers (a Reform over a collaboration), an unlocked one too (Military Aid), never Send Gold", () => {
+    forgetTargets();
+    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_SEND_GOLD, 2), project(A.DIPLOMACY_ACTION_MILITARY_AID, 2)] }, relations: { 1: "HOSTILE", 3: "HOSTILE" } });
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_MILITARY_AID, 2]]);
+    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2), project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2)] }, relations: { 1: "HOSTILE", 3: "HOSTILE" } });
+    choices.tendDiplomacy({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2]], "a policy slot for good beats the priority's own");
+});
+
+test("endeavors go to a leader not approached this age before the one we stand worst with (Gregarious Animal: an action with every leader)", () => {
+    forgetTargets();
+    const both = (id) => [project(A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, id)];
+    reset({ projects: { 2: both(2), 3: both(3) }, relations: { 1: "HOSTILE", 2: "NEUTRAL", 3: "NEUTRAL" } });
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 3]], "Memphis, the nearest");
+    reset({ projects: { 2: both(2), 3: both(3) }, relations: { 1: "HOSTILE", 2: "NEUTRAL", 3: "NEUTRAL" } });
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2]], "then Athens, never approached");
+});
+
+test("Lafayette's Reform is started with every leader the game allows, whatever «Дипломатия» says; a leader's Reform is supported", () => {
+    forgetTargets();
+    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2, 140)] } });
+    let out = choices.startReforms();
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2]]);
+    assert.equal(out[0].key, "REFORM");
+    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2, 140)] } });
+    choices.startReforms({ threatened: true });
+    assert.deepEqual(started(), [], "a threat: the Influence goes to befriending");
+    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2, 400)] } });
+    choices.startReforms();
+    assert.deepEqual(started(), [], "not enough Influence");
+    const R = DiplomaticResponseTypes;
+    reset({ notifications: [{ name: "NOTIFICATION_DIPLOMATIC_RESPONSE_REQUIRED", target: { id: 81 } }],
+        diplomacy: { 81: { initialPlayer: 2, actionType: A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, actionGroup: 7, responses: [
+            { responseType: R.DIPLOMACY_RESPONSE_ACCEPT, cost: 0, responseName: "Accept" },
+            { responseType: R.DIPLOMACY_RESPONSE_SUPPORT, cost: 150, responseName: "Support" },
+        ] } } });
+    out = choices.answerDiplomacy();
+    assert.equal(fake.sent.find((s) => s.op === PlayerOperationTypes.RESPOND_DIPLOMATIC_ACTION)?.args.Type, R.DIPLOMACY_RESPONSE_SUPPORT, "a tradition slot for good to its supporters");
+});
+
+// Research/40 B6: espionage. Game 41's rivals stole 45 technologies and 36 civics from us; we stole none.
+test("espionage: the science focus steals a technology from the leader with the most science (Neutral or better), one at a time", () => {
+    forgetTargets();
+    const steal = (id) => project(A.DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH, id, 80);
+    const science = { 2: 40, 3: 90 };
+    const stats = [2, 3].map((id) => [id, Players.get(id).Stats]);
+    for (const [id] of stats) Players.get(id).Stats = { getNetYield: () => science[id] };
+    try {
+        reset({ projects: { 2: [steal(2)], 3: [steal(3)] }, relations: { 1: "HOSTILE", 2: "NEUTRAL", 3: "FRIENDLY" } });
+        const out = choices.tendDiplomacy({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH, 3]], JSON.stringify(out));
+        assert.equal(out[0].key, "ESPIONAGE_STEAL");
+        reset({ projects: { 2: [steal(2)], 3: [steal(3)] }, relations: { 1: "HOSTILE", 2: "NEUTRAL", 3: "FRIENDLY" },
+            events: { 0: [{ initialPlayer: 0, targetPlayer: 3, actionType: A.DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH }] } });
+        choices.tendDiplomacy({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.deepEqual(started().filter(([t]) => t === A.DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH), [], "ours runs already");
+        reset({ projects: { 2: [steal(2)] }, relations: { 1: "HOSTILE", 2: "UNFRIENDLY", 3: "HOSTILE" } });
+        choices.tendDiplomacy({ ...DEFAULT_SETTINGS, profile: "SCIENCE" });
+        assert.deepEqual(started().filter(([t]) => t === A.DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH), [], "an Unfriendly leader: a spy revealed would make it worse");
+    } finally {
+        for (const [id, s] of stats) Players.get(id).Stats = s;
+    }
+});
+
+test("espionage: a rival near the science victory gets its space program sabotaged, whatever «Дипломатия» says", () => {
+    const SAB = A.DIPLOMACY_ACTION_ESPIONAGE_SABOTAGE_SPACE_PROGRAM;
+    reset({ projects: { 2: [project(SAB, 2, 150)] } });
+    let out = choices.sabotageSpace([{ cls: "SCIENCE", fixed: true, leader: 2, level: "DANGER" }]);
+    assert.deepEqual(started(), [[SAB, 2]]);
+    assert.equal(out[0].key, "SABOTAGE_SPACE");
+    reset({ projects: { 2: [project(SAB, 2, 150)] } });
+    out = choices.sabotageSpace([{ cls: "CULTURE", leader: 2, level: "DANGER" }, { cls: "SCIENCE", own: true, fixed: true, level: "CHANCE" }]);
+    assert.deepEqual(started(), [], "no science rival near");
+    reset({ projects: { 2: [project(SAB, 2, 150)] }, wars: [2] });
+    choices.sabotageSpace([{ cls: "SCIENCE", fixed: true, leader: 2, level: "WATCH" }]);
+    assert.deepEqual(started(), [], "at war with us");
+});
+
+// Research/40 B7: city-states we are suzerain of.
+const ourCityState = () => {
+    const cs = Players.get(5);
+    const before = { isMinor: cs.isMinor, Influence: cs.Influence };
+    cs.isMinor = true;
+    cs.Influence = { hasSuzerain: true, getSuzerain: () => 0 };
+    return () => Object.assign(cs, before);
+};
+const csArgs = (type) => fake.sent.filter((s) => s.kind === "player" && s.args.Type === type).map((s) => s.args);
+
+test("a city-state we are suzerain of is incorporated while settlements count for us and the cap has room", () => {
+    const restore = ourCityState();
+    const INC = A.DIPLOMACY_ACTION_CS_INCORPORATE;
+    try {
+        reset({ projects: { 5: [project(INC, 5, 150)] } });
+        let out = choices.incorporateCityState({ want: true, room: 2 });
+        assert.deepEqual(csArgs(INC), [{ Player1: 0, Type: INC, Amount: 1, ID: 5 }], JSON.stringify(out));
+        assert.equal(out[0].key, "INCORPORATE");
+        reset({ projects: { 5: [project(INC, 5, 150)] } });
+        assert.deepEqual(choices.incorporateCityState({ want: false, room: 2 }), [], "settlements do not count now");
+        assert.deepEqual(choices.incorporateCityState({ want: true, room: 0 }), [], "at the cap");
+    } finally {
+        restore();
+    }
+});
+
+test("a threatened settlement short of guards levies the strongest soldier a nearby city-state of ours offers", () => {
+    const restore = ourCityState();
+    const LEVY = A.DIPLOMACY_ACTION_CS_LEVY_UNIT;
+    const unit = (t) => ({ parameterName: "Unit", targetName: t, targetID: GameInfo.Units.lookup(t).$hash, costYieldD: 60 });
+    const threat = { settlement: { x: 2, y: 2, name: "Rome" }, count: 2, land: 2, owners: [] };
+    try {
+        reset({ projects: { 5: [{ ...project(LEVY, 5, 60), targetList2: [unit("UNIT_SLINGER"), unit("UNIT_WARRIOR"), unit("UNIT_SPEARMAN")] }] } });
+        const out = choices.levyDefenders([threat]);
+        assert.deepEqual(csArgs(LEVY).map((a) => [a.ID, GameInfo.Units.lookup(a.Unit)?.UnitType]), [[5, "UNIT_SPEARMAN"]], JSON.stringify(out));
+        assert.equal(out[0].key, "LEVIED");
+        assert.equal(out[0].args[1], "Celts", "the city-state by its city's name (game 42 logged «деревни»)");
+        reset({ projects: { 5: [{ ...project(LEVY, 5, 60), targetList2: [unit("UNIT_SPEARMAN")] }] } });
+        assert.deepEqual(choices.levyDefenders([]), [], "no threat");
+        // Ships only (game 42: all five levies answered ships, which a land soldier cannot hit).
+        reset({ projects: { 5: [{ ...project(LEVY, 5, 60), targetList2: [unit("UNIT_SPEARMAN")] }] } });
+        assert.deepEqual(choices.levyDefenders([{ ...threat, count: 2, land: 0, ships: 2 }]), []);
+        assert.deepEqual(csArgs(LEVY), []);
+    } finally {
+        restore();
     }
 });

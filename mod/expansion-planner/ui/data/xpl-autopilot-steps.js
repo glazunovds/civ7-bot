@@ -26,7 +26,8 @@ import { H, yieldIndex, YIELD_KEYS } from '../core/xpl-yields.js';
 import { GOLD_PRESSURE, goldPressure, happinessWorth, unhappinessShare } from '../core/xpl-scarcity.js';
 const HAPPINESS = yieldIndex("YIELD_HAPPINESS");
 import { FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MASTERY_INNOVATION, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, PROJECT_PRODUCTION_TRADITIONS, rankInnovationResearch, REACH_MAX_TURNS, REPEATABLE_PROJECTS, RESEARCH_INNOVATION, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
-import { disabledVictories, innovationNeed, scoreVictoryOn } from './xpl-victory.js';
+import { disabledVictories, innovationNeed, scoreVictoryOn, triumphs } from './xpl-victory.js';
+import { settlementMilestone, triumphLine, triumphsUnderWay } from '../core/xpl-legacy.js';
 import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
@@ -36,7 +37,9 @@ import { villagesOf } from './xpl-player-facts.js';
 import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './xpl-centre-defence.js';
 import { TUNING } from '../core/xpl-tuning.js';
 import { focusOfProfile } from '../core/xpl-effect-value.js';
-import { greatWorksWaiting, hostileActs, traitEffects } from './xpl-autopilot-choices.js';
+import { cardGains, greatWorksWaiting, hostileActs, modifierEffect, traitEffects } from './xpl-autopilot-choices.js';
+import { futureClockTurns, futureInTime, pickCardResearch, pickStructural } from '../core/xpl-research-value.js';
+import { isMissionary, MISSIONARIES_AT_ONCE, MISSIONARY_CHARGES, MISSION_LATE_TURNS, MISSION_MIN, missionNeed } from './xpl-missions.js';
 import { chooseGoal, conversionRule, conversionValue, createBudget, noteGoalBought, rankConversions, TOWN_SHARE } from '../core/xpl-savings.js';
 import { CITY_TARGETS } from '../core/xpl-strategy.js';
 import { gameKey, settings } from '../services/xpl-settings.js';
@@ -292,9 +295,33 @@ function pickRecommendation(recs, profileKey) {
     return recs[0] ?? null;
 }
 
+let traitSetCache = null;
+
+/** Our civilization's and leader's traits (CivilizationTraits, LeaderTraits), once per civilization, leader and tables. */
+function ourTraits() {
+    const me = safe(() => Players.get(pid()), null);
+    const civ = safe(() => GameInfo.Civilizations.lookup(me.civilizationType)?.CivilizationType, null);
+    const leader = safe(() => GameInfo.Leaders.lookup(me.leaderType)?.LeaderType, null);
+    const key = `${civ}|${leader}`;
+    const tables = [GameInfo.CivilizationTraits, GameInfo.LeaderTraits];
+    if (traitSetCache && traitSetCache.key === key && traitSetCache.tables.every((t, i) => t === tables[i])) return traitSetCache.set;
+    const set = new Set();
+    for (const r of GameInfo.CivilizationTraits ?? []) if (civ && r.CivilizationType === civ) set.add(r.TraitType);
+    for (const r of GameInfo.LeaderTraits ?? []) if (leader && r.LeaderType === leader) set.add(r.TraitType);
+    traitSetCache = { key, tables, set };
+    return set;
+}
+
+/**
+ * An unlock row that is ours: it needs no trait, or one we have (research/40 A1). The Test of Time's Foundation, Hierarchy
+ * and Administration unlock only by the civilization's attribute trait (a settlement cap, a specialist cap or a wonder), and
+ * every reader dropped those rows, so the nodes looked empty.
+ */
+const rowOurs = (r) => !r.RequiredTraitType || ourTraits().has(r.RequiredTraitType);
+
 /**
  * What each available node's next research unlocks (GameInfo.ProgressionTreeNodeUnlocks rows at
- * depth depthUnlocked + 1, as the game's tech chooser reads them; rows that need a trait left
+ * depth depthUnlocked + 1, as the game's tech chooser reads them; rows that need a trait we lack left
  * out). @returns [{ node, nodeType, name, targets, turns }]
  */
 function researchCandidates(holder, available) {
@@ -309,7 +336,7 @@ function researchCandidates(holder, available) {
         const rows = Array.isArray(data?.unlockIndices)
             ? data.unlockIndices.map((i) => GameInfo.ProgressionTreeNodeUnlocks?.[i]).filter(Boolean)
             : (safe(() => GameInfo.ProgressionTreeNodeUnlocks.filter((r) => r.ProgressionTreeNodeType === def.ProgressionTreeNodeType), []) ?? []);
-        const targets = rows.filter((r) => (Number(r.UnlockDepth) || 1) === next && !r.RequiredTraitType).map((r) => r.TargetType);
+        const targets = rows.filter((r) => (Number(r.UnlockDepth) || 1) === next && rowOurs(r)).map((r) => r.TargetType);
         out.push({ node, nodeType: def.ProgressionTreeNodeType, name: def.Name, targets, repeat, turns: Number(safe(() => holder.getTurnsForNode(node), 99)) });
     }
     return out;
@@ -333,7 +360,7 @@ function treeFacts() {
     }
     const firstUnlocks = new Map();
     for (const r of GameInfo.ProgressionTreeNodeUnlocks ?? []) {
-        if ((Number(r.UnlockDepth) || 1) !== 1 || r.RequiredTraitType) continue;
+        if ((Number(r.UnlockDepth) || 1) !== 1 || !rowOurs(r)) continue;
         if (!firstUnlocks.has(r.ProgressionTreeNodeType)) firstUnlocks.set(r.ProgressionTreeNodeType, []);
         firstUnlocks.get(r.ProgressionTreeNodeType).push(r.TargetType);
     }
@@ -704,8 +731,11 @@ export function chooseResearch(kind, settings, focus = null) {
         }
     }
     // A rival near a dominance win (the strategy's watch): no Future Tech, it advances the age and every
-    // rival's multiple falls (research/21 §3.4).
-    const candidates = focus ? researchCandidates(holder, available).filter((c) => !(c.repeat && settings?.strategy?.noFutureTech)) : [];
+    // rival's multiple falls (research/21 §3.4). In the final age, none the path would not finish before the end it brings
+    // nearer (research/40 A7: +10 age progress each).
+    const clock = kind === "tech" ? safe(() => futureClock(), null) : null;
+    const candidates = focus ? researchCandidates(holder, available).filter((c) => !(c.repeat && settings?.strategy?.noFutureTech)
+        && !(c.repeat && clock && !futureInTime(c.turns, 1, clock.turnsLeft, clock.perFuture))) : [];
     // Science: a node whose next research unlocks an Innovation wonder is the path's research too (S2).
     if (focus === "SCIENCE") {
         const wonders = innovationWonders();
@@ -722,6 +752,29 @@ export function chooseResearch(kind, settings, focus = null) {
     const found = focus && !settings?.strategy?.gateLate ? safe(() => researchGate(focus, candidates), null) : null;
     const late = !!settings?.strategy?.gateLate || !!found?.late;
     const gate = found?.late ? null : found;
+    // Structural research (research/40 A1): a node whose next research grants a tradition slot, a specialist cap, a syncretic
+    // choice, a city limit or a settlement cap that binds soon, the most per turn, before the advisor's pick (the advisor never
+    // sees most of them: game 41's Rome Reborn waited from E1 until the player took it at about E60), and before the path's
+    // own research when no slower than it (or within STRUCTURE_QUICK_TURNS). A gate of this age keeps its way first.
+    const structural = !gate ? safe(() => structuralStep(holder, available, focus), null) : null;
+    const sendStructural = () => {
+        if (!structural || !safe(() => Game.PlayerOperations.canStart(pid(), op, { ProgressionTreeNodeType: structural.node }, false), null)?.Success) return null;
+        Game.PlayerOperations.sendRequest(pid(), op, { ProgressionTreeNodeType: structural.node });
+        return { key: kind === "tech" ? "STRUCTURAL_TECH" : "STRUCTURAL_CIVIC", args: [safe(() => Locale.compose(structural.name), structural.nodeType), structureLabel(structural.kinds)] };
+    };
+    // Policy cards (the user, game 44 T53: Reformation's Religious Orders and Rationalism, 2 turns away, beat the weakest cards
+    // slotted, and the civic came last at E61): the node whose new cards win the most a turn of research over the cards they
+    // would replace, after the structural node and before the path's research when no slower than it (or within
+    // STRUCTURE_QUICK_TURNS), before the advisor's pick always. A gate of this age keeps its way first.
+    const cards = !gate ? safe(() => cardStep(holder, available, settings), null) : null;
+    const sendCards = () => {
+        if (!cards || !safe(() => Game.PlayerOperations.canStart(pid(), op, { ProgressionTreeNodeType: cards.node }, false), null)?.Success) return null;
+        Game.PlayerOperations.sendRequest(pid(), op, { ProgressionTreeNodeType: cards.node });
+        const fmt = (v) => Math.round(v * 10) / 10;
+        log.info(`research: ${cards.nodeType} for its cards (${cards.t} turn(s)): ${cards.pairs.map((p) => `${p.card.type} ${fmt(p.card.value)} over ${p.out.type ?? "a free slot"} ${fmt(p.out.value)}`).join(", ")}; +${fmt(cards.gain)} a turn`);
+        const names = cards.pairs.map((p) => safe(() => Locale.compose(p.card.name), p.card.type)).join(", ");
+        return { key: kind === "tech" ? "CARD_TECH" : "CARD_CIVIC", args: [safe(() => Locale.compose(cards.name), cards.nodeType), names, Math.round(cards.gain)] };
+    };
     const quickest = (list) => [...list].sort((a, b) => (a.turns ?? 99) - (b.turns ?? 99))[0];
     // Modern, no gate before us (Rocketry in, or out of reach): the research that brings Innovation, by Innovation per turn
     // (research/38 §4 C2). A one-off project a mastery opens is wanted only where its site stands or is queued: game 30 took
@@ -746,6 +799,15 @@ export function chooseResearch(kind, settings, focus = null) {
     // Nothing of the path left to research or reach: what grants its victory points by itself.
     const bonus = focus && !innovation && !victory && !toward ? (gate ? gate.pool.find((c) => gate.goals.has(c.nodeType)) ?? null : pickBonusResearch(focus, candidates)) : null;
     const step = innovation ?? victory ?? toward?.via ?? bonus;
+    const ahead = (c) => c && (!step || c.t <= Math.max(STRUCTURE_QUICK_TURNS, Number(step.turns) || 99));
+    if (ahead(structural)) {
+        const done = sendStructural();
+        if (done) return done;
+    }
+    if (ahead(cards)) {
+        const done = sendCards();
+        if (done) return done;
+    }
     if (step && safe(() => Game.PlayerOperations.canStart(pid(), op, { ProgressionTreeNodeType: step.node }, false), null)?.Success) {
         Game.PlayerOperations.sendRequest(pid(), op, { ProgressionTreeNodeType: step.node });
         const name = (t, fallback) => safe(() => Locale.compose(t), fallback);
@@ -753,6 +815,8 @@ export function chooseResearch(kind, settings, focus = null) {
         const label = toward ? `${name(step.name, step.nodeType)} → ${goal ? name(goal, toward.goal) : toward.goal}` : name(step.name, step.nodeType);
         return { key: kind === "tech" ? "VICTORY_TECH" : "VICTORY_CIVIC", args: [label] };
     }
+    const done = sendStructural() ?? sendCards();
+    if (done) return done;
     const subject = kind === "tech" ? globalThis.AdvisorySubjectTypes?.CHOOSE_TECH : globalThis.AdvisorySubjectTypes?.CHOOSE_CULTURE;
     const recs = safe(() => Players.Advisory.get(pid()).getTreeRecommendations({ playerId: pid(), subject, maxReturnedEntries: 0 }), []) ?? [];
     const toNode = (r) => {
@@ -771,12 +835,59 @@ export function chooseResearch(kind, settings, focus = null) {
     const pick = pickRecommendation(usable, settings.profile);
     // No advice: the quickest available one.
     const nodeType = pick ? toNode(pick) : [...pool].sort((a, b) => (safe(() => holder.getTurnsForNode(a), 99) - safe(() => holder.getTurnsForNode(b), 99)))[0];
+    if (!pick) safe(() => probeBlindResearch(kind, pool), null);
     const args = { ProgressionTreeNodeType: nodeType };
     const ok = safe(() => Game.PlayerOperations.canStart(pid(), op, args, false), null);
     if (!ok?.Success) return null;
     Game.PlayerOperations.sendRequest(pid(), op, args);
     const def = safe(() => GameInfo.ProgressionTreeNodes.lookup(nodeType), null);
     return { key: kind === "tech" ? "TECH" : "CIVIC", args: [def?.Name ? Locale.compose(def.Name) : String(nodeType), pick ? "" : "*"] };
+}
+
+const STRUCTURE_QUICK_TURNS = 3; // a structural node this quick goes ahead of the path's research whatever its turns
+
+/**
+ * The structural node to research now (core pickStructural): the settlement cap's room counts the settlements we have
+ * (Stats), the specialist cap weighs more for the science focus. @returns a candidate with `kinds`, or null
+ */
+function structuralStep(holder, available, focus) {
+    const stats = safe(() => Players.get(pid()).Stats, null);
+    const cap = Number(stats?.settlementCap) || 0;
+    const room = cap > 0 ? cap - (Number(stats?.numSettlements) || 0) : Infinity;
+    return pickStructural(researchCandidates(holder, available), { capRoom: room, science: focus === "SCIENCE", effectOf: (t) => safe(() => modifierEffect(t), null) });
+}
+
+/**
+ * The node to research for its policy cards (core pickCardResearch): each candidate's next unlocks valued as the policy
+ * step values cards (choices cardGains), against the age's turns left. @returns a candidate with `gain` and `pairs`, or null
+ */
+function cardStep(holder, available, settings) {
+    const gainOf = cardGains(settings);
+    const turnsLeft = Number(safe(() => ageOutlook().turnsLeft, Infinity));
+    return pickCardResearch(researchCandidates(holder, available), (c) => gainOf(c.targets), { turnsLeft: Number.isNaN(turnsLeft) ? Infinity : turnsLeft });
+}
+
+/**
+ * Probe P-RES-1 (research/40): research the game's advisor did not name, with each node's advisory classes
+ * (ProgressionTree_Advisories). The advisor recommends only MILITARY, CULTURE, SCIENCE and ECONOMIC nodes: the others
+ * should be the ones listed here.
+ */
+function probeBlindResearch(kind, pool) {
+    const classes = new Map();
+    for (const r of GameInfo.ProgressionTree_Advisories ?? []) {
+        if (!classes.has(r.ProgressionTreeNodeType)) classes.set(r.ProgressionTreeNodeType, []);
+        classes.get(r.ProgressionTreeNodeType).push(String(r.AdvisoryClassType ?? "").replace("ADVISORY_CLASS_", ""));
+    }
+    const list = [...pool].map((n) => {
+        const type = safe(() => GameInfo.ProgressionTreeNodes.lookup(n)?.ProgressionTreeNodeType, String(n));
+        return `${type} [${(classes.get(type) ?? []).join(",") || "none"}]`;
+    });
+    log.info(`research: no advice for the ${kind} tree; available ${list.join("; ")} (probe P-RES-1)`);
+}
+
+/** The gains' names for the log, each once ("settlement cap, policy slot"). */
+function structureLabel(kinds) {
+    return [...new Set(kinds ?? [])].map((k) => safe(() => Locale.compose(`LOC_XPL_AP_STRUCT_${k}`), k)).join(", ");
 }
 
 /**
@@ -821,13 +932,25 @@ function bestPlotFor(city, typeHash, plots) {
     });
 }
 
-/** The plan's tile, else `best(free tiles)`, else `best(plots)` (bestPlotFor). @returns a plot index or null */
+/**
+ * The plan's tile, else `best(free tiles)`, else `best(plots)` (bestPlotFor); never a tile a wonder of ours is queued or
+ * ordered on (one order per tile: game 42), one a stuck item of this city stands on, nor one this building was dropped
+ * from stuck (game 45: blockedPlot). @returns a plot index, or null when no tile is usable
+ */
 function pickPlot(city, typeHash, plots, best) {
     if (!(plots?.length > 0)) return null;
+    const usable = plots.filter((i) => !blockedPlot(city, typeHash, i));
+    if (usable.length === 0) return null;
     const plan = planTiles(city, typeHash);
-    if (plan.own !== null && plots.includes(plan.own)) return plan.own;
-    const free = plots.filter((i) => !plan.kept.has(i));
-    return best(free.length > 0 ? free : plots);
+    if (plan.own !== null && usable.includes(plan.own)) return plan.own;
+    const free = usable.filter((i) => !plan.kept.has(i));
+    return best(free.length > 0 ? free : usable);
+}
+
+/** bestPlotFor as a location, or null when no tile is usable. */
+function bestLocFor(city, typeHash, plots) {
+    const plot = bestPlotFor(city, typeHash, plots);
+    return plot === null || plot === undefined ? null : safe(() => GameplayMap.getLocationFromIndex(plot), null);
 }
 
 /** The building plan's tile for this building in this city (`own`, or null) and the tiles it keeps for anything else. */
@@ -998,8 +1121,11 @@ function removeFromQueue(city, index) {
     if (RemoveAt === undefined || editedThisPass(city)) return false;
     const args = { InsertMode: RemoveAt, QueueLocation: index };
     if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return false;
+    const removed = queueTypes(city)[index];
     Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
     noteEdited(city);
+    // A wonder we take out ourselves is no wonder gone unbuilt (game 44: the dropped Oxford University went to UI.log as one).
+    if (removed !== undefined && isWonderType(removed)) wonderOrders.delete(`${sidOf(city)}|${typeNameOf(removed)}`);
     return true;
 }
 
@@ -1354,7 +1480,7 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
     const place = (city, def, { front = true } = {}) => {
         const plots = placeable(city, def);
         if (!plots) return false;
-        const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
+        const loc = bestLocFor(city, def.$hash, plots);
         if (!loc) return false;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash, X: loc.x, Y: loc.y });
         note(city, def.$hash);
@@ -1674,7 +1800,7 @@ function padOffered(cities) {
  * the strategy holds them back). Turns are the game's (getTurnsForNode); a mastery whose tech is not in yet takes as long
  * again. @returns { gateTurns, runs: [{ key, innovation, turns, cost: 0 }], at: Map(nodeType -> the turn it is in) }
  */
-function researchPlan(cities, { airfield = false, radio = false } = {}) {
+export function researchPlan(cities, { airfield = false, radio = false } = {}) {
     const plan = { gateTurns: 0, runs: [], at: new Map() };
     const holder = safe(() => Players.get(pid()).Techs, null);
     if (!holder) return plan;
@@ -1722,17 +1848,35 @@ function researchPlan(cities, { airfield = false, radio = false } = {}) {
         cands.set(node, c);
     }
     for (const c of rankInnovationResearch([...cands.values()])) push(c.nodeType, c.points, c.turns);
-    // Future Tech after its prerequisites (Nuclear Fission: no Innovation of its own), each a step dearer.
+    // Future Tech after its prerequisites (Nuclear Fission: no Innovation of its own), each a step dearer, and each only when
+    // done before the end it brings nearer (research/40 A7: +10 age progress each, about 5 turns of the final age).
     if (!safe(() => state.get().autopilot?.strategy?.noFutureTech, false)) {
         const ft = rows.find((r) => /FUTURE_TECH_SCIENCE_VP$/.test(String(r.TargetType)));
         if (ft) {
             const node = ft.ProgressionTreeNodeType;
             for (const p of prereqs.get(node) ?? []) if (!researched(p) && !plan.at.has(p)) push(p, 0, turnsOf(p));
             const points = researchInnovationOf(ft.TargetType);
-            for (let k = 1; k <= FUTURE_TECH_AHEAD; k++) push(node, points, turnsOf(node) * k);
+            const clock = futureClock();
+            for (let k = 1; k <= FUTURE_TECH_AHEAD; k++) {
+                if (clock && !futureInTime(t + turnsOf(node) * k, k, clock.turnsLeft, clock.perFuture)) break;
+                push(node, points, turnsOf(node) * k);
+            }
         }
     }
     return plan;
+}
+
+/**
+ * The final age's clock as our Future research moves it (research/40 A7): the turns left and the turns each Future node
+ * takes off them, while the game ends on the clock (not endless, no rival's science countdown first). @returns or null
+ */
+function futureClock() {
+    const o = safe(() => ageOutlook(), null);
+    if (!o?.isFinalAge || o.endless || o.rivalWin || !Number.isFinite(o.turnsLeft)) return null;
+    const apm = safe(() => Game.AgeProgressManager, null);
+    const left = (Number(safe(() => apm.getMaxAgeProgressionPoints(), 0)) || 0) - (Number(safe(() => apm.getCurrentAgeProgressionPoints(), 0)) || 0);
+    const perFuture = futureClockTurns(o.turnsLeft, left);
+    return Number.isFinite(perFuture) ? { turnsLeft: o.turnsLeft, perFuture } : null;
 }
 
 /** The one-off projects a mastery opens, and whether their site stands or is queued in one of our cities (the Airfield's flights, the Radio Telescope). */
@@ -2155,7 +2299,7 @@ export function victoryPurchases(focus, { pads = null, sitesFirst = false } = {}
                 if (Number.isFinite(cost) && cost > 0) out.push({ city: town, def, args: null, cost, key, ok: false });
                 break;
             }
-            const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(town, def.$hash, plots) ?? plots[0]), null);
+            const loc = bestLocFor(town, def.$hash, plots);
             if (!loc) continue;
             const args = { ConstructibleType: def.$hash, X: loc.x, Y: loc.y };
             const r = safe(() => Game.CityCommands.canStart(town.id, CityCommandTypes.PURCHASE, args, false), null);
@@ -2267,8 +2411,11 @@ export function repairBuildings({ buy = true, queue = true, budget = null } = {}
                     }
                 }
                 if (!queue || city.isTown || d.inQueue) continue;
+                // Never a second order on a tile a wonder of ours is queued or ordered on (one order per tile: game 42).
+                if (tileTaken(loc, { wondersOnly: true }) !== null) continue;
                 if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
                 Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+                notePlotOrder(loc, d.def.$hash);
                 out.push({ key: "REPAIR_QUEUED", args: [safe(() => Locale.compose(d.def.Name), d.def.ConstructibleType), nameOf(city)] });
                 break; // the rest of this type next pass (one queue entry per type)
             }
@@ -2373,6 +2520,32 @@ const isScout = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === de
 const isSettler = (def) => !!def && (def.FoundCity === true || def.FoundCity === "true" || def.FoundCity === 1);
 const isExplorer = (def) => !!def && (def.ExtractsArtifacts === true || def.ExtractsArtifacts === "true" || def.ExtractsArtifacts === 1);
 const isMerchant = (def) => !!def && (def.MakeTradeRoute === true || def.MakeTradeRoute === "true" || def.MakeTradeRoute === 1);
+// Our civilization's own great people (research/40 B4: UNIT_CLASS_GREATPERSON with one of our traits; not the Great Banker).
+const isOurGreatPerson = (def) => !!def && !!def.TraitType && def.VictoryUnit !== true && def.VictoryUnit !== "true"
+    && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_GREATPERSON") && ourTraits().has(def.TraitType);
+const GREAT_PERSON_TURNS = 8; // trained only where done within this many turns (each one costs more: COST_PROGRESSION_PREVIOUS_COPIES)
+
+// Trait effects that pay per trade route or widen the routes (research/40 A5).
+const TRADE_PAY_EFFECTS = new Set([
+    "EFFECT_PLAYER_ADJUST_YIELD_PER_NUM_TRADE_ROUTES", "EFFECT_PLAYER_ADJUST_YIELD_PER_NUM_TRADE_ROUTES_AND_SUZERAINED_TYPE",
+    "EFFECT_CITY_ADJUST_YIELD_PER_TOTAL_NUM_TRADE_ROUTES", "EFFECT_CITY_ADJUST_TRADE_YIELD", "EFFECT_PLAYER_ADJUST_TRADE_CAPACITY",
+    "EFFECT_ADJUST_PLAYER_UNLIMITED_RANGE_TRADE_ROUTES",
+]);
+
+// Trait effects that pay per resource (research/40 C: America +50 gold per improved resource, Amina, Hatshepsut).
+const RESOURCE_PAY_EFFECTS = new Set(["EFFECT_ADJUST_PLAYER_YIELD_FOR_RESOURCE", "EFFECT_PLAYER_ADJUST_YIELD_PER_RESOURCE", "EFFECT_PLAYER_ADJUST_YIELD_PER_UNIQUE_RESOURCE", "EFFECT_CITY_ADJUST_YIELD_PER_RESOURCE", "EFFECT_CITY_ADJUST_RESOURCE_CAP", "EFFECT_PLAYER_ADJUST_RESOURCE_COUNT_PER_INSTANCE"]);
+
+/** Do resources pay our civilization or leader by a trait (growth then values a resource tile with any focus)? */
+export function resourcesPay() {
+    return (safe(() => traitEffects(), []) ?? []).some((e) => RESOURCE_PAY_EFFECTS.has(e.effect));
+}
+
+/** Do trade routes pay our civilization or leader: a trait paying per route or widening them, or a merchant of our own? */
+export function tradePays() {
+    if ((safe(() => traitEffects(), []) ?? []).some((e) => TRADE_PAY_EFFECTS.has(e.effect))) return true;
+    const traits = ourTraits();
+    return !!GameInfo.Units?.find((d) => isMerchant(d) && d.TraitType && traits.has(d.TraitType));
+}
 const queueUnitDef = (q) => (q.unitType !== undefined && q.unitType !== -1 ? safe(() => GameInfo.Units.lookup(q.unitType), null) : null);
 
 /** Units of a kind we have or are training. */
@@ -2411,11 +2584,15 @@ export function sitesKnown() {
  * whose purchase the game offers (Success, or InsufficientFunds for a savings goal).
  * @returns { city, args, cost, name } or null
  */
-function settlerOffer(threats = [], { fill = false, past = 0 } = {}) {
+function settlerOffer(threats = [], { fill = false, past = 0, anywhere = false } = {}) {
     // None with a war at our door (research/24 X7: one bought at E51, four turns into the war, stood idle until the age ended).
     // The final age fills the cap (`fill`, research/26 §3.3), else only far below it; the military lever goes `past` it
     // (research/30 §1).
-    if (war.near || !(expansionDeficit() || (fill && belowSettlementCap(past))) || finalAgeTooLate(FINAL_SETTLER_BUY_TURNS) || !sitesKnown()) return null;
+    // A settlement milestone within the cap's room (research/40 B2) buys one below the cap too.
+    // A military countdown to block or to start (`anywhere`, the strategy's settleAnywhere) needs no site known: its settler
+    // founds wherever the game allows (game 42: Tubman's countdown won at M62 while every known site was dangerous).
+    const milestone = !!safe(() => settlementMilestoneNow(), null);
+    if (war.near || !(expansionDeficit() || ((fill || milestone) && belowSettlementCap(past))) || finalAgeTooLate(FINAL_SETTLER_BUY_TURNS) || (!anywhere && !sitesKnown())) return null;
     const stats = safe(() => Players.get(pid()).Stats, null);
     const n = Number(stats?.numSettlements) || 0;
     const cap = (Number(stats?.settlementCap) || 0) + Math.max(0, Number(past) || 0);
@@ -2433,8 +2610,8 @@ function settlerOffer(threats = [], { fill = false, past = 0 } = {}) {
     // A city holding a late settler first: the purchase takes its place.
     const holding = (c) => late.some((l) => sidOf(l.city) === sidOf(c));
     for (const city of ownSettlements().filter((c) => !threatened.has(sidOf(c))).sort((a, b) => Number(holding(b)) - Number(holding(a)) || (b.population ?? 0) - (a.population ?? 0))) {
-        // Only where a safe site lies within reach of a settler starting there (X7).
-        if (!safe(() => safeSiteFrom(city.location, war.risk), true)) continue;
+        // Only where a safe site lies within reach of a settler starting there (X7); a countdown takes any tile.
+        if (!anywhere && !safe(() => safeSiteFrom(city.location, war.risk), true)) continue;
         for (const def of defs) {
             const args = { UnitType: def.$hash };
             const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
@@ -2487,9 +2664,83 @@ function settlersWanted(n, cap) {
     return n < EARLY_SETTLEMENTS || n < cap - 1 ? SETTLERS_EARLY : SETTLERS_LATER;
 }
 
-/** Buys a settler from the free gold when one is wanted and the game sells it (settlerOffer). @returns log entries */
-export function buySettlers(budget, threats = [], { fill = false, past = 0 } = {}) {
-    const offer = settlerOffer(threats, { fill, past });
+/**
+ * The Homeland triumph within the cap's room this turn (research/40 B2; core settlementMilestone): Exploration's 16 Homeland
+ * settlements (+2 settlement cap in Modern), not in its last MILESTONE_LATE_TURNS turns. Legacy path milestones count
+ * nothing in this game version (games 42-43). @returns { need, why, next } or null
+ */
+export function settlementMilestoneNow() {
+    const stats = safe(() => Players.get(pid()).Stats, null);
+    const all = ownSettlements();
+    return settlementMilestone({
+        age: currentAge(),
+        settlements: Number(stats?.numSettlements ?? all.length) || 0, cap: Number(stats?.settlementCap) || 0,
+        homeland: all.filter((c) => !safe(() => c.isDistantLands, false)).length,
+        turnsLeft: safe(() => ageEndTurns(), null),
+    });
+}
+
+let legacyLogged = -1;
+let ageProbe = null; // { turn, points, futures: Map(node type -> depth) } of the last logLegacy (probe P-AGE-1)
+
+/**
+ * Probe P-AGE-1 (research/40): the age's points with the change since the last turn, and our Future Tech / Civic completed
+ * since (each should add 10, HumanOnly), to confirm that only our Future research and first-to-milestones move the clock.
+ */
+function ageProbeLine() {
+    const apm = safe(() => Game.AgeProgressManager, null);
+    const points = Number(safe(() => apm.getCurrentAgeProgressionPoints(), NaN));
+    const max = Number(safe(() => apm.getMaxAgeProgressionPoints(), NaN));
+    if (!Number.isFinite(points)) return "";
+    const futures = new Map();
+    for (const def of GameInfo.ProgressionTreeNodes ?? []) {
+        if (!/_FUTURE_(TECH|CIVIC)$/.test(String(def.ProgressionTreeNodeType))) continue;
+        futures.set(def.ProgressionTreeNodeType, Number(safe(() => Game.ProgressionTrees.getNode(pid(), def.ProgressionTreeNodeType)?.depthUnlocked, 0)) || 0);
+    }
+    const prev = ageProbe;
+    ageProbe = { turn: Game.turn, points, futures };
+    if (!prev || prev.turn >= Game.turn) return `; age ${points}/${max}`;
+    const done = [...futures].filter(([t, d]) => d > (prev.futures.get(t) ?? d)).map(([t, d]) => `${t.replace("NODE_", "")} ${prev.futures.get(t)}→${d}`);
+    return `; age ${points}/${max} (+${points - prev.points} since T${prev.turn}${done.length ? `; our Future research done: ${done.join(", ")}` : ""}) (probe P-AGE-1)`;
+}
+
+/** Probe P-LEG-1 (research/40): our legacy points by class at an age change (Players.AdvancedStart getLegacyPoints). */
+export function probeLegacyPoints() {
+    const points = safe(() => Players.AdvancedStart.get(pid()).getLegacyPoints(), null);
+    log.info(`legacy points at the age change: ${JSON.stringify(points)} (probe P-LEG-1)`);
+}
+
+/**
+ * The legacy summary for the Autopilot tab in a non-final age's last turns (research/40 C, legacy notes P6): the triumphs
+ * under way, closest first, so the player picks the age's cards with them in view (the cards stay the player's).
+ * @returns { turnsLeft, triumphs: [{ name, current, total }] } or null outside those turns
+ */
+export function legacySummary() {
+    const left = ageEndTurns();
+    if (left === null || safe(() => Game.AgeProgressManager.isFinalAge, false)) return null;
+    const open = triumphsUnderWay(safe(() => triumphs(), []) ?? []);
+    if (open.length === 0) return null;
+    return { turnsLeft: left, triumphs: open.map((t) => ({ name: t.name, current: t.current, total: t.total })) };
+}
+
+/** UI.log once a turn: the triumphs done and under way, the settlements and the age's points (probes P-INC-1, P-AGE-1). */
+export function logLegacy() {
+    if (legacyLogged === Game.turn) return;
+    legacyLogged = Game.turn;
+    const ms = safe(() => settlementMilestoneNow(), null);
+    // The settlements and the cap: whether an incorporated city-state counts toward it (probe P-INC-1).
+    const stats = safe(() => Players.get(pid()).Stats, null);
+    log.info(`legacy: triumphs ${triumphLine(safe(() => triumphs(), []) ?? [])}; settlements ${stats?.numSettlements ?? "?"}/${stats?.settlementCap ?? "?"}${ms ? `; settlers toward ${ms.why} ${ms.next} (${ms.need} more)` : ""}${safe(() => ageProbeLine(), "")}`);
+}
+
+/**
+ * Buys a settler from the free gold when one is wanted and the game sells it (settlerOffer). One a pass: the savings goal's
+ * purchase (buyGoal) counts (game 43: two bought in Васет at E69, one as the SETTLER goal, one here). `anywhere`: the
+ * strategy's settleAnywhere (a military countdown to block or to start), when no safe site need be known. @returns log entries
+ */
+export function buySettlers(budget, threats = [], { fill = false, past = 0, anywhere = false } = {}) {
+    if ((budget?.entries ?? []).some((e) => e.kind === "SETTLER")) return [];
+    const offer = settlerOffer(threats, { fill, past, anywhere });
     if (!offer || !offer.ok || offer.cost > budget.free()) return [];
     Game.CityCommands.sendRequest(offer.city.id, CityCommandTypes.PURCHASE, offer.args);
     dropQueued(offer.drop);
@@ -2623,7 +2874,8 @@ export function dropVictoryWork() {
         const i = types.findIndex(victoryOnly);
         if (i < 0) continue;
         if (types.every(victoryOnly)) {
-            const r = plans ? queueNextBuildings(plans, sidOf(city), 1, { skip: victoryOnly }) : { queued: [] };
+            const r = plans ? queueNextBuildings(plans, sidOf(city), 1, { skip: (t, p) => victoryOnly(t) || (!!p && stuckOffAt(t, p.x, p.y)) }) : { queued: [] };
+            for (const q of r.at ?? []) notePlotOrder(q, q.type);
             if (r.queued.length === 0) {
                 const fallback = cheapestBuilding(city, { skip: victoryOnly });
                 if (!fallback) continue;
@@ -2766,11 +3018,27 @@ function unitsWanted(unitOptions) {
         }
     }
     // Economy focus: merchants while trade routes are open (imported resources count for the
-    // Antiquity path and GDP), up to MERCHANTS_AT_ONCE at a time.
-    if (unitOptions.merchants && unitOptions.victory === "ECONOMIC") {
+    // Antiquity path and GDP), up to MERCHANTS_AT_ONCE at a time. Any focus for a civilization or leader trade routes pay
+    // (research/40 A5: Chola, Aksum, Babylon, Mississippian, Elizabeth, the unique merchants).
+    if (unitOptions.merchants && (unitOptions.victory === "ECONOMIC" || safe(() => tradePays(), false))) {
         const want = Math.min(MERCHANTS_AT_ONCE, openTradeRoutes({ profile: unitOptions.profile }));
         const n = want - unitCount(isMerchant);
         if (n > 0) out.push({ test: isMerchant, n, key: "QUEUED_MERCHANT", target: want });
+    }
+    // Missionaries for our own settlements (research/40 B1; data/xpl-missions.js): while MISSION_MIN of ours do not follow our
+    // religion, enough for their charges, up to MISSIONARIES_AT_ONCE; none while Ius Reformandi is slotted. Trained where a
+    // Temple stands (the game's answer), never in a space city.
+    // Our civilization's great people (research/40 B4), one at a time: the game trains them where its quarter or building
+    // stands (its answer), and each is activated where it works (units.js useGreatPerson).
+    if (unitCount(isOurGreatPerson) === 0 && GameInfo.Units?.find(isOurGreatPerson)) out.push({ test: isOurGreatPerson, n: 1, key: "QUEUED_GREAT_PERSON", target: 1 });
+    // Not in an age's last MISSION_LATE_TURNS: trained, walked and spread before it ends (game 42: two queued at E65-E66, one
+    // finished at E69 and never used).
+    const mission = safe(() => missionNeed(), null);
+    const missionLate = (safe(() => ageEndTurns(), null) ?? Infinity) <= MISSION_LATE_TURNS;
+    if (mission && mission.settlements >= MISSION_MIN && !missionLate) {
+        const want = Math.min(MISSIONARIES_AT_ONCE, Math.ceil(mission.charges / MISSIONARY_CHARGES));
+        const n = want - unitCount(isMissionary);
+        if (n > 0) out.push({ test: isMissionary, n, key: "QUEUED_MISSIONARY", target: mission.settlements });
     }
     // Settlers: with «Поселенцы», unless the strategy stops training them (the final age: research/21 C3),
     // and only with a site to go to (C3b: our search's picks, or the game's suggestions from the capital).
@@ -3343,7 +3611,7 @@ function trainWantedUnits(unitOptions) {
     };
     // Units the overlays and options want (explorers, settlers, scouts, merchants) never come from a space city in the
     // final push (game 11: the capital built Antiquarians on turns 56-58 instead of science projects).
-    const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE", "QUEUED_GROUND_ATTACKER", "QUEUED_WARSHIP"]);
+    const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE", "QUEUED_GROUND_ATTACKER", "QUEUED_WARSHIP", "QUEUED_MISSIONARY", "QUEUED_GREAT_PERSON"]);
     // Explorers neither from a city kept for a Launch Pad nor where they take long (game 34: Ливерпуль's Antiquarian, 400
     // at 39 a turn, took its production M14-M37, and its pad came at M47).
     const padKept = safe(() => padExclusion(unitOptions.strategy), null);
@@ -3374,6 +3642,7 @@ function trainWantedUnits(unitOptions) {
             // Soldiers (aircraft too) only where they are done soon (game 18: 33 turns for a Landship).
             if (isSoldierDef(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             if (w.key === "QUEUED_EXPLORER" && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
+            if (w.key === "QUEUED_GREAT_PERSON" && unitTurns(city, order.args.UnitType) > GREAT_PERSON_TURNS) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             if (w.key === "QUEUED_GUARD") noteGuardOrder(city, order.args.UnitType);
             if (w.key === "QUEUED_MELEE") meleeOrders.set(sidOf(city), order.args.UnitType);
@@ -3656,7 +3925,7 @@ function costliestBuilding(city, accept = null) {
         const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
         const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
         if (!probe?.Success || probe.InQueue || plots.length === 0 || builtThisPass(city).has(def.ConstructibleType)) continue;
-        const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
+        const loc = bestLocFor(city, def.$hash, plots);
         if (!loc) continue;
         best = { args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, type: def.ConstructibleType, cost };
     }
@@ -3669,7 +3938,8 @@ function cheapestBuilding(city, { skip = null } = {}) {
     for (const def of GameInfo.Constructibles ?? []) {
         if (def.ConstructibleClass !== "BUILDING" || skip?.(def.ConstructibleType)) continue;
         const probe = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
-        if (!probe?.Success) continue;
+        // Not one already queued here (game 45: Памплона's stuck Grocer got a second Grocer as the item to go ahead of it).
+        if (!probe?.Success || probe.InQueue) continue;
         const plots = [...(probe.Plots ?? []), ...(probe.ExpandUrbanPlots ?? [])];
         if (plots.length === 0) continue;
         const cost = Number(safe(() => city.Production.getConstructibleProductionCost(def.ConstructibleType), def.Cost ?? 999)) || 999;
@@ -4079,9 +4349,7 @@ function meleeNode() {
 
 /** Is this one of our civilization's (or leader's) traits? */
 function ownTrait(trait) {
-    const me = safe(() => Players.get(pid()), null);
-    return !!GameInfo.CivilizationTraits?.find((r) => r.TraitType === trait && r.CivilizationType === safe(() => GameInfo.Civilizations.lookup(me.civilizationType)?.CivilizationType, null))
-        || !!GameInfo.LeaderTraits?.find((r) => r.TraitType === trait && r.LeaderType === safe(() => GameInfo.Leaders.lookup(me.leaderType)?.LeaderType, null));
+    return ourTraits().has(trait);
 }
 
 /** This age's walls (FORTIFICATION buildings, not another civilization's own): the defs. */
@@ -4173,7 +4441,19 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
             const plots = [...(probe?.Plots ?? []), ...(buyProbe?.Plots ?? [])];
             tried.push(`${def.ConstructibleType} build ${probe?.Success ?? "?"}/${probe?.Plots?.length ?? 0} buy ${buyProbe?.Success ?? "?"}/${buyProbe?.Plots?.length ?? 0}${probe?.FailureReasons?.length ? ` (${probe.FailureReasons.join("; ")})` : ""}`);
             if (plots.length === 0) continue;
-            const loc = safe(() => GameplayMap.getLocationFromIndex(plots.includes(centre) ? centre : plots[0]), null);
+            // A tile no other order of ours takes (one order per tile; game 45: Экбатана's Monument never completed after
+            // walls were queued on its tile, 74,46), the centre first; the centre anyway when every free tile is taken.
+            const free = plots.filter((i) => {
+                const l = safe(() => GameplayMap.getLocationFromIndex(i), null);
+                const taken = l ? tileTaken(l) : undefined;
+                return taken === null || taken === def.$hash || taken === def.ConstructibleType; // these walls' own order
+            });
+            const at = free.includes(centre) ? centre : free[0] ?? (plots.includes(centre) ? centre : null);
+            if (at === null) {
+                tried.push(`${def.ConstructibleType}: every offered tile has an order of ours`);
+                continue;
+            }
+            const loc = safe(() => GameplayMap.getLocationFromIndex(at), null);
             if (!loc) continue;
             const args = { ConstructibleType: def.$hash, X: loc.x, Y: loc.y };
             const name = safe(() => Locale.compose(def.Name), def.ConstructibleType);
@@ -4184,6 +4464,7 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
                 const cost = Number(r?.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
                 if (r?.Success && Number.isFinite(cost) && cost <= left(t)) {
                     Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, args);
+                    notePlotOrder(loc, def.$hash);
                     b.spend(cost, { kind: "WALLS", label: `${name} (${nameOf(city)})` });
                     out.push({ key: "WALLS_BOUGHT", args: [name, nameOf(city), Math.round(cost)] });
                     done = true;
@@ -4196,6 +4477,7 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
             if (ageEnding() && !safe(() => Game.AgeProgressManager.isFinalAge, false)) continue;
             if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+            notePlotOrder(loc, def.$hash);
             wallsFirst(city, t, def);
             out.push({ key: "WALLS_QUEUED", args: [name, nameOf(city)] });
             done = true;
@@ -4239,10 +4521,48 @@ const wonderOrders = new Map();
 export function resetWonderOrders() {
     wonderOrders.clear();
     noticesLogged.clear();
+    plotOrders.clear();
 }
 
 function noteWonderOrder(city, type, tile) {
     wonderOrders.set(`${sidOf(city)}|${type}`, { type, cityKey: sidOf(city), cityName: nameOf(city), x: tile.x, y: tile.y, turn: Game.turn, seen: null });
+    notePlotOrder(tile, type);
+}
+
+// ---- one order per tile (game 42) -------------------------------------------------------------------------------------
+// Two of our orders on one tile spoil it. Game 42: Battersea Power Station (Парса, 43,35) and Doi Suthep (Гордион, 32,36)
+// crossed their cost and never completed, each after a Pairidaeza was queued on its tile (a repair 50 s before the wonder in
+// Парса; the unique improvement step in Гордион, and again in the same second as Battersea later), while the growth step
+// placed citizens on 32,36 with a wonder "in production" there; the same wonder on a tile with no other order completed (Doi
+// Suthep at 43,35), and the two that left their queues poured ~1,700 production into small buildings. The production list
+// hides what is queued (production-chooser-helpers.js), so a player never stacks orders on a tile; our BUILD with X, Y does
+// not check. So no order goes to a tile a queued item of ours targets (the queue entries' `location`, as the game's placement
+// manager reads them), one this turn's orders took, or one a wonder of ours was ordered on.
+const plotOrders = new Map(); // "x,y" -> { turn, type }: this turn's orders on a tile (the queues show them next pass)
+
+/** Notes an order sent to a tile (its type: a hash or a name). */
+function notePlotOrder(loc, type) {
+    if (loc) plotOrders.set(`${loc.x},${loc.y}`, { turn: Game.turn, type });
+}
+
+/**
+ * What of ours already targets this tile: a queued item of any of our settlements, this turn's order there, a wonder ordered
+ * there this turn; `wondersOnly`: only a wonder. @returns its type (a hash or a name), or null
+ */
+function tileTaken(loc, { wondersOnly = false } = {}) {
+    if (!loc) return null;
+    const keep = (t) => !wondersOnly || isWonderType(t);
+    for (const city of ownSettlements()) {
+        for (const q of safe(() => city.BuildQueue.getQueue(), []) ?? []) {
+            if (q?.location?.x !== loc.x || q.location.y !== loc.y) continue;
+            const t = queueItemType(q);
+            if (keep(t)) return t;
+        }
+    }
+    const o = plotOrders.get(`${loc.x},${loc.y}`);
+    if (o && o.turn === Game.turn && keep(o.type)) return o.type;
+    for (const w of wonderOrders.values()) if (w.x === loc.x && w.y === loc.y && w.turn === Game.turn) return w.type;
+    return null;
 }
 
 // The game's notices about production it took away (expire at the turn's end): written to UI.log once each.
@@ -4346,6 +4666,18 @@ try {
 // frontSlot is 0 there, toFront never brings it back to the front nor keeps a move behind it, and unstickQueues moves the
 // next item ahead of it (or queues one when it stands alone).
 
+// Game 45: four buildings stood at 100% and never completed, about 1,700 production. Each time the item moved ahead of one was
+// done, the stuck one came back to the front and took a turn's production before it was found stuck again (Патрагада's
+// University 464 → 825 of 437), and Памплона's Grocer, alone in its queue, got a second Grocer on its own tile as the item to
+// go ahead of it: the two swapped places 24 times, M10-M41, 1,232 of 267. So an item found stuck is stuck again the moment it
+// is back at the front, the item moved ahead of it is never its own type nor on its tile, one stuck STUCK_DROP_TURNS since it
+// first stood at 100% leaves the queue (what it holds is lost either way), and that building keeps off that tile
+// STUCK_TILE_TURNS (blockedPlot, the plan's queue).
+export const STUCK_DROP_TURNS = 3;
+export const STUCK_TILE_TURNS = 20;
+const stuckFirst = new Map(); // "sid|hash" -> the first turn that item stood at 100% (while it stays queued)
+const stuckOff = new Map();   // "TYPE|x,y" -> the turn that building left its queue stuck on that tile
+
 /** The first turn this city's item in production stood at 100%, when that was an earlier turn (stuck); else null. */
 function stuckHeadSince(city) {
     const sid = sidOf(city);
@@ -4357,8 +4689,10 @@ function stuckHeadSince(city) {
         return null;
     }
     if (!stuckSince.has(k)) stuckSince.set(k, Game.turn);
-    const since = stuckSince.get(k);
+    // Found stuck before and back at the front: stuck at once.
+    const since = isStuck(city, head) && stuckFirst.has(k) ? stuckFirst.get(k) : stuckSince.get(k);
     if (!(since < Game.turn)) return null;
+    if (!stuckFirst.has(k)) stuckFirst.set(k, since);
     const set = stuckTypes.get(sid) ?? new Set();
     set.add(head);
     stuckTypes.set(sid, set);
@@ -4371,13 +4705,56 @@ function isStuck(city, hash) {
     if (!set?.has(hash)) return false;
     if (queueTypes(city).includes(hash)) return true;
     set.delete(hash);
+    stuckFirst.delete(`${sidOf(city)}|${hash}`);
     return false;
+}
+
+/**
+ * A tile no new order of this building takes (pickPlot): a wonder of ours is queued or ordered there (one order per tile: game
+ * 42), an item of this city found stuck stands there, or this building left its queue stuck there within STUCK_TILE_TURNS.
+ */
+function blockedPlot(city, typeHash, plot) {
+    const loc = safe(() => GameplayMap.getLocationFromIndex(plot), null);
+    if (!loc) return false;
+    const off = stuckOff.get(`${typeNameOf(typeHash)}|${loc.x},${loc.y}`);
+    if (off !== undefined && Game.turn - off < STUCK_TILE_TURNS) return true;
+    if (tileTaken(loc, { wondersOnly: true }) !== null) return true;
+    return (safe(() => city.BuildQueue.getQueue(), []) ?? []).some((q) => q?.location?.x === loc.x && q.location.y === loc.y && isStuck(city, queueItemType(q)));
+}
+
+/** May the plan queue this building on this tile (not one it left stuck within STUCK_TILE_TURNS)? */
+function stuckOffAt(type, x, y) {
+    const off = stuckOff.get(`${type}|${x},${y}`);
+    return off !== undefined && Game.turn - off < STUCK_TILE_TURNS;
+}
+
+/**
+ * An item of this city stuck STUCK_DROP_TURNS since it first stood at 100% leaves the queue (wonders aside: unstickWonder gives
+ * what they hold to a building), and its building keeps off its tile. @returns a log entry, or null
+ */
+function dropStuck(city) {
+    const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const h = queueItemType(items[i]);
+        if (isWonderType(h) || !isStuck(city, h)) continue;
+        const first = stuckFirst.get(`${sidOf(city)}|${h}`);
+        if (first === undefined || Game.turn - first < STUCK_DROP_TURNS) continue;
+        const at = items[i]?.location;
+        if (!removeFromQueue(city, i)) return null;
+        if (at && at.x >= 0) stuckOff.set(`${typeNameOf(h)}|${at.x},${at.y}`, Game.turn);
+        log.warn(`queue: ${nameOf(city)}: ${typeNameOf(h)} has stood at 100% since T${first} and the game does not complete it: it leaves the queue, and keeps off ${at && at.x >= 0 ? `${at.x},${at.y}` : "its tile"} ${STUCK_TILE_TURNS} turns (game 45)`);
+        return { key: "QUEUE_STUCK_DROPPED", args: [nameOf(city), itemName(h), first] };
+    }
+    return null;
 }
 
 /** Forgets the items found stuck (tests; a new game). */
 export function resetStuckItems() {
     stuckSince.clear();
     stuckTypes.clear();
+    stuckFirst.clear();
+    stuckOff.clear();
+    stuckTileProbed.clear();
 }
 
 /**
@@ -4389,17 +4766,35 @@ export function unstickQueues() {
     for (const city of ownSettlements()) {
         if (city.isTown || editedThisPass(city)) continue;
         const since = stuckHeadSince(city);
+        const dropped = dropStuck(city);
+        if (dropped) {
+            out.push(dropped);
+            continue;
+        }
         if (since === null) continue;
+        const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
         const types = queueTypes(city);
         const head = types[0];
         const held = Math.round(Number(safe(() => city.BuildQueue.getPercentComplete(head), 0)) || 0);
-        if (types.length > 1) {
-            if (!moveInQueue(city, 1, 0)) continue;
-            log.warn(`queue: ${nameOf(city)}: ${typeNameOf(head)} has stood at 100% since T${since} (${held}%: the game does not complete it); ${typeNameOf(types[1])} moved ahead of it (probe)`);
-            out.push({ key: "QUEUE_UNSTUCK", args: [nameOf(city), itemName(head), itemName(types[1])] });
+        safe(() => probeStuckTile(city, since), null);
+        if (isWonderType(head)) {
+            const entry = unstickWonder(city, types, since, held);
+            if (entry) out.push(entry);
             continue;
         }
-        const add = plannedAbsorbers(city)[0] ?? cheapestBuilding(city) ?? lastResort(city);
+        // Never its own type nor an item on its tile ahead of it (game 45: a second Grocer on Памплона's stuck one's tile).
+        const at = items[0]?.location;
+        const onItsTile = (loc) => !!at && at.x >= 0 && loc?.x === at.x && loc?.y === at.y;
+        const next = types.findIndex((t, i) => i > 0 && t !== head && !onItsTile(items[i]?.location) && !isStuck(city, t));
+        if (next > 0) {
+            if (!moveInQueue(city, next, 0)) continue;
+            log.warn(`queue: ${nameOf(city)}: ${typeNameOf(head)} has stood at 100% since T${since} (${held}%: the game does not complete it); ${typeNameOf(types[next])} moved ahead of it (probe)`);
+            out.push({ key: "QUEUE_UNSTUCK", args: [nameOf(city), itemName(head), itemName(types[next])] });
+            continue;
+        }
+        const headName = typeNameOf(head);
+        const add = plannedAbsorbers(city).find((a) => a.type !== headName && !onItsTile({ x: a.args.X, y: a.args.Y }))
+            ?? cheapestBuilding(city, { skip: (t) => t === headName }) ?? lastResort(city);
         if (!add) continue;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, add.args);
         const type = add.type ?? safe(() => GameInfo.Constructibles.lookup(add.args?.ConstructibleType)?.ConstructibleType, null);
@@ -4410,6 +4805,56 @@ export function unstickQueues() {
     }
     return out;
 }
+
+/**
+ * A wonder the game does not complete (game 42: three, all on tiles another order of ours had targeted): once it leaves the
+ * queue, all it holds goes into the item in production, and whatever exceeds that item's cost is lost (Парса's Military
+ * Academy got 1,110 of a 441 cost; Гордион's Opera House 879 more than it needed). So the costliest building goes ahead of it:
+ * the queue's, else the plan's or the city's costliest, queued first and moved ahead next pass. The wonder may be ordered
+ * again later, on a tile no order of ours takes (orderWonder). @returns a log entry, or null
+ */
+function unstickWonder(city, types, since, held) {
+    const head = types[0];
+    const progress = currentProgress(city) ?? 0;
+    // As the cash-out of a lost race chooses (cashOutLostWonders): the building that keeps the most of it.
+    const queued = bestAbsorber(absorberCandidates(city), progress);
+    const outside = bestAbsorber(plannedAbsorbers(city), progress) ?? bestAbsorber([costliestBuilding(city)].filter(Boolean), progress);
+    if (queued && (!outside || queued.keeps >= outside.keeps - 0.5)) {
+        if (!moveInQueue(city, queued.index, 0)) return null;
+        log.warn(`queue: ${nameOf(city)}: ${typeNameOf(head)} has stood at 100% since T${since} (${held}%: the game does not complete it); ${queued.type} moved ahead of it, keeping ${Math.round(queued.keeps)} of its ${Math.round(progress)} (probe)`);
+        return { key: "QUEUE_UNSTUCK", args: [nameOf(city), itemName(head), itemName(queued.type)] };
+    }
+    if (!outside || builtThisPass(city).has(outside.type)) return null;
+    Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, outside.args);
+    noteBuilt(city, outside.type);
+    log.warn(`queue: ${nameOf(city)}: ${typeNameOf(head)} has stood at 100% since T${since} (${held}%: the game does not complete it); ${outside.type} queued to take ${Math.round(outside.keeps)} of its ${Math.round(progress)} next pass (probe)`);
+    return { key: "QUEUE_UNSTUCK_QUEUED", args: [nameOf(city), itemName(head), itemName(outside.type)] };
+}
+
+/**
+ * UI.log once a turn while an item is stuck (probe of the one-order-per-tile rule): its tile, what stands there (type, complete,
+ * damaged), the game's answer to that item on that tile, and every queued item's tile.
+ */
+function probeStuckTile(city, since) {
+    if (stuckTileProbed.get(sidOf(city)) === Game.turn) return;
+    stuckTileProbed.set(sidOf(city), Game.turn);
+    const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+    const head = items[0];
+    const at = head?.location;
+    const here = at ? (safe(() => MapConstructibles.getHiddenFilteredConstructibles(at.x, at.y), []) ?? []).map((id) => {
+        const c = safe(() => Constructibles.getByComponentID(id), null);
+        return c ? `${typeNameOf(c.type)}${c.complete === false ? " (unfinished)" : ""}${c.damaged ? " (damaged)" : ""}` : "?";
+    }) : [];
+    const h = queueItemType(head);
+    const answer = at ? safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: h, X: at.x, Y: at.y }, false), null) : null;
+    // The tiles the game offers that building without a tile (its placement screen's): is this one among them? (game 45)
+    const offer = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: h }, false), null);
+    const offered = [...(offer?.Plots ?? []), ...(offer?.ExpandUrbanPlots ?? [])];
+    const idx = at ? safe(() => GameplayMap.getIndexFromXY(at.x, at.y), null) : null;
+    const tiles = items.map((q) => `${typeNameOf(queueItemType(q))}${q?.location && q.location.x >= 0 ? `@${q.location.x},${q.location.y}` : ""}`);
+    log.warn(`queue: ${nameOf(city)}: stuck since T${since} at ${at ? `${at.x},${at.y}` : "?"}; there [${here.join(", ")}]; the game on that tile: ${answer ? JSON.stringify({ Success: answer.Success, InProgress: answer.InProgress, InQueue: answer.InQueue, FailureReasons: answer.FailureReasons }) : "-"}; offered ${idx !== null && offered.includes(idx) ? "yes" : "no"} (${offered.length} tile(s)); queue [${tiles.join(", ")}] (probe)`);
+}
+const stuckTileProbed = new Map(); // sid -> the turn probeStuckTile wrote
 
 /** Writes the queue probe to UI.log, once a turn (above). */
 export function probeQueues() {
@@ -4438,6 +4883,12 @@ function orderWonder(city, wonder) {
         .filter((p, i, all) => all.findIndex((q) => q.x === p.x && q.y === p.y) === i).slice(0, WONDER_TILE_TRIES);
     const refused = [];
     for (const t of tiles) {
+        // Not where another order of ours stands (one order per tile, above).
+        const taken = tileTaken(t);
+        if (taken !== null) {
+            refused.push(`${t.x},${t.y}: ${typeNameOf(taken)} is queued there`);
+            continue;
+        }
         const args = { ConstructibleType: def.$hash, X: t.x, Y: t.y };
         const r = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null);
         if (!r?.Success) {
@@ -4718,9 +5169,11 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
             return !!def && levers.has(def.ConstructibleType) && !leverSoon(city, def);
         };
         const padWait = padNear?.has(sidOf(city)) && gateEta > 0 ? (t) => holdsPadRoom(city, t, gateEta) : null;
-        const skip = (t) => (space ? !sites.has(t) : !!military?.(t)) || !inAge(t) || slowLever(t) || !!padWait?.(t);
+        const skip = (t, p) => (space ? !sites.has(t) : !!military?.(t)) || !inAge(t) || slowLever(t) || !!padWait?.(t) || (!!p && stuckOffAt(t, p.x, p.y));
         if (plans) {
             const r = queueNextBuildings(plans, sidOf(city), 2, { skip });
+            // This turn's orders on their tiles: the queues show them only next pass (one order per tile).
+            for (const q of r.at ?? []) notePlotOrder(q, q.type);
             if (r.queued.length > 0) {
                 out.push({ key: "QUEUED_PLAN", args: [nameOf(city), r.queued.map((t) => Locale.compose(GameInfo.Constructibles.lookup(t)?.Name ?? t)).join(", ")] });
                 continue;
@@ -4809,6 +5262,152 @@ function itemCost(city, h) {
     const p = safe(() => GameInfo.Projects.lookup(h), null);
     if (p) return { hash: p.$hash, cost: Number(safe(() => P.getProjectProductionCost(p.ProjectType), p.Cost ?? 0)) || 0 };
     return { hash: h, cost: 0 };
+}
+
+// ---- unique improvements (research/40 B5) ----------------------------------------------------------------
+
+export const UQI_PAYBACK_TURNS = 15; // a unique improvement is queued when its production pays back within this many turns
+const uqiProbed = new Set();          // types whose placement answer UI.log has shown (probe P-UQI-1)
+// Orders the game cancelled: games 42-43 re-ordered Pairidaezas on one tile of Парса seven times (E20-E34) and Stepwells in
+// Васет five times (M3-M18), each cancelled (NOTIFICATION_PRODUCTION_INVALIDATED). An order gone from the queue unbuilt keeps
+// its tile off for UQI_RETRY_TURNS.
+export const UQI_RETRY_TURNS = 20;
+const uqiOrders = new Map(); // "sid|type|x,y" -> { city key, type, x, y, turn }: our orders not yet seen built
+const uqiOff = new Map();    // "type|x,y" -> the turn the tile may be tried again
+
+/** A database boolean (true, 1 or "true"; false, 0 or "false"). */
+const flag = (v) => v === true || v === 1 || v === "true";
+
+/** Forgets the unique improvement orders (tests). */
+export function resetUniqueImprovements() {
+    uqiOrders.clear();
+    uqiOff.clear();
+}
+
+/** Is a constructible of this type standing on this tile? */
+function standsOn(loc, type) {
+    for (const id of safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? []) {
+        const c = safe(() => Constructibles.getByComponentID(id), null);
+        if (c && safe(() => GameInfo.Constructibles.lookup(c.type)?.ConstructibleType, null) === type) return true;
+    }
+    return false;
+}
+
+/** Our earlier orders: built ones are forgotten; one neither queued nor built keeps its tile off for UQI_RETRY_TURNS. */
+function reviewUniqueOrders(cities) {
+    for (const [k, o] of [...uqiOrders]) {
+        if (o.turn >= Game.turn) continue;
+        const city = cities.find((c) => sidOf(c) === o.cityKey);
+        const queued = city && (safe(() => city.BuildQueue.getQueue(), []) ?? []).some((q) => typeNameOf(queueItemType(q)) === o.type && (!q.location || (q.location.x === o.x && q.location.y === o.y)));
+        if (queued) continue;
+        uqiOrders.delete(k);
+        if (standsOn(o, o.type)) continue;
+        uqiOff.set(`${o.type}|${o.x},${o.y}`, Game.turn + UQI_RETRY_TURNS);
+        log.info(`unique improvement: ${o.type} at ${o.x},${o.y} left ${city ? nameOf(city) : o.cityKey}'s queue unbuilt (ordered T${o.turn}); that tile is off for ${UQI_RETRY_TURNS} turns`);
+    }
+}
+
+/**
+ * May this unique improvement go on this tile: no other order of ours there (tileTaken), not off after a cancelled order, and,
+ * for one that may not stand next to its own kind (Improvements.SameAdjacentValid false: Pairidaeza, Stepwell, Caravanserai…),
+ * none standing, queued or ordered next to it.
+ */
+function uqiTileOk(def, row, loc) {
+    if (tileTaken(loc) !== null || (uqiOff.get(`${def.ConstructibleType}|${loc.x},${loc.y}`) ?? 0) > Game.turn) return false;
+    if (row?.SameAdjacentValid === undefined || row.SameAdjacentValid === null || flag(row.SameAdjacentValid)) return true;
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, 1), []) ?? []) {
+        const n = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!n || (n.x === loc.x && n.y === loc.y)) continue;
+        if (standsOn(n, def.ConstructibleType)) return false;
+        const t = tileTaken(n);
+        if (t !== null && typeNameOf(t) === def.ConstructibleType) return false;
+    }
+    return true;
+}
+
+/** Our civilization's unique improvements (TypeTags UNIQUE_IMPROVEMENT, Improvements.TraitType one of ours): the defs. */
+function ourUniqueImprovements() {
+    const traits = ourTraits();
+    const out = [];
+    for (const t of GameInfo.TypeTags?.filter((r) => r.Tag === "UNIQUE_IMPROVEMENT") ?? []) {
+        const def = safe(() => GameInfo.Constructibles.lookup(t.Type), null);
+        if (!def || def.ConstructibleClass !== "IMPROVEMENT" || out.includes(def)) continue;
+        const row = safe(() => GameInfo.Improvements.find((r) => r.ConstructibleType === def.ConstructibleType), null);
+        if (row?.TraitType && !traits.has(row.TraitType)) continue;
+        out.push(def);
+    }
+    return out;
+}
+
+/**
+ * What a unique improvement brings a turn on a tile, weighed by the priority: the game's own numbers when its placement
+ * data lists the improvement there (calculateAllBuildingsPlacements; probe P-UQI-1 says whether it does), else its base
+ * yields (Constructible_YieldChanges).
+ */
+function improvementValue(data, def, plot, weights) {
+    const forType = data?.buildings?.find((b) => b.constructibleType === def.$hash);
+    if (!uqiProbed.has(def.ConstructibleType)) {
+        uqiProbed.add(def.ConstructibleType);
+        log.info(`unique improvement: ${def.ConstructibleType} ${forType ? `listed by calculateAllBuildingsPlacements (${forType.placements?.length ?? 0} tiles)` : "not listed by calculateAllBuildingsPlacements"} (probe P-UQI-1)`);
+    }
+    const at = forType?.placements?.find((p) => p.plotID === plot);
+    if (at) return (at.yieldChanges ?? []).reduce((v, n, i) => v + (weights[yieldIndex(safe(() => GameInfo.Yields[i]?.YieldType, null) ?? "")] ?? 0) * (Number(n) || 0), 0);
+    let v = 0;
+    for (const r of GameInfo.Constructible_YieldChanges?.filter((y) => y.ConstructibleType === def.ConstructibleType) ?? []) v += (weights[yieldIndex(r.YieldType)] ?? 0) * (Number(r.YieldChange) || 0);
+    return v;
+}
+
+/**
+ * Unique improvements (research/40 B5: Baray, Great Wall, Stepwell, Terrace Farm, Caravanserai…; 24 civilizations): the
+ * plan holds buildings only, so they were never queued. In each city with none queued, the one that pays back soonest
+ * (cost ÷ its value a turn, within UQI_PAYBACK_TURNS) is appended on a tile the game offers and the plan leaves free,
+ * and only where it is done before the age ends. @returns log entries
+ */
+export function queueUniqueImprovements(settings) {
+    const out = [];
+    const defs = ourUniqueImprovements();
+    if (defs.length === 0) return out;
+    const weights = profileFor(settings).y;
+    const left = ageEndTurns();
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    reviewUniqueOrders(cities);
+    for (const city of cities) {
+        const queued = queueTypes(city);
+        if (defs.some((d) => queued.includes(d.$hash))) continue;
+        // Appended: it waits for the whole queue.
+        const wait = left === null ? 0 : queued.reduce((t, h) => t + (Number(safe(() => itemTurns(city, h), 0)) || 0), 0);
+        let best = null;
+        let data; // the game's placement numbers, read once a city (an expensive query)
+        for (const def of defs) {
+            const row = safe(() => GameInfo.Improvements.find((x) => x.ConstructibleType === def.ConstructibleType), null);
+            // One a settlement (Improvements.OnePerSettlement: Kabaka's Lake).
+            if (flag(row?.OnePerSettlement) && cityHas(city, def.ConstructibleType)) continue;
+            const r = safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
+            if (!r?.Success || !(r.Plots?.length > 0)) continue;
+            const kept = planTiles(city, def.$hash).kept;
+            const free = r.Plots.filter((i) => !kept.has(i) && uqiTileOk(def, row, safe(() => GameplayMap.getLocationFromIndex(i), null)));
+            if (free.length === 0) continue;
+            let tile = null;
+            if (data === undefined) data = safe(() => city.Yields.calculateAllBuildingsPlacements(), null);
+            for (const plot of free) {
+                const v = improvementValue(data, def, plot, weights);
+                if (!tile || v > tile.v) tile = { plot, v };
+            }
+            const cost = itemCost(city, def.$hash).cost;
+            const payback = tile.v > 0 ? cost / tile.v : Infinity;
+            if (payback > UQI_PAYBACK_TURNS || !doneInAge(city, def.$hash, left, wait)) continue;
+            if (!best || payback < best.payback) best = { def, plot: tile.plot, payback };
+        }
+        if (!best) continue;
+        const loc = safe(() => GameplayMap.getLocationFromIndex(best.plot), null);
+        if (!loc) continue;
+        Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, { ConstructibleType: best.def.$hash, X: loc.x, Y: loc.y });
+        noteBuilt(city, best.def.$hash);
+        notePlotOrder(loc, best.def.$hash);
+        uqiOrders.set(`${sidOf(city)}|${best.def.ConstructibleType}|${loc.x},${loc.y}`, { cityKey: sidOf(city), type: best.def.ConstructibleType, x: loc.x, y: loc.y, turn: Game.turn });
+        out.push({ key: "QUEUED_UNIQUE_IMPROVEMENT", args: [nameOf(city), safe(() => Locale.compose(best.def.Name), best.def.ConstructibleType), Math.round(best.payback)] });
+    }
+    return out;
 }
 
 /** Turns this city needs for an item, its own progress counted (an item moved back keeps it: root gotcha 20). */
@@ -4939,7 +5538,7 @@ export function placeGrowth(settings, { victory = null } = {}) {
             townFocus ??= new Map((safe(() => runTownAdvisor(settings), null)?.rows ?? []).map((r) => [`${r.town.x},${r.town.y}`, r.focus?.best?.key ?? null]));
             focusKind = townFocus.get(`${city.location.x},${city.location.y}`) ?? null;
         }
-        const a = growthAdvice(city.id, settings, { focusKind, victory });
+        const a = growthAdvice(city.id, settings, { focusKind, victory, resourceTrait: safe(() => resourcesPay(), false) });
         // A new citizen holds the turn (NOTIFICATION_NEW_POPULATION) until placed: the advised
         // choice first, then every offered tile in order, then a specialist (towns have none).
         const specialist = () => {
@@ -4949,8 +5548,11 @@ export function placeGrowth(settings, { victory = null } = {}) {
             Game.PlayerOperations.sendRequest(pid(), PlayerOperationTypes.ASSIGN_WORKER, args);
             return { key: "GROWTH_SPECIALIST", args: [nameOf(city), a.bestSpecialist.gain] };
         };
-        const tile = () => {
+        // `avoid`: not a tile a wonder of ours is queued on (game 42: citizens placed on Гордион's 32,36 under its wonder);
+        // it is the last resort (a new citizen holds the turn until placed).
+        const tile = (avoid = true) => {
             for (const t of a?.expand ?? []) {
+                if (avoid && tileTaken(t, { wondersOnly: true }) !== null) continue;
                 const args = { X: t.x, Y: t.y };
                 const ok = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.EXPAND, args, false), null);
                 if (ok && ok.Success === false) continue;
@@ -4959,7 +5561,7 @@ export function placeGrowth(settings, { victory = null } = {}) {
             }
             return null;
         };
-        const placed = a?.choice === "SPECIALIST" ? specialist() ?? tile() : tile() ?? specialist();
+        const placed = (a?.choice === "SPECIALIST" ? specialist() ?? tile() : tile() ?? specialist()) ?? tile(false);
         if (placed) {
             out.push(placed);
             countGrowth(placed.key === "GROWTH_SPECIALIST" ? "specialists" : "tiles");
@@ -5388,7 +5990,7 @@ function cheapestHappiness(c, defs, limit) {
 
 /** Buys this Happiness building in this settlement on the plan's tile (bestPlotFor) and spends it. @returns true when sent */
 function buyHappiness(c, pick, b, kind) {
-    const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(c, pick.def.$hash, pick.plots) ?? pick.plots[0]), null);
+    const loc = bestLocFor(c, pick.def.$hash, pick.plots);
     if (!loc) return false;
     const args = { ConstructibleType: pick.def.$hash, X: loc.x, Y: loc.y };
     if (!safe(() => Game.CityCommands.canStart(c.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) return false;
@@ -5499,6 +6101,9 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     const stats = safe(() => Players.get(pid()).Stats, null);
     const settling = !!(settings?.autopilot?.trainSettlers ?? settings?.autopilot?.settlers);
     if (settling && (Number(stats?.numSettlements) || 0) < (Number(stats?.settlementCap) || 0) / 2 && !kinds.includes("SETTLER")) kinds.unshift("SETTLER");
+    // A settlement milestone within the cap's room (research/40 B2: Antiquity's military path, Exploration's Homeland triumph):
+    // a settler is saved for after the first goal.
+    if (settling && !kinds.includes("SETTLER") && safe(() => settlementMilestoneNow(), null)) kinds.splice(Math.min(1, kinds.length), 0, "SETTLER");
     // The military lever puts SETTLER first itself (core/xpl-strategy.js); without «Поселенцы» it is no goal.
     if (!settling) kinds.splice(0, kinds.length, ...kinds.filter((k) => k !== "SETTLER"));
     // Exploration's last turns with the science focus: the free gold is banked for Modern, first of all (research/38 §4 D1:
@@ -5508,7 +6113,7 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     // A war at our door: no savings goal, the gold stays free for defenders and upgrades (research/23 D5: game 8,
     // a conversion goal and then a University goal kept the free gold at 0 for the whole war).
     if (war.near) kinds.length = 0;
-    const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap, past: pastCapOf(settings?.strategy) }), null) : null;
+    const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap, past: pastCapOf(settings?.strategy), anywhere: !!settings?.strategy?.settleAnywhere }), null) : null;
     const keep = kinds.includes("CONVERT") ? conversionKeep() : 0;
     // The town chosen stays the goal while it may still become a city (research/39 §4.2: game 32's goal went back and forth
     // between Liverpool and Leeds); below the floor a conversion is a goal at any horizon (no goal at all E1-E16).
@@ -5603,7 +6208,7 @@ function codexGoals() {
             const probe = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             if ((!probe?.Success && !probe?.InsufficientFunds) || plots.length === 0) continue;
-            const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
+            const loc = bestLocFor(city, def.$hash, plots);
             if (!loc) continue;
             const cost = Number(probe.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
             if (!Number.isFinite(cost) || cost <= 0) continue;
@@ -5640,7 +6245,7 @@ function siteGoals(pads) {
             const probe = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             if ((!probe?.Success && !probe?.InsufficientFunds) || plots.length === 0) continue;
-            const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
+            const loc = bestLocFor(city, def.$hash, plots);
             const cost = Number(probe.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
             if (!loc || !Number.isFinite(cost) || cost <= 0) continue;
             out.push({ key: `${sidOf(city)}|${def.ConstructibleType}`, label: composeOr("LOC_XPL_AP_GOAL_LEVER", composeOr(def.Name), nameOf(city)), cost, anyHorizon: true, purchase: { city, args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, name: composeOr(def.Name) } });
@@ -5666,7 +6271,7 @@ function gdpGoals() {
             const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
             if (!probe?.Success && !probe?.InsufficientFunds) continue;
             if (plots.length === 0) continue;
-            const loc = safe(() => GameplayMap.getLocationFromIndex(bestPlotFor(city, def.$hash, plots) ?? plots[0]), null);
+            const loc = bestLocFor(city, def.$hash, plots);
             if (!loc) continue;
             const args = { ConstructibleType: def.$hash, X: loc.x, Y: loc.y };
             const cost = Number(probe.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
@@ -5686,6 +6291,8 @@ export function buyGoal(budget) {
     if (!g || g.done || !g.purchase || g.cost > budget.forGoal()) return [];
     const { city, args, name } = g.purchase;
     if (g.kind === "SETTLER") {
+        // One settler a pass (buySettlers may have bought it already: game 43, two at E69).
+        if (budget.entries.some((e) => e.kind === "SETTLER")) return [];
         if (!safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null)?.Success) return [];
         Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, args);
         dropQueued(g.purchase.drop);

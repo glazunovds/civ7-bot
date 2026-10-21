@@ -212,6 +212,13 @@ export function installFakeEngine(world, age = "antiquity") {
             },
             // world.cities[i].unrest = true: the settlement is in unrest
             Happiness: { get hasUnrest() { return !!c.unrest; }, get turnsOfUnrest() { return c.unrest ? 1 : -1; } },
+            // world.cities[i].religion = a GameInfo.Religions hash (city.Religion.majorityReligion, as the banner reads it; -1 none);
+            // urban and rural follow it unless world.cities[i].urbanReligion / ruralReligion say otherwise
+            Religion: {
+                get majorityReligion() { return c.religion ?? -1; },
+                get urbanReligion() { return c.urbanReligion ?? c.religion ?? -1; },
+                get ruralReligion() { return c.ruralReligion ?? c.religion ?? -1; },
+            },
             Gold: { getTownUpgradeCost: () => c.cost ?? 300, getBuildingPurchaseCost: (_y, type) => world.buyCost?.(type, c) ?? 250, getUnitPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250 },
             Production: {
                 getConstructibleProductionCost: (type) => world.costOf?.(type) ?? 100,
@@ -261,18 +268,21 @@ export function installFakeEngine(world, age = "antiquity") {
     // Build queues: world.cities[i].queue = { type, turns, pct } (the item in production: a
     // constructible or a project), queued = [types behind it: constructibles, projects or units],
     // trains = a unit type at the end. Entries as the game gives them: every type field is there,
-    // -1 when it does not apply (seen in game: a queued project's constructibleType is -1).
+    // -1 when it does not apply (seen in game: a queued project's constructibleType is -1). A queued item may be
+    // { type, x, y } (and queue.x / queue.y): its `location`, as the game's entries carry the tile they were ordered on.
     const entry = (t) => {
-        const building = info.Constructibles.lookup(t);
-        const project = building ? null : info.Projects.lookup(t);
-        const unit = building || project ? null : info.Units.lookup(t);
+        const type = typeof t === "object" && t !== null ? t.type : t;
+        const building = info.Constructibles.lookup(type);
+        const project = building ? null : info.Projects.lookup(type);
+        const unit = building || project ? null : info.Units.lookup(type);
         const h = (building ?? project ?? unit).$hash;
         return {
             kind: building ? 0 : project ? 2 : 1,
             constructibleType: building ? h : -1, projectType: project ? h : -1, unitType: unit ? h : -1, type: h,
+            ...(typeof t === "object" && t !== null && t.x !== undefined ? { location: { x: t.x, y: t.y } } : {}),
         };
     };
-    const current = (c) => entry(c.queue.type);
+    const current = (c) => entry(c.queue.x !== undefined ? c.queue : c.queue.type);
     const makeQueue = (c) => ({
         isEmpty: !c.queue,
         currentProductionKind: 0,
@@ -444,8 +454,9 @@ export function installFakeEngine(world, age = "antiquity") {
         type: info.Units.lookup(u.type).$hash,
         // u.onMap === false: packed in an army (its location stays its commander's tile unless u.x is -1)
         location: { x: u.x, y: u.y },
-        // A commander (UNIT_ARMY_COMMANDER, UNIT_FLEET_COMMANDER…), as the game's unit.isCommanderUnit
-        isCommanderUnit: /_COMMANDER$/.test(u.type),
+        // A commander (UNIT_ARMY_COMMANDER, UNIT_FLEET_COMMANDER…), as the game's unit.isCommanderUnit; u.commander for one
+        // named otherwise (Rome's UNIT_LEGATUS)
+        isCommanderUnit: u.commander ?? /_COMMANDER$/.test(u.type),
         isOnMap: u.onMap !== false,
         // u.embarked: the game's unit.isEmbarked (left out: unknown, our code then reads the tile)
         ...(u.embarked !== undefined ? { isEmbarked: !!u.embarked } : {}),
@@ -457,6 +468,17 @@ export function installFakeEngine(world, age = "antiquity") {
         // u.melee / u.ranged: combat strengths (a ranged unit has the higher ranged one)
         Combat: { attacksRemaining: u.attacks ?? 1, getMeleeStrength: () => u.melee ?? 20, rangedStrength: u.ranged ?? 0, bombardStrength: 0 },
         Movement: { movementMovesRemaining: u.moves ?? 2 },
+        // world.activationPlots(unitId, command) -> [plot index]: where a command works (unit.getActivationPlots, as the unit panel shows it
+        // after shouldShowActivationPlots). Asked for anything but a unit command (an operation) the game crashed (20 October, a native
+        // null read): the fake records it in world.crashes and throws.
+        getActivationPlots: (cmd) => {
+            if (!String(cmd).startsWith("UNITCOMMAND_")) {
+                (world.crashes ??= []).push(`getActivationPlots(${cmd})`);
+                throw new Error(`getActivationPlots(${cmd}): the game crashes on anything but a unit command`);
+            }
+            return world.activationPlots?.(u.id, cmd) ?? [];
+        },
+        shouldShowActivationPlots: (cmd) => String(cmd).startsWith("UNITCOMMAND_") && (world.showsActivationPlots?.(u.id, cmd) ?? true),
         // u.promotions = { can: true, has: ["PROMO_A"], earnable: ["PROMO_B"] }
         Experience: u.promotions ? {
             // world.units[i].promotions.has may change between passes (a promotion bought)
@@ -513,9 +535,13 @@ export function installFakeEngine(world, age = "antiquity") {
         ],
     };
     g.Game.UnitOperations = {
-        canStart: (id, op, args) => {
-            const custom = world.unitCanStart?.(id, op, args);
+        // world.unitCanStart(id, op, args, exclusion): `exclusion` is the game's 4th argument (true: does the action apply at
+        // all, as the unit panel asks before showing it)
+        canStart: (id, op, args, exclusion) => {
+            const custom = world.unitCanStart?.(id, op, args, exclusion);
             if (custom) return custom;
+            // Like the game: only a leader's own commander may convert independents' units (Genghis).
+            if (op === "UNITOPERATION_CONVERT_BARBARIANS") return { Success: false };
             // Like the game: a unit disperses only the village it stands on (world.villages).
             if (op === "UNITOPERATION_DISPERSE_INDEPENDENT") {
                 const u = (world.units ?? []).find((x) => x.id === id?.id);
@@ -587,6 +613,10 @@ export function installFakeEngine(world, age = "antiquity") {
         DIPLOMACY_ACTION_DECLARE_WAR: 44, DIPLOMACY_ACTION_FORM_ALLIANCE: 45, DIPLOMACY_ACTION_DECLARE_FORMAL_WAR: 46,
         // A rival's espionage (group ESPIONAGE) and sanction (group SANCTION), as the game names them.
         DIPLOMACY_ACTION_ESPIONAGE_STEAL_RICHES: 47, DIPLOMACY_ACTION_SABOTAGE_RESEARCH: 48,
+        // Lafayette's Reform, an endeavor a leader unlocks, the steals, city-state actions, a space sabotage (research/40)
+        DIPLOMACY_ACTION_GRANT_POLICY_SLOT: 49, DIPLOMACY_ACTION_MILITARY_AID: 50, DIPLOMACY_ACTION_SEND_GOLD: 51,
+        DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH: 52, DIPLOMACY_ACTION_ESPIONAGE_STEAL_CIVIC: 53, DIPLOMACY_ACTION_CS_INCORPORATE: 54,
+        DIPLOMACY_ACTION_CS_LEVY_UNIT: 55, DIPLOMACY_ACTION_ESPIONAGE_SABOTAGE_SPACE_PROGRAM: 56,
     };
     g.WarTypes = { SURPRISE_WAR: 0, FORMAL_WAR: 1 };
     g.DiplomacyPlayerRelationships = { PLAYER_RELATIONSHIP_HOSTILE: 10, PLAYER_RELATIONSHIP_UNFRIENDLY: 11, PLAYER_RELATIONSHIP_NEUTRAL: 12, PLAYER_RELATIONSHIP_FRIENDLY: 13, PLAYER_RELATIONSHIP_HELPFUL: 14 };
@@ -738,6 +768,15 @@ export function installFakeEngine(world, age = "antiquity") {
         };
         // world.wonderArtifacts = [feature index] (natural wonders that still hold an artifact)
         p.Stats.hasNaturalWonderArtifact = (feature) => (world.wonderArtifacts ?? []).includes(feature);
+        // world.religion = our religion's hash (player.Religion.getReligionType(); none: -1), world.beliefs = [belief hashes]
+        if (p.id === 0) {
+            p.Religion = {
+                hasCreatedReligion: () => world.religion != null && world.religion !== -1,
+                getReligionType: () => world.religion ?? -1,
+                getBeliefs: () => world.beliefs ?? [],
+                canCreateReligion: () => !!world.canCreateReligion,
+            };
+        }
         // Another player's units: its world.enemies (owner = its id), as Units.get answers them.
         if (p.id !== 0) p.Units = { getUnits: () => enemyIds().filter(({ id }) => id.owner === p.id).map(({ id }) => g.Units.get(id)) };
         if (p.id === 0) {

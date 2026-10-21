@@ -39,6 +39,30 @@ test("finds the tack on a tile the city may use, with build and buy", () => {
     assert.equal(findTackSpot(city, market, tacks.get("BUILDING_MARKET")), null);
 });
 
+// Game 45: four buildings the plan queued on its own tiles (the game said yes with X and Y) stood at 100% and never completed,
+// about 1,700 production. The game's own placement screen sends X and Y only for a tile it offers without them.
+test("an order goes only to a tile the game offers for that building (its Plots), as the placement screen allows", () => {
+    const granary = GameInfo.Constructibles.lookup("BUILDING_GRANARY");
+    const canBuild = globalThis.Game.CityOperations.canStart;
+    const offered = fake.grid.index(7, 8);
+    globalThis.Game.CityOperations.canStart = (id, op, args, ex) => (GameInfo.Constructibles.lookup(args?.ConstructibleType)?.ConstructibleType === "BUILDING_GRANARY"
+        ? (args.X != null ? { Success: true } : { Success: true, Plots: [offered], ExpandUrbanPlots: [] })
+        : canBuild(id, op, args, ex));
+    try {
+        fake.sent.length = 0;
+        assert.equal(orderAtTack(city.id, granary, { x: 12, y: 12 }, false), false, "the game says yes with X and Y, but does not offer the tile");
+        assert.equal(fake.sent.length, 0);
+        assert.equal(orderAtTack(city.id, granary, { x: 7, y: 8 }, false), true);
+        assert.equal(fake.sent.length, 1);
+        // No tile listed at all: the X and Y answer decides.
+        globalThis.Game.CityOperations.canStart = (id, op, args, ex) => (GameInfo.Constructibles.lookup(args?.ConstructibleType)?.ConstructibleType === "BUILDING_GRANARY" ? { Success: true } : canBuild(id, op, args, ex));
+        assert.equal(orderAtTack(city.id, granary, { x: 12, y: 12 }, false), true);
+    } finally {
+        globalThis.Game.CityOperations.canStart = canBuild;
+        fake.sent.length = 0;
+    }
+});
+
 test("sends the placement-mode request (type hash + tack X/Y)", () => {
     const spot = findTackSpot(city, lib, tacksByType().get("BUILDING_LIBRARY"));
     assert.equal(orderAtTack(city.id, lib, spot, false), true);

@@ -334,6 +334,37 @@ test("the game refuses the chosen tile: the wonder's next tile is ordered; with 
     }
 });
 
+// Game 42: Battersea and Doi Suthep never completed on tiles where a Pairidaeza of ours was queued (a repair, the unique
+// improvement step); the game itself accepted both orders. One order per tile.
+test("a wonder is not ordered on a tile another queued item of ours targets: its next tile is", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued };
+    try {
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 4, pct: 0 };
+        const picks = steps.chooseWonders(DEFAULT_SETTINGS, 1);
+        const pick = picks.get(`c:${A.x}-${A.y}`);
+        athens.queued = [{ type: "BUILDING_GRANARY", x: pick.x, y: pick.y }];
+        fake.sent.length = 0;
+        steps.fillProduction(picks);
+        const order = wonderOrders()[0];
+        assert.ok(order && !(order.args.X === pick.x && order.args.Y === pick.y), `the other tile: ${JSON.stringify(order?.args)}`);
+        // The same pass: what was just ordered on a tile holds it too (the queue shows it next pass).
+        athens.queued = [];
+        steps.resetWonderOrders();
+        const tiles = [[pick.x, pick.y], ...pick.plots.map((p) => [p.x, p.y])];
+        fake.sent.length = 0;
+        steps.fillProduction(picks);
+        steps.fillProduction(new Map([[`c:${B.x}-${B.y}`, { ...pick, cityKey: `c:${B.x}-${B.y}`, type: "WONDER_HANGING_GARDENS" }]]));
+        const placed = wonderOrders().map((o) => [o.args.X, o.args.Y]);
+        assert.equal(placed.length, 2, JSON.stringify(placed));
+        assert.notDeepEqual(placed[0], placed[1], "two wonders, two tiles");
+        assert.ok(placed.every((t) => tiles.some((u) => u[0] === t[0] && u[1] === t[1])));
+    } finally {
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+    }
+});
+
 test("our orders are watched and the planner's rows refreshed while no wonder may start (game 22: during a war at our door the Shwedagon Pagoda's loss was logged 26 turns late)", () => {
     const athens = world.cities[0];
     const keep = { queue: athens.queue, queued: athens.queued, cap: world.settlementCap };
@@ -389,6 +420,37 @@ test("a wonder that leaves the queue unbuilt goes to UI.log with the game's noti
     } finally {
         Game.turn = turn;
         delete world.notifications;
+        athens.queue = keep.queue;
+        athens.queued = keep.queued;
+    }
+});
+
+// Game 44: the cash-out dropped Oxford University from Синъян's queue (WONDER_DROPPED, a race lost), and the watch then wrote
+// "left Синъян's queue unbuilt" for it, the line meant for wonders the game takes away.
+test("a wonder we take out of the queue ourselves is no wonder gone unbuilt", () => {
+    const athens = world.cities[0];
+    const keep = { queue: athens.queue, queued: athens.queued, canBuild: world.canBuild };
+    const turn = Game.turn;
+    world.canBuild = (type, id, args) => (type === undefined ? { Success: true } : keep.canBuild(type, id, args)); // queue edits
+    try {
+        athens.queue = { type: "BUILDING_MONUMENT", turns: 4, pct: 0 };
+        fake.sent.length = 0;
+        steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        const ordered = GameInfo.Constructibles.lookup(wonderOrders()[0].args.ConstructibleType).ConstructibleType;
+        // Next turn it waits behind a project held 5 turns, with nothing in it: it leaves the queue (WONDER_WAIT_DROPPED).
+        Game.turn = turn + 1;
+        athens.queue = { type: "PROJECT_SPHERICAL_EARTH", turns: 5, pct: 10 };
+        athens.queued = ["BUILDING_MONUMENT", ordered];
+        fake.sent.length = 0;
+        const out = steps.fillProduction(steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        assert.ok(out.some((e) => e.key === "WONDER_WAIT_DROPPED"), JSON.stringify(out));
+        Game.turn = turn + 2;
+        athens.queued = [];
+        const lines = capture(() => steps.chooseWonders(DEFAULT_SETTINGS, 1));
+        assert.deepEqual(lines.filter((l) => l.includes("queue unbuilt")), []);
+    } finally {
+        Game.turn = turn;
+        world.canBuild = keep.canBuild;
         athens.queue = keep.queue;
         athens.queued = keep.queued;
     }
@@ -504,5 +566,30 @@ test("no wonder waits behind a project or a wonder in production: none is ordere
         world.canBuild = canBuild;
         athens.queue = keep.queue;
         athens.queued = keep.queued;
+    }
+});
+
+// Research/40 B3: Antiquity's culture path off our focus, its first milestone (2 wonders) one wonder away: a legacy point.
+// Games 42-43: legacy paths read 0 in every age and their milestones count nothing in this game version, so the culture path's
+// first milestone (2 wonders) no longer adds to a wonder's worth (it did on every wonder of game 43's Antiquity).
+test("a legacy path near its first milestone does not change a wonder's worth (path milestones count nothing: games 42-43)", () => {
+    const tables = { LegacyPaths: GameInfo.LegacyPaths, AgeProgressionMilestones: GameInfo.AgeProgressionMilestones };
+    const score = () => [...steps.chooseWonders({ ...DEFAULT_SETTINGS, profile: "SCIENCE" }, 1).values()][0]?.score ?? 0;
+    const turn = Game.turn;
+    try {
+        const base = score();
+        assert.ok(base > 0);
+        steps.resetWonderOrders();
+        GameInfo.LegacyPaths = [{ LegacyPathType: "LP_AQ_CULTURE", LegacyPathClassType: "LEGACY_PATH_CLASS_CULTURE", EnabledByDefault: true }];
+        GameInfo.AgeProgressionMilestones = [2, 4, 7].map((n, i) => ({ LegacyPathType: "LP_AQ_CULTURE", RequiredPathPoints: n, FinalMilestone: i === 2 }));
+        Players.get(0).LegacyPaths = { getScore: () => 1, getEnabledLegacyPaths: () => [] };
+        Game.turn += 1; // the wants are read once a turn
+        assert.equal(score(), base);
+    } finally {
+        GameInfo.LegacyPaths = tables.LegacyPaths;
+        GameInfo.AgeProgressionMilestones = tables.AgeProgressionMilestones;
+        delete Players.get(0).LegacyPaths;
+        Game.turn = turn;
+        steps.resetWonderOrders();
     }
 });

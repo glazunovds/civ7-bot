@@ -154,3 +154,44 @@ export function independentNameOf(id) {
         return String(id);
     }
 }
+
+// ---- religion (research/40 notes/religion.md) -------------------------------------------------------------
+
+function tryOr(fn, fallback) {
+    try {
+        const v = fn();
+        return v === undefined || v === null ? fallback : v;
+    } catch (_e) {
+        return fallback;
+    }
+}
+
+/** A religion's type name for a hash or type (GameInfo.Religions), else the value as a string. */
+function religionKey(r) {
+    return tryOr(() => GameInfo.Religions.lookup(r)?.ReligionType, null) ?? String(r);
+}
+
+/** Our religion (player.Religion.getReligionType(): a GameInfo.Religions hash), or null before we found one. */
+export function ourReligion(pid = GameContext.localPlayerID) {
+    const rel = tryOr(() => Players.get(pid).Religion, null);
+    if (!rel || !tryOr(() => rel.hasCreatedReligion(), false)) return null;
+    const t = tryOr(() => rel.getReligionType(), null);
+    return t === null || t === -1 ? null : t;
+}
+
+/**
+ * Does this settlement follow our religion: its majority religion, as its banner shows it (city.Religion.majorityReligion,
+ * city-banners.js)? Only the Holy City does by itself; the others follow once a Missionary converts them.
+ */
+export function followsOurReligion(city, pid = GameContext.localPlayerID) {
+    const ours = ourReligion(pid);
+    if (ours === null) return false;
+    const m = tryOr(() => city.Religion.majorityReligion, null);
+    return m !== null && m !== -1 && religionKey(m) === religionKey(ours);
+}
+
+/** A settlement's majority religion, or null (none). */
+export function religionOf(city) {
+    const m = tryOr(() => city.Religion.majorityReligion, null);
+    return m === null || m === -1 ? null : m;
+}

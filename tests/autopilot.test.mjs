@@ -335,32 +335,40 @@ test("victory focus: the victories themselves and those switched off are kept fo
     }
 });
 
-test("victory focus, the final age: a completed path is kept with «Авто» (its victory goes on)", async () => {
+// Games 42-43: legacy paths read 0 in every age (their milestones count nothing in this game version), so the focus comes from
+// the victories' own points; within an age the lead went back and forth, so only a new age's first turns re-decide it.
+test("victory focus: from the victories' own points; a new age's first turns re-decide it, later in the age it stays", async () => {
     settings.patch({ autopilot: { focus: true, victory: "AUTO", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
-    GameInfo.LegacyPaths = [
-        { LegacyPathType: "LP_CULTURE", LegacyPathClassType: "LEGACY_PATH_CLASS_CULTURE", EnabledByDefault: true },
-        { LegacyPathType: "LP_SCIENCE", LegacyPathClassType: "LEGACY_PATH_CLASS_SCIENCE", EnabledByDefault: true },
-    ];
-    GameInfo.AgeProgressionMilestones = [
-        { LegacyPathType: "LP_CULTURE", FinalMilestone: true, RequiredPathPoints: 15 },
-        { LegacyPathType: "LP_SCIENCE", FinalMilestone: true, RequiredPathPoints: 3 },
-    ];
-    Players.get(0).LegacyPaths = { getScore: (t) => (t === "LP_SCIENCE" ? 3 : 4) };
-    const final = Object.getOwnPropertyDescriptor(Game.AgeProgressManager, "isFinalAge");
+    const vm = Game.VictoryManager;
+    Game.VictoryManager = { isCountdownVictoryEnabled: () => true, getCountdownVictoryDominanceScore: () => -1 };
+    const points = (culture, economic) => ({
+        VICTORY_CULTURE_MODERN: { 0: culture[0], 5: culture[1] },
+        VICTORY_ECONOMIC_MODERN: { 0: economic[0], 5: economic[1] },
+        VICTORY_SCIENCE_MODERN: { 0: 1, 5: 4 },
+    });
+    const focus = () => state.get().autopilot.focus?.cls;
+    world.met = [5]; // the best rival is one we have met
     try {
         state.set({ autopilot: { ...state.get().autopilot, focus: null } });
-        Object.defineProperty(Game.AgeProgressManager, "isFinalAge", { value: true, configurable: true });
-        await autopilot.runTurn(true);
-        assert.equal(state.get().autopilot.focus?.cls, "SCIENCE", "the space projects are done; 100 Innovation is still to come");
-        state.set({ autopilot: { ...state.get().autopilot, focus: null } });
-        Object.defineProperty(Game.AgeProgressManager, "isFinalAge", { value: false, configurable: true });
-        await autopilot.runTurn(true);
-        assert.equal(state.get().autopilot.focus?.cls, "CULTURE", "an earlier age: a completed path is left");
+        world.agePoints = 5;
+        world.victoryPoints = points([30, 5], [50, 300]);
+        for (let i = 0; i < 4; i++) await autopilot.runTurn(true); // an earlier focus is kept in the game's memory: a switch
+        assert.equal(focus(), "CULTURE", "far ahead in culture, behind in the economy");
+        // The economy far ahead in the middle of the age: the focus stays.
+        world.agePoints = 50;
+        world.victoryPoints = points([30, 25], [900, 100]);
+        for (let i = 0; i < 4; i++) await autopilot.runTurn(true);
+        assert.equal(focus(), "CULTURE", "past the age's first turns");
+        // A new age's first turns: it changes.
+        world.agePoints = 5;
+        for (let i = 0; i < 4; i++) await autopilot.runTurn(true);
+        assert.equal(focus(), "ECONOMIC");
     } finally {
-        if (final) Object.defineProperty(Game.AgeProgressManager, "isFinalAge", final);
-        else delete Game.AgeProgressManager.isFinalAge;
+        Game.VictoryManager = vm;
+        delete world.victoryPoints;
+        delete world.agePoints;
+        delete world.met;
         settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
-        delete Players.get(0).LegacyPaths;
     }
 });
 

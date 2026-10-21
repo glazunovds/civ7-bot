@@ -8,7 +8,7 @@ const CITY = { x: 6, y: 8 };
 const TOWN = { x: 16, y: 8 };
 const SITE = { x: 26, y: 8 };
 const near = (x, y, c) => Math.abs(x - c.x) <= 1 && Math.abs(y - c.y) <= 1;
-installFakeEngine({
+const world = {
     width: 34, height: 18, wrapX: false,
     tiles: (x, y) => ({ terrain: "TERRAIN_FLAT", yields: { YIELD_FOOD: 2 }, owner: near(x, y, CITY) || near(x, y, TOWN) ? 0 : -1 }),
     structures: (x, y) => {
@@ -21,7 +21,8 @@ installFakeEngine({
         { owner: 0, x: CITY.x, y: CITY.y, name: "Athens", pop: 6, prod: 12 },
         { owner: 0, x: TOWN.x, y: TOWN.y, name: "Argos", pop: 3, prod: 4, isTown: true },
     ],
-});
+};
+installFakeEngine(world);
 installFakeDmt();
 const bridge = await import("../mod/expansion-planner/ui/integrations/xpl-dmt-bridge.js");
 const { allTarget, listTargets, settlementRole, startBuildingPlan } = await import("../mod/expansion-planner/ui/data/xpl-building-job.js");
@@ -79,4 +80,20 @@ test("a city-centre tack without a remembered role is scored on the spot", async
     const site = listTargets().find((t) => t.kind === "planned" && t.x === 26 && t.y === 14);
     assert.equal(site.role, null);
     assert.ok(["CITY", "TOWN"].includes(settlementRole(site, { ...DEFAULT_SETTINGS, includeHidden: true })));
+});
+
+// Research/40 B8: Augustus's towns may buy culture buildings (the game's PURCHASE answer says so): the town plan holds them.
+test("a town gets what the game lets it buy too (a civilization's or leader's ability: the Monument), not the rest", async () => {
+    const argosId = { owner: 0, id: 1 };
+    world.canBuy = (type, id) => (id?.id === argosId.id && type === "BUILDING_MONUMENT" ? { Success: false, InsufficientFunds: true, Plots: [] } : { Success: false });
+    const { clearEngineCache } = await import("../mod/expansion-planner/ui/data/xpl-engine-cache.js");
+    clearEngineCache(); // the game's answers changed within the turn
+    try {
+        const plans = await planAll({ incremental: false });
+        const argos = typesFor(plans, "Argos");
+        assert.ok(argos.includes("BUILDING_MONUMENT"), argos.join());
+        assert.ok(!argos.includes("BUILDING_LIBRARY") && !argos.includes("BUILDING_MARKET"), argos.join());
+    } finally {
+        delete world.canBuy;
+    }
 });

@@ -136,9 +136,12 @@ test("research takes every other technology and mastery before Future Tech (afte
         steps.chooseResearch("tech", S, null);
         assert.deepEqual(researched(), ["NODE_TECH_MO_URBANIZATION"], "Urbanization's mastery: the quickest of the rest");
         world.treeRecs = () => [{ recommendedType: N("NODE_TECH_MO_FUTURE_TECH"), whichAdvisors: [] }, { recommendedType: N("NODE_TECH_MO_MOBILIZATION"), whichAdvisors: [] }];
+        // Urbanization's mastery raises the settlement cap: far from it (research/40 A1), the advisor's.
+        world.settlementCap = 20;
         fake.sent.length = 0;
         steps.chooseResearch("tech", S, null);
         assert.deepEqual(researched(), ["NODE_TECH_MO_MOBILIZATION"], "the advisor's among the rest");
+        delete world.settlementCap;
         world.research.tech.available = [N("NODE_TECH_MO_FUTURE_TECH")];
         fake.sent.length = 0;
         steps.chooseResearch("tech", S, null);

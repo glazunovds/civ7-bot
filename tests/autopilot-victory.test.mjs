@@ -36,13 +36,6 @@ for (const id of [0, 1, 2]) {
 }
 Object.assign((Players.get(0).Diplomacy ??= {}), { hasMet: (id) => id === 1 }); // player 2 not met yet
 
-test("legacy paths: this age's enabled ones, our score, the best rival we have met, the final milestone's goal", () => {
-    assert.deepEqual(victory.legacyStandings().map(({ cls, ours, rival, goal }) => ({ cls, ours, rival, goal })), [
-        { cls: "CULTURE", ours: 4, rival: 5, goal: 7 },
-        { cls: "SCIENCE", ours: 2, rival: 1, goal: 10 },
-    ]);
-});
-
 test("the leader's preferred victory: this age's trait, else the Modern one", () => {
     const leaders = GameInfo.Leaders;
     const traits = GameInfo.LeaderTraits;
@@ -183,50 +176,6 @@ test("victory races: our points, the goal (science: a fixed 100), the best rival
         Game.VictoryManager = vm;
         delete world.victoryPoints;
         delete world.countdown;
-    }
-});
-
-test("only this age's legacy paths (GameInfo.LegacyPaths holds every age's; seen in game: no focus after an age change)", () => {
-    const rows = GameInfo.LegacyPaths;
-    const milestones = GameInfo.AgeProgressionMilestones;
-    try {
-        GameInfo.LegacyPaths = [
-            { LegacyPathType: "LP_EX_ECONOMIC", Age: "AGE_EXPLORATION", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC", EnabledByDefault: true },
-            { LegacyPathType: "LP_AQ_ECONOMIC", Age: "AGE_ANTIQUITY", LegacyPathClassType: "LEGACY_PATH_CLASS_ECONOMIC", EnabledByDefault: true },
-        ];
-        GameInfo.AgeProgressionMilestones = [
-            { LegacyPathType: "LP_EX_ECONOMIC", FinalMilestone: true, RequiredPathPoints: 30 },
-            { LegacyPathType: "LP_AQ_ECONOMIC", FinalMilestone: true, RequiredPathPoints: 20 },
-        ];
-        assert.deepEqual(victory.legacyStandings().map((s) => s.path), ["LP_AQ_ECONOMIC"], "this game is in Antiquity");
-    } finally {
-        GameInfo.LegacyPaths = rows;
-        GameInfo.AgeProgressionMilestones = milestones;
-    }
-});
-
-test("legacy paths switched off in the game setup are left out (the player's enabled paths)", () => {
-    const me = Players.get(0);
-    me.LegacyPaths.getEnabledLegacyPaths = () => [{ legacyPath: Database.makeHash("LP_SCIENCE") }];
-    try {
-        assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["SCIENCE"]);
-    } finally {
-        delete me.LegacyPaths.getEnabledLegacyPaths;
-    }
-    assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["CULTURE", "SCIENCE"], "unknown: all of them");
-    // The list names another age's paths (as after an age change): matched by class.
-    me.LegacyPaths.getEnabledLegacyPaths = () => [{ legacyPath: Database.makeHash("LEGACY_PATH_ANTIQUITY_SCIENCE"), legacyPathClass: Database.makeHash("LEGACY_PATH_CLASS_SCIENCE") }];
-    try {
-        assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["SCIENCE"]);
-    } finally {
-        delete me.LegacyPaths.getEnabledLegacyPaths;
-    }
-    // A list that matches none of this age's paths is not believed: all of them.
-    me.LegacyPaths.getEnabledLegacyPaths = () => [{ legacyPath: Database.makeHash("LEGACY_PATH_SOMETHING_ELSE") }];
-    try {
-        assert.deepEqual(victory.legacyStandings().map((s) => s.cls), ["CULTURE", "SCIENCE"]);
-    } finally {
-        delete me.LegacyPaths.getEnabledLegacyPaths;
     }
 });
 

@@ -1635,6 +1635,9 @@
     <Row Tag="LOC_XPL_AP_QUEUE_UNSTUCK_QUEUED">
       <Text>{1_City}: {2_Item} has stood at 100% for turns and the game does not complete it: {3_Other} queued to go ahead of it</Text>
     </Row>
+    <Row Tag="LOC_XPL_AP_QUEUE_STUCK_DROPPED">
+      <Text>{1_City}: «{2_Item}» leaves the queue: at 100% since turn {3_Num}, the game does not complete it</Text>
+    </Row>
     <Row Tag="LOC_XPL_AP_SPACE_PUSH_HALF">
       <Text>Rocketry is in and a Launch Pad stands or is queued: production now weighs ×1.25 and science ÷1.25 (the full push comes after the Innovation masteries)</Text>
     </Row>
@@ -1922,12 +1925,6 @@
     </Row>
     <Row Tag="LOC_XPL_AP_FOCUS_NONE">
       <Text>not chosen yet</Text>
-    </Row>
-    <Row Tag="LOC_XPL_AP_FOCUS_PATH">
-      <Text>{1_Name}: {2_Num}/{3_Num} (best rival: {4_Num})</Text>
-    </Row>
-    <Row Tag="LOC_XPL_AP_FOCUS_PATH_DONE">
-      <Text>{1_Name}: complete ({2_Num}/{3_Num})</Text>
     </Row>
     <Row Tag="LOC_XPL_AP_FOCUS_TRIUMPHS">
       <Text>Close triumphs: {1_List}</Text>
@@ -2295,6 +2292,99 @@
     </Row>
     <Row Tag="LOC_XPL_AP_SATELLITE_QUEUED">
       <Text>{1_City}: «{2_Project}» queued: the satellite reveals the whole map</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCTURAL_TECH">
+      <Text>research: {1_Name} (gives {2_Gains})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCTURAL_CIVIC">
+      <Text>civic: {1_Name} (gives {2_Gains})</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CARD_TECH">
+      <Text>research: {1_Name} for its policy cards ({2_Cards}: +{3_Num} a turn over the cards they replace)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_CARD_CIVIC">
+      <Text>civic: {1_Name} for its policy cards ({2_Cards}: +{3_Num} a turn over the cards they replace)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCT_CAP">
+      <Text>+1 settlement cap</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCT_SLOT">
+      <Text>a policy slot</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCT_SPECIALIST">
+      <Text>+1 specialist per tile</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCT_SYNCRETIC">
+      <Text>a syncretism choice</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_STRUCT_CITY_LIMIT">
+      <Text>+1 city limit</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_REFORM">
+      <Text>Reform with {1_Leader}: a policy slot for good</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_FACTORY">
+      <Text>Factory Town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_FOCUS_GAIN_FACTORY">
+      <Text>{1_N} improved factory resources: +1 resource slot, Factory, Port and Rail Station at half the gold</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MISSION_SPREAD">
+      <Text>{1_Unit}: our religion spread in {2_City}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_MISSION_MOVE">
+      <Text>{1_Unit} heads to {2_City} to spread our religion</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_MISSIONARY">
+      <Text>{1_City}: queued {2_Name} ({3_Num} of our settlements do not follow our religion)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GREAT_PERSON_USED">
+      <Text>{1_Unit}: great person activated</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_GREAT_PERSON_MOVE">
+      <Text>{1_Unit} heads to a tile where it works</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_GREAT_PERSON">
+      <Text>{1_City}: queued {2_Name} (our civilization's great person)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_QUEUED_UNIQUE_IMPROVEMENT">
+      <Text>{1_City}: queued {2_Name} (our unique improvement, pays back in {3_Num} turns)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ESPIONAGE_STEAL">
+      <Text>spies: {1_Action} against {2_Leader}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_SABOTAGE_SPACE">
+      <Text>spies sabotage the space program of {1_Leader} (near the science victory)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_INCORPORATE">
+      <Text>{1_Name}: incorporation started (settlements count for us now)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEVIED">
+      <Text>{1_Unit} levied from {2_Name} for {3_City}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_INDEPENDENTS_CONVERTED">
+      <Text>{1_Unit} converts the independents' units next to it</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEGATUS_FOUNDED">
+      <Text>{1_Unit} founds a town at {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEGATUS_MOVE">
+      <Text>{1_Unit} heads to {2_X},{3_Y} to found a town</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_COMMANDER_ATTACK">
+      <Text>{1_Unit} finishes a raider at {2_X},{3_Y}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_DEFENSIVE_PERIMETER">
+      <Text>{1_Unit}: Defensive Perimeter (raiders close)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_ROAD_BUILT">
+      <Text>{1_Unit} builds a road to {2_Town} (no connected city: its Focus would feed nobody)</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEGACY_SUMMARY">
+      <Text>Triumphs under way, {1_Num} turns before the age ends: {2_List}</Text>
+    </Row>
+    <Row Tag="LOC_XPL_AP_LEGACY_TRIUMPH">
+      <Text>{1_Name} {2_Num}/{3_Num}</Text>
     </Row>
   </EnglishText>
 </Database>

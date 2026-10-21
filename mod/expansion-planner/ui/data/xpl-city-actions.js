@@ -74,24 +74,28 @@ export function plannedInOrder(plans, sid) {
 
 /**
  * Queues a city's next planned buildings (plan order) at their planned tiles, skipping
- * those already queued and those the game refuses there now (a future tile, locked...).
- * @returns { queued: [type], refused: number }
+ * those already queued and those the game refuses there now (a future tile, locked...): the game
+ * must offer the tile for that building (orderAtTack, game 45). `skip(type, planned)` leaves one out.
+ * @returns { queued: [type], at: [{ type, x, y }] (the tiles ordered), refused: number }
  */
 export function queueNextBuildings(plans, sid, max = QUEUE_MAX_NEW, { skip = null } = {}) {
     const city = cityOfSid(sid);
-    if (!city || city.isTown) return { queued: [], refused: 0 };
+    if (!city || city.isTown) return { queued: [], at: [], refused: 0 };
     const inQueue = queuedTypes(city);
     const queued = [];
+    const at = [];
     let refused = 0;
     for (const p of plannedInOrder(plans, sid)) {
         if (queued.length >= max) break;
-        if (inQueue.has(p.type) || p.locked || skip?.(p.type)) continue;
+        if (inQueue.has(p.type) || p.locked || skip?.(p.type, p)) continue;
         const def = GameInfo.Constructibles.lookup(p.type);
         if (!def) continue;
-        if (orderAtTack(city.id, def, { x: p.x, y: p.y }, false)) queued.push(p.type);
-        else refused++;
+        if (orderAtTack(city.id, def, { x: p.x, y: p.y }, false)) {
+            queued.push(p.type);
+            at.push({ type: p.type, x: p.x, y: p.y });
+        } else refused++;
     }
-    return { queued, refused };
+    return { queued, at, refused };
 }
 
 /** Buys one planned building on its planned tile. @returns boolean */

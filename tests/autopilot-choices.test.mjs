@@ -761,6 +761,82 @@ test("a crisis card's Happiness loss counts double where it would push a settlem
     }
 });
 
+// Research/40 A2: game 41 slotted Ius Reformandi («Право на реформу»), valued "?": every settlement of ours newly following
+// our religion gets 3 buildings damaged. And the religious crisis's Happiness cards were not weighed: the game's
+// REQUIREMENT_CITY_FOLLOWS_RELIGION was an unknown test.
+test("religious crisis cards: Ius Reformandi's damage goes last; Tolerance and Zeal by which of our settlements follow our religion", () => {
+    reset();
+    delete globalThis.LfYieldsPreview; // the previews value none of them
+    const cards = [
+        { TraditionType: "TRADITION_IUS_REFORMANDI", Name: "Ius Reformandi", slot: 3, yields: null },
+        { TraditionType: "TRADITION_LITURGICAL_DISPUTES", Name: "Liturgical Disputes", slot: 3, yields: null },
+        { TraditionType: "TRADITION_RELIGIOUS_ZEAL", Name: "Zeal", slot: 3, yields: null },
+        { TraditionType: "TRADITION_RELIGIOUS_TOLERANCE", Name: "Tolerance", slot: 3, yields: null },
+        { TraditionType: "TRADITION_RELIGIOUS_ESPIONAGE", Name: "Schism", slot: 3, yields: null },
+        { TraditionType: "TRADITION_RELIGIOUS_MERCHANTS", Name: "Jizya", slot: 3, yields: null },
+    ];
+    for (const c of cards) rows.push({ ...c, $index: rows.length, $hash: 100 + rows.length });
+    const offeredBefore = culture.getUnlockedTraditions;
+    let offer = [];
+    culture.getUnlockedTraditions = (t) => (t === 3 ? rows.filter((r) => offer.includes(r.TraditionType)).map((r) => r.$hash) : offeredBefore(t));
+    useModifiers([
+        { id: "IUS_REFORMANDI_MOD_PILLAGE", effect: "EFFECT_CITY_DAMAGE_CONSTRUCTIBLES", args: { Amount: 3, DamageType: "UNHAPPINESS" } },
+        { id: "LITURGICAL_DISPUTES_MOD_HAPPINESS", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: -4 } },
+        { id: "RELIGIOUS_ZEAL_MOD_HAPPINESS", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: -8 } },
+        { id: "RELIGIOUS_TOLERANCE_MOD_HAPPINESS", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: 8 } },
+        { id: "RELIGIOUS_ESPIONAGE_MOD_HAPPINESS", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: -4 } },
+        { id: "RELIGIOUS_MERCHANTS_MOD_HAPPINESS", effect: "EFFECT_CITY_ADJUST_YIELD", args: { YieldType: "YIELD_HAPPINESS", Amount: -4 } },
+    ]);
+    const sets = { LITURGICAL_DISPUTES_MOD_HAPPINESS: "REQSET_FOLLOWS", RELIGIOUS_ZEAL_MOD_HAPPINESS: "REQSET_NOT_FOLLOWS", RELIGIOUS_TOLERANCE_MOD_HAPPINESS: "REQSET_NOT_FOLLOWS",
+        RELIGIOUS_ESPIONAGE_MOD_HAPPINESS: "REQSET_HOMELAND", RELIGIOUS_MERCHANTS_MOD_HAPPINESS: "REQSET_DISTANT" };
+    for (const m of GameInfo.Modifiers) m.SubjectRequirementSetId = sets[m.ModifierId] ?? null;
+    GameInfo.TraditionModifiers = [
+        { TraditionType: "TRADITION_IUS_REFORMANDI", ModifierId: "IUS_REFORMANDI_MOD_PILLAGE" },
+        { TraditionType: "TRADITION_LITURGICAL_DISPUTES", ModifierId: "LITURGICAL_DISPUTES_MOD_HAPPINESS" },
+        { TraditionType: "TRADITION_RELIGIOUS_ZEAL", ModifierId: "RELIGIOUS_ZEAL_MOD_HAPPINESS" },
+        { TraditionType: "TRADITION_RELIGIOUS_TOLERANCE", ModifierId: "RELIGIOUS_TOLERANCE_MOD_HAPPINESS" },
+        { TraditionType: "TRADITION_RELIGIOUS_ESPIONAGE", ModifierId: "RELIGIOUS_ESPIONAGE_MOD_HAPPINESS" },
+        { TraditionType: "TRADITION_RELIGIOUS_MERCHANTS", ModifierId: "RELIGIOUS_MERCHANTS_MOD_HAPPINESS" },
+    ];
+    GameInfo.RequirementSetRequirements = [{ RequirementSetId: "REQSET_FOLLOWS", RequirementId: "REQ_FOLLOWS" }, { RequirementSetId: "REQSET_NOT_FOLLOWS", RequirementId: "REQ_NOT_FOLLOWS" },
+        { RequirementSetId: "REQSET_HOMELAND", RequirementId: "REQ_HOMELAND" }, { RequirementSetId: "REQSET_DISTANT", RequirementId: "REQ_DISTANT" }];
+    GameInfo.Requirements = [
+        { RequirementId: "REQ_FOLLOWS", RequirementType: "REQUIREMENT_CITY_FOLLOWS_RELIGION" },
+        { RequirementId: "REQ_NOT_FOLLOWS", RequirementType: "REQUIREMENT_CITY_FOLLOWS_RELIGION", Inverse: "true" },
+        { RequirementId: "REQ_HOMELAND", RequirementType: "REQUIREMENT_CITY_IS_DISTANT_LANDS", Inverse: "true" },
+        { RequirementId: "REQ_DISTANT", RequirementType: "REQUIREMENT_CITY_IS_DISTANT_LANDS" },
+    ];
+    world.religion = 77;
+    world.cities = [{ owner: 0, x: 2, y: 2, name: "Rome", happy: 2, religion: 77, nets: { YIELD_PRODUCTION: 20, YIELD_SCIENCE: 20 } },
+        { owner: 0, x: 6, y: 6, name: "Cole", isTown: true, happy: 2, religion: 88, nets: { YIELD_PRODUCTION: 10, YIELD_GOLD: 10 } }];
+    slots[3] = 1;
+    try {
+        offer = ["TRADITION_IUS_REFORMANDI", "TRADITION_LITURGICAL_DISPUTES"];
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["TRADITION_LITURGICAL_DISPUTES"], "−4 Happiness in Rome, not 3 damaged buildings per conversion");
+        reset();
+        offer = ["TRADITION_RELIGIOUS_ZEAL", "TRADITION_RELIGIOUS_TOLERANCE"];
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["TRADITION_RELIGIOUS_TOLERANCE"], "Cole follows another religion: +8 there, not −8");
+        // Schism hits the Homeland (Rome at +2 goes below zero), Jizya the Distant Lands (Cole at +30 hardly feels it).
+        reset();
+        world.cities[1].distant = true;
+        world.cities[1].happy = 30;
+        offer = ["TRADITION_RELIGIOUS_ESPIONAGE", "TRADITION_RELIGIOUS_MERCHANTS"];
+        choices.fillOnePolicySlot(DEFAULT_SETTINGS);
+        assert.deepEqual(chosen(), ["TRADITION_RELIGIOUS_MERCHANTS"]);
+    } finally {
+        rows.splice(-cards.length);
+        culture.getUnlockedTraditions = offeredBefore;
+        clearModifiers();
+        delete GameInfo.RequirementSetRequirements;
+        delete GameInfo.Requirements;
+        delete world.religion;
+        world.cities = [];
+        slots[3] = 0;
+    }
+});
+
 test("a story's Happiness option comes first while a settlement is in unrest (research/22 A4: War Support was taken instead)", () => {
     reset();
     const id = { owner: 0, id: 11, type: 3 };
@@ -857,6 +933,34 @@ test("story options with no icons are valued by their rewards' yields: +Happines
         delete GameInfo.NarrativeRewards;
         clearModifiers();
         world.cities = [];
+    }
+});
+
+// Research/40 C (legacy notes P7): a crisis story's option carrying the crisis's narrative tag completes a crisis triumph (a
+// crisis card for the next age's dedications).
+test("a crisis story: of two equal options, the one granting the crisis's narrative tag", () => {
+    reset();
+    const id = { owner: 0, id: 14, type: 3 };
+    const stories = [{ NarrativeStoryType: "AC001", Name: "Invasion" }, { NarrativeStoryType: "AC001A", Activation: "LINKED" }, { NarrativeStoryType: "AC001B", Activation: "LINKED" }];
+    GameInfo.NarrativeStories = { lookup: (t) => stories.find((s) => s.NarrativeStoryType === t) ?? null };
+    GameInfo.NarrativeStory_Links = [{ FromNarrativeStoryType: "AC001", ToNarrativeStoryType: "AC001B" }, { FromNarrativeStoryType: "AC001", ToNarrativeStoryType: "AC001A" }];
+    GameInfo.NarrativeRewardIcons = [];
+    GameInfo.NarrativeStory_Rewards = [{ NarrativeStoryType: "AC001A", NarrativeRewardType: "R_A" }, { NarrativeStoryType: "AC001B", NarrativeRewardType: "R_B" }];
+    GameInfo.NarrativeRewards = [{ NarrativeRewardType: "R_A", ModifierID: "M_A" }, { NarrativeRewardType: "R_B", ModifierID: "M_B" }];
+    useModifiers([
+        { id: "M_A", effect: "EFFECT_PLAYER_GRANT_NARRATIVE_TAG", args: { NarrativeTagType: "NARRATIVE_TAG_CRISIS_INVASION", Amount: 1 } },
+        { id: "M_B", effect: "EFFECT_PLAYER_GRANT_NARRATIVE_TAG", args: { NarrativeTagType: "NARRATIVE_TAG_SOMETHING", Amount: 1 } },
+    ]);
+    Players.get(0).Stories = { getFirstPendingMetId: () => id, find: () => ({ type: "AC001" }), canAfford: () => true, determineRequisiteLink: () => false };
+    const answer = () => fake.sent.filter((s) => s.op === PlayerOperationTypes.CHOOSE_NARRATIVE_STORY_DIRECTION).map((s) => s.args.TargetType);
+    try {
+        choices.chooseStory(new Set());
+        assert.deepEqual(answer(), ["AC001A"]);
+    } finally {
+        delete Players.get(0).Stories;
+        delete GameInfo.NarrativeStory_Rewards;
+        delete GameInfo.NarrativeRewards;
+        clearModifiers();
     }
 });
 

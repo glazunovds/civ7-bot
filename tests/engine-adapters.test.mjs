@@ -171,6 +171,34 @@ test("mountains are mountains: not workable, not buildable (Terrains has no Moun
     assert.equal(m.isMountain, true);
     assert.equal(m.workable, false);
     assert.equal(m.urbanizable, false);
+    // The Inca (research/40 C): a trait unlocks an improvement on mountains: workable, never buildable.
+    const inca = new FactsCache(engineMap, { ...getRules(), mountainsWorkable: true }, { playerId: 0, includeHidden: false });
+    assert.equal(inca.facts(engineMap.index(18, 5)).workable, true);
+    assert.equal(inca.facts(engineMap.index(18, 5)).urbanizable, false);
+});
+
+test("trait tile rules: an improvement unlocked on mountains makes them workable; a natural-wonder trait values them", async () => {
+    const { traitTileRules } = await import("../mod/expansion-planner/ui/data/xpl-rules-loader.js");
+    const info = {
+        TraitModifiers: [{ TraitType: "TRAIT_INCA", ModifierId: "M_APUS" }, { TraitType: "TRAIT_ISABELLA", ModifierId: "M_NW" }],
+        Constructible_ValidTerrains: [{ ConstructibleType: "IMPROVEMENT_INCA_MOUNTAIN", TerrainType: "TERRAIN_MOUNTAIN" }],
+        ModifierArguments: [{ ModifierId: "M_APUS", Name: "ConstructibleType", Value: "IMPROVEMENT_INCA_MOUNTAIN" }],
+        Modifiers: [{ ModifierId: "M_APUS", ModifierType: "MT_A" }, { ModifierId: "M_NW", ModifierType: "MT_N" }],
+        DynamicModifiers: [{ ModifierType: "MT_A", EffectType: "EFFECT_PLAYER_GRANT_CONSTRUCTIBLE_UNLOCK" }, { ModifierType: "MT_N", EffectType: "EFFECT_PLOT_ADJUST_YIELD_PER_PLAYER_NATURAL_WONDER" }],
+    };
+    assert.deepEqual(traitTileRules(new Set(["TRAIT_INCA"]), info), { mountainsWorkable: true, naturalWonderTrait: false });
+    assert.deepEqual(traitTileRules(new Set(["TRAIT_ISABELLA"]), info), { mountainsWorkable: false, naturalWonderTrait: true });
+    assert.deepEqual(traitTileRules(new Set(["TRAIT_ROME"]), info), { mountainsWorkable: false, naturalWonderTrait: false });
+    const { naturalWondersValued } = await import("../mod/expansion-planner/ui/data/xpl-site-job.js");
+    const vm = Game.VictoryManager;
+    try {
+        // The culture victory off in the setup: valued only for a natural-wonder trait.
+        Game.VictoryManager = { isCountdownVictoryEnabled: (t) => !String(GameInfo.Victories.lookup(t)?.VictoryClassType ?? t).includes("CULTURE"), isScoreVictoryEnabled: () => true };
+        assert.equal(naturalWondersValued({}), false);
+        assert.equal(naturalWondersValued({ naturalWonderTrait: true }), true);
+    } finally {
+        Game.VictoryManager = vm;
+    }
 });
 
 test("far below the cap (unseenVillagePenalty) a village never seen costs a site value, not the site (research/24 X3: «18 unseen; INDEPENDENT 171»)", async () => {

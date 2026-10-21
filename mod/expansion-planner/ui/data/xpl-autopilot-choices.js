@@ -17,8 +17,11 @@ import { costMultiplier, happinessWorth } from '../core/xpl-scarcity.js';
 import { judgeDeal } from '../core/xpl-deals.js';
 import { log } from '../services/xpl-log.js';
 import { effectYields, focusOfProfile, rankGovernments } from '../core/xpl-effect-value.js';
-import { campaignState, peaceIntentFor, promoteUnits, threatenedSettlements } from './xpl-autopilot-units.js';
-import { independentNameOf, villagesOf } from './xpl-player-facts.js';
+import { beliefValue, pantheonValue, rankByValue } from '../core/xpl-religion.js';
+import { cardSwapGain, swapWorth } from '../core/xpl-research-value.js';
+import { campaignState, guardsFor, guardsWanted, peaceIntentFor, promoteUnits, threatenedSettlements } from './xpl-autopilot-units.js';
+import { followsOurReligion, independentNameOf, villagesOf } from './xpl-player-facts.js';
+import { gameKey, settings } from '../services/xpl-settings.js';
 
 function safe(fn, fallback) {
     try {
@@ -101,6 +104,12 @@ function effectsOf(modifierIds, depth = 0) {
         else out.push({ effect, args });
     }
     return out;
+}
+
+/** A modifier's own effect type (GameInfo.Modifiers → DynamicModifiers), or null: what research unlocks (steps). */
+export function modifierEffect(id) {
+    const t = modifierTables();
+    return t.effect.get(t.type.get(id)) ?? null;
 }
 
 /**
@@ -224,6 +233,10 @@ const SETTLEMENT_TESTS = {
     REQUIREMENT_CITY_IS_TOWN: (c) => !!c.isTown,
     REQUIREMENT_CITY_IS_CITY: (c) => !c.isTown,
     REQUIREMENT_CITY_IS_CAPITAL: (c) => !!safe(() => c.isCapital, false),
+    REQUIREMENT_CITY_IS_DISTANT_LANDS: (c) => !!safe(() => c.isDistantLands, false),
+    // The religious crisis's cards (research/40 A2): Religious Tolerance +8 and Zeal −8 Happiness where a settlement does not
+    // follow our religion, Liturgical Disputes −4 where it does (the requirement names the card owner's religion).
+    REQUIREMENT_CITY_FOLLOWS_RELIGION: (c) => followsOurReligion(c),
 };
 const truthy = (v) => v === true || v === 1 || v === "true" || v === "1";
 
@@ -469,8 +482,52 @@ export function fillOnePolicySlot(settings, sent = new Set(), { forced = false }
     return [];
 }
 
-const SWAP_MIN_GAIN = 2;      // a swap must win at least this (weighted yield per turn)...
-const SWAP_MIN_SHARE = 0.25;  // ...and this share of the card it takes out
+/**
+ * What a node's new policy cards would win over the cards slotted now (core cardSwapGain), for research (the user, game
+ * 44: Reformation's Religious Orders and Rationalism came last). Each card is valued as the policy step values it
+ * (cardValue: Policy Yield Previews previews a card not unlocked yet, as its civic tooltips show), the slotted ones as what
+ * taking them out would cost; crisis cards and cards already unlocked are left out. Weights, levers and the slotted cards
+ * are read once, at the first card. @returns (targets) → { gain, pairs: [{ card: { type, name, value, slot }, out }] } or null
+ */
+export function cardGains(settings) {
+    let ctx = null;
+    const values = new Map();
+    const setup = () => {
+        const culture = safe(() => Players.get(pid()).Culture, null);
+        const T = globalThis.CultureSlotTypes;
+        if (!culture || !T || !globalThis.LfYieldsPreview?.previewPolicyYields) return false;
+        const weights = profileFor(settings).y;
+        const levers = leverContext(settings);
+        const slotted = [];
+        const free = {};
+        const unlocked = new Set();
+        for (const [slot, t] of [["TRADITION", T.TRADITION_CULTURE_SLOT], ["POLICY", T.POLICY_CULTURE_SLOT]]) {
+            if (t === undefined) continue;
+            free[slot] = freeSlots(culture, t);
+            for (const h of safe(() => culture.getUnlockedTraditions(t), []) ?? []) unlocked.add(h);
+            for (const h of safe(() => culture.getActiveTraditions(t), []) ?? []) {
+                const def = safe(() => GameInfo.Traditions.lookup(h), null);
+                if (def) slotted.push({ type: def.TraditionType, name: def.Name, slot, value: cardValue(def.TraditionType, weights, levers, { active: true }) });
+            }
+        }
+        return { weights, levers, slotted, free, unlocked };
+    };
+    return (targets) => {
+        const defs = (targets ?? []).map((t) => safe(() => GameInfo.Traditions.lookup(t), null))
+            .filter((d) => d && !truthy(d.IsCrisis) && d.CultureSlotType !== "CRISIS_CULTURE_SLOT");
+        if (defs.length === 0) return null;
+        ctx ??= setup();
+        if (!ctx) return null;
+        const cards = [];
+        for (const def of defs) {
+            if (ctx.unlocked.has(def.$hash)) continue;
+            if (!values.has(def.TraditionType)) values.set(def.TraditionType, cardValue(def.TraditionType, ctx.weights, ctx.levers));
+            const value = values.get(def.TraditionType);
+            if (value !== null) cards.push({ type: def.TraditionType, name: def.Name, value, slot: def.CultureSlotType === "TRADITION_CULTURE_SLOT" ? "TRADITION" : "POLICY" });
+        }
+        return cards.length > 0 ? cardSwapGain(cards, ctx.slotted, ctx.free) : null;
+    };
+}
 
 /**
  * When the game lets the player swap cards (Culture.canSwapCultureSlot, as the policies screen
@@ -507,7 +564,7 @@ export function swapOnePolicy(settings, sent = new Set()) {
             const value = def ? cardValue(def.TraditionType, weights, levers, { active: true }) : null;
             if (value === null) continue;
             const gain = top.value - value;
-            if (gain < Math.max(SWAP_MIN_GAIN, SWAP_MIN_SHARE * Math.abs(value))) continue;
+            if (!swapWorth(gain, value)) continue;
             if (!best || gain > best.gain) best = { out: def, outValue: value, into: top, gain };
         }
     }
@@ -663,6 +720,18 @@ function rewardIcons(storyType) {
     return out;
 }
 
+// A crisis story's option that grants the crisis's narrative tag (EFFECT_PLAYER_GRANT_NARRATIVE_TAG, NARRATIVE_TAG_CRISIS_*)
+// completes a crisis triumph: a crisis card for the next age's dedications (research/40 C, legacy notes P7). Worth this much.
+const CRISIS_TAG_VALUE = 3;
+
+/** Does this story option grant a crisis's narrative tag (its rewards' modifiers)? */
+function grantsCrisisTag(storyType) {
+    const rewards = new Set((GameInfo.NarrativeStory_Rewards?.filter((r) => r.NarrativeStoryType === storyType) ?? []).map((r) => r.NarrativeRewardType));
+    if (rewards.size === 0) return false;
+    const ids = (GameInfo.NarrativeRewards?.filter((r) => rewards.has(r.NarrativeRewardType)) ?? []).map((r) => r.ModifierID ?? r.ModifierId).filter(Boolean);
+    return (safe(() => effectsOf(ids), []) ?? []).some((e) => e.effect === "EFFECT_PLAYER_GRANT_NARRATIVE_TAG" && /^NARRATIVE_TAG_CRISIS_/.test(String(e.args?.NarrativeTagType ?? "")));
+}
+
 export function chooseStory(answered = new Set(), settings = null) {
     const stories = safe(() => Players.get(pid()).Stories, null);
     if (!stories) return [];
@@ -689,7 +758,8 @@ export function chooseStory(answered = new Set(), settings = null) {
         if (icons.length === 0) icons = safe(() => rewardIcons(to.NarrativeStoryType), []) ?? [];
         const negative = icons.some((i) => truthy(i.Negative));
         const happy = icons.some((i) => i.RewardIconType === "YIELD_HAPPINESS" && !truthy(i.Negative)) && !icons.some((i) => i.RewardIconType === "YIELD_HAPPINESS" && truthy(i.Negative));
-        options.push({ key: to.NarrativeStoryType, ai: !!(link?.AIPriority === true || link?.AIPriority === "true" || link?.AIPriority === 1), negative, happy, value: storyValue(icons, weights) });
+        const crisis = safe(() => grantsCrisisTag(to.NarrativeStoryType), false) ? CRISIS_TAG_VALUE : 0;
+        options.push({ key: to.NarrativeStoryType, ai: !!(link?.AIPriority === true || link?.AIPriority === "true" || link?.AIPriority === 1), negative, happy, value: storyValue(icons, weights) + crisis });
     }
     const calm = options.some((o) => o.happy) && unhappySettlement();
     // Happiness first in unrest; then what the profile values most (research/23 S5: the base game sets no
@@ -708,13 +778,19 @@ export function chooseStory(answered = new Set(), settings = null) {
 
 // ---- other one-off choices ---------------------------------------------------------------
 
-/** A pantheon when one is unlocked (the first belief the game allows). */
-export function choosePantheon() {
+/** A pantheon when one is unlocked: the one worth most to our empire that the game allows (research/40 A3). */
+export function choosePantheon(settings = {}) {
     if (!waiting("NOTIFICATION_CHOOSE_PANTHEON")) return [];
     const religion = safe(() => Players.get(pid()).Religion, null);
     if (!religion || !(Number(safe(() => religion.getNumPantheonsUnlocked(), 0)) > 0)) return [];
-    for (const b of GameInfo.Beliefs ?? []) {
-        if (b.BeliefClassType !== "BELIEF_CLASS_PANTHEON") continue;
+    // The pantheon worth most to our empire (research/40 A3; core/xpl-religion.js), not the first the game allows (game 41:
+    // Earth Goddess). Unknown ones (another mod's) after the known, in the game's order.
+    const weights = profileFor(settings).y;
+    const facts = safe(() => pantheonFacts(settings), {});
+    const defs = (GameInfo.Beliefs?.filter((b) => b.BeliefClassType === "BELIEF_CLASS_PANTHEON") ?? []);
+    const ranked = rankByValue(defs.map((b) => b.BeliefType), (t) => pantheonValue(t, facts, weights));
+    for (const type of ranked) {
+        const b = defs.find((d) => d.BeliefType === type);
         const args = { BeliefType: Database.makeHash(b.BeliefType) };
         const ok = safe(() => Game.PlayerOperations.canStart(pid(), PlayerOperationTypes.FOUND_PANTHEON, args, false), null);
         if (!ok?.Success) continue;
@@ -725,11 +801,100 @@ export function choosePantheon() {
 }
 
 /**
+ * Our settlements' tiles as religion counts them: farms, camps, fishing boats, mines, resource tiles and quarters (2+
+ * buildings), and per settlement its specialists, population and natural wonders.
+ */
+function empireTiles() {
+    const out = { farms: 0, camps: 0, fishing: 0, mines: 0, resources: 0, quarters: 0, specialists: 0, naturalWonders: 0, rural10: 0, urban10: 0 };
+    for (const city of safe(() => Players.get(pid()).Cities.getCities(), []) ?? []) {
+        let wonder = false;
+        for (const idx of safe(() => city.getPurchasedPlots(), []) ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc) continue;
+            if (Number(safe(() => GameplayMap.getResourceType(loc.x, loc.y), -1)) >= 0) out.resources++;
+            if (safe(() => GameplayMap.isNaturalWonder(loc.x, loc.y), false)) wonder = true;
+            let buildings = 0;
+            for (const id of safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? []) {
+                const c = safe(() => Constructibles.getByComponentID(id), null);
+                const def = c ? safe(() => GameInfo.Constructibles.lookup(c.type), null) : null;
+                const t = def?.ConstructibleType ?? "";
+                if (def?.ConstructibleClass === "BUILDING") buildings++;
+                else if (/^IMPROVEMENT_(FARM|TERRACE_FARM|PASTURE|PLANTATION)/.test(t)) out.farms++;
+                else if (/^IMPROVEMENT_(CAMP|WOODCUTTER)/.test(t)) out.camps++;
+                else if (/FISHING_BOAT/.test(t)) out.fishing++;
+                else if (/^IMPROVEMENT_(MINE|CLAY_PIT|QUARRY)/.test(t)) out.mines++;
+            }
+            if (buildings >= 2) out.quarters++;
+        }
+        if (wonder) out.naturalWonders++;
+        let workers = 0;
+        for (const w of safe(() => city.Workers.GetAllPlacementInfo(), []) ?? []) workers += Number(w.NumWorkers) || 0;
+        if (workers >= 3) out.specialists++;
+        if (Number(safe(() => city.ruralPopulation, 0)) >= 10) out.rural10++;
+        if (Number(safe(() => city.urbanPopulation, 0)) >= 10) out.urban10++;
+    }
+    return out;
+}
+
+const PANTHEON_GROWTH_MAX = 3;   // the empire a pantheon serves grows to the settlement cap, at most this many times today's
+const QUARTERS_PER_CITY = 2;     // quarters a city has by Antiquity's end, at least
+
+/**
+ * What a pantheon acts on (core pantheonValue), for the whole age: the pantheon comes early (Mysticism) and lasts all of
+ * Antiquity, so the tiles of today grow with the settlements toward the cap, and every city builds quarters.
+ */
+function pantheonFacts(settings) {
+    const me = Players.get(pid());
+    const cities = safe(() => me.Cities.getCities(), []) ?? [];
+    const settlements = Math.max(1, cities.length);
+    const cap = Number(safe(() => me.Stats.settlementCap, 0)) || settlements;
+    const grow = Math.min(PANTHEON_GROWTH_MAX, Math.max(1, cap / settlements));
+    const t = empireTiles();
+    let production = 0;
+    let food = 0;
+    for (const c of cities) {
+        if (!c.isTown) production += Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+        food += Math.max(0, Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_FOOD), 0)) || 0);
+    }
+    const cityCount = Math.max(1, cities.filter((c) => !c.isTown).length);
+    return {
+        settlements: settlements * grow, production: production * grow, food: food * grow,
+        influence: Number(safe(() => me.Stats.getNetYield(YieldTypes.YIELD_DIPLOMACY), 0)) || 0,
+        farms: t.farms * grow, camps: t.camps * grow, fishing: t.fishing * grow, mines: t.mines * grow, resources: t.resources * grow,
+        quarters: Math.max(t.quarters, QUARTERS_PER_CITY * cityCount * grow),
+        focus: focusOfProfile(settings?.profile),
+    };
+}
+
+/**
+ * What a religion's beliefs act on (core beliefValue): our settlements follow it once our Missionaries convert them
+ * (research/40 B1), foreign ones only as they follow it now.
+ */
+function beliefFacts(settings) {
+    const me = Players.get(pid());
+    const cities = safe(() => me.Cities.getCities(), []) ?? [];
+    const t = empireTiles();
+    let foreign = 0;
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (p.id === pid()) continue;
+        for (const c of safe(() => p.Cities.getCities(), []) ?? []) if (followsOurReligion(c)) foreign++;
+    }
+    return {
+        settlements: cities.length, cities: cities.filter((c) => !c.isTown).length, followers: cities.length, foreign,
+        specialists: t.specialists, naturalWonders: t.naturalWonders, rural10: t.rural10, urban10: t.urban10,
+        distant: cities.filter((c) => safe(() => c.isDistantLands, false)).length,
+        // City-states we are suzerain of: our Missionaries convert them once ours follow (research/40 C; Icons' relics).
+        treasure: 0, wonders: 1, cityStates: ourCityStates().length, focus: focusOfProfile(settings?.profile),
+    };
+}
+
+/**
  * Founding a religion (NOTIFICATION_CHOOSE_RELIGION) and its beliefs (NOTIFICATION_CHOOSE_BELIEF):
  * the first religion not founded yet, then beliefs one at a time (the game confirms each with
- * BeliefAdded) while the game accepts one. Beliefs worth most by Policy Yield Previews (their
- * BeliefModifiers) first, else in the game's order. Same operations as the game's belief
- * picker (panel-belief-picker.js: FOUND_RELIGION {ReligionType}, ADD_BELIEF {BeliefType}).
+ * BeliefAdded) while the game accepts one. Beliefs worth most to our empire first (core/xpl-religion.js;
+ * research/40 A3), one we do not know by Policy Yield Previews' value of its BeliefModifiers. Same
+ * operations as the game's belief picker (panel-belief-picker.js: FOUND_RELIGION {ReligionType},
+ * ADD_BELIEF {BeliefType}).
  */
 export async function foundReligion(settings) {
     const out = [];
@@ -748,14 +913,18 @@ export async function foundReligion(settings) {
     }
     if (!(out.length > 0 || waiting("NOTIFICATION_CHOOSE_BELIEF") || waiting("NOTIFICATION_CHOOSE_RELIGION"))) return out;
     const weights = profileFor(settings).y;
+    const facts = safe(() => beliefFacts(settings), {});
     const tried = new Set();
     for (let i = 0; i < MAX_BELIEFS; i++) {
         const options = [];
         for (const b of GameInfo.Beliefs ?? []) {
             if (b.BeliefClassType === "BELIEF_CLASS_PANTHEON" || tried.has(b.BeliefType)) continue;
             if (!safe(() => Game.Religion.isBeliefClaimable(b.BeliefType), false)) continue;
+            // Our empire's numbers first (research/40 A3: game 41 took Icons, Interfaith Dialogue, Conversion and Stewardship,
+            // the first rows of each class); a belief we do not know, Policy Yield Previews' value of its modifiers.
+            const known = beliefValue(b.BeliefType, facts, weights);
             const ids = (GameInfo.BeliefModifiers?.filter((m) => m.BeliefType === b.BeliefType) ?? []).map((m) => m.ModifierID ?? m.ModifierId);
-            options.push({ b, value: modifiersValue(ids, weights) });
+            options.push({ b, value: known ?? modifiersValue(ids, weights) });
         }
         options.sort((a, b) => (b.value ?? -Infinity) - (a.value ?? -Infinity));
         const pick = options.find(({ b }) => safe(() => Game.PlayerOperations.canStart(pid(), PlayerOperationTypes.ADD_BELIEF, { BeliefType: Database.makeHash(b.BeliefType) }, false), null)?.Success);
@@ -899,8 +1068,10 @@ export function answerDiplomacy({ support = false } = {}) {
             .sort((a, b) => (Number(a.cost) || 0) - (Number(b.cost) || 0) || Number(a.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT) - Number(b.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT));
         let pick = options[0];
         // «Дипломатия»: supporting a leader's endeavor improves the relationship more than
-        // accepting it (the game's favor for support), when the Influence allows.
-        if (support && ENDEAVOR !== undefined && event?.actionGroup === ENDEAVOR) {
+        // accepting it (the game's favor for support), when the Influence allows. A leader's Reform
+        // (Lafayette's: a tradition slot for good to each supporter; research/40 A4) is supported whatever the option.
+        const reform = event?.actionType !== undefined && event.actionType === globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GRANT_POLICY_SLOT;
+        if ((support && ENDEAVOR !== undefined && event?.actionGroup === ENDEAVOR) || reform) {
             pick = options.find((r) => r.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT && (Number(r.cost) || 0) <= balance) ?? pick;
         }
         if (!pick) {
@@ -1518,8 +1689,7 @@ export async function seekPeace({ offensive = false } = {}) {
 // ---- diplomacy with other leaders («Дипломатия») ---------------------------------------------
 
 const RELATION_RANK = ["HOSTILE", "UNFRIENDLY", "NEUTRAL", "FRIENDLY", "HELPFUL"];
-// Endeavors («Инициативы») in the order tried; the priority's own come first.
-const ENDEAVORS = ["RESEARCH_COLLABORATION", "MINOR_TRADE", "CULTURAL_EXCHANGE", "FARMERS_MARKET", "LOCAL_FESTIVALS", "WONDER_CONSTRUCTION"];
+// The priority's own endeavors («Инициативы»): they come first (endeavorsOffered).
 const ENDEAVOR_FOR_PROFILE = {
     SCIENCE: ["RESEARCH_COLLABORATION"], CULTURE: ["CULTURAL_EXCHANGE", "WONDER_CONSTRUCTION"], GOLD: ["MINOR_TRADE"],
     PRODUCTION: ["MINOR_TRADE"], FOOD: ["FARMERS_MARKET"], HAPPINESS: ["LOCAL_FESTIVALS"],
@@ -1601,36 +1771,24 @@ function distanceToUs(p) {
  *  - «Контршпионаж» (DIPLOMACY_ACTION_COUNTER_SPY; from the Exploration age) against a leader whose
  *    spy was caught against us, unless one already runs against them;
  *  - «Примирение» (SEND_DELEGATION, no unlock needed) with a leader who is Unfriendly or Hostile;
- *  - an endeavor («Инициатива»: research collaboration, open markets, cultural exchange, farmers
- *    market, local festival, wonder construction; the priority's own first) with the leader we
- *    stand worst with (not Hostile: the game allows none), while no Influence goes to befriending
- *    independents. Endeavors and reconciliation raise the relationship.
+ *  - a steal of a technology (science) or civic (culture) from the Neutral-or-better leader with the
+ *    most science (research/40 B6), one at a time;
+ *  - an endeavor («Инициатива»): the one worth most of those the game offers (research/40 A4; the
+ *    priority's own first), with a leader not approached this age first, then the one we stand worst
+ *    with (not Hostile: the game allows none), while no Influence goes to befriending independents.
+ *    Endeavors and reconciliation raise the relationship.
  * Under threat only the counter-spy (Influence goes to befriending). Never with a leader at war
  * with us; worst relationship first, then nearest.
  */
 export function tendDiplomacy(settings, { threatened = false } = {}) {
     const out = [];
     const A = globalThis.DiplomacyActionTypes ?? {};
-    const AVAILABLE = globalThis.DiplomacyProjectStatus?.PROJECT_AVAILABLE;
-    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
-    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
     const me = safe(() => Players.get(pid()), null);
     if (!me?.Diplomacy) return out;
     noteCaughtSpies();
-    const balance = () => Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0;
     const leaderName = (id) => safe(() => Locale.compose(Players.get(id).leaderName), String(id));
     const actionName = (type) => safe(() => Locale.compose(GameInfo.DiplomacyActions.lookup(type).Name), String(type));
-    const start = (target, actionType) => {
-        if (actionType === undefined) return false;
-        const project = (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), target, T, G, -1, T), []) ?? []).find((p) => p.actionType === actionType);
-        if (!project || (AVAILABLE !== undefined && project.projectStatus !== AVAILABLE)) return false;
-        const cost = Number(project.targetList1?.find((t) => t.targetID === target)?.costYieldD) || 0;
-        if (cost > balance()) return false;
-        const args = { Amount: 1, Player1: pid(), Type: project.actionType, Player2: target, ID: target };
-        if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) return false;
-        Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
-        return true;
-    };
+    const start = startAction;
     // 1. Counter-spy against a caught spy's leader.
     const running = (target) => (safe(() => Game.Diplomacy.getPlayerEvents(pid()), []) ?? [])
         .some((e) => e.initialPlayer === pid() && e.actionType === A.DIPLOMACY_ACTION_COUNTER_SPY && e.targetPlayer === target);
@@ -1667,18 +1825,255 @@ export function tendDiplomacy(settings, { threatened = false } = {}) {
             break;
         }
     }
-    // 3. An endeavor, while no Influence goes to befriending independents.
+    // 3. Espionage for the focus's research (research/40 B6: game 41's rivals stole 45 technologies and 36 civics from us, we
+    // none): a technology for science, a civic for culture, from the leader with the most science of those Neutral or
+    // better (a spy revealed costs relationship), one of ours at a time, while no Influence goes to befriending.
+    const stealType = A[STEAL_FOR_FOCUS[focusOfProfile(settings?.profile)]];
+    if (!befriendBusy && stealType !== undefined && !ourActionRunning(stealType)) {
+        const science = (id) => Number(safe(() => Players.get(id).Stats.getNetYield(YieldTypes.YIELD_SCIENCE), 0)) || 0;
+        for (const l of [...leaders].filter((x) => x.rank >= 2).sort((a, b) => science(b.id) - science(a.id))) {
+            if (!start(l.id, stealType)) continue;
+            out.push({ key: "ESPIONAGE_STEAL", args: [actionName(stealType), leaderName(l.id)] });
+            return out;
+        }
+    }
+    // 4. An endeavor, while no Influence goes to befriending independents: the one worth most of those the game offers us
+    // (research/40 A4: before, a list of six, so an endeavor a leader, an attribute node or a city-state bonus unlocked was
+    // never started), with the leaders not yet approached this age first (Exploration's «Gregarious Animal» triumph: an
+    // action with every leader, +1 policy slot; game 41's went to an AI at E58), then the one we stand worst with.
     if (befriendBusy) return out;
-    const order = [...new Set([...(ENDEAVOR_FOR_PROFILE[settings?.profile] ?? []), ...ENDEAVORS])].map((n) => A[`DIPLOMACY_ACTION_${n}`]);
-    for (const l of leaders) {
+    const targeted = endeavorTargets();
+    const ordered = [...leaders].sort((a, b) => Number(targeted.has(a.id)) - Number(targeted.has(b.id)));
+    for (const l of ordered) {
         if (l.rank === 0) continue;
-        for (const type of order) {
-            if (!start(l.id, type)) continue;
-            out.push({ key: "ENDEAVOR", args: [actionName(type), leaderName(l.id)] });
+        const offers = endeavorsOffered(l.id, settings?.profile);
+        for (const o of offers) {
+            if (!start(l.id, o.actionType)) continue;
+            noteEndeavorTarget(l.id);
+            out.push({ key: "ENDEAVOR", args: [actionName(o.actionType), leaderName(l.id)] });
             return out;
         }
     }
     return out;
+}
+
+// The steal that serves a focus (research/40 B6).
+const STEAL_FOR_FOCUS = { SCIENCE: "DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH", CULTURE: "DIPLOMACY_ACTION_ESPIONAGE_STEAL_CIVIC" };
+
+/**
+ * Starts a diplomatic action with a leader as the diplomacy panel's quick start does ({Amount: 1, Player1, Type, Player2,
+ * ID}), when the game offers it now (PROJECT_AVAILABLE), the Influence pays for it and canStart agrees. @returns bool
+ */
+function startAction(target, actionType) {
+    if (actionType === undefined) return false;
+    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
+    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
+    const AVAILABLE = globalThis.DiplomacyProjectStatus?.PROJECT_AVAILABLE;
+    const project = (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), target, T, G, -1, T), []) ?? []).find((p) => p.actionType === actionType);
+    if (!project || (AVAILABLE !== undefined && project.projectStatus !== AVAILABLE)) return false;
+    const cost = Number(project.targetList1?.find((t) => t.targetID === target)?.costYieldD) || 0;
+    if (cost > (Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0)) return false;
+    const args = { Amount: 1, Player1: pid(), Type: project.actionType, Player2: target, ID: target };
+    if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) return false;
+    Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
+    return true;
+}
+
+/** One of our actions of this type under way (against anyone, or against `target`). */
+function ourActionRunning(actionType, target = null) {
+    return (safe(() => Game.Diplomacy.getPlayerEvents(pid()), []) ?? [])
+        .some((e) => e.initialPlayer === pid() && e.actionType === actionType && (target === null || e.targetPlayer === target));
+}
+
+/**
+ * A rival near the science victory (the victory watch's SCIENCE entry at WATCH or DANGER, its countdown or Innovation): our
+ * spies sabotage its space program (DIPLOMACY_ACTION_ESPIONAGE_SABOTAGE_SPACE_PROGRAM, Modern: −50% production toward its
+ * Launch Pads and Launch Satellite; research/40 B6). Nothing we hold stops its countdown (root gotcha 58); this slows the
+ * work before it. Whatever «Дипломатия» says, never against a leader at war with us, one at a time. @returns log entries
+ */
+export function sabotageSpace(watch = []) {
+    const SAB = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_ESPIONAGE_SABOTAGE_SPACE_PROGRAM;
+    if (SAB === undefined) return [];
+    const w = (watch ?? []).find((x) => x.cls === "SCIENCE" && !x.own && (x.level === "DANGER" || x.level === "WATCH") && Number.isInteger(x.leader));
+    if (!w || safe(() => Players.get(pid()).Diplomacy.isAtWarWith(w.leader), false) || ourActionRunning(SAB, w.leader)) return [];
+    if (!startAction(w.leader, SAB)) return [];
+    return [{ key: "SABOTAGE_SPACE", args: [safe(() => Locale.compose(Players.get(w.leader).leaderName), String(w.leader))] }];
+}
+
+// ---- city-states: incorporate, levy (research/40 B7) ---------------------------------------------------------
+
+const LEVY_RADIUS = 8; // a city-state this near a threatened settlement of ours may lend it a soldier
+
+/** City-states we are suzerain of (player.isMinor, Influence.getSuzerain(), as the city banners read it), nearest to `at` first. */
+function ourCityStates(at = null) {
+    const ours = at ? [at] : (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    const dist = (p) => {
+        let best = Infinity;
+        for (const c of safe(() => p.Cities.getCities(), []) ?? []) {
+            for (const o of ours) best = Math.min(best, safe(() => GameplayMap.getPlotDistance(o.x, o.y, c.location.x, c.location.y), Infinity));
+        }
+        return best;
+    };
+    return (safe(() => Players.getAlive(), []) ?? [])
+        .filter((p) => p?.isMinor && safe(() => p.Influence.hasSuzerain, false) && safe(() => p.Influence.getSuzerain(), -1) === pid())
+        .map((p) => ({ p, d: dist(p) })).sort((a, b) => a.d - b.d);
+}
+
+/** The game's offer of an action toward a city-state (getProjectDataForUI, PROJECT_AVAILABLE), or null. */
+function cityStateProject(cs, actionType) {
+    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
+    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
+    const AVAILABLE = globalThis.DiplomacyProjectStatus?.PROJECT_AVAILABLE;
+    const project = (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), cs.id, T, G, -1, T), []) ?? []).find((x) => x.actionType === actionType);
+    return project && (AVAILABLE === undefined || project.projectStatus === AVAILABLE) ? project : null;
+}
+
+const influence = () => Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+
+/** A city-state's name: its city's (its civilization's name is a generic one: game 42 logged «деревни»). */
+function cityStateName(p) {
+    const city = (safe(() => p.Cities.getCities(), []) ?? [])[0];
+    return safe(() => Locale.compose(city?.name ?? p.civilizationName ?? p.name), String(p.id));
+}
+
+/**
+ * Incorporates a city-state we are suzerain of (DIPLOMACY_ACTION_CS_INCORPORATE: 240 / 480 / 720 Influence, 10 turns; it
+ * becomes our town; the AI did it 7 times in game 41) while settlements count for us (`want`: the final age's fill of the
+ * cap or our military lever, a settlement milestone within the cap's room: research/40 B7) and the cap has room. The nearest
+ * first, one at a time, the target screen's args {Player1, Type, Amount: 1, ID}. Whether it counts toward the cap is probe
+ * P-INC-1 (the settlement count in UI.log's legacy line). @returns log entries
+ */
+export function incorporateCityState({ want = false, room = 0 } = {}) {
+    const INC = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_CS_INCORPORATE;
+    if (INC === undefined || !want || !(room > 0) || befriendBusy || ourActionRunning(INC)) return [];
+    for (const { p } of ourCityStates()) {
+        const project = cityStateProject(p, INC);
+        if (!project) continue;
+        const cost = Number(project.targetList1?.find((t) => t.targetID === p.id)?.costYieldD ?? project.targetList1?.[0]?.costYieldD) || 0;
+        if (cost > influence()) continue;
+        const args = { Player1: pid(), Type: INC, Amount: 1, ID: p.id };
+        if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) continue;
+        Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
+        return [{ key: "INCORPORATE", args: [cityStateName(p)] }];
+    }
+    return [];
+}
+
+/**
+ * A threatened settlement short of guards takes a soldier from a city-state we are suzerain of within LEVY_RADIUS
+ * (DIPLOMACY_ACTION_CS_LEVY_UNIT, instant: the unit types the game offers in the project's targetList2, the target
+ * screen's `Unit` arg): its strongest melee land unit, from the Influence (research/40 B7). One a pass. @returns log entries
+ */
+export function levyDefenders(threats = []) {
+    const LEVY = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_CS_LEVY_UNIT;
+    if (LEVY === undefined || threats.length === 0) return [];
+    for (const t of threats) {
+        // A land unit against land raiders only (game 42: all five levies answered ships, which a melee unit cannot hit).
+        if (t.land !== undefined && !(Number(t.land) > 0)) continue;
+        if (safe(() => guardsFor(t, undefined, threats), 0) >= safe(() => guardsWanted(t), 1)) continue;
+        for (const { p, d } of ourCityStates(t.settlement)) {
+            if (d > LEVY_RADIUS) break;
+            const project = cityStateProject(p, LEVY);
+            if (!project) continue;
+            const offers = (project.targetList2 ?? []).filter((x) => x.parameterName === "Unit")
+                .map((x) => ({ x, def: safe(() => GameInfo.Units.lookup(x.targetName ?? x.targetID), null) }))
+                .filter((o) => o.def && o.def.Domain === "DOMAIN_LAND" && o.def.CoreClass === "CORE_CLASS_MILITARY")
+                .sort((a, b) => (Number(safe(() => GameInfo.Unit_Stats.lookup(b.def.UnitType)?.Combat, 0)) || 0) - (Number(safe(() => GameInfo.Unit_Stats.lookup(a.def.UnitType)?.Combat, 0)) || 0));
+            for (const o of offers) {
+                const cost = Number(o.x.costYieldD ?? project.targetList1?.[0]?.costYieldD) || 0;
+                if (cost > influence()) continue;
+                const args = { Player1: pid(), Type: LEVY, Amount: 1, ID: p.id, Unit: o.x.targetID };
+                if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) continue;
+                Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
+                return [{ key: "LEVIED", args: [safe(() => Locale.compose(o.def.Name), o.def.UnitType), cityStateName(p), t.settlement.name] }];
+            }
+        }
+    }
+    return [];
+}
+
+// Endeavors by worth (research/40 A4): Lafayette's Reform gives a policy slot for good; the rest by what they bring a turn.
+// The priority's own come first (ENDEAVOR_FOR_PROFILE), then these; one the game offers that is not listed after them.
+export const ENDEAVOR_VALUE = Object.freeze({
+    GRANT_POLICY_SLOT: 100,
+    RESEARCH_COLLABORATION: 10, CULTURAL_EXCHANGE: 10, MINOR_TRADE: 10, FARMERS_MARKET: 9, LOCAL_FESTIVALS: 9,
+    SEND_DELEGATION_DIPLOMATIC_CITY_STATE_BONUS: 9, FRIEND_OF_WA: 8, SHARE_INNOVATIONS: 8, WONDER_CONSTRUCTION: 8,
+    TRADE_MAP: 6, GINSING_AGREEMENT: 6, MILITARY_AID: 5,
+});
+const ENDEAVOR_UNKNOWN = 4;
+const ENDEAVOR_OWN = 10; // the priority's own endeavor
+// Endeavors that are something else: gold for nothing, a captured commander, the reconciliation of step 2.
+const NOT_ENDEAVORS = new Set(["SEND_GOLD", "FREE_CAPTURED_COMMANDER", "SEND_DELEGATION"]);
+
+/** The endeavors the game offers us toward a leader now (getProjectDataForUI, PROJECT_AVAILABLE), worth most first. */
+function endeavorsOffered(target, profile) {
+    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
+    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
+    const ENDEAVOR = globalThis.DiplomacyActionGroups?.DIPLOMACY_ACTION_GROUP_ENDEAVOR;
+    const AVAILABLE = globalThis.DiplomacyProjectStatus?.PROJECT_AVAILABLE;
+    const A = globalThis.DiplomacyActionTypes ?? {};
+    const own = new Set(ENDEAVOR_FOR_PROFILE[profile] ?? []);
+    const out = [];
+    for (const p of safe(() => Game.Diplomacy.getProjectDataForUI(pid(), target, T, G, -1, T), []) ?? []) {
+        const name = String(safe(() => GameInfo.DiplomacyActions.lookup(p.actionType)?.DiplomacyActionType, null)
+            ?? Object.keys(A).find((k) => A[k] === p.actionType) ?? "").replace("DIPLOMACY_ACTION_", "");
+        const endeavor = (ENDEAVOR !== undefined && p.actionGroup === ENDEAVOR) || name in ENDEAVOR_VALUE;
+        if (!endeavor || !name || NOT_ENDEAVORS.has(name)) continue;
+        if (AVAILABLE !== undefined && p.projectStatus !== AVAILABLE) continue;
+        out.push({ actionType: p.actionType, name, value: (ENDEAVOR_VALUE[name] ?? ENDEAVOR_UNKNOWN) + (own.has(name) ? ENDEAVOR_OWN : 0) });
+    }
+    return out.sort((a, b) => b.value - a.value);
+}
+
+/** The leaders we started an endeavor with this age (the settings' memory of this game: an age change keeps it). */
+function endeavorTargets() {
+    const age = safe(() => Game.age, null);
+    const v = String(safe(() => settings.recall(gameKey(), "endeavors"), "") ?? "");
+    const [at, ids] = v.split("|");
+    return at === String(age) ? new Set((ids ?? "").split(",").filter(Boolean).map(Number)) : new Set();
+}
+
+function noteEndeavorTarget(id) {
+    const set = endeavorTargets();
+    set.add(id);
+    safe(() => settings.remember(gameKey(), { endeavors: `${safe(() => Game.age, null)}|${[...set].join(",")}` }), null);
+}
+
+/**
+ * Lafayette's Reform («Реформа», DIPLOMACY_ACTION_GRANT_POLICY_SLOT; research/40 A4): a policy slot for us, for good, once
+ * per leader, and a tradition slot for each leader who supports it. Started with every leader the game allows, whatever
+ * the «Дипломатия» option says (it costs only Influence), while no Influence goes to befriending independents and nothing
+ * threatens us. @returns log entries
+ */
+let reformProbed = false;
+
+export function startReforms({ threatened = false } = {}) {
+    const REFORM = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GRANT_POLICY_SLOT;
+    if (REFORM === undefined || threatened || befriendBusy) return [];
+    const me = safe(() => Players.get(pid()), null);
+    if (!me?.Diplomacy) return [];
+    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
+    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
+    const AVAILABLE = globalThis.DiplomacyProjectStatus?.PROJECT_AVAILABLE;
+    const balance = Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (!p?.isMajor || p.id === pid() || !safe(() => me.Diplomacy.hasMet(p.id), false) || safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+        const project = (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), p.id, T, G, -1, T), []) ?? []).find((x) => x.actionType === REFORM);
+        // Probe P-REF-1 (research/40): how Lafayette's Reform shows in the game's project data, once a session.
+        if (project && !reformProbed) {
+            reformProbed = true;
+            log.info(`reform: project toward ${p.id}: status ${project.projectStatus}, operation ${project.operationType}, targets ${JSON.stringify(project.targetList1 ?? null)} (probe P-REF-1)`);
+        }
+        if (!project || (AVAILABLE !== undefined && project.projectStatus !== AVAILABLE)) continue;
+        const cost = Number(project.targetList1?.find((t) => t.targetID === p.id)?.costYieldD) || 0;
+        if (cost > balance) continue;
+        const args = { Amount: 1, Player1: pid(), Type: REFORM, Player2: p.id, ID: p.id };
+        if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) continue;
+        Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
+        noteEndeavorTarget(p.id);
+        return [{ key: "REFORM", args: [safe(() => Locale.compose(p.leaderName), String(p.id))] }];
+    }
+    return [];
 }
 
 /**
@@ -1807,7 +2202,7 @@ export async function makeChoices(settings, { retry = false } = {}) {
     out.push(...await foundReligion(settings));
     // «Наступление» (research/37 Phase 7) works with «Оборона»: the peace intent is consulted only then.
     const offensive = !!settings.autopilot?.offensive && !!settings.autopilot?.defend;
-    out.push(...choosePantheon(), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals({ offensive }), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
+    out.push(...choosePantheon(settings), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals({ offensive }), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
     out.push(...await seekPeace({ offensive }));
     if (retry && turnBlocker()) out.push(...acknowledge(), ...considerTownProjects());
     return out;
