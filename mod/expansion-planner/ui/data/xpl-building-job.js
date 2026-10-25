@@ -30,6 +30,10 @@ import { upkeepIn } from './xpl-city-actions.js';
 import { costValue, happinessWorth } from '../core/xpl-scarcity.js';
 import { runWonderPlanner } from './xpl-wonder-job.js';
 import { tierValue } from '../core/xpl-wonder-tiers.js';
+import { quarterYieldsByMember } from './xpl-quarter-sources.js';
+import { focusOfProfile } from '../core/xpl-effect-value.js';
+import { ALTAR, altarPantheonValue, archiveSignature, greatWorkSlotValues, ourPantheonType } from './xpl-building-extras.js';
+import { sameId } from '../core/xpl-component-id.js';
 
 const JOB_NAME = "buildings";
 const AREA_RADIUS = 3;
@@ -147,6 +151,32 @@ function happinessRecovery(members, types, rules, weights) {
             const value = h > 0 ? happinessWorth(weights, nets, nets[H], h) : 0;
             if (value > 0) out.push({ sid: m.key, type, value });
         }
+    }
+    return out;
+}
+
+/**
+ * What buildings bring beyond their yields (data/xpl-building-extras.js; research/game60 M4, M8): each settlement's Altar our
+ * pantheon's yields there (a town buys it), and a building's great-work slots the works waiting in the archive, in the
+ * member that plans it with the most production (it takes them first). [{ sid, type, value }]
+ */
+function buildingExtras(members, settlements, selectionFor, validity, weights, settings) {
+    const out = [];
+    const focus = focusOfProfile(settings.profile);
+    const has = (sid, type) => !!validity.get(sid)?.existing.has(type);
+    const pantheon = ourPantheonType();
+    if (pantheon) {
+        for (const m of members) {
+            if (!m.city || has(m.key, ALTAR) || !selectionFor(m.key).includes(ALTAR)) continue;
+            const value = altarPantheonValue(m.city, weights, { pantheon, focus });
+            if (value > 0) out.push({ sid: m.key, type: ALTAR, value });
+        }
+    }
+    const production = new Map(settlements.map((st) => [st.id, st.production]));
+    for (const [type, value] of greatWorkSlotValues(weights, focus)) {
+        const best = members.filter((m) => m.city && !has(m.key, type) && selectionFor(m.key).includes(type))
+            .sort((a, b) => (production.get(b.key) ?? 0) - (production.get(a.key) ?? 0))[0];
+        if (best) out.push({ sid: best.key, type, value });
     }
     return out;
 }
@@ -287,13 +317,27 @@ function wonderAnchors(settings, rules, members, roleBySid) {
         scored.push({ type: r.type, sid: o.cityKey, plots: new Set(o.plots.map((p) => p.idx)), turns: o.turns, score, favored: r.type === favored });
     }
     scored.sort((a, b) => Number(b.favored) - Number(a.favored) || b.score - a.score);
-    const out = scored.slice(0, MAX_ANCHORS + (scored[0]?.favored ? 1 : 0)).map(({ type, sid, plots, turns }) => ({ type, sid, plots, turns }));
+    // A city builds one wonder at a time (chooseWonders): a second anchor there is done after the first, and left out when that
+    // is past the age's end (adjacency M2, game 60: Dur-Sharrukin held a tile next to the capital's Palace A70-A92 beside the
+    // Great Stele's, timed as if both were built at once, and was never ordered).
+    const busy = new Map(); // sid -> the turn its anchors so far are done
+    const timed = [];
+    for (const a of scored) {
+        const turns = (busy.get(a.sid) ?? 0) + a.turns;
+        if (busy.has(a.sid) && w.ageTurnsLeft != null && turns > w.ageTurnsLeft - 2) continue;
+        busy.set(a.sid, turns);
+        timed.push({ ...a, turns });
+    }
+    const out = timed.slice(0, MAX_ANCHORS + (timed[0]?.favored ? 1 : 0)).map(({ type, sid, plots, turns }) => ({ type, sid, plots, turns }));
     const row = favored ? w.rows.find((r) => r.type === favored) : null;
     if (row?.status === "LOCKED") {
         const prod = (m) => Number(safe(() => m.city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
         const best = [...cityMembers].sort((a, b) => prod(b) - prod(a))[0];
         const cost = Number(safe(() => best.city.Production.getConstructibleProductionCost(favored), 0)) || rules.costOf(favored);
-        out.push({ type: favored, sid: best.key, plots: null, turns: LOCK_DELAY + Math.ceil(cost / Math.max(1, prod(best))) });
+        // It starts once unlocked and once that city's anchors above are done; past the age's end there, no tile.
+        const busyUntil = out.filter((a) => a.sid === best.key).reduce((t, a) => Math.max(t, a.turns), 0);
+        const turns = Math.max(LOCK_DELAY, busyUntil) + Math.ceil(cost / Math.max(1, prod(best)));
+        if (!(busyUntil > 0 && w.ageTurnsLeft != null && turns > w.ageTurnsLeft - 2)) out.push({ type: favored, sid: best.key, plots: null, turns });
     }
     return out;
 }
@@ -342,6 +386,42 @@ export function hasPlanTacks(plans) {
 }
 
 /**
+ * Is our tack's building queued in one of our cities: on that tile when the queue entry says where, else in the city that owns
+ * the tile? Detailed Map Tacks removes such a tack when the building is completed (game 60's review, E7: a refresh must never
+ * remove it, whatever the plan now says). The queues are read once, at the first question: the tack bridge asks twice for every
+ * tack of ours in the registry (150-200 with the full plan's tacks, in 15-20 cities), and each question read every queue.
+ * @returns (entry) => boolean
+ */
+function queuedOnTile() {
+    let at = null;       // "x,y,hash" of queued buildings with a tile
+    let anywhere = null; // hash -> ids of the cities queuing it without one
+    const read = () => {
+        at = new Set();
+        anywhere = new Map();
+        for (const city of safe(() => Players.get(GameContext.localPlayerID).Cities.getCities(), []) ?? []) {
+            for (const q of safe(() => city.BuildQueue.getQueue(), []) ?? []) {
+                const hash = q?.constructibleType;
+                if (hash === undefined || hash === null || hash === -1) continue;
+                if (q.location) at.add(`${q.location.x},${q.location.y},${hash}`);
+                else anywhere.set(hash, [...(anywhere.get(hash) ?? []), city.id]);
+            }
+        }
+    };
+    const hashes = new Map();
+    return (e) => {
+        if (!hashes.has(e.type)) hashes.set(e.type, safe(() => GameInfo.Constructibles.lookup(e.type).$hash, null));
+        const hash = hashes.get(e.type);
+        if (hash === null || hash === undefined) return false;
+        if (!at) read();
+        if (at.has(`${e.x},${e.y},${hash}`)) return true;
+        const ids = anywhere.get(hash);
+        if (!ids) return false;
+        const owner = safe(() => GameplayMap.getOwningCityFromXY(e.x, e.y), null);
+        return ids.some((id) => sameId(owner, id));
+    };
+}
+
+/**
  * Places the plan's building tacks, replacing our earlier ones in the area (but never
  * tacks of buildings already queued, nor any tack the player placed).
  * perSettlement: only each settlement's next N planned buildings (plan order), no fillers —
@@ -360,7 +440,8 @@ export async function placePlanTacks(plans, { replacePrevious = true, onProgress
     const entries = [...chosen, ...(plans.anchors ?? [])].map((p) => ({ x: p.x, y: p.y, type: p.type }));
     const near = nearCentres(plans.centres);
     const kept = new Set(plans.keptTacks ?? []);
-    return placeTacks(entries, "build", { replacePrevious, onProgress, replaceFilter: (e) => near(e) && !kept.has(tackKey(e.x, e.y, e.type)) });
+    const queued = queuedOnTile();
+    return placeTacks(entries, "build", { replacePrevious, onProgress, replaceFilter: (e) => near(e) && !kept.has(tackKey(e.x, e.y, e.type)) && !queued(e) });
 }
 
 /**
@@ -428,7 +509,7 @@ function regionAround(target, all, engineMap) {
 }
 
 /** Settings and inputs that change what a plan is (not UI-only ones): a change means a full recalculation. */
-function inputSignature(target, settings, selected, lockedSet, rules) {
+function inputSignature(target, settings, selected, lockedSet, rules, extras = {}) {
     const { optionsOpen: _o, lastTarget: _l, autoTacks: _a, incremental: _i, growthHints: _g, ...bs } = settings.buildings ?? {};
     return JSON.stringify({
         target: target.key,
@@ -440,8 +521,13 @@ function inputSignature(target, settings, selected, lockedSet, rules) {
         selected: [...selected].sort(),
         // After the win every building is placed, its gain or not (game 40): another plan.
         everything: !!settings.afterWin,
+        // Our quarter yield modifiers (adjacency F8): a new card or pantheon is another plan.
+        quarters: extras.quarters ?? "",
         // Locked buildings are planned anyway (later); an unlock changes the game's answers of every city instead.
         locked: bs.includeLocked === false ? [...lockedSet].sort() : [],
+        // Our pantheon (the Altar's worth) and the archive's works (the slots' worth): research/game60 M4, M8.
+        pantheon: extras.pantheon ?? null,
+        archive: extras.archive ?? "",
     });
 }
 
@@ -452,7 +538,7 @@ function inputSignature(target, settings, selected, lockedSet, rules) {
  */
 function memberSignature(settlement, role, anchors) {
     const kept = anchors.filter((a) => a.sid === settlement.id).map((a) => `${a.type}:${a.plots ? [...a.plots].sort((x, y) => x - y).join(".") : "rules"}`);
-    return `${role}/${settlement.specialists?.slots ?? 0}/${kept.join(",")}`;
+    return `${role}/${settlement.specialists?.slots ?? 0}/${kept.join(",")}/${settlement.quarterYields?.join(".") ?? ""}`;
 }
 
 /** Why a plan is a full one: the inputs that changed, or none (for the log). */
@@ -595,6 +681,8 @@ export function startBuildingPlan(target, settings, options = {}) {
         const roleBySid = new Map(members.map((m) => [m.key, settlementRole(m, settings)]));
         const anchors = safe(() => wonderAnchors(settings, rules, members, roleBySid), []);
         const anchorsOf = (sid) => anchors.filter((a) => a.sid === sid);
+        // What our traits, cards and pantheons give each quarter (adjacency F8, game 60: Russia's +1 Culture a quarter).
+        const quarters = safe(() => quarterYieldsByMember(members, (k) => roleBySid.get(k)), null) ?? { bySid: new Map(), signature: "" };
         const settlements = members.map((m) => {
             const centre = engineMap.index(m.x, m.y);
             const v = validity.get(m.key);
@@ -611,6 +699,7 @@ export function startBuildingPlan(target, settings, options = {}) {
                 owned: ownedBy.get(m.key),
                 adjMult: 1 + slots, // shown with each building; the plan values specialists per tile
                 specialists: slots > 0 ? { slots, cost: perSpecialist } : null,
+                quarterYields: quarters.bySid.get(m.key) ?? null,
                 // Wonder anchors: the tiles the game allows for each (null: the wonder's own rules), and when it is done.
                 wonderPlots: new Map(anchorsOf(m.key).filter((a) => a.plots).map((a) => [a.type, a.plots])),
                 fixedEta: horizon ? new Map(anchorsOf(m.key).map((a) => [a.type, a.turns])) : null,
@@ -694,10 +783,15 @@ export function startBuildingPlan(target, settings, options = {}) {
         // buildings); a city everything selected.
         const townSelection = (sid) => adjacencySelection.filter((t) => rules.placementOf(t).town || !!validity.get(sid)?.buildable.has(t));
         const selectionFor = (sid) => [...(roleBySid.get(sid) === "TOWN" ? townSelection(sid) : adjacencySelection), ...anchorsOf(sid).map((a) => a.type)];
+        // The pantheon through each Altar, great-work slots while works wait (buildingExtras): in the plan's order, and in the
+        // purchases' value (`net`).
+        const extras = safe(() => buildingExtras(members, settlements, selectionFor, validity, profile.y, settings), []);
+        for (const e of extras) planState.setExtraValue(e.sid, e.type, (planState.extraValue.get(`${e.sid}|${e.type}`) ?? 0) + e.value);
+        const extraOf = new Map(extras.map((e) => [`${e.sid}|${e.type}`, e.value]));
 
         // Incremental: same target and settings, recent plan -> re-solve only changed settlements.
         const memberSigs = Object.fromEntries(settlements.map((st) => [st.id, `${planState.settlementSignature(st.id)}/${engineSigs.get(st.id) ?? ""}/${memberSignature(st, roleBySid.get(st.id), anchors)}`]));
-        const inputSig = inputSignature(target, settings, selected, lockedSet, rules);
+        const inputSig = inputSignature(target, settings, selected, lockedSet, rules, { quarters: quarters.signature, pantheon: safe(() => ourPantheonType(), null), archive: safe(() => archiveSignature(), "") });
         let dirty = null;
         let seed = null;
         if (bs.incremental === false) fullWhy = "option off";
@@ -714,7 +808,7 @@ export function startBuildingPlan(target, settings, options = {}) {
         timing.setup += now() - t0;
         ctx = {
             facts, areaSet, uniqueTypes, validity, engineData, lockedSet, locked, horizon, roleBySid, settlements, planState,
-            calibration, tackInfo, adjacencySelection, warehouseSelection, selectionFor, memberSigs, inputSig, dirty, seed, anchors, recoveryOf,
+            calibration, tackInfo, adjacencySelection, warehouseSelection, selectionFor, memberSigs, inputSig, dirty, seed, anchors, recoveryOf, extraOf,
         };
     }
 
@@ -766,10 +860,13 @@ export function startBuildingPlan(target, settings, options = {}) {
                 const upkeep = upkeepOf(p.sid, p.type);
                 // Happiness that wins back a settlement's penalty below zero (happinessRecovery).
                 const recovery = Math.round((ctx.recoveryOf.get(`${p.sid}|${p.type}`) ?? 0) * 10) / 10;
+                // Our pantheon through an Altar, the works a great-work slot takes from the archive (buildingExtras).
+                const extra = Math.round((ctx.extraOf.get(`${p.sid}|${p.type}`) ?? 0) * 10) / 10;
                 return {
                     upkeep,
                     recovery,
-                    net: Math.round((p.value + recovery - upkeepValue(p.sid, upkeep)) * 10) / 10,
+                    extra,
+                    net: Math.round((p.value + recovery + extra - upkeepValue(p.sid, upkeep)) * 10) / 10,
                     bestNow: bestNowFor(p, engineByHash.get(hash) ?? [], engine, planState, plannedAt, describe, nameOf),
                     ...p,
                     ...describe(p.idx, p.sid),

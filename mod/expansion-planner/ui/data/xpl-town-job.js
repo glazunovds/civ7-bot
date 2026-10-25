@@ -3,7 +3,7 @@
  * Engine calls are the same ones the production chooser uses for its
  * "Convert to City" button (production-chooser-operations.js, panel-production-chooser.js).
  */
-import { adviseTown, compareAdvice, estimateAgeTurnsLeft } from '../core/xpl-town-advisor.js';
+import { adviseTown, compareAdvice, estimateAgeTurnsLeft, exactClock } from '../core/xpl-town-advisor.js';
 import { improvementKind, recommendFocus } from '../core/xpl-town-focus.js';
 import { profileFor } from '../core/xpl-profiles.js';
 import { focusOfProfile } from '../core/xpl-effect-value.js';
@@ -128,7 +128,9 @@ export function ageOutlook() {
     const endless = !ageHasEnd();
     const rivalWin = safe(() => rivalWinTurns(), null);
     const clock = endless ? Infinity : turnsLeft;
-    return { turnsLeft: rivalWin ? Math.min(clock, rivalWin.turns) : clock, isFinalAge, endless: endless && !rivalWin, rivalWin, ageFrac: max > 0 ? points / max : 0 };
+    // `exact`: one point a turn lately and the estimate the clock's own (exactClock): deadlines then need no margin.
+    const exact = !endless && !rivalWin && turnsLeft === max - points && exactClock(samples, points, max);
+    return { turnsLeft: rivalWin ? Math.min(clock, rivalWin.turns) : clock, isFinalAge, endless: endless && !rivalWin, rivalWin, ageFrac: max > 0 ? points / max : 0, exact };
 }
 
 /** Median of (gold purchase cost / production cost) for current-age buildings in a real city. */

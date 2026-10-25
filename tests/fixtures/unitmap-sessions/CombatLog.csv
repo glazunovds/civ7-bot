@@ -1,0 +1,4 @@
+Turn, SourceType, Location, AttPlayer, DefPlayer, CombatType, Attacker, Defender, AttStr, DefStr, AttStrMod, DefStrMod, AttDmg, DefDmg, Destroyed, HealAmount, attHealth, defHealth
+140,Unit vs Unit,(10)(11),28,0,Melee,(14)UNIT_WARRIOR,(14)UNIT_WARRIOR,20,20,0,0,30,30,N/A,0,(70)100,(70)100
+2,Unit vs Unit,(50)(31),40,0,Ranged,(17)UNIT_CORSAIR,(16)UNIT_MAN_AT_ARMS,35,35,0,0,0,25,N/A,0,(100)100,(75)100
+2,Unit vs Unit,(50)(31),28,0,Ranged,(17)UNIT_CROSSBOWMAN,(16)UNIT_MAN_AT_ARMS,35,35,0,0,0,20,N/A,0,(100)100,(55)100

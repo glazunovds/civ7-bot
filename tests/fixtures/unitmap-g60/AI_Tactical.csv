@@ -1,0 +1,5 @@
+Game Turn, Player, Category, Target Type, Target Info, Unit Info, Extra
+64, 28, Attack Units, TARGET_LOW_PRIORITY_UNIT, UNIT_WARRIOR (983051:0), UNIT_WARRIOR (65536), Expected Damage: 0, Move 64 14 Attack -9999 -9999,  Army
+65, 28, Attack Units, TARGET_LOW_PRIORITY_UNIT, UNIT_SLINGER (1179654:0), UNIT_WARRIOR (65536), Expected Damage: 0, Move 64 14 Attack 64 15,  Army
+66, 28, Attack Units, TARGET_LOW_PRIORITY_UNIT, UNIT_SLINGER (1179654:0), UNIT_WARRIOR (65536), Expected Damage: 0, Move 64 13 Attack 65 12,  Army
+67, 28, Attack Units, TARGET_LOW_PRIORITY_UNIT, UNIT_SLINGER (1179654:0), UNIT_WARRIOR (65536), Expected Damage: 0, Move 65 12 Attack 65 11,  Army

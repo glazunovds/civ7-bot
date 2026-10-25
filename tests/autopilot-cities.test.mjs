@@ -72,16 +72,16 @@ test("a new age's first turn converts the best towns that were not cities in the
         world.gold = 2000;
         fake.sent.length = 0;
         let out = await steps.convertAtAgeStart(createBudget({ gold: 2000 }), "CULTURE");
-        assert.deepEqual(out, [], "science and economy only");
+        assert.deepEqual(out, [], "another focus: only to the 1:1 floor, which Pella's return keeps (2 cities, 2 towns)");
         out = await steps.convertAtAgeStart(createBudget({ gold: 2000 }), "SCIENCE");
         assert.deepEqual(converted(), ["Corinth", "Thebes"], "Pella comes back with the card");
         assert.deepEqual(out.map((e) => e.key), ["TOWN_CONVERTED_AGE_START", "TOWN_CONVERTED_AGE_START"]);
-        // The gold above the reserve only.
+        // All the gold, the reserve too (game 61: 71 above the reserve against Спахан's 550): no cheaper moment comes.
         world.cities.forEach((c, i) => { c.isTown = towns[i]; });
         world.gold = 1000;
         fake.sent.length = 0;
-        await steps.convertAtAgeStart(createBudget({ gold: 1000, reserve: 300 }), "SCIENCE");
-        assert.deepEqual(converted(), ["Corinth"], "700 above the reserve: Thebes's 900 waits");
+        await steps.convertAtAgeStart(createBudget({ gold: 1000, reserve: 500 }), "SCIENCE");
+        assert.deepEqual(converted(), ["Corinth"], "Corinth's 600 from 1,000 with a 500 reserve; then 400 left: Thebes's 900 waits");
         // This age's own cities remembered (a later turn, or a reload): no window, though fewer cities stand.
         world.cities.forEach((c, i) => { c.isTown = towns[i]; });
         settings.remember(gameKey(), { ageCities: `AGE_EXPLORATION|${A.x},${A.y};${P.x},${P.y}` });
@@ -157,12 +157,14 @@ test("a settlement a revolt may take buys a Happiness building there from all th
         fake.sent.length = 0;
         assert.deepEqual(steps.guardRevolts(createBudget({ gold: 300, reserve: 250 })), [], "calm: nothing");
         thebes.unrest = true;
+        thebes.buyInUnrest = true; // the game sells nothing in unrest unless an effect allows it (city.Gold.canPurchaseWhileInUnrest)
         fake.sent.length = 0;
         const out = steps.guardRevolts(createBudget({ gold: 300, reserve: 250 }));
         assert.deepEqual(bought(), [2], "the reserve too");
         assert.equal(out[0]?.key, "REVOLT_GUARD");
     } finally {
         delete thebes.unrest;
+        delete thebes.buyInUnrest;
         delete world.canBuy;
     }
 });
@@ -252,6 +254,7 @@ test("the pass: a new age's first-turn conversion, a revolt guard's purchase, an
         settings.remember(gameKey(), { ageCities: `AGE_ANTIQUITY|${A.x},${A.y};${P.x},${P.y}` });
         world.gold = 2000;
         thebes.unrest = true; // not converted (calmEnough), guarded
+        thebes.buyInUnrest = true; // an effect lets it buy in unrest (city.Gold.canPurchaseWhileInUnrest)
         state.set({ autopilot: { ...(state.get().autopilot ?? {}), log: [] } });
         await autopilot.runTurn(true);
         const keys = (state.get().autopilot.log ?? []).map((e) => e.key);
@@ -261,6 +264,7 @@ test("the pass: a new age's first-turn conversion, a revolt guard's purchase, an
         Game.CityCommands.sendRequest = send;
         world.cities.forEach((c, i) => { c.isTown = towns[i]; });
         delete thebes.unrest;
+        delete thebes.buyInUnrest;
         delete world.canBuy;
         delete Players.get(0).LegacyPaths;
         world.gold = 100;
@@ -295,6 +299,37 @@ test("switched on before the dedications: the autopilot stops for them and switc
         delete world.blocker;
         settings.remember(gameKey(), { apOnAge: null, ageCities: null });
         settings.patch({ autopilot: { ...Object.fromEntries(Object.keys(off).map((k) => [k, true])), endTurn: false } });
+    }
+});
+
+// The integration review of game 60's packages: the window runs for every focus or none now (gold), and a science focus
+// remembered from the last age set its city target while «Фокус победы» was off.
+test("with the victory focus off, the dedications' conversion window converts only to the 1:1 floor", async () => {
+    const autopilot = await import("../mod/expansion-planner/ui/hud/xpl-autopilot.js");
+    const send = Game.CityCommands.sendRequest;
+    Game.CityCommands.sendRequest = (id, op, args) => {
+        send(id, op, args);
+        if (args?.Directive === OrderTypes.ORDER_TOWN_UPGRADE) world.cities.filter((c) => c.owner === 0)[id.id].isTown = false;
+    };
+    const towns = world.cities.map((c) => c.isTown);
+    const turn = Game.turn;
+    try {
+        Game.turn = 1;
+        autopilot.resetFirstTurnWindow();
+        settings.patch({ autopilot: { focus: false } });
+        settings.remember(gameKey(), { ageCities: `AGE_ANTIQUITY|${A.x},${A.y};${P.x},${P.y}`, focus: "SCIENCE" });
+        world.gold = 2000;
+        world.blocker = { type: EndTurnBlockingTypes.OTHER, name: "NOTIFICATION_AGE_TRANSITION" };
+        fake.sent.length = 0;
+        await autopilot.convertBeforeDedications();
+        assert.deepEqual(converted(), [], "Pella's return keeps 2 cities to 2 towns: no science city target");
+    } finally {
+        Game.CityCommands.sendRequest = send;
+        world.cities.forEach((c, i) => { c.isTown = towns[i]; });
+        Game.turn = turn;
+        delete world.blocker;
+        world.gold = 100;
+        settings.remember(gameKey(), { ageCities: null, focus: null });
     }
 });
 

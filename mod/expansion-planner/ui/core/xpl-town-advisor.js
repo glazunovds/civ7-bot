@@ -105,6 +105,24 @@ export function compareAdvice(a, b) {
     return b.advice.value - a.advice.value;
 }
 
+// The age's clock is exact when its points rose one a turn over this many last turns (game 60: Antiquity's last turns).
+export const EXACT_CLOCK_TURNS = 5;
+
+/**
+ * Did the age's points rise exactly one a turn over the last EXACT_CLOCK_TURNS turns, the last sample now's points? Then the turns
+ * left are max - points, and a deadline needs no margin (game 60: a 1-turn margin on such a clock lost the capital's Altar).
+ */
+export function exactClock(samples, points, max, n = EXACT_CLOCK_TURNS) {
+    const usable = (samples ?? []).filter((s) => Number.isFinite(s.turn) && Number.isFinite(s.points));
+    if (usable.length < n + 1 || !(max > 0)) return false;
+    const last = usable.slice(-(n + 1));
+    if (last[last.length - 1].points !== points) return false;
+    for (let i = 1; i < last.length; i++) {
+        if (last[i].turn - last[i - 1].turn !== 1 || last[i].points - last[i - 1].points !== 1) return false;
+    }
+    return true;
+}
+
 /** Turns left in the age from samples [{ turn, points }] (oldest first). */
 export function estimateAgeTurnsLeft(samples, points, max, fallbackTotalTurns = 120) {
     const usable = (samples ?? []).filter((s) => Number.isFinite(s.turn) && Number.isFinite(s.points));

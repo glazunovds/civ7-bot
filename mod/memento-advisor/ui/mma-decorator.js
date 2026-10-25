@@ -159,7 +159,7 @@ export class MmaScreenDecorator {
         return compose(`LOC_MMA_MODE_${mode}`);
     }
 
-    /** Our row after the filter bar: who the advice is for, and one button per ranking. */
+    /** Our row after the filter bar: who and which age the advice is for, and one button per ranking. */
     ensureSwitch() {
         const bar = this.c.Root.querySelector(".memento-select-filter-bar");
         if (!bar?.parentElement) return;
@@ -175,7 +175,8 @@ export class MmaScreenDecorator {
         const lang = this.ctx?.lang ?? "en";
         const leader = this.ctx?.leader ? nameOf("leader", this.ctx.leader, lang) : null;
         const civ = this.ctx?.civ ? nameOf("civ", this.ctx.civ, lang) : null;
-        const who = leader && civ ? compose("LOC_MMA_FOR_PAIR", leader, civ) : leader ? compose("LOC_MMA_FOR_LEADER", leader) : compose("LOC_MMA_FOR_ANY");
+        const age = (this.ctx?.age ? nameOf("age", this.ctx.age, lang) : null) ?? "";
+        const who = leader && civ ? compose("LOC_MMA_FOR_PAIR", leader, civ, age) : leader ? compose("LOC_MMA_FOR_LEADER", leader, age) : compose("LOC_MMA_FOR_ANY", age);
         row.appendChild(el("div", "mma-switch-label font-body", who));
         for (const mode of MODES) {
             const b = el("div", `mma-mode font-body${mode === this.mode ? " mma-mode--on" : ""}`, this.modeLabel(mode));

@@ -6,7 +6,7 @@ import { findSites, runToEnd } from "../mod/expansion-planner/ui/core/xpl-site-p
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { normaliseRule } from "../mod/expansion-planner/ui/core/xpl-adjacency-rules.js";
 import { scoreSiteRoles } from "../mod/expansion-planner/ui/core/xpl-site-roles.js";
-import { TUNING } from "../mod/expansion-planner/ui/core/xpl-tuning.js";
+import { TUNING, siteTuning } from "../mod/expansion-planner/ui/core/xpl-tuning.js";
 
 test("open grassland site scores and is not rejected", () => {
     const w = new FakeWorld(30, 20);
@@ -38,6 +38,18 @@ test("a site squeezed between two settlements is rejected for lack of room", () 
     });
     const r = scoreSite(w.at(15, 10), ctx);
     assert.equal(r.rejected?.code, REJECT.ROOM);
+});
+
+// Game 63: one settlement from our military countdown for Modern's last 12 turns; the relaxed search's 3 candidates, squeezed
+// between settlements, were all rejected for ROOM while two bought settlers stood idle.
+test("a squeezed site the military countdown needs: the relaxed search with anyRoom keeps it (no ROOM or RING1 rejection)", () => {
+    const w = new FakeWorld(30, 20);
+    const centres = [{ idx: w.at(11, 10), kind: "OWN" }, { idx: w.at(19, 10), kind: "FOREIGN" }, { idx: w.at(15, 6), kind: "FOREIGN" }, { idx: w.at(15, 14), kind: "FOREIGN" }];
+    const relaxed = scoreSite(w.at(15, 10), w.ctx({ centres, overlapTol: "HIGH", tuning: siteTuning(true) }));
+    assert.ok([REJECT.ROOM, REJECT.RING1].includes(relaxed.rejected?.code), `relaxed alone: ${JSON.stringify(relaxed.rejected)}`);
+    const any = scoreSite(w.at(15, 10), w.ctx({ centres, overlapTol: "HIGH", tuning: siteTuning(true, { anyRoom: true }) }));
+    assert.equal(any.rejected, undefined, JSON.stringify(any.rejected));
+    assert.equal(siteTuning(false, { anyRoom: true }), TUNING, "the normal search keeps its rules");
 });
 
 test("water-locked centre fails room gate; fresh water and coast add bonuses", () => {

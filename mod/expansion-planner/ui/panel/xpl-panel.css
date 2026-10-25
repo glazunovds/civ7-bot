@@ -37,12 +37,29 @@
     border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.45);
 }
 
-.xpl-title {
+/* The title with the mod's version beside it (small and dim: every screenshot shows the build). */
+.xpl-title-box {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
     flex: 1 1 auto;
+    min-width: 0;
+}
+
+.xpl-title {
+    flex: 0 1 auto;
+    min-width: 0;
     font-size: 1.35rem;
     line-height: 1.1;
     color: #d8c593;
     text-transform: uppercase;
+}
+
+.xpl-version {
+    flex: 0 0 auto;
+    margin-left: 0.6rem;
+    font-size: 0.86rem;
+    color: #8f8a7c;
 }
 
 .xpl-priority {
@@ -112,6 +129,15 @@
     font-size: 0.92rem;
     color: #8f8a7c;
     border-top: 0.0555555556rem solid rgba(196, 176, 120, 0.3);
+}
+
+/* Shown only while Detailed Map Tacks is missing (xpl-panel.js renderStatus). */
+.xpl-footer.hidden {
+    display: none;
+}
+
+.xpl-footer .xpl-status {
+    color: #e8d18a;
 }
 
 /* ---- Settlements tab ---------------------------------------------------- */
@@ -622,9 +648,259 @@
     overflow-y: auto;
 }
 
-/* Autopilot tab. */
-.xpl-ap-status { flex: 1 1 0; min-width: 0; font-size: 1.03rem; }
+/* ---- Autopilot tab (game 60's review, UI-1) -------------------------------- */
+/* A fixed top bar, then the settings and the log, each in its own fill scrollable: side by side in the
+   large frame (about 55% / 45%), one at a time in the compact one (the Settings | Log switch). */
+.xpl-ap-top {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+    margin-top: 0.2rem;
+}
+.xpl-ap-state {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+    pointer-events: auto;
+}
+.xpl-ap-status { font-size: 1.03rem; color: #b9b2a0; }
 .xpl-ap-status--on { color: #9ed89a; }
+.xpl-ap-blocker { font-size: 0.92rem; color: #8f8a7c; }
+.xpl-ap-blocker--held { color: #e8d18a; }
+.xpl-ap-blocker.hidden { display: none; }
+.xpl-ap-summary {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+    min-height: 1.6rem;
+    margin-top: 0.2rem;
+    border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.25);
+}
+.xpl-ap-gold {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-bottom: 0.2rem;
+    font-size: 0.92rem;
+    color: #cfc8b6;
+}
+/* No gold plan yet: the line keeps its room (the compact frame's switch stays on the right). */
+.xpl-ap-gold--none { visibility: hidden; }
+.xpl-ap-switch,
+.xpl-ap-filters {
+    display: flex;
+    flex-direction: row;
+    flex: 0 0 auto;
+    margin-left: 0.4rem;
+    pointer-events: auto;
+}
+.xpl-frame--large .xpl-ap-switch { display: none; }
+/* A segment of a two- or three-way switch. */
+.xpl-ap-seg {
+    flex: 0 0 auto;
+    padding: 0.05rem 0.55rem;
+    font-size: 0.92rem;
+    color: #b9b2a0;
+    background: rgba(255, 255, 255, 0.04);
+    border: 0.0555555556rem solid rgba(196, 176, 120, 0.3);
+    pointer-events: auto;
+}
+.xpl-ap-seg:hover { color: #ffffff; background: rgba(255, 255, 255, 0.1); }
+.xpl-ap-seg--on { color: #f2d16b; background: rgba(242, 209, 107, 0.16); border-color: rgba(242, 209, 107, 0.65); }
+
+.xpl-ap-panes {
+    display: flex;
+    flex-direction: row;
+    flex: 1 1 0;
+    min-height: 0;
+}
+.xpl-ap-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+}
+.xpl-ap-pane--off { display: none; }
+.xpl-frame--large .xpl-ap-pane--off { display: flex; }
+.xpl-frame--large .xpl-ap-pane--settings {
+    flex: 0 0 auto;
+    width: 55%;
+    padding-right: 0.5rem;
+    margin-right: 0.5rem;
+    border-right: 0.0555555556rem solid rgba(196, 176, 120, 0.25);
+}
+.xpl-ap-pane .xpl-scroll--fill {
+    flex: 1 1 0;
+    min-height: 4rem;
+}
+
+/* Groups of options: a header (open/close, title, count, master checkbox) over its items. */
+.xpl-ap-groups {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+}
+.xpl-ap-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0.25rem;
+}
+.xpl-ap-group__head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 2.2rem;
+    padding: 0.1rem 0.25rem;
+    background: rgba(196, 176, 120, 0.08);
+    border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.3);
+}
+.xpl-ap-group__toggle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 1 1 0;
+    min-width: 0;
+    pointer-events: auto;
+}
+.xpl-ap-group__toggle:hover { background: rgba(255, 255, 255, 0.05); }
+.xpl-ap-group__toggle fxs-minus-plus { flex: 0 0 auto; }
+.xpl-ap-group__titles {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+    margin-left: 0.45rem;
+}
+.xpl-ap-group__title { font-size: 1.03rem; color: #d8c593; }
+.xpl-ap-group__line { font-size: 0.86rem; color: #9fd3c7; }
+.xpl-ap-group__line.hidden { display: none; }
+.xpl-ap-group__count {
+    flex: 0 0 auto;
+    margin: 0 0.4rem;
+    font-size: 0.92rem;
+    color: #b9b2a0;
+}
+/* The master checkbox; a mixed group shows a bar over the empty box (fxs-checkbox has no third state). */
+.xpl-ap-master {
+    position: relative;
+    flex: 0 0 auto;
+}
+.xpl-ap-master__mixed {
+    position: absolute;
+    left: 28%;
+    right: 28%;
+    top: 44%;
+    height: 12%;
+    background: #f2d16b;
+    pointer-events: none;
+    visibility: hidden;
+}
+.xpl-ap-master--mixed .xpl-ap-master__mixed { visibility: visible; }
+.xpl-ap-all-off { min-width: 4rem; }
+.xpl-ap-group__items {
+    display: flex;
+    flex-direction: column;
+    padding: 0.1rem 0 0.2rem 0.2rem;
+}
+.xpl-ap-group__items.hidden { display: none; }
+.xpl-ap-item {
+    display: flex;
+    flex-direction: column;
+}
+.xpl-ap-item--d1 { margin-left: 1.5rem; }
+.xpl-ap-item--d2 { margin-left: 3rem; }
+.xpl-ap-item__line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 1.9rem;
+    font-size: 0.98rem;
+}
+.xpl-ap-item__line fxs-checkbox { flex: 0 0 auto; margin-right: 0.3rem; }
+.xpl-ap-item__label {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-right: 0.3rem;
+}
+/* An option that looks on but does not act (what it needs is off), or a value the phase replaces: still editable. */
+.xpl-ap-item--dim .xpl-ap-item__label,
+.xpl-ap-item--dim fxs-checkbox,
+.xpl-ap-item--dim fxs-dropdown { opacity: 0.5; }
+.xpl-ap-item__chips {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+.xpl-ap-item__dropdown {
+    flex: 0 0 10.5rem;
+    min-width: 0;
+}
+.xpl-ap-item .xpl-small-button { min-width: 4rem; }
+.xpl-ap-help {
+    flex: 0 0 auto;
+    width: 1.3rem;
+    margin-left: 0.3rem;
+    font-size: 0.92rem;
+    text-align: center;
+    color: #8f8a7c;
+    border: 0.0555555556rem solid rgba(196, 176, 120, 0.35);
+    border-radius: 0.65rem;
+    pointer-events: auto;
+}
+.xpl-ap-help:hover,
+.xpl-ap-help--on { color: #f2d16b; border-color: rgba(242, 209, 107, 0.7); }
+.xpl-ap-details {
+    margin: 0 0.3rem 0.35rem 2.3rem;
+    padding: 0.2rem 0.4rem;
+    min-width: 0;
+    font-size: 0.9rem;
+    color: #b9b2a0;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 0.15rem solid rgba(196, 176, 120, 0.4);
+}
+.xpl-ap-details.hidden { display: none; }
+.xpl-ap-note {
+    margin: 0 0.3rem 0.2rem 2.3rem;
+    font-size: 0.9rem;
+    color: #8f8a7c;
+}
+.xpl-ap-note.hidden { display: none; }
+.xpl-chip--needs { color: #e9a38a; background: rgba(224, 123, 57, 0.14); }
+.xpl-chip--phase { color: #f2d16b; background: rgba(242, 209, 107, 0.14); }
+.xpl-chip--hint { color: #b9b2a0; background: rgba(255, 255, 255, 0.07); }
+.xpl-chip--units { color: #e5c97b; background: rgba(229, 201, 123, 0.12); }
+
+/* The log pane: its title and filter, the victory box (open or closed), then the log. */
+.xpl-ap-log-head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+    min-height: 2rem;
+}
+.xpl-ap-log-title {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 1.03rem;
+    color: #d8c593;
+}
+.xpl-ap-focus-head {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.25rem;
+    font-size: 0.98rem;
+    color: #e8dcb8;
+    background: rgba(196, 176, 120, 0.08);
+    pointer-events: auto;
+}
+.xpl-ap-focus-head:hover { background: rgba(255, 255, 255, 0.08); }
+.xpl-ap-focus-head.hidden,
+.xpl-ap-focus-box.hidden { display: none; }
+.xpl-ap-focus-box { flex: 0 0 auto; margin: 0 0 0.2rem 0.4rem; }
 .xpl-ap-log {
     display: flex;
     flex-direction: column;
@@ -633,15 +909,23 @@
     margin-top: 0.2rem;
     overflow-y: auto;
 }
+.xpl-ap-log-turn {
+    margin: 0.3rem 0 0.1rem;
+    font-size: 0.95rem;
+    color: #d8c593;
+    border-bottom: 0.0555555556rem solid rgba(196, 176, 120, 0.25);
+}
 .xpl-ap-log-row {
     padding: 0.12rem 0.3rem;
     font-size: 0.95rem;
     border-left: 0.2rem solid rgba(158, 216, 154, 0.35);
     margin-bottom: 0.1rem;
 }
+.xpl-ap-log-row--routine { color: #9a958a; border-left-color: rgba(255, 255, 255, 0.12); }
+.xpl-ap-log-row--error { color: #e9a38a; border-left-color: rgba(224, 123, 57, 0.8); }
+.xpl-ap-log-row--threat { border-left-color: rgba(232, 197, 71, 0.75); }
 
 .xpl-ap-lost.hidden { display: none; }
-.xpl-ap-units-title { width: 100%; margin-top: 0.3rem; color: #e5c97b; }
 
 /* Scrollbars: every scrolling list sits in the game's fxs-scrollable (attached-scrollbar), which
    draws the scrollbar the UI engine does not. The wrapper takes the list's place in the layout

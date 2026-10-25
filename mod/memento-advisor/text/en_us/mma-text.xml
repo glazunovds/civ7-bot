@@ -2,13 +2,13 @@
 <Database>
   <EnglishText>
     <Row Tag="LOC_MMA_FOR_PAIR">
-      <Text>Suggested mementos for {1_Leader} + {2_Civ}:</Text>
+      <Text>Suggested mementos for {1_Leader} + {2_Civ} ({3_Age}):</Text>
     </Row>
     <Row Tag="LOC_MMA_FOR_LEADER">
-      <Text>Suggested mementos for {1_Leader}:</Text>
+      <Text>Suggested mementos for {1_Leader} ({2_Age}):</Text>
     </Row>
     <Row Tag="LOC_MMA_FOR_ANY">
-      <Text>Suggested mementos:</Text>
+      <Text>Suggested mementos ({1_Age}):</Text>
     </Row>
     <Row Tag="LOC_MMA_MODE_AUTO">
       <Text>Auto ({1_Victory})</Text>
@@ -29,7 +29,7 @@
       <Text>Military</Text>
     </Row>
     <Row Tag="LOC_MMA_MODE_AUTO_TT">
-      <Text>The victory that suits this leader and civilization (the leader's preferred victory for the civilization's age, else their attributes). The numbers on the cards are the best mementos for it, 1 first; mementos you have not unlocked are skipped.</Text>
+      <Text>The victory that suits this leader and civilization (the leader's preferred victory for the age the mementos are chosen for, else their attributes). The numbers on the cards are the best mementos for it, 1 first; mementos you have not unlocked are skipped.</Text>
     </Row>
     <Row Tag="LOC_MMA_MODE_TT">
       <Text>Rank the mementos for this goal instead (Balanced: the average of the four victories). The choice is remembered.</Text>

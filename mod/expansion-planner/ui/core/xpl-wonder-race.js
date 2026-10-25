@@ -79,15 +79,16 @@ export function raceLost({ ourTurns, rivalTurns, ageTurnsLeft }) {
 }
 
 /**
- * Which building should take production that would otherwise be lost (all of it up to its cost): the one that
- * keeps the most, the earlier on ties (the plan's order). Used for a lost wonder's progress (moved ahead of it)
- * and for its refund (standing right behind it).
- * @param candidates [{ cost, ... }]  @returns the best candidate with `keeps`, or null
+ * Which building should take production that would otherwise be lost (all of it up to the room it has left: its cost
+ * less its own progress, `room`, else its cost): the one that keeps the most, the earlier on ties (the plan's order).
+ * Used for a lost wonder's progress (moved ahead of it) and for its refund (standing right behind it). Game 60: a
+ * Monument at 61% counted as keeping 44 with 38 of room left.
+ * @param candidates [{ cost, room?, ... }]  @returns the best candidate with `keeps`, or null
  */
 export function bestAbsorber(candidates, amount) {
     let best = null;
     for (const c of candidates) {
-        const keeps = Math.min(Number(c.cost) || 0, amount);
+        const keeps = Math.min(Number(c.room ?? c.cost) || 0, amount);
         if (keeps > 0 && (!best || keeps > best.keeps + 0.5)) best = { ...c, keeps };
     }
     return best;

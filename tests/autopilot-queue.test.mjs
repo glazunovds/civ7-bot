@@ -81,12 +81,21 @@ test("a settler goes ahead of a wonder or a project in production (units do not 
     assert.deepEqual(moves(), [[0, 2, 0]]);
 });
 
-test("a repair goes behind a wonder with progress, not ahead of it", () => {
+// Never ahead of a wonder in production; nor right behind it any more (game 60's review): that place is the refund guard's
+// (guardWonderRefund: a big building there), and the two took the city's one queue edit turn about. It waits for the wonder.
+test("a repair never goes ahead of a wonder with progress, and waits where it is while the wonder is in production", () => {
     reset();
     athens.queue = { type: "WONDER_PYRAMIDS", turns: 9, pct: 60 };
     athens.queued = ["BUILDING_MONUMENT", "BUILDING_LIBRARY"];
     world.canBuild = (type, id) => (type === "BUILDING_LIBRARY" && id.id === 0 ? { Success: true, RepairDamaged: true, InQueue: true, Plots: [idx(7, 6)] } : type === undefined ? { Success: true } : { Success: false, Plots: [] });
-    const out = steps.repairBuildings({ buy: false, queue: true });
+    let out = steps.repairBuildings({ buy: false, queue: true });
+    assert.deepEqual(moves(), []);
+    assert.ok(!out.some((e) => e.key === "REPAIR_FIRST"));
+    // The wonder done, the Monument in production with progress: right behind it.
+    athens.queue = { type: "BUILDING_MONUMENT", turns: 3, pct: 60 };
+    athens.queued = ["BUILDING_GRANARY", "BUILDING_LIBRARY"];
+    fake.sent.length = 0;
+    out = steps.repairBuildings({ buy: false, queue: true });
     assert.deepEqual(moves(), [[0, 2, 1]]);
     assert.ok(out.some((e) => e.key === "REPAIR_FIRST"));
 });

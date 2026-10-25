@@ -15,6 +15,7 @@ import { focusPlot } from '../map/xpl-camera.js';
 import { isDmtActive } from '../integrations/xpl-dmt-status.js';
 import { clearOurTacks, isDmtReady, onDmtReady } from '../integrations/xpl-dmt-bridge.js';
 import { QUEUE_MAX_NEW, buyPlanned, cityOfSid, purchaseAdvice, queueNextBuildings } from '../data/xpl-city-actions.js';
+import { askTackRefresh } from '../hud/xpl-autopilot.js';
 
 const SPECIALIST_OPTIONS = [0, 0.5, 1];
 const WAITING_BUDGET_MS = 12; // CPU per frame for a plan while the panel is open (the player waits for it)
@@ -222,7 +223,10 @@ export class BuildingsTab {
             this.updateOptionsSummary();
             this.markStale("OPTIONS");
         });
-        this.listen(this.buttons.recalc, "action-activate", () => this.compute());
+        this.listen(this.buttons.recalc, "action-activate", () => {
+            askTackRefresh(); // the autopilot's next pass renews the plan's tacks (game 60's review, E7)
+            this.compute();
+        });
         this.listen(this.optionsToggle, "click", () => {
             settings.patch({ buildings: { optionsOpen: !settings.get().buildings.optionsOpen } });
             this.applyOptionsOpen();
@@ -263,6 +267,8 @@ export class BuildingsTab {
     /** Opening the tab shows the last plan; it never starts a new one by itself. */
     show() {
         this.active = true;
+        // The player looks at the plan: the autopilot's next pass renews its tacks (game 60's review, E7).
+        askTackRefresh();
         this.refreshTargets();
         this.render();
     }

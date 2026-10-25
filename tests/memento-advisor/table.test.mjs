@@ -8,12 +8,16 @@ import { MEMENTO_TABLE, getPicks, mementoTypeByIcon } from "../../mod/memento-ad
 const FOCUSES = ["CULTURE", "SCIENCE", "ECONOMIC", "MILITARY"];
 const RANKINGS = ["BALANCED", ...FOCUSES];
 const AGE_OF = { AQ: "AQ", EX: "EX", MO: "MO" };
+const AGES = ["AGE_ANTIQUITY", "AGE_EXPLORATION", "AGE_MODERN"];
 
 const T = MEMENTO_TABLE;
 const top = (leader, civ, ranking) => getPicks(leader, civ).ranks[ranking];
 
 test("header: version, rankings, build info", () => {
-    assert.equal(T.version, 1);
+    assert.equal(T.version, 2);
+    assert.deepEqual(T.ages.map((a) => a.type), AGES);
+    assert.deepEqual(T.ages.map((a) => a.key), ["AQ", "EX", "MO"]);
+    for (const a of T.ages) assert.ok(a.name.en && a.name.ru, a.type + " name");
     assert.deepEqual([...T.rankings], RANKINGS);
     assert.deepEqual([...T.focuses], FOCUSES);
     assert.ok(T.generatedFrom && T.generatedFrom.date, "generatedFrom.date");
@@ -38,21 +42,25 @@ test("every leader and civilization has names in both languages", () => {
     for (const c of Object.values(T.civs)) assert.ok(c.age in AGE_OF);
 });
 
-test("every leader + civilization pair (and each fallback) has 6 distinct known mementos per ranking", () => {
+test("every leader + civilization pair (and each fallback) has 6 distinct known mementos per ranking, in every age", () => {
     const leaders = Object.keys(T.leaders);
     const civs = Object.keys(T.civs);
-    const keys = ["*|*"];
-    for (const l of leaders) {
-        keys.push(l + "|*");
-        for (const c of civs) keys.push(l + "|" + c);
+    const keys = [];
+    for (const a of AGES) {
+        keys.push("*|*@" + a);
+        for (const l of leaders) {
+            keys.push(l + "|*@" + a);
+            for (const c of civs) keys.push(l + "|" + c + "@" + a);
+        }
     }
     assert.equal(Object.keys(T.picks).length, keys.length);
     for (const key of keys) {
         const p = T.picks[key];
         assert.ok(p, "missing " + key);
         assert.ok(FOCUSES.includes(p.focus), key + " focus " + p.focus);
-        const civ = key.split("|")[1];
-        assert.equal(p.age, civ === "*" ? "AQ" : T.civs[civ].age, key + " age");
+        const age = key.split("@")[1];
+        assert.equal(p.ageType, age, key + " age");
+        assert.equal(p.age, T.ages.find((a) => a.type === age).key, key + " age key");
         for (const r of RANKINGS) {
             const list = p.ranks[r];
             assert.equal(list.length, 6, key + " " + r);
@@ -68,9 +76,11 @@ test("every leader + civilization pair (and each fallback) has 6 distinct known 
     }
 });
 
-test("getPicks falls back to the leader alone, then to *|*", () => {
-    assert.equal(getPicks("LEADER_AMINA", "CIVILIZATION_NOT_A_CIV"), T.picks["LEADER_AMINA|*"]);
-    assert.equal(getPicks("LEADER_NOT_A_LEADER", "CIVILIZATION_HAN"), T.picks["*|*"]);
+test("getPicks falls back to the leader alone, then to *|*; with no age, the civilization's own (Antiquity for none)", () => {
+    assert.equal(getPicks("LEADER_AMINA", "CIVILIZATION_NOT_A_CIV"), T.picks["LEADER_AMINA|*@AGE_ANTIQUITY"]);
+    assert.equal(getPicks("LEADER_NOT_A_LEADER", "CIVILIZATION_HAN"), T.picks["*|*@AGE_ANTIQUITY"]);
+    assert.equal(getPicks("LEADER_AMINA", "CIVILIZATION_MING"), T.picks["LEADER_AMINA|CIVILIZATION_MING@AGE_EXPLORATION"]);
+    assert.equal(getPicks("LEADER_AMINA", "CIVILIZATION_MING", "AGE_NOT_AN_AGE"), T.picks["LEADER_AMINA|CIVILIZATION_MING@AGE_EXPLORATION"]);
 });
 
 test("spot check: Benjamin Franklin's science game wants Yasakani, Corpus Juris Civilis and the Analects", () => {

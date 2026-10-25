@@ -4,8 +4,10 @@
         [--markdown FILE] [--accept-fingerprints] [--strict]
 
 Reads the game's mementos, leaders and civilizations (base game and every DLC
-folder present), scores every memento for every leader + civilization pair with
-the method in mma_scoring.py (research/16-memento-scoring.md), and writes:
+folder present), scores every memento for every leader + civilization pair in
+every age with the method in mma_scoring.py (research/16-memento-scoring.md):
+the game lets any civilization play in any age, and the mementos are chosen
+again at every age transition. It writes:
 
 - <out>/mma-table.js      ES module, `export const MEMENTO_TABLE` (+ `getPicks`).
 - tools/memento-advisor/out/mma-extract.json  everything read and every base score (reference, not shipped).
@@ -34,7 +36,7 @@ DEFAULT_OUT = os.path.join(REPO, "mod", "memento-advisor", "data")
 # The reference dump stays out of the mod folder (it is not shipped).
 EXTRACT_OUT = os.path.join(REPO, "tools", "memento-advisor", "out")
 FINGERPRINTS = os.path.join(HERE, "mma_fingerprints.json")
-TABLE_VERSION = 1
+TABLE_VERSION = 2        # 2: picks per age ("<LEADER>|<CIV>@<AGE>")
 RANK_DEPTH = 12          # ranks 1-6 plus 6 spares, so the mod can skip locked mementos
 SHOWN = 6
 
@@ -134,6 +136,26 @@ def fingerprint(game, mtype):
 
 # ---------------------------------------------------------------- main build
 
+def civ_in_age(c, age):
+    """The civilization as the game plays it in `age`: its own items, with that age's ability rows
+    (CivilizationItems of that age's domain, as the game's civ select shows it for the age)."""
+    traits = c.get("ageTraits", {}).get(age)
+    if age == c["age"] or not traits:
+        return c
+    return dict(c, items=[i for i in c["items"] if i["kind"] != "KIND_TRAIT"] + traits)
+
+
+def age_rows(game):
+    """The ages in order, each with its short key and its name in both languages (the game's text)."""
+    out = []
+    for age in sc.AGES:
+        tag = "LOC_%s_NAME" % age
+        out.append({"type": age, "key": sc.AGE_SHORT[age],
+                    "name": {"en": first_form(plain_en(game, tag)) or sc.AGE_NAME[age][0],
+                             "ru": first_form(game.t_ru(tag)) or sc.AGE_NAME[age][1]}})
+    return out
+
+
 def build(game, warnings):
     load_yield_forms(game)
 
@@ -184,10 +206,9 @@ def build(game, warnings):
             "tags": prof["tags"],
         }
     civs = {}
-    cprof = {}
+    cprof = {}   # (civ, age) -> profile: the ability text changes with the age it is played in
     for ct, c in sorted(game.civs.items(), key=lambda kv: (sc.AGES.index(kv[1]["age"]), kv[0])):
         prof = sc.civ_profile(c, pe, game.unit_tags)
-        cprof[ct] = prof
         civs[ct] = {
             "name": {"en": pe(c["nameTag"]), "ru": first_form(game.t_ru(c["nameTag"]))},
             "age": sc.AGE_SHORT[c["age"]],
@@ -195,6 +216,13 @@ def build(game, warnings):
             "attributes": prof["attributes"],
             "tags": prof["tags"],
         }
+        age_tags = {}
+        for age in sc.AGES:
+            cprof[(ct, age)] = prof if age == c["age"] else sc.civ_profile(civ_in_age(c, age), pe, game.unit_tags)
+            if cprof[(ct, age)]["tags"] != prof["tags"]:
+                age_tags[sc.AGE_SHORT[age]] = cprof[(ct, age)]["tags"]
+        if age_tags:
+            civs[ct]["ageTags"] = age_tags   # only the ages whose tags differ from its own age's
         if not civs[ct]["name"]["en"]:
             warnings.append("%s: no English name" % ct)
 
@@ -223,33 +251,37 @@ def build(game, warnings):
     civ_order = ["*"] + list(civs)
     pick_rows = {}
     focus_counts = {}
-    full = {}   # (leader, civ) -> {focus, rankings} for reports and tests
+    full = {}   # (leader, civ, age) -> {focus, rankings} for reports and tests
+    base_scores = {(t, ai): sc.score(values[t], ai, (), ())[0] for t in order for ai in range(len(sc.AGES))}
 
-    def rank_pair(lt, ct):
-        age = game.civs[ct]["age"] if ct != "*" else "AGE_ANTIQUITY"
+    def rank_pair(lt, ct, age):
+        """A pair scored for the age the mementos are chosen for, whatever the civilization's own age."""
         ai = sc.AGES.index(age)
         ltags = lprof[lt]["tags"] if lt != "*" else []
-        ctags = cprof[ct]["tags"] if ct != "*" else []
-        focus = sc.default_focus(lprof.get(lt), cprof.get(ct), age)
+        ctags = cprof[(ct, age)]["tags"] if ct != "*" else []
+        focus = sc.default_focus(lprof.get(lt), cprof.get((ct, age)), age)
         scored = {}
         for mtype in order:
             s, _ = sc.score(values[mtype], ai, ltags, ctags)
-            base, _ = sc.score(values[mtype], ai, (), ())
-            scored[mtype] = (s, base)
+            scored[mtype] = (s, base_scores[(mtype, ai)])
         ranks = {}
         for r in sc.RANKINGS:
             ranks[r] = sorted(order, key=lambda t: (-round(scored[t][0][r], 6), -scored[t][1][r], t))[:RANK_DEPTH]
         return focus, ranks, scored
 
+    # picks[leader] = one row per age (sc.AGES order), each a cell per civ of civ_order ("*" only for "*").
     for lt in ["*"] + list(leaders):
-        cells = []
-        for ct in (civ_order if lt != "*" else ["*"]):
-            focus, ranks, scored = rank_pair(lt, ct)
-            focus_counts[focus] = focus_counts.get(focus, 0) + 1
-            ids = [list_id(ranks[r]) for r in sc.RANKINGS]
-            cells.append("%s:%s" % (focus[0], ",".join(str(i) for i in ids)))
-            full[(lt, ct)] = {"focus": focus, "ranks": ranks, "scores": scored}
-        pick_rows[lt] = ";".join(cells)
+        rows = []
+        for age in sc.AGES:
+            cells = []
+            for ct in (civ_order if lt != "*" else ["*"]):
+                focus, ranks, scored = rank_pair(lt, ct, age)
+                focus_counts[focus] = focus_counts.get(focus, 0) + 1
+                ids = [list_id(ranks[r]) for r in sc.RANKINGS]
+                cells.append("%s:%s" % (focus[0], ",".join(_b36n(i) for i in ids)))
+                full[(lt, ct, age)] = {"focus": focus, "ranks": ranks, "scores": scored}
+            rows.append(";".join(cells))
+        pick_rows[lt] = rows
 
     # ---- base values for the extract and the report
     base_values = {}
@@ -273,6 +305,7 @@ def build(game, warnings):
         "order": order,
         "mementos": {t: {k: mementos[t][k] for k in ("name", "source", "icon", "unlock", "attribute", "tags",
                                                        "conditional", "what", "est")} for t in order},
+        "ages": age_rows(game),
         "leaders": leaders,
         "civs": civs,
         "civOrder": civ_order,
@@ -288,15 +321,29 @@ def _b36(i):
     return digits[i // 36] + digits[i % 36]
 
 
+def _b36n(i):
+    """A list id in base 36, as short as it goes (parseInt(s, 36) reads it back)."""
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    s = ""
+    while True:
+        s = digits[i % 36] + s
+        i //= 36
+        if not i:
+            return s
+
+
 # ---------------------------------------------------------------- the JS module
 
 JS_TEMPLATE = """// mma-table.js: generated by tools/memento-advisor/build_table.py from the game files. Do not edit.
 // Method and spot checks: research/16-memento-scoring.md.
 //
-// MEMENTO_TABLE.picks["<LEADER>|<CIV>"] (or "<LEADER>|*" when the civilization is unknown, "*|*" when
-// both are) = { focus, age, ranks: { BALANCED, CULTURE, SCIENCE, ECONOMIC, MILITARY: [6 memento types] },
+// MEMENTO_TABLE.picks["<LEADER>|<CIV>@<AGE>"] (AGE the game's type, AGE_ANTIQUITY…; "<LEADER>|*@<AGE>"
+// when the civilization is unknown or random, "*|*@<AGE>" when both are) = { focus, age, ageType,
+//   ranks: { BALANCED, CULTURE, SCIENCE, ECONOMIC, MILITARY: [6 memento types] },
 //   more: { same keys: the next 6, to skip mementos the player has not unlocked }, reasons: { TYPE: {en, ru} } }.
-// A pick is scored for the age of the civilization (mementos can be changed at every age transition).
+// A pick is scored for the age the mementos are chosen for (the start age, or the next age at a
+// transition): the game lets any civilization play in any age. getPicks(leader, civ, age) reads it.
+// A pick is decoded the first time it is read.
 // MEMENTO_TABLE.mementos[TYPE].icon is the card's url('blp:<icon>') key; mementoTypeByIcon() maps it back.
 const D = __DATA__;
 
@@ -312,10 +359,10 @@ function build(d) {
     }
     const label = (tags, lang) => tags.map((t) => (d.tagLabels[t] ? d.tagLabels[t][lang] : t)).join(", ");
     const cache = new Map();
-    const reason = (type, age, leader, civ) => {
+    const reason = (type, age, leader, civ, civTags) => {
         const m = d.mementos[type];
         const lHits = leader ? m.tags.filter((t) => leader.tags.includes(t)) : [];
-        const cHits = civ ? m.tags.filter((t) => civ.tags.includes(t)) : [];
+        const cHits = civ ? m.tags.filter((t) => civTags.includes(t)) : [];
         const key = type + "|" + age + "|" + (lHits.length ? leader.name.en : "") + "|" + (cHits.length ? civ.name.en : "");
         let r = cache.get(key);
         if (r) return r;
@@ -334,26 +381,39 @@ function build(d) {
         return r;
     };
     const FOCUS = { C: "CULTURE", S: "SCIENCE", E: "ECONOMIC", M: "MILITARY" };
-    const picks = {};
-    for (const [lt, row] of Object.entries(d.picks)) {
+    const decode = (lt, ct, ageRow, cell) => {
         const leader = d.leaders[lt];
-        row.split(";").forEach((cell, i) => {
-            const ct = d.civOrder[i];
-            const civ = d.civs[ct];
-            const age = civ ? civ.age : "AQ";
-            const [f, ids] = cell.split(":");
-            const listIds = ids.split(",").map(Number);
-            const ranks = {};
-            const more = {};
-            const reasons = {};
-            d.rankings.forEach((r, k) => {
-                ranks[r] = top[listIds[k]];
-                more[r] = rest[listIds[k]];
-                for (const t of ranks[r].concat(more[r])) {
-                    if (!reasons[t]) reasons[t] = reason(t, age, leader, civ);
-                }
+        const civ = d.civs[ct];
+        const age = ageRow.key;
+        // A civilization's ability text changes with the age it is played in.
+        const civTags = civ ? (civ.ageTags && civ.ageTags[age]) || civ.tags : [];
+        const [f, ids] = cell.split(":");
+        const listIds = ids.split(",").map((s) => parseInt(s, 36));
+        const ranks = {};
+        const more = {};
+        const reasons = {};
+        d.rankings.forEach((r, k) => {
+            ranks[r] = top[listIds[k]];
+            more[r] = rest[listIds[k]];
+            for (const t of ranks[r].concat(more[r])) {
+                if (!reasons[t]) reasons[t] = reason(t, age, leader, civ, civTags);
+            }
+        });
+        return Object.freeze({ focus: FOCUS[f], age, ageType: ageRow.type, ranks: Object.freeze(ranks), more: Object.freeze(more), reasons: Object.freeze(reasons) });
+    };
+    const picks = {};
+    for (const [lt, rows] of Object.entries(d.picks)) {
+        const civs = lt === "*" ? ["*"] : d.civOrder;
+        rows.forEach((row, a) => {
+            const ageRow = d.ages[a];
+            const cells = row.split(";");
+            civs.forEach((ct, i) => {
+                let pick = null;
+                Object.defineProperty(picks, lt + "|" + ct + "@" + ageRow.type, {
+                    enumerable: true,
+                    get: () => pick || (pick = decode(lt, ct, ageRow, cells[i])),
+                });
             });
-            picks[lt + "|" + ct] = Object.freeze({ focus: FOCUS[f], age, ranks: Object.freeze(ranks), more: Object.freeze(more), reasons: Object.freeze(reasons) });
         });
     }
     const mementos = {};
@@ -366,6 +426,7 @@ function build(d) {
         generatedFrom: d.generatedFrom,
         focuses: d.focuses,
         rankings: d.rankings,
+        ages: Object.freeze(d.ages.map((a) => Object.freeze(a))),
         mementos: Object.freeze(mementos),
         leaders: d.leaders,
         civs: d.civs,
@@ -376,16 +437,34 @@ function build(d) {
 export const MEMENTO_TABLE = build(D);
 
 const BY_ICON = new Map(Object.entries(MEMENTO_TABLE.mementos).map(([t, m]) => [m.icon, t]));
+const AGE_TYPE = new Map();
+for (const a of MEMENTO_TABLE.ages) {
+    AGE_TYPE.set(a.type, a.type);
+    AGE_TYPE.set(a.key, a.type);
+}
 
 /** The memento type whose reward icon (Rewards.CustomData, the card's url('blp:<icon>')) is `icon`. */
 export function mementoTypeByIcon(icon) {
     return BY_ICON.get(icon) || null;
 }
 
-/** The picks for a leader and a civilization; falls back to "<LEADER>|*", then "*|*". */
-export function getPicks(leaderType, civType) {
+/**
+ * The game's age type (AGE_ANTIQUITY…) the picks are for: `age` (a type or AQ / EX / MO) when the
+ * table knows it, else the civilization's own age, else the first age.
+ */
+export function pickAge(civType, age) {
+    const civ = MEMENTO_TABLE.civs[civType];
+    return AGE_TYPE.get(age) || (civ && AGE_TYPE.get(civ.age)) || MEMENTO_TABLE.ages[0].type;
+}
+
+/**
+ * The picks for a leader and a civilization in the age the mementos are chosen for (pickAge);
+ * falls back to "<LEADER>|*@<AGE>", then "*|*@<AGE>".
+ */
+export function getPicks(leaderType, civType, age) {
     const p = MEMENTO_TABLE.picks;
-    return p[leaderType + "|" + civType] || p[leaderType + "|*"] || p["*|*"];
+    const a = pickAge(civType, age);
+    return p[leaderType + "|" + civType + "@" + a] || p[leaderType + "|*@" + a] || p["*|*@" + a];
 }
 """
 
@@ -398,17 +477,21 @@ def write_js(path, data):
 
 # ---------------------------------------------------------------- markdown report
 
+# (leader, civilization, age): None = the civilization's own age (Antiquity for "*").
 SPOT_CHECKS = [
-    ("LEADER_BENJAMIN_FRANKLIN", "CIVILIZATION_HAN"),
-    ("LEADER_BENJAMIN_FRANKLIN", "CIVILIZATION_MING"),
-    ("LEADER_BENJAMIN_FRANKLIN", "CIVILIZATION_MEIJI"),
-    ("LEADER_AMINA", "CIVILIZATION_AKSUM"),
-    ("LEADER_ASHOKA", "CIVILIZATION_MAURYA"),
-    ("LEADER_NAPOLEON", "CIVILIZATION_ROME"),
-    ("LEADER_NAPOLEON", "CIVILIZATION_FRENCH_EMPIRE"),
-    ("LEADER_HIMIKO", "CIVILIZATION_HEIAN"),
-    ("LEADER_CONFUCIUS", "CIVILIZATION_HAN"),
-    ("LEADER_CONFUCIUS", "*"),
+    ("LEADER_BENJAMIN_FRANKLIN", "CIVILIZATION_HAN", None),
+    ("LEADER_BENJAMIN_FRANKLIN", "CIVILIZATION_MING", None),
+    ("LEADER_BENJAMIN_FRANKLIN", "CIVILIZATION_MEIJI", None),
+    ("LEADER_AMINA", "CIVILIZATION_AKSUM", None),
+    ("LEADER_ASHOKA", "CIVILIZATION_MAURYA", None),
+    ("LEADER_NAPOLEON", "CIVILIZATION_ROME", None),
+    ("LEADER_NAPOLEON", "CIVILIZATION_FRENCH_EMPIRE", None),
+    ("LEADER_HIMIKO", "CIVILIZATION_HEIAN", None),
+    ("LEADER_CONFUCIUS", "CIVILIZATION_HAN", None),
+    ("LEADER_CONFUCIUS", "*", None),
+    ("LEADER_CONFUCIUS", "*", "AGE_MODERN"),
+    ("LEADER_CATHERINE", "CIVILIZATION_RUSSIA", None),
+    ("LEADER_CATHERINE", "CIVILIZATION_RUSSIA", "AGE_ANTIQUITY"),   # game 60: Russia played in Antiquity
 ]
 
 
@@ -416,13 +499,17 @@ def markdown(data, full, base_values, values, out_path):
     names = {t: data["mementos"][t]["name"] for t in data["order"]}
     lines = []
     lines.append("## Appendix A. Spot checks (generated)\n")
-    for lt, ct in SPOT_CHECKS:
-        if (lt, ct) not in full:
+    age_names = {a["type"]: a["name"]["en"] for a in data["ages"]}
+    for lt, ct, age in SPOT_CHECKS:
+        own = sc.AGES[[a["key"] for a in data["ages"]].index(data["civs"][ct]["age"])] if ct in data["civs"] else sc.AGES[0]
+        age = age or own
+        if (lt, ct, age) not in full:
             continue
-        p = full[(lt, ct)]
+        p = full[(lt, ct, age)]
         ln = data["leaders"][lt]["name"]["en"]
-        cn = data["civs"][ct]["name"]["en"] if ct != "*" else "unknown civ (Antiquity)"
-        lines.append("### %s + %s: default focus %s\n" % (ln, cn, p["focus"]))
+        cn = data["civs"][ct]["name"]["en"] if ct != "*" else "unknown civ"
+        where = "" if age == own and ct != "*" else " in %s" % age_names[age]
+        lines.append("### %s + %s%s: default focus %s\n" % (ln, cn, where, p["focus"]))
         lines.append("| # | " + " | ".join(sc.RANKINGS) + " |")
         lines.append("|---|" + "---|" * len(sc.RANKINGS))
         for i in range(SHOWN):
@@ -586,11 +673,12 @@ def main(argv=None):
         markdown(data, full, base_values, values, args.markdown)
 
     pairs = sum(1 for k in full if k[0] != "*" and k[1] != "*")
-    print("mementos %d (base %d), leaders %d, civilizations %d (%s), pairs %d + %d leader fallbacks + *|*" % (
+    print("mementos %d (base %d), leaders %d, civilizations %d (%s), pairs x ages %d + %d leader fallbacks + %d *|*" % (
         len(game.mementos), sum(1 for m in game.mementos.values() if m["source"] == "base"),
         len(data["leaders"]), len(data["civs"]),
         ", ".join("%s %d" % (a, sum(1 for c in data["civs"].values() if c["age"] == a)) for a in ("AQ", "EX", "MO")),
-        pairs, len(data["leaders"])))
+        pairs, sum(1 for k in full if k[0] != "*" and k[1] == "*"), sum(1 for k in full if k[0] == "*")))
+    print("civilizations whose ability tags change with the age: %d" % sum(1 for c in data["civs"].values() if c.get("ageTags")))
     print("default focus over all pairs: %s" % focus_counts)
     print("rank lists pooled: %d; %s: %d bytes" % (len(data["lists"]), js_path, os.path.getsize(js_path)))
     for w in warnings:

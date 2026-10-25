@@ -10,6 +10,16 @@ export const MOD_FS_ROOT = `fs://game/${MOD_ID}/`;
 export const PANEL_TAG = "xpl-panel";
 export const HOTKEY_ACTION = "open-expansion-planner";
 export const HOTKEY_WINDOW_EVENT = "xpl-hotkey-toggle";
+// F7 (game 60's review, UI-2): the autopilot's next step (hud/xpl-autopilot.js stepNow).
+export const STEP_ACTION = "xpl-autopilot-step";
+export const STEP_WINDOW_EVENT = "xpl-hotkey-step";
+// Each input action of config/input.xml and the window event its hotkey dispatches (hud/xpl-hotkey.js).
+const HOTKEY_EVENTS = new Map([[HOTKEY_ACTION, HOTKEY_WINDOW_EVENT], [STEP_ACTION, STEP_WINDOW_EVENT]]);
+
+/** The window event for an input action of ours, or null. */
+export function hotkeyEvent(action) {
+    return HOTKEY_EVENTS.get(action) ?? null;
+}
 export const DOCK_MODIFIER_CLASS = "xpl-planner";
 
 export const TABS = [

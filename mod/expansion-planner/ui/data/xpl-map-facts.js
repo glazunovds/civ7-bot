@@ -64,7 +64,7 @@ export class FactsCache {
                 if (!def) continue;
                 const ageless = this.rules.hasTag(def.ConstructibleType, "AGELESS");
                 const obsolete = def.ConstructibleClass === "BUILDING" && !!def.Age && def.Age !== this.rules.age && !ageless;
-                f.constructibles.push({ type: def.ConstructibleType, cls: def.ConstructibleClass, obsolete, complete: c.complete !== false });
+                f.constructibles.push({ type: def.ConstructibleType, cls: def.ConstructibleClass, obsolete, complete: c.complete !== false, damaged: c.damaged === true });
             }
             // Improvements are not "buildings" for placement purposes; keep them for adjacency selectors only.
         } catch (error) {

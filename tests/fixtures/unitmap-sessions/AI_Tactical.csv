@@ -1,0 +1,3 @@
+Game Turn, Player, Category, Target Type, Target Info, Unit Info, Extra
+140, 28, Attack Units, TARGET_LOW_PRIORITY_UNIT, UNIT_WARRIOR (65536:0), UNIT_WARRIOR (131073), Expected Damage: 0, Move 12 11 Attack 10 11,  Army
+2, 28, Attack Units, TARGET_LOW_PRIORITY_UNIT, UNIT_MAN_AT_ARMS (65536:0), UNIT_CROSSBOWMAN (131073), Expected Damage: 0, Move 52 31 Attack 50 31,  Army

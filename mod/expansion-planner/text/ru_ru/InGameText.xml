@@ -8,8 +8,14 @@
     <Replace Tag="LOC_XPL_OPEN_DESC" Language="ru_RU">
       <Text>Открыть или закрыть панель планировщика экспансии.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_STEP" Language="ru_RU">
+      <Text>Автопилот: следующий шаг</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_STEP_DESC" Language="ru_RU">
+      <Text>Один проход автопилота с отмеченными пунктами прямо сейчас; ход не завершается.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_DOCK_TT" Language="ru_RU">
-      <Text>Планировщик экспансии (F8)[N]Места для поселений, повышение городков до городов и бонусы соседства зданий.</Text>
+      <Text>Планировщик экспансии (F8; F7: следующий шаг автопилота)[N]Места для поселений, повышение городков до городов и бонусы соседства зданий.</Text>
     </Replace>
     <!-- Panel chrome -->
     <Replace Tag="LOC_XPL_TITLE" Language="ru_RU">
@@ -625,6 +631,9 @@
     <Replace Tag="LOC_XPL_AP_AGE_END_QUEUED" Language="ru_RU">
       <Text>{1_City}: {2_Item} в очереди, чтобы строиться первым: из очереди ничего не успеет до конца эпохи (осталось около {3_Turns} ход.)</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_AGE_END_HAPPINESS" Language="ru_RU">
+      <Text>{1_City}: в городе беспорядки, «{2_Item}» строится первым и успеет до конца эпохи (осталось около {3_Turns} ход.); купить его там нельзя</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_DROPPED" Language="ru_RU">
       <Text>{1_City}: {2_Wonder} убрано из очереди ({3_Why})</Text>
     </Replace>
@@ -1118,6 +1127,18 @@
     <Replace Tag="LOC_XPL_DOCK_AUTOPILOT" Language="ru_RU">
       <Text>Автопилот включён</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_DOCK_STEP_DONE" Language="ru_RU">
+      <Text>шаг: действий {1_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DOCK_STEP_BUSY" Language="ru_RU">
+      <Text>занят</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DOCK_STEP_NOT_YOUR_TURN" Language="ru_RU">
+      <Text>не ваш ход</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_DOCK_STEP_AI" Language="ru_RU">
+      <Text>играет ИИ</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_STATUS_ON" Language="ru_RU">
       <Text>Автопилот включён: действует в начале каждого вашего хода</Text>
     </Replace>
@@ -1127,6 +1148,9 @@
     <Replace Tag="LOC_XPL_AP_STATUS_OFF" Language="ru_RU">
       <Text>Автопилот выключен</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_STATUS_STEPPING" Language="ru_RU">
+      <Text>Автопилот делает шаг…</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_TURN_ON" Language="ru_RU">
       <Text>Включить</Text>
     </Replace>
@@ -1134,13 +1158,25 @@
       <Text>Выключить</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_TOGGLE_TT" Language="ru_RU">
-      <Text>Пока включён, в начале каждого вашего хода автопилот принимает отмеченные ниже решения командами самой игры (работает и по сети). Юнитов двигает только с пунктами для юнитов ниже. Выключается при новой загрузке игры.</Text>
+      <Text>Пока включён, в начале каждого вашего хода автопилот принимает отмеченные в его настройках решения командами самой игры (работает и по сети). Юнитов двигает только с пунктами групп «двигает юнитов». Выключается при новой загрузке игры.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RUN_NOW" Language="ru_RU">
-      <Text>Сделать сейчас</Text>
+      <Text>Следующий шаг (F7)</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RUN_NOW_TT" Language="ru_RU">
-      <Text>Выполнить отмеченные решения один раз прямо сейчас (ход не завершается).</Text>
+      <Text>Один проход с отмеченными пунктами прямо сейчас (F7), включён автопилот или нет; ход не завершается. Только в ваш ход. Как и автопилот, может переставить очереди (чудеса, юниты и стены вперёд).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STEP_DONE" Language="ru_RU">
+      <Text>шаг: действий {1_Num} за {2_Sec} с; {3_Blocker}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STEP_BUSY" Language="ru_RU">
+      <Text>шаг не сделан: автопилот уже работает</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STEP_NOT_YOUR_TURN" Language="ru_RU">
+      <Text>шаг не сделан: сейчас не ваш ход</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STEP_AI" Language="ru_RU">
+      <Text>шаг не сделан: за вас играет ИИ</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_INTRO" Language="ru_RU">
       <Text>Для того, чтобы отойти (например, в сетевой игре с таймером): исследования, политики и другие выборы, производство, рост, городки и покупки решаются за вас; юниты двигаются, только если отмечены их пункты.</Text>
@@ -1149,7 +1185,10 @@
       <Text>Исследования и цивики</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RESEARCH_TT" Language="ru_RU">
-      <Text>Если ничего не изучается, выбрать рекомендацию советника игры (сначала совпадающую с вашим приоритетом), как её показывают окна технологий и цивиков.</Text>
+      <Text>Когда ничего не изучается, выбирает следующую технологию или цивик. Сначала то, что нужно против опасности: стены при долгой угрозе или войне у ваших границ, более сильный боец ближнего боя при войне у ваших границ, «Расщепление ядра» в войне с крупной державой при «Ядерном оружии» (и «Обороне») и «Судостроение», пока места поселенца лежат за бурным морем. Затем, впереди исследований пути, если не дольше их: узел, дающий ячейку политики, лимит специалистов, выбор синкретизма, лимит городов или лимит поселений, который вот-вот будет достигнут, иначе узел, чьи новые карты политик лучше самых слабых из вставленных (по Policy Yield Previews, если этот мод установлен). С «Фокусом на победу» — исследования пути (сначала путь к главному исследованию эпохи). Иначе рекомендация советника игры (сначала совпадающая с вашим приоритетом), иначе самое быстрое. «Технологии будущего» и цивик будущего — только когда больше ничего не осталось или когда их хочет путь. В последние ходы эпохи — только то, что будет готово до её конца.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESEARCH_TIP" Language="ru_RU">
+      <Text>Когда ничего не изучается, выбирает следующую технологию и цивик: сначала дающие ячейки и лимиты и те, чьи карты политик выгодны, иначе совет игры; с фокусом на победу — сначала исследования пути. По умолчанию вкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_PRODUCTION_LABEL" Language="ru_RU">
       <Text>Производство</Text>
@@ -1157,17 +1196,26 @@
     <Replace Tag="LOC_XPL_AP_PRODUCTION_TT" Language="ru_RU">
       <Text>Город с пустой очередью получает два следующих здания из плана на их клетках; если из плана строить нечего — главный выбор советника (здание на лучшей по оценке игры клетке, проект или военный юнит).</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_PRODUCTION_TIP" Language="ru_RU">
+      <Text>Заполняет пустые очереди: следующие здания плана на их клетках, иначе совет игры; юниты и стены ставятся вперёд, где они нужны поселению. По умолчанию вкл. Без него не работают чудеса, булавки плана и пересчёт зданий.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_GROWTH_LABEL" Language="ru_RU">
       <Text>Размещать новых жителей</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_GROWTH_TT" Language="ru_RU">
       <Text>Выросший город размещает нового жителя туда, где подсказки роста пишут «лучший выбор»: новая клетка или специалист.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_GROWTH_TIP" Language="ru_RU">
+      <Text>Размещает каждого нового жителя туда, где подсказки роста видят лучший выбор (клетка или специалист), с учётом того, что довольство делает с поселением. По умолчанию вкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_TOWNS_LABEL" Language="ru_RU">
       <Text>Специализация городков</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_TOWNS_TT" Language="ru_RU">
-      <Text>Растущий городок с 7+ жителями, связанный с городом, получает рекомендованную специализацию; до этого новые жители занимают клетки под неё (фермы для фермерского, шахты для горнодобывающего). Уже выбранная специализация не меняется. Пока городков больше, чем городов, лучший городок становится городом (сначала основанный на месте города; при фокусе на науку или экономику — с наибольшим производством); после этого — только городок, которому вкладка «Городки» советует «преобразовать» по его доходам. Золото копится на это: остальные покупки ждут, пока городок не станет городом.</Text>
+      <Text>Растущий городок с 7+ жителями, связанный с городом, получает рекомендованную специализацию; до этого новые жители занимают клетки под неё (фермы для фермерского, шахты для горнодобывающего). Уже выбранная специализация не меняется. Пока городков больше, чем городов, или (со «Стратегией по фазам» и фокусом на науку или экономику) пока городов меньше цели эпохи (5 в древности, 6, затем 8 в эпохе исследований), городок становится городом: сначала основанный на месте города, затем по совету вкладки «Городки», затем при фокусе на науку или экономику — с наибольшим производством на золото, иначе самый дешёвый; после этого — только городок, которому вкладка «Городки» советует «преобразовать» по его доходам. Выбранный городок — цель накоплений: остальные покупки ждут, пока он не станет городом. Не во время войны у ваших границ, не в волнениях, не ради цели эпохи, пока у какого-либо города Довольство ниже нуля (кроме кризиса), и не в последние 25 ходов последней эпохи.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TOWNS_TIP" Language="ru_RU">
+      <Text>Выбирает рекомендованную специализацию городка при 7 жителях и превращает городки в города по производству на золото, копя на это золото. Выбранная специализация не меняется. По умолчанию вкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_PURCHASES_LABEL" Language="ru_RU">
       <Text>Покупать за золото</Text>
@@ -1175,11 +1223,17 @@
     <Replace Tag="LOC_XPL_AP_PURCHASES_TT" Language="ru_RU">
       <Text>Покупать до 3 зданий из плана за ход, сначала самые выгодные, затем улучшать до 3 военных юнитов, которых игра позволяет улучшить (сначала у поселений под угрозой), всегда сохраняя запас ниже. Здания городков (склады) берут не больше половины свободного золота и ничего, пока копим на цель.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_PURCHASES_TIP" Language="ru_RU">
+      <Text>Покупает здания плана на золото сверх запаса, сначала самые выгодные, и улучшает юнитов; ремонт, стены и защитники под угрозой могут брать всё золото. По умолчанию вкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SKIP_UNITS_LABEL" Language="ru_RU">
       <Text>Бездействующие юниты пропускают ход</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_SKIP_UNITS_TT" Language="ru_RU">
       <Text>Юниты, ждущие приказа, пропускают ход (их не двигают), чтобы ход мог завершиться.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SKIP_UNITS_TIP" Language="ru_RU">
+      <Text>Юниты, ждущие приказа, пропускают ход (их не двигают), чтобы ход мог завершиться. По умолчанию выкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_END_TURN_LABEL" Language="ru_RU">
       <Text>Завершать ход</Text>
@@ -1187,11 +1241,17 @@
     <Replace Tag="LOC_XPL_AP_END_TURN_TT" Language="ru_RU">
       <Text>Завершать ход, когда всё сделано, чтобы никто не ждал таймер. Не завершает, пока игра ждёт выбора, который автопилот не делает: тогда журнал называет его.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_END_TURN_TIP" Language="ru_RU">
+      <Text>Завершает ход после прохода, если игра не ждёт выбора, который автопилот не делает (журнал его называет). Только пока автопилот включён; шаг (F7) ход не завершает. По умолчанию выкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_RESERVE" Language="ru_RU">
       <Text>Запас золота</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RESERVE_TT" Language="ru_RU">
       <Text>Покупки оставляют в казне столько ходов вашего дохода золота, но не больше 1000 золота (к концу игры несколько ходов дохода оставили бы тысячи без дела). При отрицательном доходе — 10 ходов дефицита. Золото на цель накопления (преобразование городка; при фокусе на победу — следующее здание пути) тоже не тратится: мелкие покупки ждут, пока цель не куплена. Ремонт, стены и защитники под угрозой берут всё золото. Со «Стратегией по фазам» (и фокусом на победу) запас на каждый ход задаёт фаза (см. подсказку строки стратегии); сама настройка остаётся вашей.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESERVE_TIP" Language="ru_RU">
+      <Text>Покупки оставляют в казне доход за столько ходов (не больше 1000 золота; по умолчанию 2). Со «Стратегией по фазам» запас на каждый ход задаёт фаза; ваша настройка сохраняется. Нужно «Покупать за золото».</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RESERVE_N" Language="ru_RU">
       <Text>доход за {1_N} ход.</Text>
@@ -1201,6 +1261,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_REPLAN_TT" Language="ru_RU">
       <Text>Пересчитывать план зданий для всех поселений с такой частотой (и сразу после постройки здания, новой клетки или новых открытых зданий). Быстро: пересчитываются только изменившиеся поселения. Булавки зданий тоже обновляются, если вы их ставили.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPLAN_TIP" Language="ru_RU">
+      <Text>Пересчитывает план зданий с такой частотой (и сразу после постройки, новой клетки или открытых зданий); пересчитываются только изменившиеся поселения. По умолчанию каждые 5 ходов. Нужно «Производство».</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_REPLAN_N" Language="ru_RU">
       <Text>каждые {1_N} ход.</Text>
@@ -1213,6 +1276,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_AI_TT" Language="ru_RU">
       <Text>Экспериментально: передаёт всю вашу цивилизацию, включая юнитов, ИИ самой игры на столько ходов, потом возвращает. Только в одиночной игре.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AI_TIP" Language="ru_RU">
+      <Text>Экспериментально, только в одиночной игре: ИИ самой игры играет всей вашей цивилизацией, включая юнитов, столько ходов, потом возвращает. По умолчанию 5 ходов.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_AI_TURNS_N" Language="ru_RU">
       <Text>{1_N} ход.</Text>
@@ -1238,6 +1304,21 @@
     <Replace Tag="LOC_XPL_AP_TURN_N" Language="ru_RU">
       <Text>Ход {1_N}:</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_TURN" Language="ru_RU">
+      <Text>Ход {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_FILTER_MAIN" Language="ru_RU">
+      <Text>Главное</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_FILTER_ALL" Language="ru_RU">
+      <Text>Всё</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_FILTER_ERRORS" Language="ru_RU">
+      <Text>Ошибки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_LOG_FILTER_TT" Language="ru_RU">
+      <Text>«Главное» скрывает рутину каждого хода (пропуск и отдых юнитов, пересчёт плана, булавки); «Ошибки» показывает только несделанное и то, что держит ход.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_ON" Language="ru_RU">
       <Text>автопилот включён</Text>
     </Replace>
@@ -1260,7 +1341,7 @@
       <Text>{1_City}: очередь пуста, подходящего нет</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_GROWTH_TILE" Language="ru_RU">
-      <Text>{1_City}: новый житель на новой клетке (+{2_V})</Text>
+      <Text>{1_City}: новый житель на новой клетке (+{2_V}; специалист {3_S})</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_GROWTH_SPECIALIST" Language="ru_RU">
       <Text>{1_City}: новый специалист (+{2_V})</Text>
@@ -1330,6 +1411,12 @@
     <Replace Tag="LOC_XPL_AP_WONDERS_TT" Language="ru_RU">
       <Text>Когда очередь города пуста, начинать чудо, которое вкладка «Чудеса» считает лучшим для него: гонку, которую вы скорее выиграете, с окончанием до конца эпохи, с наибольшей пользой на ход производства (его доход, бонус соседним зданиям и ценность для культурного пути наследия и туризма). Одновременно строится не больше указанного числа чудес, каждое на лучшей клетке.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_WONDERS_TIP" Language="ru_RU">
+      <Text>Начинает чудо, гонку за которое город выиграет, по его уровню и пользе за ход, с окончанием до конца эпохи, на клетке плана; проигрываемую гонку меняет на здание. По умолчанию вкл. Нужно «Производство».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MAX_WONDERS_TIP" Language="ru_RU">
+      <Text>Сколько чудес может строиться одновременно (по умолчанию 1). Со «Стратегией по фазам» число на каждый ход задаёт фаза; ваша настройка сохраняется. Нужно «Строить чудеса».</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_MAX_WONDERS" Language="ru_RU">
       <Text>Чудес одновременно</Text>
     </Replace>
@@ -1350,8 +1437,125 @@
     <Replace Tag="LOC_XPL_AP_CHOICES_TT" Language="ru_RU">
       <Text>Делает выборы, которые держат ход: пустые ячейки политик (карта с наибольшей пользой по Policy Yield Previews, если этот мод установлен, иначе первая предложенная), бонус празднества, сюжетные события (вариант, который предпочитает ИИ игры), пантеон, религию и её верования (сначала полезнейшие по Policy Yield Previews), правительство, бонус города-государства, приветствие нового знакомого лидера (дружелюбное, если можно, иначе нейтральное), предложение лидера (самый дешёвый ответ, кроме отказа; отказ никогда: он может означать войну), экраны «просмотрено» и предупреждения советника. Уведомления «Обнаружен шпионаж» прочитываются. Шедевры из архива выставляются в свободные ячейки. В войну по призыву союзника никогда не вступает (это внезапная война с усталостью от войны): призыв откладывается, а отказ (союз расторгается) — только если игра всё ещё держит из-за него ход. Каждому лидеру, воюющему с вами, раз в 3 хода предлагается мир (без уступок с обеих сторон).</Text>
     </Replace>
-    <Replace Tag="LOC_XPL_AP_UNITS_TITLE" Language="ru_RU">
-      <Text>Юниты (эти пункты двигают юнитов):</Text>
+    <Replace Tag="LOC_XPL_AP_CHOICES_TIP" Language="ru_RU">
+      <Text>Делает выборы, которые держат ход: карты политик, празднества, сюжетные события, пантеон и верования, правительство, бонусы городов-государств, приветствия и предложения лидеров (без отказов). По умолчанию вкл.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_ECONOMY" Language="ru_RU">
+      <Text>Производство и золото</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_CHOICES" Language="ru_RU">
+      <Text>Решения</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_VICTORY" Language="ru_RU">
+      <Text>Победа</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_EXPANSION" Language="ru_RU">
+      <Text>Расширение и разведка</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_DEFENCE" Language="ru_RU">
+      <Text>Оборона и генералы</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_WARS" Language="ru_RU">
+      <Text>Война (по умолчанию выкл.)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GROUP_TURN" Language="ru_RU">
+      <Text>Ход</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MOVES_UNITS" Language="ru_RU">
+      <Text>двигает юнитов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MASTER_TT" Language="ru_RU">
+      <Text>Отметить или снять все пункты группы.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ALL_OFF" Language="ru_RU">
+      <Text>Всё выкл.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ALL_OFF_TT" Language="ru_RU">
+      <Text>Выключить все военные пункты (включить их все отсюда нельзя: по умолчанию они выключены).</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DETAILS_TT" Language="ru_RU">
+      <Text>Полное описание</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_PRODUCTION" Language="ru_RU">
+      <Text>нужно «Производство»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_WONDERS" Language="ru_RU">
+      <Text>нужно «Строить чудеса»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_PURCHASES" Language="ru_RU">
+      <Text>нужно «Покупать за золото»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_FOCUS" Language="ru_RU">
+      <Text>нужен «Фокус на победу»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_DEFEND" Language="ru_RU">
+      <Text>нужна «Оборона»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_NUCLEAR" Language="ru_RU">
+      <Text>нужно «Ядерное оружие»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NEEDS_ANY_TACKS" Language="ru_RU">
+      <Text>нужно «Производство» с пересчётом или «Поселенцы»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WHEN_ON" Language="ru_RU">
+      <Text>только при включённом автопилоте</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NOTE_AGE_END" Language="ru_RU">
+      <Text>если был включён к концу эпохи</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PHASE_RESERVE" Language="ru_RU">
+      <Text>фаза: {1_N} ход.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PHASE_WONDERS" Language="ru_RU">
+      <Text>фаза: {1_N}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PHASE_TT" Language="ru_RU">
+      <Text>Значение на каждый ход задаёт «Стратегия по фазам»; ваша настройка снова действует, когда стратегия выключена.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VIEW_SETTINGS" Language="ru_RU">
+      <Text>Настройки</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VIEW_LOG" Language="ru_RU">
+      <Text>Журнал</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_HEAD" Language="ru_RU">
+      <Text>Победа: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GENERAL_ENTRY" Language="ru_RU">
+      <Text>{1_Role} ур. {2_Level} ({3_Xp}/{4_Next})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROLE_VANGUARD" Language="ru_RU">
+      <Text>Авангард</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROLE_BASTION" Language="ru_RU">
+      <Text>Бастион</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROLE_NONE" Language="ru_RU">
+      <Text>Генерал</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GENERALS_NONE" Language="ru_RU">
+      <Text>генералов нет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GENERALS_TT" Language="ru_RU">
+      <Text>Генералы: роль, уровень и опыт до следующего уровня; затем текущая операция.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_HUNT" Language="ru_RU">
+      <Text>охота на деревню</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_RAIDERS" Language="ru_RU">
+      <Text>охота на рейдеров</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WAR" Language="ru_RU">
+      <Text>учебная война</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_LINE" Language="ru_RU">
+      <Text>{1_Kind}: {2_Stage}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STAGE_GATHER" Language="ru_RU">
+      <Text>сбор</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STAGE_FIGHT" Language="ru_RU">
+      <Text>бой</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_EXPLORE_LABEL" Language="ru_RU">
       <Text>Разведчики исследуют</Text>
@@ -1359,23 +1563,35 @@
     <Replace Tag="LOC_XPL_AP_EXPLORE_TT" Language="ru_RU">
       <Text>Разведчики сначала идут к ближайшему открытию (грот, руины, костёр…) в пределах 4 ходов, даже во время автоматической разведки, затем исследуют (автоматическая разведка игры, иначе край тумана). Города сначала строят разведчиков, пока их не станет 2. В новейшее время исследователи выкапывают артефакты (руины, чудеса природы) и ищут новые места раскопок в ваших музеях и университетах; строится до 2, пока есть что копать или исследовать.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_EXPLORE_TIP" Language="ru_RU">
+      <Text>Разведчики идут к открытиям и исследуют карту (сначала строятся 2); в новейшее время исследователи копают артефакты. По умолчанию выкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SETTLERS_LABEL" Language="ru_RU">
       <Text>Поселенцы основывают поселения</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_SETTLERS_TT" Language="ru_RU">
       <Text>Города строят поселенцев (по 2, пока поселений меньше 3, затем по 1, не выше лимита поселений; ставятся в начало очереди). Поселенец без приказа идёт к лучшему свободному месту со вкладки «Поселения» (поиск сам каждые 5 ходов; сначала та роль, что держит города и городки 1 к 1, иначе место, которое советует игра), не дальше 10 ходов, и основывает там поселение; городок на месте города становится городом, когда хватает золота. У каждого поселенца своё место; ни один ход не начнёт войну. Поселенцы держатся подальше от враждебных военных юнитов: никакого места, если враг в пределах 3 клеток, никакого пути ближе 2 клеток к нему; если враг в пределах 3 клеток, поселенец остаётся в ближайшем вашем поселении или бежит туда (или отходит), даже на ходу; из поселения он уходит к безопасному месту, если весь путь туда идёт дальше 3 клеток от врагов, иначе — в другое ваше поселение, где врагов рядом нет. Никакого места ближе 5 клеток к чужому поселению, ближе 3 клеток к деревне независимого народа и ближе 6 клеток к любой деревне, дружественной или нет (поселение там делает её враждебной). Поселенец, который идёт 12 ходов или трижды сменил место, берёт ближайшее безопасное. Пока ни одного места не известно, поселенцы не строятся. В древности, пока поселений меньше лимита, новые чудеса и научные проекты не начинаются: сначала поселенцы. Мигрант переселяется в поселение, где стоит («Переселить»; город или городок), иначе идёт в ближайшее ваше; новый житель — на клетку, которую лучше всего оценивают подсказки роста. В эпоху исследований до «Судостроения» ни один сухопутный юнит не идёт через глубокий океан (он останавливается на каждой клетке океана и получает урон); прибрежные воды можно.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLERS_TIP" Language="ru_RU">
+      <Text>Строит поселенцев до лимита поселений и основывает поселения на местах со вкладки «Поселения» (поиск сам), подальше от враждебных юнитов и деревень; мигранты переселяются. По умолчанию выкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_DEFEND_LABEL" Language="ru_RU">
-      <Text>Армия: стрелять или укрепиться</Text>
+      <Text>Оборона: армия защищает поселения</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_DEFEND_TT" Language="ru_RU">
       <Text>Военный юнит без приказа разгоняет деревню независимого народа, на которой стоит; иначе стреляет (стрелки) сначала по вражескому солдату рядом с вашими поселениями, затем по другим солдатам, по самому раненому (никогда по пустой клетке и никогда так, чтобы начать войну); иначе лечится, если ранен; иначе идёт на пустую деревню, которая воюет с вами, в пределах 4 клеток, чтобы разогнать её (не гарнизон; не пока с ней кто-то дружит); иначе укрепляется (или встаёт в дозор) на месте. Юнит ближнего боя (и укреплённый) атакует враждебный юнит рядом с ним возле ваших поселений, если прогноз боя самой игры обещает явный выигрыш: враг гибнет или получает вдвое больше урона, чем наносит, а ваш юнит сохраняет не меньше половины здоровья; никогда не атакует поселение и не начинает войну. Поселению угрожают 2+ враждебных юнита в пределах 4 клеток, или один в пределах 2, или один в пределах 4, когда центр поселения повреждён (считаются только независимые, которые воюют с вами, и не отряды деревни, стоящие у неё, если они не рядом с поселением и не атакуют его): пока ваших солдат вокруг меньше, чем враждебных юнитов, оно сразу покупает сильнейший юнит ближнего боя на всё золото (городки тоже), ближайший город строит такой же в первую очередь, солдаты издалека идут туда, а один юнит идёт к независимому, с которым пока нельзя подружиться (останавливается в 2 клетках). Поселение в пределах 6 клеток от деревни, которая воюет с вами, без солдата на нём или рядом, покупает его на золото сверх запаса. Всегда есть один юнит ближнего боя не слабее лучшего, какой можно построить: центр каждого поселения защищается полной силой сильнейшего бойца ближнего боя, обученного, купленного или улучшенного вами в этой эпохе (20, если такого нет). Растущий городок с населением 7 под угрозой или рядом с враждебной деревней берёт оборонительную специализацию городка (только с ней городок может купить стены) и покупает стены. Защитников не больше 4 на поселение; военные юниты по совету игры строятся, только пока их меньше 2 на поселение. Пока доход золота отрицательный, новые юниты появляются только для защиты поселения под угрозой, и улучшаются только там. Если юнит стоит на одной клетке с другим военным юнитом (новый юнит из города), один из них отходит на ближайшую свободную клетку, сначала на своей земле; если вокруг одни ваши солдаты, сосед уступает место.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DEFEND_TIP" Language="ru_RU">
+      <Text>Армия защищает поселения: солдаты идут туда, где опаснее всего, и бьют рейдеров, когда прогноз игры выгоден, под угрозой покупаются защитники и стены, генералы встают у самого тяжёлого боя. По умолчанию выкл. Без неё не работают охоты и войны.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_MERCHANTS_LABEL" Language="ru_RU">
       <Text>Торговцы: лучший торговый путь</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_MERCHANTS_TT" Language="ru_RU">
       <Text>Торговец без приказа открывает лучший торговый путь, который разрешает игра, в порядке экрана торговли (сначала больше ввозимых ресурсов, затем доход по вашему приоритету). Если путь нельзя открыть на месте, торговец сначала идёт в тот город. Один торговец на город, в пределах торгового лимита каждой цивилизации.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_MERCHANTS_TIP" Language="ru_RU">
+      <Text>Торговец без приказа открывает лучший торговый путь, который разрешает игра, сначала дойдя до нужного города. Один торговец на город. По умолчанию выкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_POLICY" Language="ru_RU">
       <Text>политика: {1_Name} (польза {2_Value})</Text>
@@ -1400,6 +1616,24 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_BLOCKED" Language="ru_RU">
       <Text>ход не завершён: игра ещё ждёт {1_What}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED_FREE" Language="ru_RU">
+      <Text>ход можно завершить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED_HOLDS" Language="ru_RU">
+      <Text>ход держит: {1_What}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED_PRODUCTION" Language="ru_RU">
+      <Text>выбор производства</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED_RESEARCH" Language="ru_RU">
+      <Text>выбор исследования</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED_CITIZEN" Language="ru_RU">
+      <Text>новый житель</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_BLOCKED_UNITS" Language="ru_RU">
+      <Text>приказы юнитам</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_EXPLORE" Language="ru_RU">
       <Text>{1_Unit}: разведка</Text>
@@ -1457,6 +1691,9 @@
     <Replace Tag="LOC_XPL_AP_CLOSE_POPUPS_TT" Language="ru_RU">
       <Text>Пока автопилот включён, окна, которые только сообщают, закрываются сразу: изучена технология или цивик, новые открытия, этапы наследия, предупреждения об эпохе и советников, ролики чудес, подсказки обучения, выбор советника на 4-м ходу, ход победы, отчёт о раскрытом шпионаже соперника; и сюжетные события, раз автопилот сам на них отвечает («Политики, празднества, события»). Никогда не закрывает дипломатию, подтверждения и конец игры.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_CLOSE_POPUPS_TIP" Language="ru_RU">
+      <Text>Закрывает окна, которые только сообщают (изучено, открытия, этапы, предупреждения советников, ролики чудес); никогда — дипломатию, подтверждения и конец игры. Только пока автопилот включён. По умолчанию вкл.</Text>
+    </Replace>
     <!-- Autopilot: diplomatic proposals -->
     <Replace Tag="LOC_XPL_AP_DIPLO_RESPONSE" Language="ru_RU">
       <Text>дипломатия: {1_Leader}, {2_Action}: {3_Response}</Text>
@@ -1479,17 +1716,26 @@
     <Replace Tag="LOC_XPL_AP_BEFRIEND_TT" Language="ru_RU">
       <Text>Тратит влияние на дружбу с независимыми народами, по одному за ход (влияния хватает на одного): сначала те, кто угрожает поселению, затем те, кто воюет с вами, затем ближайшие к вашим поселениям (по их деревне); если на первого влияния пока не хватает, оно копится для него. Когда дружба доходит до 30, война с ним заканчивается. При угрозе в уже начатую дружбу вкладывается больше влияния. Также предлагает цивилизациям открыть границы, когда ваши разведчики доходят до их земель.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_BEFRIEND_TIP" Language="ru_RU">
+      <Text>Тратит влияние на дружбу с независимыми, по одному: сначала угрожающие поселению, затем воюющие с вами, затем ближайшие. Также предлагает открыть границы, начинает реформы и присоединяет города-государства. По умолчанию вкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_TACKS_LABEL" Language="ru_RU">
       <Text>Булавки плана на карте</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_TACKS_TT" Language="ru_RU">
       <Text>После каждого пересчёта здания плана ставятся булавками на карту (Detailed Map Tacks); с поселенцами также места, куда они идут, и следующие лучшие. Заменяются только булавки поселений, поставленные автопилотом.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_TACKS_TIP" Language="ru_RU">
+      <Text>После каждого пересчёта ставит булавки следующих зданий плана (Detailed Map Tacks), а с поселенцами — места, куда они идут. По умолчанию вкл. Нужно «Производство» с пересчётом или «Поселенцы».</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_ROAM_LABEL" Language="ru_RU">
       <Text>Армия разведывает (по одному в городе остаются)</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_ROAM_TT" Language="ru_RU">
       <Text>Военные юниты, кроме одного гарнизона в каждом городе, уходят на разведку: автоматическая разведка игры, если она доступна, иначе случайная клетка на краю тумана не дальше 3 ходов, никогда на чужую землю и не в войну. Укреплённых будит; раненые сначала лечатся.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ROAM_TIP" Language="ru_RU">
+      <Text>Военные юниты, кроме одного гарнизона в городе, разведывают (автоматическая разведка игры, иначе край тумана), никогда на чужую землю и не в войну. По умолчанию выкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_SITES_FOUND" Language="ru_RU">
       <Text>места поселений пересчитаны: {1_Num}</Text>
@@ -1508,6 +1754,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_QUEUED_SETTLER" Language="ru_RU">
       <Text>{1_City}: в очередь {2_Name} (поселенцев одновременно: {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLER_DROPPED" Language="ru_RU">
+      <Text>{1_City}: {2_Name} убран из очереди: имеющиеся поселенцы уже заполняют место до лимита поселений ({3_Num} из {4_Cap})</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_FRONT_LOADED" Language="ru_RU">
       <Text>{1_City}: {2_Name} перенесён в начало очереди</Text>
@@ -1535,6 +1784,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_GOAL_PADS" Language="ru_RU">
       <Text>космодромы ({1_N})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_GOAL_WINDOW" Language="ru_RU">
+      <Text>золото на преобразование городка в первый ход новой эпохи (около {1_Cost}[icon:YIELD_GOLD], пока карточки не вернули города)</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_GOAL_BANK" Language="ru_RU">
       <Text>золото на Новое время (смена эпохи сохранит до {1_Cap}[icon:YIELD_GOLD])</Text>
@@ -1576,7 +1828,7 @@
       <Text>Юниты улучшаются только у поселений под угрозой</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_STRATEGY_TT_PEACE_ARMY" Language="ru_RU">
-      <Text>В мирное время: никаких солдат по совету, казарм и других военных зданий</Text>
+      <Text>В мирное время: никаких солдат по совету и военных зданий, кроме дающих производство</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_STRATEGY_TT_CITIES_ONLY" Language="ru_RU">
       <Text>Покупки по плану — только в городах</Text>
@@ -1614,6 +1866,9 @@
     <Replace Tag="LOC_XPL_AP_RESUME_TT" Language="ru_RU">
       <Text>Включён к концу эпохи — автопилот сам включится снова в первый ход новой эпохи, когда вы выберете устремления (выборы эпохи остаются вашими). Преобразования городков в этот первый ход самые дешёвые за эпоху: городом считается только столица, пока «Все ваши города прошлой эпохи остаются городами» не вернёт остальные.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_RESUME_TIP" Language="ru_RU">
+      <Text>Если автопилот был включён к концу эпохи, он сам включится в первый ход новой эпохи, когда вы выберете устремления. По умолчанию вкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_AUTO_RESUMED" Language="ru_RU">
       <Text>Новая эпоха: автопилот снова включается сам (он был включён к концу прошлой эпохи)</Text>
     </Replace>
@@ -1623,11 +1878,20 @@
     <Replace Tag="LOC_XPL_AP_REVOLT_GUARD" Language="ru_RU">
       <Text>{1_Settlement} может восстать: там куплено «{2_Building}» ({3_Gold} золота)</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_REVOLT_QUEUED" Language="ru_RU">
+      <Text>{1_Settlement}: волнения (покупки там закрыты): «{2_Building}» в очередь, первым</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REVOLT_FIRST" Language="ru_RU">
+      <Text>{1_Settlement}: волнения: «{2_Building}» первым в очереди</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_HAPPINESS_RESCUE" Language="ru_RU">
       <Text>{1_Settlement} теряет {2_Pct}% доходов из-за недовольства ({3_Happy}): там куплено «{4_Building}» ({5_Gold} золота), раньше накоплений</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_WONDER_WAIT_DROPPED" Language="ru_RU">
       <Text>{1_City}: «{2_Wonder}» убрано из очереди, пока строится «{3_Item}» (около {4_Turns} ход.): если соперник достроит чудо, игра заберёт производство «{3_Item}»</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WONDER_STARVED" Language="ru_RU">
+      <Text>{1_City}: «{2_Wonder}» убрано из очереди: {3_Turns} ход. не получало производства из-за юнитов и стен впереди, его место займёт другое чудо</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_QUEUE_UNSTUCK" Language="ru_RU">
       <Text>{1_City}: «{2_Item}» уже не первый ход стоит на 100%, и игра его не завершает: «{3_Other}» строится раньше</Text>
@@ -1666,6 +1930,9 @@
     <Replace Tag="LOC_XPL_AP_THREAT" Language="ru_RU">
       <Text>угроза: у {1_Name} враждебных юнитов: {2_Num}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_THREATS" Language="ru_RU">
+      <Text>угрозы (враждебных юнитов рядом): {1_List}</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_BEFRIEND_SUPPORT" Language="ru_RU">
       <Text>больше влияния на дружбу с {1_Name} (угрожает нам)</Text>
     </Replace>
@@ -1677,6 +1944,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_DEFENDER_BOUGHT" Language="ru_RU">
       <Text>куплено: {1_Name} ({2_City}) за {3_Num}[icon:YIELD_GOLD] — рядом враждебных юнитов: {4_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WARSHIP_BOUGHT" Language="ru_RU">
+      <Text>куплено: {1_Name} ({2_City}) за {3_Num}[icon:YIELD_GOLD] — корабли обстреливают {4_City}</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_GARRISON_BOUGHT" Language="ru_RU">
       <Text>куплено: {1_Name} ({2_City}) за {3_Num}[icon:YIELD_GOLD] — рядом враждебный независимый народ, а солдата там не было</Text>
@@ -1739,6 +2009,9 @@
     <Replace Tag="LOC_XPL_AP_UPGRADED" Language="ru_RU">
       <Text>{1_Unit} улучшен до: {2_Unit}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_ARMY_UPGRADED" Language="ru_RU">
+      <Text>{1_Unit} улучшает солдат своей армии: {2_Num} (около {3_Num}[icon:YIELD_GOLD])</Text>
+    </Replace>
     <!-- Autopilot: defenders, room, migrants -->
     <Replace Tag="LOC_XPL_AP_REINFORCE" Language="ru_RU">
       <Text>{1_Unit} идёт защищать: {2_Name}</Text>
@@ -1795,7 +2068,142 @@
       <Text>Наступление: отбивать потерянные поселения</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_OFFENSIVE_TT" Language="ru_RU">
-      <Text>Вместе с «Армия: стрелять или укрепиться». Выключено (по умолчанию) — автопилот только обороняется и при любой возможности ищет мир. Включено — в войне, которую начал кто-то другой, он отбивает ваше поселение, которое держит враг в пределах 10 клеток от ваших: когда ваши поселения в безопасности и ваша победа не близко, солдаты, которых оборона оставляет свободными (не меньше 2 ближнего боя, 3 всего и на 2 больше вражеских солдат рядом), собираются в 3 клетках от него с командиром, затем стрелки и осадные орудия обстреливают укрепления, бойцы ближнего боя атакуют их, когда прогноз игры обещает выгоду, а солдат занимает каждый район с нулевой прочностью; взятое поселение остаётся вашим. Пока штурм продвигается, белый мир не предлагается, а мир без возврата поселения отклоняется; мир с его возвратом принимается. Поход заканчивается, когда поселение снова ваше, при мире, когда солдаты нужны для защиты ваших поселений, через 25 ходов или через 5 ходов без продвижения, или когда ваша победа близко. Командир похода сначала берёт «Инициативу», «Мобильность» и «Полки», если у него ещё нет оборонительного повышения. Никогда не начинает войну и не берёт поселения, которые не были вашими.</Text>
+      <Text>Вместе с «Оборона». Выключено (по умолчанию) — автопилот только обороняется и при любой возможности ищет мир. Включено — в войне, которую начал кто-то другой, он отбивает ваше поселение, которое держит враг в пределах 10 клеток от ваших: когда ваши поселения в безопасности и ваша победа не близко, солдаты, которых оборона оставляет свободными (не меньше 2 ближнего боя, 3 всего и на 2 больше вражеских солдат рядом), собираются в 3 клетках от него с командиром, затем стрелки и осадные орудия обстреливают укрепления, бойцы ближнего боя атакуют их, когда прогноз игры обещает выгоду, а солдат занимает каждый район с нулевой прочностью; взятое поселение остаётся вашим. Пока штурм продвигается, белый мир не предлагается, а мир без возврата поселения отклоняется; мир с его возвратом принимается. Поход заканчивается, когда поселение снова ваше, при мире, когда солдаты нужны для защиты ваших поселений, через 25 ходов или через 5 ходов без продвижения, или когда ваша победа близко. Командир похода сначала берёт «Инициативу», «Мобильность» и «Полки», если у него ещё нет оборонительного повышения. Никогда не начинает войну и не берёт поселения, которые не были вашими.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_OFFENSIVE_TIP" Language="ru_RU">
+      <Text>В войне, начатой другими, отбивает ваше поселение, которое держит враг в пределах 10 клеток, свободными от обороны солдатами; мир ждёт, пока штурм продвигается. Сам войну не начинает. По умолчанию выкл. Нужна «Оборона».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_VILLAGES_LABEL" Language="ru_RU">
+      <Text>Охота на деревни, которые мы не подружим</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_VILLAGES_TT" Language="ru_RU">
+      <Text>Вместе с «Оборона» (по умолчанию вкл.). На деревню охотятся, когда мы её не подружим: лагерь кризиса, деревня, которую дружит другой лидер (не тот, кто уже настроен к вам недружелюбно или враждебно), любая после половины эпохи или та, на дружбу с которой вашего влияния не хватит за 10 ходов. В пределах 8 клеток от ваших поселений, когда они в безопасности: свободные от обороны солдаты (2 ближнего боя, всего 3, на одного больше её солдат рядом) собираются в 2 клетках от неё с командиром (сначала авангард), затем ей объявляется война, солдаты ближнего боя бьют её солдат, когда прогноз игры говорит, что это выгодно, а солдат заходит в пустую деревню и разгоняет её (100 ресурса, +10 к отношениям соседних лидеров; опыт получает командир рядом). Конец: деревни нет, 15 ходов или 5 без убийств, потеряны 2 солдата без убийств или солдаты нужны вашим поселениям. Никогда — город-государство или деревня, которую дружите вы.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_VILLAGES_TIP" Language="ru_RU">
+      <Text>Разгоняет деревни в пределах 8 клеток, с которыми вы не подружитесь, свободными солдатами с генералом (ради его опыта), когда поселения в безопасности. Никогда — город-государство. По умолчанию вкл. Нужна «Оборона».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_RAIDERS_LABEL" Language="ru_RU">
+      <Text>Охота на рейдеров у наших земель</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_RAIDERS_TT" Language="ru_RU">
+      <Text>Вместе с «Оборона» (по умолчанию вкл.). Командир со свободными от обороны солдатами идёт на вражеских солдат, бродящих в пределах 6 клеток от ваших поселений, на ваших или ничьих землях: только на тех, кто уже воюет с вами (никогда не начинает войну сам и не трогает стражу деревни у её стен — это охота на деревни). Начинается, когда ваши поселения в безопасности, командир дойдёт до рейдера за 3 хода, а свободных солдат в 2 ходах вместе с упакованными в его армию хватает (один ближнего боя, всего 2, на одного больше их солдат рядом). Солдаты ближнего боя бьют, когда прогноз игры говорит, что это выгодно, а командир встаёт так, чтобы бой был в его радиусе: каждый бой там и его совместные атаки дают ему опыт. Идёт за рейдером, пока тот в пределах 8 клеток от ваших поселений; конец: рейдеров нет, 6 ходов или 3 без убийств, потеряны 2 солдата без убийств или солдаты нужны поселению.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_RAIDERS_TIP" Language="ru_RU">
+      <Text>Генерал со свободными солдатами идёт на рейдеров, уже воюющих с вами, в пределах 6 клеток от ваших поселений — ради опыта генерала. Сам войну не начинает. По умолчанию вкл. Нужна «Оборона».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_LABEL" Language="ru_RU">
+      <Text>Учебная война со слабым соседом</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_TT" Language="ru_RU">
+      <Text>Вместе с «Оборона» (по умолчанию выкл.). Раз в эпоху, не в последней: официальная война с ближайшим известным лидером в пределах 10 клеток, у которого не больше половины ваших сухопутных солдат, нет более сильного юнита ближнего боя, не больше 60% вашего производства, меньше поселений и нет союзника, когда ваши поселения в безопасности, нет другой войны и угрозы войны, нет вашей близкой победы и чужой, которую надо остановить, не в первые 10 и не в последние 20 ходов эпохи, ваша поддержка войны не меньше их, влияния хватает на 2 очка поддержки и командир с 4 свободными солдатами готов. Нейтрального или недружелюбного осуждают до враждебности (2 раза, 4 — если он очень слаб, раз в 10 ходов). Армия собирается в 3 клетках от их ближайшего поселения и бьёт их солдат в пределах 4 клеток, когда прогноз игры выгоден, ничего не захватывая; поддержку войны покупают, когда их поддержка догнала вашу, а очко стоит не больше половины свободного влияния. Конец: командир получил повышение, его опыт стоит 5 ходов, усталость от войны, потеряны 2 юнита без убийств, вмешалась третья сторона, поселению угрожают, доходы упали на 10% или прошло 20 ходов; затем ищут мир, прося их ближайший городок, если поддержка войны выше на 3 и лимит поселений позволяет. Ничего не строится и не покупается ради неё.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_TIP" Language="ru_RU">
+      <Text>Раз в эпоху (не в последней) — официальная война с намного более слабым соседом, чтобы генералы набрали опыт; ничего не захватывается, затем ищется мир. По умолчанию выкл. Нужна «Оборона».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_STARTED" Language="ru_RU">
+      <Text>Охота: {2_Num} солдат идут к деревне {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_FIGHT" Language="ru_RU">
+      <Text>Охота: война с {1_Name}; атакуют {2_Num} солдат</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_HUNT_ENDED" Language="ru_RU">
+      <Text>Охота на {1_Name} окончена: {2_Reason}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RAIDER_HUNT_STARTED" Language="ru_RU">
+      <Text>Рейдеры: командир и {2_Num} солдат идут на рейдеров {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RAIDER_HUNT_ENDED" Language="ru_RU">
+      <Text>Охота на рейдеров {1_Name} окончена: {2_Reason}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_DECLARED" Language="ru_RU">
+      <Text>Учебная война: объявлена официальная война {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_GATHER" Language="ru_RU">
+      <Text>Учебная война с {1_Name}: собираются {2_Num} солдат</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_FIGHT" Language="ru_RU">
+      <Text>Учебная война: армия бьётся у {1_Name} ({2_Num} солдат)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_WAR_ENDED" Language="ru_RU">
+      <Text>Учебная война у {1_Name} окончена: {2_Reason}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TRAINING_PEACE_HELD" Language="ru_RU">
+      <Text>Мира с {1_Name} пока нет: учебная война продолжается</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WAR_SUPPORT_BOUGHT" Language="ru_RU">
+      <Text>Поддержка войны против {1_Name} куплена за {2_Num}[icon:YIELD_DIPLOMACY]</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_DENOUNCED" Language="ru_RU">
+      <Text>{1_Name}: осуждение (к учебной войне)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_GATHER" Language="ru_RU">
+      <Text>{1_Unit} собирается к {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_ADVANCE" Language="ru_RU">
+      <Text>{1_Unit} наступает у {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_COMMANDER" Language="ru_RU">
+      <Text>{1_Unit} занимает место у {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_STRUCK" Language="ru_RU">
+      <Text>{1_Unit} атакует у {2_Name} ({3_X},{4_Y})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_DONE" Language="ru_RU">
+      <Text>деревни больше нет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_BEFRIENDED" Language="ru_RU">
+      <Text>теперь она дружественна</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_OFF" Language="ru_RU">
+      <Text>настройка выключена</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_VICTORY" Language="ru_RU">
+      <Text>наша победа близко</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_HOME" Language="ru_RU">
+      <Text>солдаты нужны нашим поселениям</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_LATE" Language="ru_RU">
+      <Text>слишком долго</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_STALL" Language="ru_RU">
+      <Text>5 ходов без убийств</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_LOSSES" Language="ru_RU">
+      <Text>потеряны 2 солдата без убийств</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_FORCE" Language="ru_RU">
+      <Text>осталось слишком мало солдат</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_NO_WAR" Language="ru_RU">
+      <Text>игра не дала объявить войну</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_PEACE" Language="ru_RU">
+      <Text>наступил мир</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_PROMOTED" Language="ru_RU">
+      <Text>командир получил повышение</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_WEARINESS" Language="ru_RU">
+      <Text>усталость от войны</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_THIRD" Language="ru_RU">
+      <Text>вмешалась третья сторона</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_XP_STALL" Language="ru_RU">
+      <Text>опыт командира не растёт</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_WHY_YIELDS" Language="ru_RU">
+      <Text>доходы упали на 10%</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RAIDER_WHY_DONE" Language="ru_RU">
+      <Text>рейдеров больше нет</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RAIDER_WHY_STALL" Language="ru_RU">
+      <Text>3 хода без убийств</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RAIDER_WHY_FAR" Language="ru_RU">
+      <Text>они ушли далеко от наших земель</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_CAMPAIGN_STARTED" Language="ru_RU">
       <Text>Поход: отбить {1_Name} у {2_Leader} — собираются {3_Num} солдат</Text>
@@ -1894,19 +2302,28 @@
       <Text>Фокус на победу</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_FOCUS_TT" Language="ru_RU">
-      <Text>Каждый ход автопилот выбирает путь наследия (культура, наука или экономика; никогда военный): тот, где вы дальше всего продвинулись в этой эпохе и сильнее всего опережаете лучшего знакомого соперника, с бонусом за победу, которую предпочитает ваш лидер, и за близкие триумфы этого рода; меняет путь, только если другой лидирует 3 хода подряд или текущий пройден (в последней эпохе пройденный путь сохраняется: его победа продолжается). Затем следует приоритету этого пути (Культура, Наука или Золото: советы по исследованиям и производству, здания, политики, рост, покупки); для культуры строит на одно чудо больше одновременно. Близкие триумфы этого рода отмечаются «Отслеживать». Его собственная работа идёт первой, по эпохам. Сначала исследования, открывающие работу пути (мастерство технологий с кодексами и «Грамотность»; «Образование» и «Городское планирование»; «Деньги» и «Свод законов»; «Индустриализация» и «Массовое производство»). Наука: библиотека и академия в каждом городе под кодексы (Древность); университет в каждом городе и новые специалисты на городской клетке, ближе всех к 40 общей прибыли (Эпоха исследований); космодромы в 3 самых производительных городах (без космодрома не победить; каждый ведёт повторяемую «Подготовку к первому космическому полету с экипажем», 15 инноваций), аэродром и радиостанция для проектов пути, школа и лаборатория в каждом городе и все проекты, дающие инновации; когда исследовать для пути больше нечего — технологии и социальные институты, дающие инновации (Новое время); эти здания города тоже покупают на золото сверх запаса. Экономика: рост на клетки с ресурсами и, с «Торговцами», торговцы, пока открыты торговые пути (любая эпоха); рынок и маяк в каждом городе — места под ресурсы (Древность); поселенцы плывут в Далекие земли после «Судостроения» — серебряные караваны (Эпоха исследований); ж/д станция, порт, фабрика и биржа в каждом городе, фабричные ресурсы на фабрики, Великий банкир открывает офисы Всемирного банка в чужих столицах (Новое время); эти здания покупают на золото сверх запаса — сначала городки, потом города, а пока технологии пути не изучены, экономика держит и науку. Серебряные караваны всегда идут домой и разгружаются. Вкладка показывает фокус, каждый путь против лучшего соперника, очки каждой победы против цели (инновации, ВВП…) и её обратный отсчёт, выключенные в игре победы и близкие триумфы.</Text>
+      <Text>Автопилот ведёт к одной победе (культура, наука или экономика; никогда военная). «Авто» выбирает её по очкам самих побед: насколько вы продвинулись к цели игры (когда она есть у каждой гонки) и насколько опережаете лучшего знакомого соперника, с бонусом за близкие триумфы этого рода и, только при первом выборе, за победу, которую предпочитает ваш лидер. Выключенная в игре победа никогда не выбирается, как и наука, пока у вашей цивилизации может быть только один город. Фокус может смениться только в первые ходы эпохи (её первые 15%), если другая победа 3 хода подряд заметно впереди; в последней эпохе он сохраняется, если только ваш собственный обратный отсчёт в другой победе не стал близок. Затем следует приоритету этой победы (Культура, Наука или Золото: советы по исследованиям и производству, здания, политики, рост, покупки); для культуры строит на одно чудо больше одновременно. Близкие триумфы этого рода отмечаются «Отслеживать». Его собственная работа идёт первой, по эпохам. Сначала исследования, открывающие работу пути (мастерство технологий с кодексами и «Грамотность»; «Образование» и «Городское планирование»; «Деньги» и «Свод законов»; «Индустриализация» и «Массовое производство»). Наука: библиотека и академия в каждом городе под кодексы (Древность); университет в каждом городе и новые специалисты на городской клетке, ближе всех к 40 общей прибыли (Эпоха исследований); космодромы в самых производительных городах (без космодрома не победить, следующие — только там, где они быстрее дают 100 инноваций; каждый ведёт повторяемую «Подготовку к первому космическому полету с экипажем», 15 инноваций), аэродром и радиостанция в городах без космодрома для проектов пути, школа и лаборатория в каждом городе и все проекты, дающие инновации; когда исследовать для пути больше нечего — технологии и социальные институты, дающие инновации (Новое время); эти здания города тоже покупают на золото сверх запаса. Экономика: рост на клетки с ресурсами и, с «Торговцами», торговцы, пока открыты торговые пути (любая эпоха); рынок и маяк в каждом городе — места под ресурсы (Древность); поселенцы плывут в Далекие земли после «Судостроения» — серебряные караваны (Эпоха исследований); ж/д станция, порт, фабрика и биржа в каждом городе, фабричные ресурсы на фабрики, Великий банкир открывает офисы Всемирного банка в чужих столицах (Новое время); эти здания покупают на золото сверх запаса — сначала городки, потом города, а пока технологии пути не изучены, экономика держит и науку. Серебряные караваны всегда идут домой и разгружаются. Вкладка показывает фокус, очки каждой победы против лучшего знакомого соперника и её цели (инновации, ВВП…) и её обратный отсчёт, выключенные в игре победы и близкие триумфы.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FOCUS_TIP" Language="ru_RU">
+      <Text>Ведёт к ближайшей победе (культура, наука или экономика) по очкам самих побед, выбирая её в первые ходы эпохи: исследования, здания, политики и покупки следуют ей. По умолчанию выкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_STRATEGY_LABEL" Language="ru_RU">
       <Text>Стратегия по фазам</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_STRATEGY_TT" Language="ru_RU">
-      <Text>С «Фокусом на победу»: автопилот играет по фазам. Рост (первая четверть древности и пока поселений заметно меньше лимита; начало эпохи исследований, пока городков больше, чем городов): важнее всего еда и производство, чтобы городки и города росли и потом быстрее строили здания фокуса; городки склоняются к фермерству. Подготовка: здания фокуса и накопления на преобразования и здания пути; при науке и экономике в мирное время никаких исследователей, солдат по совету и казарм, улучшение юнитов только у угрозы. Рывок к победе (последняя эпоха): новые поселенцы не строятся; при науке золото копится на 3–5 космодромов до «Ракетостроения», и все они покупаются сразу, как оно изучено. Фаза задаёт запас золота и число чудес на ход (ваши настройки не меняются); на вкладке видна фаза, в подсказке — что она меняет. Выключено: каждый ход ваши настройки.</Text>
+      <Text>С «Фокусом на победу»: автопилот играет по фазам. Рост (первая четверть древности и до её половины, пока поселений заметно меньше лимита; начало эпохи исследований, пока поселений заметно меньше лимита или городков больше, чем городов): важнее всего еда и производство, чтобы городки и города росли и потом быстрее строили здания фокуса; городки склоняются к фермерству; юниты могут идти впереди чудес. Подготовка: здания фокуса и накопления на преобразования и здания пути; при науке и экономике в мирное время никаких исследователей, солдат по совету и чисто военных зданий. Рывок к победе (последняя эпоха): поселенцы заполняют лимит поселений, пока поселения дают очки (включена военная победа или победа по очкам), иначе — только ниже половины лимита и ни одного, когда главное исследование эпохи пройдено на 60%; при науке до «Ракетостроения» копится золото на космодромы, нужные космической гонке, и они покупаются, как только оно изучено. Вне роста юниты улучшаются только у угрозы. Соперник, близкий к другой победе, добавляет ответ: ещё одно чудо (культура), цель по ВВП (экономика), поселенцев (военная) и никаких «Технологий будущего». Фаза задаёт запас золота и число чудес на ход (ваши настройки не меняются); на вкладке видна фаза, в подсказке — что она меняет. Выключено: каждый ход ваши настройки.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRATEGY_TIP" Language="ru_RU">
+      <Text>Ведёт фокус по фазам (рост, подготовка, рывок к победе); каждая задаёт веса доходов, запас золота и число чудес на ход. По умолчанию вкл. Нужен «Фокус на победу».</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RESOURCES_LABEL" Language="ru_RU">
       <Text>Назначать ресурсы</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_RESOURCES_TT" Language="ru_RU">
       <Text>Ресурсы, не назначенные ни одному поселению, назначаются в свободные ячейки (как в экране ресурсов игры): сначала самые ценные по вашему приоритету, города раньше городков, только куда игра разрешает. Назначенные ресурсы дают бонусы и засчитываются в экономический путь наследия и триумфы.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_RESOURCES_TIP" Language="ru_RU">
+      <Text>Назначает свободные ресурсы в пустые ячейки: сначала самые ценные по вашему приоритету, города раньше городков, только куда разрешает игра. По умолчанию вкл.</Text>
     </Replace>
     <Replace Tag="LOC_XPL_FOCUS_CULTURE" Language="ru_RU">
       <Text>Культура</Text>
@@ -1946,6 +2363,9 @@
     <Replace Tag="LOC_XPL_AP_DIPLOMACY_TT" Language="ru_RU">
       <Text>С другими лидерами, только то, что игра предлагает сейчас и на что хватает Влияния: «Контршпионаж» против лидера, чьего шпиона поймали у вас (с эпохи исследований); «Примирение» с лидером, который относится к вам недружелюбно или враждебно; одна инициатива за ход с лидером, с которым отношения хуже всего, сначала подходящая вашему приоритету (научное сотрудничество, свободные рынки, культурный обмен, фермерский рынок, местный фестиваль, строительство чудес), только пока Влияние не идёт на дружбу с независимыми; инициативу лидера поддерживает (а не только принимает), если хватает Влияния. Предложения никогда не отклоняются (это портит отношения или означает войну). Пока поселению угрожают, только контршпионаж; никогда с лидером, который воюет с вами.</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_DIPLOMACY_TIP" Language="ru_RU">
+      <Text>С другими лидерами — только на что хватает влияния: контршпионаж, примирение с недружелюбным или враждебным лидером, одна инициатива за ход, поддержка их инициатив. Предложения никогда не отклоняет. По умолчанию выкл.</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_COUNTER_SPY" Language="ru_RU">
       <Text>контршпионаж против: {1_Name}</Text>
     </Replace>
@@ -1965,6 +2385,12 @@
     <Replace Tag="LOC_XPL_AP_SETTLER_WAITS" Language="ru_RU">
       <Text>{1_Unit} ждёт в {2_Name}: рядом враги</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLER_ESCORT_COMING" Language="ru_RU">
+      <Text>{1_Unit} ждёт охрану: {2_Unit}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SETTLER_ESCORTED" Language="ru_RU">
+      <Text>{1_Unit} идёт с охраной ({2_Unit}) к месту поселения {3_X},{4_Y}</Text>
+    </Replace>
     <!-- Autopilot: ocean and enemies -->
     <Replace Tag="LOC_XPL_AP_LEFT_OCEAN" Language="ru_RU">
       <Text>{1_Unit} уходит из глубокого океана на {2_X},{3_Y}</Text>
@@ -1981,6 +2407,18 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_REPAIR_FIRST" Language="ru_RU">
       <Text>{1_City}: ремонт первым в очереди</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPAIR_DEFERRED" Language="ru_RU">
+      <Text>{1_Name} ({2_City}): ремонт ждёт: {3_Why}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPAIR_WHY_HOSTILE" Language="ru_RU">
+      <Text>враждебный юнит «{1_Unit}» в {2_Num} кл.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPAIR_WHY_RECENT" Language="ru_RU">
+      <Text>отремонтировано {1_Num} ход(а) назад</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_REPAIR_WHY_CONVERT" Language="ru_RU">
+      <Text>золото идёт на преобразование городка {1_Town} в последние ходы эпохи</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_DECLINED_WAR" Language="ru_RU">
       <Text>союзник {1_Name} зовёт на войну с {2_Name}: отказ; союз расторгнут</Text>
@@ -2008,6 +2446,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_VICTORY_TT" Language="ru_RU">
       <Text>При включённом «Фокусе на победу»: «Авто» — автопилот сам выбирает путь, на котором ближе к победе; «Культура», «Наука» или «Экономика» — следует этому пути (если эта победа включена в игре). Выключенные в игре победы никогда не выбираются и здесь не предлагаются.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VICTORY_TIP" Language="ru_RU">
+      <Text>«Авто» выбирает ближайшую победу; «Культура», «Наука» или «Экономика» — следует ей. Предлагаются только включённые в игре победы. По умолчанию «Авто». Нужен «Фокус на победу».</Text>
     </Replace>
     <!-- Autopilot: victory levers -->
     <Replace Tag="LOC_XPL_AP_VICTORY_WORK" Language="ru_RU">
@@ -2106,6 +2547,9 @@
     <Replace Tag="LOC_XPL_AP_GOAL_DEFENDER" Language="ru_RU">
       <Text>защитника ({1_Name})</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_GOAL_COMMANDER" Language="ru_RU">
+      <Text>второго командира ({1_City})</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_SITES_RELAXED" Language="ru_RU">
       <Text>мест для поселений почти не осталось: поиск повторён с мягкими правилами, найдено {1_Num}</Text>
     </Replace>
@@ -2121,6 +2565,21 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_QUEUED_GUARD" Language="ru_RU">
       <Text>{1_City}: в очередь {2_Name} (по солдату на поселение: {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_COMMANDER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} (второй командир: нужно командиров — {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COMMANDER_BOUGHT" Language="ru_RU">
+      <Text>куплено: {1_Name} ({2_City}) за {3_Num}[icon:YIELD_GOLD] — второй командир</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COMMANDER_ESCAPED" Language="ru_RU">
+      <Text>{1_Unit} уходит из-под удара на {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COMMANDER_WALK_STOPPED" Language="ru_RU">
+      <Text>{1_Unit} прерывает путь: {2_X},{3_Y} под ударом врага</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COMMANDER_ADVANCE" Language="ru_RU">
+      <Text>{1_Unit} идёт к поселению {2_City}, насколько безопасно ({3_X},{4_Y})</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_PEACE_ACCEPTED" Language="ru_RU">
       <Text>принят мир с {1_Name} (предложение почти ничего у нас не просит)</Text>
@@ -2183,6 +2642,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_SCOUT_VILLAGE" Language="ru_RU">
       <Text>{1_Unit} разведывает поселение {2_Name} (к {3_X},{4_Y}): после встречи его можно подружить</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SCOUT_SLEEPS" Language="ru_RU">
+      <Text>{1_Unit} спит: на его земле разведывать больше нечего, а море штормит</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_COMMANDER_POST" Language="ru_RU">
       <Text>{1_Unit} занимает пост в {2_Name}</Text>
@@ -2256,6 +2718,15 @@
     <Replace Tag="LOC_XPL_AP_LEFT_HAZARD" Language="ru_RU">
       <Text>{1_Unit} уходит с клетки, где теряет {4_Num} здоровья за ход (чума), на {2_X},{3_Y}</Text>
     </Replace>
+    <Replace Tag="LOC_XPL_AP_LEFT_HAZARD_WALK" Language="ru_RU">
+      <Text>{1_Unit} уходит из чумы: {5_Num} ход(а) пути до {2_X},{3_Y} (в пути около {6_Num} урона; если остаться — {4_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_PLAGUE_ROOM" Language="ru_RU">
+      <Text>{1_Unit} освобождает клетку {3_X},{4_Y}: туда уходит из чумы {2_Unit}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_WALK_HAZARD" Language="ru_RU">
+      <Text>{1_Unit}: путь до {2_X},{3_Y} проходит через чуму, приказ отменён</Text>
+    </Replace>
     <Replace Tag="LOC_XPL_AP_BIAS_SET_NONE" Language="ru_RU">
       <Text>Без фокуса</Text>
     </Replace>
@@ -2319,6 +2790,9 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_STRUCT_CITY_LIMIT" Language="ru_RU">
       <Text>+1 к лимиту городов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_STRUCT_PANTHEON" Language="ru_RU">
+      <Text>пантеон</Text>
     </Replace>
     <Replace Tag="LOC_XPL_AP_REFORM" Language="ru_RU">
       <Text>Реформа с лидером {1_Leader}: ячейка политики навсегда</Text>
@@ -2385,6 +2859,114 @@
     </Replace>
     <Replace Tag="LOC_XPL_AP_LEGACY_TRIUMPH" Language="ru_RU">
       <Text>{1_Name} {2_Num}/{3_Num}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_LABEL" Language="ru_RU">
+      <Text>Ядерное оружие</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_TT" Language="ru_RU">
+      <Text>Вместе с «Оборона» (по умолчанию выкл.). В войне с крупной державой: сначала изучается «Расщепление ядра», затем строится «Манхэттенский проект» там, где он будет готов раньше (за 25 ходов); когда он стоит, а война у наших границ, производится до 2 ядерных зарядов (по 1000 производства, за 15 ходов), бомбардировщик для авиабазы и аэродром, если его нет. Авиакомандир с бомбардировщиком бьёт только по вражеской армии: не меньше 3 сухопутных юнитов противника в зоне взрыва в пределах 8 клеток от наших поселений, никогда не задевая наши юниты и земли, чужие (не воюющих с нами) и любые поселения, и никогда там, где игра говорит, что это начнёт новую войну. Заражение держится 10 ходов, каждый удар портит отношения.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_TIP" Language="ru_RU">
+      <Text>В войне с крупной державой: изучает «Расщепление ядра», строит «Манхэттенский проект» и до 2 зарядов, бьёт по вражеским армиям от 3 сухопутных юнитов у ваших поселений, не задевая ваших и чужих. По умолчанию выкл. Нужна «Оборона».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_COMMANDER_ESCORTED" Language="ru_RU">
+      <Text>{1_Unit} идёт с охраной ({2_Unit}) на {3_X},{4_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SORTIE" Language="ru_RU">
+      <Text>{1_Unit} выходит на вылазку против {2_Enemy} в {3_X},{4_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ARMY_MARCH" Language="ru_RU">
+      <Text>{1_Unit} собирает {2_Num} в армию и идёт к {3_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FIELD_UNPACKED" Language="ru_RU">
+      <Text>{1_Unit} развёртывает {2_Num} солдат против {3_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SKIRMISH_POST" Language="ru_RU">
+      <Text>{1_Unit} занимает позицию у нашего поселения, чтобы стрелять по солдатам {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SKIRMISH_COMMANDER" Language="ru_RU">
+      <Text>{1_Unit} встаёт над нашими стрелками против {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SKIRMISH_UNPACKED" Language="ru_RU">
+      <Text>{1_Unit} развёртывает {2_Num} солдат для боя с {3_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_ARMY_OVERRUN" Language="ru_RU">
+      <Text>{1_Unit} сминает {2_Unit} ({3_X},{4_Y}) упакованной армией</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VANGUARD_PACKS" Language="ru_RU">
+      <Text>{1_Unit} (авангард) собирает {2_Num} солдат в армию</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_VANGUARD_RALLY" Language="ru_RU">
+      <Text>{1_Unit} (авангард) зовёт {2_Num} солдат в армию</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AIR_FOCUSED_ATTACK" Language="ru_RU">
+      <Text>{1_Unit} наносит удар по {2_Enemy} на {3_X},{4_Y} силами {5_Num} самолётов</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_BOMBER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} для авиабазы (нужно {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_AIRFIELD" Language="ru_RU">
+      <Text>{1_City}: в очередь аэродром ради {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_TECH_FOR_NUCLEAR" Language="ru_RU">
+      <Text>Изучение ради ядерного оружия: {1_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_PROJECT" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} ({3_Num} ход.)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_WEAPON_QUEUED" Language="ru_RU">
+      <Text>{1_City}: в очередь ядерный заряд ({2_Num} с очередью, {3_Num} ход.)</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUKE_STRUCK" Language="ru_RU">
+      <Text>{1_Unit} сбрасывает ядерный заряд на {4_Num} юнитов противника в {2_X},{3_Y}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SATELLITE_PAD_QUEUED" Language="ru_RU">
+      <Text>{1_City}: в очередь стартовая площадка для спутника, открывающего карту</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_CITIES_LABEL" Language="ru_RU">
+      <Text>Ядерные удары по городам</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_CITIES_TT" Language="ru_RU">
+      <Text>Только вместе с «Ядерное оружие» и «Оборона» (по умолчанию выкл.). Когда подходящей вражеской армии нет, ядерный заряд может ударить по городу крупной державы, воюющей с нами, в пределах 8 клеток от наших поселений, ближайшему первым: никогда не задевая наши юниты и земли, чужие (не воюющих с нами), любые другие поселения и поселение, которое было нашим (его мы хотим вернуть), и никогда там, где игра говорит, что это начнёт новую войну. Взрыв уничтожает население, здания и улучшения; заражение держится 10 ходов, каждый удар портит отношения.</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUCLEAR_CITIES_TIP" Language="ru_RU">
+      <Text>Когда бить по армии нечем, ядерный заряд может ударить по городу воюющей с вами державы в пределах 8 клеток от ваших поселений; никогда — по бывшему вашему. По умолчанию выкл. Нужны «Ядерное оружие» и «Оборона».</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AIR_CARPET_BOMB" Language="ru_RU">
+      <Text>{1_Unit}: «Ковровая бомбардировка» по {2_Enemy} в {3_X},{4_Y} (бомбардировщиков: {5_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_AIR_SWEEP" Language="ru_RU">
+      <Text>{1_Unit}: «Пролет истребителей» над {2_X},{3_Y} (истребителей: {4_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_SQUADRON_BASE" Language="ru_RU">
+      <Text>{1_Unit} строит авиабазу, чтобы прикрыть {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_CARRIER_SAILS" Language="ru_RU">
+      <Text>{1_Unit} идёт прикрыть {2_Name} с моря</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FLEET_COMMANDER_POST" Language="ru_RU">
+      <Text>{1_Unit} встаёт к нашим кораблям у {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NAVAL_FOCUS_FIRE" Language="ru_RU">
+      <Text>{1_Unit}: «Сосредоточенный огонь» по {2_Enemy} в {3_X},{4_Y} (кораблей: {5_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NAVAL_COORDINATED_ATTACK" Language="ru_RU">
+      <Text>{1_Unit}: «Скоординированная атака на море» на {2_Enemy} в {3_X},{4_Y} (кораблей: {5_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_NUKE_CITY_STRUCK" Language="ru_RU">
+      <Text>{1_Unit} сбрасывает ядерный заряд на {2_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_FORMATION_SWAP" Language="ru_RU">
+      <Text>{1_Unit}, раненый, меняется местами с {2_Unit} у {3_Name}</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_SQUADRON" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} ради авиабазы (нужно {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_CARRIER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name}, чтобы прикрыть берег с моря (нужно {3_Num})</Text>
+    </Replace>
+    <Replace Tag="LOC_XPL_AP_QUEUED_FLEET_COMMANDER" Language="ru_RU">
+      <Text>{1_City}: в очередь {2_Name} для кораблей (нужно {3_Num})</Text>
     </Replace>
   </LocalizedText>
 </Database>

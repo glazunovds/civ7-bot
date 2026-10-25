@@ -1,6 +1,6 @@
 # Civ VII mods — Expansion Planner
 
-A Civilization VII **UI mod** (mod id `expansion-planner`, in `mod/expansion-planner/`) plus Node tests and dev tools. It is a planner panel opened from a top-left toolbar button (or F8). It has six tabs:
+A Civilization VII **UI mod** (mod id `expansion-planner`, in `mod/expansion-planner/`) plus Node tests and dev tools. It is a planner panel opened from a top-left toolbar button (or F8); F7 («Следующий шаг») runs one autopilot pass that never ends the turn. It has six tabs:
 - **Settlements:** sites for future cities or feeder towns.
 - **Buildings:** an adjacency layout per settlement, or for all settlements at once, placed as Detailed Map Tacks.
   - Whole layouts are searched, connector buildings toward far good tiles included (gotcha 48).
@@ -10,7 +10,7 @@ A Civilization VII **UI mod** (mod id `expansion-planner`, in `mod/expansion-pla
 - **Towns:** convert a town to a city or keep it, and which Town Focus to pick (with a «Выбрать» button that sets it).
 - **Wonders:** where to build each wonder, its tier (what its effect is worth), and the race against rivals.
 - **Empire:** every settlement on one page (city strengths, town Focus, food sent/received, plan left), plus the «Сеть еды» food-network map lens.
-- **Autopilot:** for stepping away (online turn timers): each turn it chooses research and civics (game advisor), makes the choices that hold the turn (policies valued by Policy Yield Previews when installed, celebrations, story events, pantheon, government, city-state bonuses), fills empty production queues (a wonder it can win, by tier and value per turn, on the plan's tile; else the plan, warehouses too; else the advisor; whatever it orders goes on the plan's tile; a chosen wonder goes straight to the front; a wonder race it will lose gets a building ahead of it, and a big building stands behind every wonder; in an age's last turns (the final age: all of it, while the score victory ends the game there) only what is done before the age ends, and a nearly done building is bought on a non-final age's last turn), places new citizens (counting what a city loses below zero Happiness, a new citizen's own yields too), sets town Focus, values policies and buildings by what their Happiness does to each settlement's yields, buys planned buildings above a gold reserve (one budget a pass; gold saved for a town conversion or the victory path's next building before small purchases; no building bought in a city while a wonder waits in its queue; a gold line in the tab and UI.log), recalculates the plan, optionally skips idle units and ends the turn (not while a choice holds it). Units move only with their own opt-in options: scouts explore (2 trained first), settlers are trained and found on the Settlements tab's sites (searched by itself; cities and towns 1 to 1 as a floor, then towns converted by their yields), idle military shoots or fortifies or explores (one garrison per city stays; hurt units escape onto shallow water from land melee raiders), merchants take the best trade route. Also befriends independents, spends leader attribute points, promotes commanders (Bastion first, commendations spent; with «Оборона» they stand in the most threatened settlement they reach within 6 turns, in peace keep their post unless one within 4 turns is 3 points unhappier, and lead Focus Fire / Coordinated Attack on raiders), places the plan's map tacks, puts archived great works on display, assigns resources, and (opt-in) explorers dig artifacts, a victory focus steers toward the closest victory (re-decided from the victories' own points in each age's first turns), by phases (Growth, Build-up, Final push: «Стратегия по фазам») (with its triumphs; research, buildings, growth, merchants and resources serve the science or economic path of each age; the government suits the focus; the Autopilot tab shows each victory's points and countdown and which victories are off; the final age's score race goes to UI.log, and settlers go past the settlement cap when that starts our military countdown, and settle wherever the game allows when a rival's must be blocked; space work runs in parallel and in one order per city, production buildings first, then the Launch Pad and Crewed Space Flight Preparation (near the goal a one-off first when it wins sooner), and the Airfield and a Radio Station only where no Launch Pad is, as soon as they are unlocked; the race counts the Innovation research brings, Launch Pads are banked for before Rocketry and bought at it (under way too), and Exploration's last turns bank gold for Modern; a rival's science countdown is the game's end), ranged soldiers shoot raiders (from their post too) and melee soldiers strike them when the game's own attack preview says it pays, defence against independents (no site near their villages, befriending one at a time, melee defenders bought where raiders are, a holder kept in each settlement near a village at war with us, empty villages dispersed, walls first in a threatened city's queue, Fort Town walls), the army sent where the danger is greatest (guards on their way count only when in time, sleeping reserves woken, ranged units too, a guard at each war front before the war, a packed army unpacks at a threatened settlement and a far soldier reinforces the army of our commander there, the guards there take better posts (a melee unit on the centre, screens facing each approach, ranged units in range, the commander covering the most of them), aircraft strike raiders, a raider about to take a damaged centre first, fighters rebase to cover the settlements enemy aircraft hit lately or reach (a Launch Pad city first) and one ground attacker is trained at a lasting front, warships attack the game's way, guard the coasts ships raid and are trained on the same water, the age's first melee unit, which every settlement centre's defence follows, trained, upgraded or bought; with «Наступление», off by default, a settlement of ours an enemy took in a war it started is retaken with the soldiers defence leaves free, and peace waits only while that assault makes progress), and diplomacy (counter-spy, reconciliation, initiatives). Off at every load (it switches itself on again in a new age's first turn, after the dedications, when it was on at the last age's end or was switched on before them; while the dedications wait it converts the towns that are cheapest then, never last age's cities, which the card brings back), and switched off when anyone wins or we are defeated; after the win (our science countdown with its goal reached, or a game played on after a victory) nothing chases a victory any more: balanced play, every other technology and civic before Future Tech, victory projects out of the queues, every remaining building on its best tile, three wonders at a time, idle gold for conversions and buildings, and the satellite that reveals the map. An item the game leaves at 100% gives way to the next and leaves the queue after 3 turns, and the plan orders only on the tiles the game offers (gotcha 77). Towns are converted by production per gold, the chosen town kept as the savings goal; a settlement a revolt may take buys a Happiness building. It also researches the slots, caps and specialist caps the game's advisor never names, and the civics whose policy cards beat the weakest ones slotted (gotcha 76), picks the pantheon and beliefs by value and spreads our religion to our own settlements with Missionaries, trains and uses our civilization's great people and unique improvements, uses the endeavors the game offers (Lafayette's Reform), steals research and levies or incorporates city-states, and buys settlers toward the Homeland triumph (research/40; gotcha 73). One order per tile (a wonder never shares its tile with another order of ours), and under a military countdown settlers take dangerous or far sites (gotcha 74). Plus an experimental single-player «ИИ играет N ходов» (the game's own Autoplay).
+- **Autopilot:** for stepping away (online turn timers): each turn it chooses research and civics (game advisor), makes the choices that hold the turn (policies valued by Policy Yield Previews when installed, celebrations, story events, pantheon, government, city-state bonuses), fills empty production queues (a wonder it can win, by tier and value per turn, on the plan's tile; else the plan, warehouses too; else the advisor; whatever it orders goes on the plan's tile; a chosen wonder goes straight to the front; a wonder race it will lose gets a building ahead of it, a big building stands behind every wonder, a wonder is ordered only where the items ahead of it leave it time, and a queue of units and walls gets the plan's next building: gotcha 89; in an age's last turns (the final age: all of it, while the score victory ends the game there) only what is done before the age ends, and a nearly done building is bought on a non-final age's last turn), places new citizens (counting what a city loses below zero Happiness, a new citizen's own yields too), sets town Focus, values policies and buildings by what their Happiness does to each settlement's yields, buys planned buildings above a gold reserve (one budget a pass; gold saved for a town conversion or the victory path's next building before small purchases; no building bought in a city while a wonder waits in its queue; all the gold only under a real attack, pillaged improvements from the free gold while no hostile stands by them, and a non-final age's last-turn conversion takes the reserve too: gotcha 89; a gold line in the tab and UI.log), recalculates the plan, optionally skips idle units and ends the turn (not while a choice holds it). Units move only with their own opt-in options: scouts explore (the second after the first settler; they keep their goals, and danger is only what we see or saw in the last 2 turns: gotcha 87), settlers are trained and found on the Settlements tab's sites (searched by itself; cities and towns 1 to 1 as a floor, then towns converted by their yields; a free soldier escorts one past an independent's raider: gotcha 87), idle military shoots or fortifies or explores (one garrison per city stays; hurt units escape onto shallow water from land melee raiders and step to the tile the fewest raiders reach; units leave the plague by ways of up to 3 turns, never resting on it (gotcha 87); a land unit stands in a ship's reach only when it out-guns it: gotcha 78), merchants take the best trade route. Also befriends independents (only villages the game says we have found, never into a race it loses; one Influence reserve for all diplomacy: gotcha 90), spends leader attribute points, keeps two generals (a vanguard and a bastion by what they took, each with its own promotions and commendations; a second one bought, trained or saved for, by the game speed's turns; Leadership's promotions toward a commendation; independents' 1-XP fights left to the lowest-level general: gotcha 88; with «Оборона» they stand at the worst fight they reach within 6 turns, shared when none is free, escape first when in danger, the vanguard waits where raids came in peace, units in a general's radius strike first, and they lead Focus Fire / Coordinated Attack on raiders: gotcha 79; the vanguard keeps up to 3 soldiers packed while raids or a war call for it, force-marches them to an urgent fight and overruns weaker raiders: gotcha 83; free promotions decide no role, one general to a fight only ships make, and packed soldiers upgrade with their army: gotcha 84; a hostile village next to our land is skirmished from our settlement, Archers next to it and a general on its centre, which it keeps while the district holds: gotcha 85), places the plan's map tacks, puts archived great works on display, assigns resources, and (opt-in) explorers dig artifacts, a victory focus steers toward the closest victory (re-decided from the victories' own points in each age's first turns), by phases (Growth, Build-up, Final push: «Стратегия по фазам») (with its triumphs; research, buildings, growth, merchants and resources serve the science or economic path of each age; the government suits the focus; the Autopilot tab shows each victory's points and countdown and which victories are off; the final age's score race goes to UI.log, and settlers go past the settlement cap when that starts our military countdown, and settle wherever the game allows when a rival's must be blocked; space work runs in parallel and in one order per city, production buildings first, then the Launch Pad and Crewed Space Flight Preparation (near the goal a one-off first when it wins sooner), and the Airfield and a Radio Station only where no Launch Pad is, as soon as they are unlocked; the race counts the Innovation research brings, Launch Pads are banked for before Rocketry and bought at it (under way too), and Exploration's last turns bank gold for Modern; a rival's science countdown is the game's end), ranged soldiers shoot raiders (from their post too) and melee soldiers strike them when the game's own attack preview says it pays, defence against independents (no site near their villages, befriending one at a time, melee defenders bought where raiders are, a holder kept in each settlement near a village at war with us, empty villages dispersed, walls first in a threatened city's queue, Fort Town walls), the army sent where the danger is greatest (guards on their way count only when in time, sleeping reserves woken, ranged units too, a guard at each war front before the war (up to 3 against an army there), a packed army unpacks at a threatened settlement and a far soldier reinforces the army of our commander there, the guards there take better posts (a melee unit on the centre, screens facing each approach, ranged units in range, the commander covering the most of them), aircraft strike raiders, a raider about to take a damaged centre first, fighters rebase to cover the settlements enemy aircraft hit lately or reach (a Launch Pad city first) and one ground attacker is trained at a lasting front, warships attack the game's way, guard the coasts ships raid and are trained on the same water, the age's first melee unit, which every settlement centre's defence follows, trained, upgraded or bought; with «Наступление», off by default, a settlement of ours an enemy took in a war it started is retaken with the soldiers defence leaves free, and peace waits only while that assault makes progress; the villages we will not befriend, and with «Охота на рейдеров» the raiders roaming near our land, are hunted for the generals' experience (both on by default; raiders: gotcha 83), and with «Учебная война», off by default, a weak neighbour gets a formal training war once an age: gotcha 80; generals stand under soldiers, free soldiers man the fronts and sortie, generals march packed armies, air bases fill with fighters and bombers, and with «Ядерное оружие», off by default, nuclear weapons strike enemy armies: gotcha 81; generals wait at the fight they stand at and at the war fronts, hunts wait for their general, hurt soldiers swap out, Squadron Commanders and carriers cover where no Airfield does, Fleet Commanders lead the warships, no settlement on a war front without guards, a warship bought where ships shell a settlement no land unit can answer, the free gold (not the savings goal's) kept for a defender while a war risk lasts, no science focus with one city, and with «Ядерные удары по городам», off by default, an enemy city near us may be struck: gotcha 82), and diplomacy (counter-spy, reconciliation, initiatives; a peace asks our lost settlements back first). Off at every load (it switches itself on again in a new age's first turn, after the dedications, when it was on at the last age's end or was switched on before them; while the dedications wait a pass only converts the towns that are cheapest then, whatever the victory focus, never last age's cities, which the card brings back: gotchas 86, 89), and switched off when anyone wins or we are defeated; after the win (our science countdown with its goal reached, or a game played on after a victory) nothing chases a victory any more: balanced play, every other technology and civic before Future Tech, victory projects out of the queues, every remaining building on its best tile, three wonders at a time, idle gold for conversions and buildings, and the satellite that reveals the map. An item the game leaves at 100% gives way to the next and leaves the queue after 3 turns, and the plan orders only on the tiles the game offers (gotcha 77). Towns are converted by production per gold, the chosen town kept as the savings goal; a settlement a revolt may take buys a Happiness building. It also researches the slots, caps and specialist caps the game's advisor never names, and the civics whose policy cards beat the weakest ones slotted (gotcha 76), researches the pantheon's civic while one is left, picks the pantheon and beliefs by value (Altars carry it; great-work slots count the works waiting) and spreads our religion to our own settlements with Missionaries from a district (gotcha 90), trains and uses our civilization's great people and unique improvements, uses the endeavors the game offers (Lafayette's Reform), steals research and levies or incorporates city-states, and buys settlers toward the Homeland triumph (research/40; gotcha 73). One order per tile (a wonder never shares its tile with another order of ours), and under a military countdown settlers take dangerous or far sites (gotcha 74). Plus an experimental single-player «ИИ играет N ходов» (the game's own Autoplay). The tab: a top bar (status, what holds the turn, «Следующий шаг (F7)», «Включить») over the settings, in seven groups with master checkboxes built from one option spec (an option whose needs are off is dimmed and acts as off), and a log of 300 entries by turn, filtered (gotcha 86).
 
 There are also tack pills in the city production menu and growth hints (map marks while the game asks where a new citizen goes). The user plays in **ru_RU**: every string ships in English and Russian.
 
@@ -20,12 +20,12 @@ More detail: `mod/CLAUDE.md` (architecture, engine API) and `tests/CLAUDE.md` (f
 - `TESTING.md`: the in-game checklist. Add a row for every user-visible change.
 
 ## Second mod: Memento Advisor (`mod/memento-advisor/`, id `memento-advisor`)
-Numbers 1–6 on the memento selection screen: the best mementos for the chosen leader + civilization. A row switches between Auto (the pair's own victory), Balanced and each victory; the choice is kept in `localStorage.modSettings["memento-advisor"]`.
+Numbers 1–6 on the memento selection screen: the best mementos for the chosen leader + civilization in the age the mementos are chosen for (the game allows any civilization in any age: gotcha 90). A row switches between Auto (the pair's own victory), Balanced and each victory; the choice is kept in `localStorage.modSettings["memento-advisor"]`.
 - **Where it runs:** the front end (new game: host `create-game-sp`) and in game (age transitions: host `age-transition-bootstrap`).
 - **The hook:** `Controls.decorate` on the host plus a scoped MutationObserver, because the memento screen is a SolidJS component. Each card's memento comes from its icon (`url('blp:<icon>')`). It works with Mattifus's Memento Editor, which the user has.
 - **Research:** `research/15-memento-screen.md` (screen, hook, pitfalls) and `research/16-memento-scoring.md` (scoring method, spot checks).
-- **Data:** the scores are precomputed: `python -I tools/memento-advisor/build_table.py` → `mod/memento-advisor/data/mma-table.js`. The reference dump goes to `tools/memento-advisor/out/`, not the mod.
-- **Code:** `ui/mma-ranking.js` is pure; `ui/mma-context.js` is the engine adapter; `ui/mma-decorator.js` holds the badges and the row.
+- **Data:** the scores are precomputed per leader + civilization + age (TABLE_VERSION 2, keys `<LEADER>|<CIV>@<AGE_TYPE>`, then `<LEADER>|*@<AGE>`, then `*|*@<AGE>`): `python -I tools/memento-advisor/build_table.py` → `mod/memento-advisor/data/mma-table.js`. The reference dump goes to `tools/memento-advisor/out/`, not the mod.
+- **Code:** `ui/mma-ranking.js` is pure; `ui/mma-context.js` is the engine adapter (`ageReaders`: the setup's start age in the front end; in game the successor of Game.age, the 'Age' parameter's next by sortIndex as the fallback; UI.log `[MMA] advice for <L> + <C> in <AGE> (…)` each time the tab opens); `ui/mma-decorator.js` holds the badges and the row.
 - **Tests:** `tests/memento-advisor/`.
 - **Deploy:** `powershell -File tools/deploy-junction.ps1 -Mod memento-advisor`.
 
@@ -39,6 +39,9 @@ Numbers 1–6 on the memento selection screen: the best mementos for the chosen 
 | Re-extract game data for tests | `python -I tools/extract-fixtures.py antiquity` |
 | Planner speed on a fake 8-city map (CPU per phase) | `node tools/bench-plan.mjs` (`nomemo` to compare without the tile memo) |
 | Layout quality: our solver against the best layout a long search finds, on random cities | `node tools/bench-optimality.mjs [maps] [steps] [antiquity/exploration/modern] [timed] [show=N]` |
+| The fight simulator: the autopilot's unit steps against game 58's village, game 60's raids, or a game's own turns replayed (gotchas 85, 86, 88) | `node tools/fight-sim.mjs [turns] [seeds] [log] [raids60] [fog] [sight=N] [scene=<file.json>] [age=antiquity]` |
+| Our units and the hostile ones near us by id, turn by turn, with the fights and the villages' births; a replay scene of those turns (gotcha 86) | `node tools/unitmap.mjs <Logs folder> [from=60] [to=75] [session=N] [scene=<out.json>] [unseen=35,36]` (needs the game's AI logging, `AIMasterLogging` 1) |
+| Keep the game's logs (it overwrites them at every launch) | `powershell -NoProfile -File tools/archive-logs.ps1 [-Keep 12]`; the scheduled task «Civ7 log archive» runs it every 15 minutes (`Unregister-ScheduledTask -TaskName "Civ7 log archive"` removes it) |
 | Follow the game's UI log | `powershell -File tools/tail-ui-log.ps1` |
 
 Run all four checks before handing anything to the user: tests, imports, syntax, and XML (the last is covered by check-syntax).
@@ -46,16 +49,17 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
 ## Game loop (how changes reach the game)
 - **Live link:** the mod folder is junctioned into `%LOCALAPPDATA%\Firaxis Games\Sid Meier's Civilization VII\Mods\expansion-planner` (`tools/deploy-junction.ps1`). Edits are live on disk.
 - **Live reload:** `AppOptions.txt` has `UIFileWatcher 1`, so **JS** edits reload live. New/renamed files, `.modinfo` changes and **text (LOC) changes need a full game restart.** Tell the user which one applies.
-  - **A live reload switches the autopilot off** (it is runtime state): after editing JS while the user plays, tell them to press «Включить» (and «Сделать сейчас» if a turn is held).
+  - **A live reload switches the autopilot off** (it is runtime state): after editing JS while the user plays, tell them to press «Включить» (and «Следующий шаг (F7)» if a turn is held).
   - **Develop between turns:** a reload in the middle of a turn's start reboots the autopilot's pass (seen in game 6: the advisor pop-up's TRIGGER_ADVISOR_SELECTED was sent 508 times while files were saved during turn starts).
   - **Prove tests on a copy:** reverting a fix to watch its test fail edits files the running game reloads (and once a write was refused while the game held the file). Copy `mod/`, `tests/` and `package.json` to a scratch folder and revert there.
 - **Logs:** in `%LOCALAPPDATA%\...\Logs\`.
-  - `UI.log`: our lines start with `[XPL]`. Also grep for `JS Error`.
+  - `UI.log`: our lines start with `[XPL]` and the turn (`[XPL] A67 …`, the level after it: `[XPL] A67 WARN …`; gotcha 86). Also grep for `JS Error`.
   - `Modding.log`: "Target in-game actions" is the truth about which mods loaded. The Add-Ons screen (Slothoth's Modpage Manager, profiles) is not.
   - `net_message_debug.log`: every request sent to the game, with timestamps (`PlayerOperation`, `UnitOperation`, `CityOperation`, `CityCommand`, `PlayerTurnComplete`; `bFromUser: 0` = sent by script). The truth about what the autopilot actually sent and what the player clicked (e.g. `TRIGGER_ADVISOR_SELECTED`).
   - Other game logs worth reading (research/13 lists what each showed): `DiplomacySummary.csv` (wars declared on us, suzerains, peace), `Player_Stats.csv` (cities, towns, settlement cap and over-cap, techs, yields per turn), `Player_Treasury.csv` (gold balance), `Player_Legacies.csv` (triumphs), `GameCore.log` (`Team 0 has won … 'VICTORY_…' victory!`).
   - `CityBuildQueue.csv`: every city's production each turn, all players (`Game Turn, Player, City, Production Added, Current Item, Current Production, Production Needed, Overflow`). The truth about wonder races and lost production (a jump in "Production Added" means another item's progress was poured in).
-- **Reading log evidence:** the user sends screenshots. Read the logs yourself before guessing. Plan logs report e.g. `N placed, M unplaced {reason counts}`, `N uniques`, `our adjacency differed from the game's on a/b pairs`.
+  - **Keep them:** the game overwrites its Logs folder at every launch (the evening game of 23 October, America to Modern T88, kept only its saves). The scheduled task «Civ7 log archive» runs `tools/archive-logs.ps1` every 15 minutes: `%LOCALAPPDATA%\Firaxis Games\Sid Meier's Civilization VII\LogArchive\<session start>.zip` (UI.log's first time stamp), an unchanged session skipped, the 12 newest kept. One launch's folder holds every age and every save loaded in it: the CSVs start again at turn 1 and unit ids are given out again (tools/unitmap.mjs reads one `session=`).
+- **Reading log evidence:** the user sends screenshots. Read the logs yourself before guessing. Plan logs report e.g. `N placed, M unplaced {reason counts}`, `N uniques`, `our adjacency differed from the game's on a/b pairs`. `units:`, `places:` and `fight:` lines, with `node tools/unitmap.mjs` on the game's AI logs, rebuild a fight turn by turn (gotcha 86).
 - **Undoing the dev setup:** see `TESTING.md`.
 
 ## Paths
@@ -117,7 +121,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
 17. **The game's `Autoplay` is made for its benchmarks.** An age change while it runs rebuilds the next age with the human slot saved as AI (`GameCore.log` «SlotStatus - AI»): the game then plays that civ by itself for good, picks its next civilizations, and it keeps playing after a victory. Our «ИИ играет» therefore stops one turn before the age ends (`Game.AgeProgressManager.ageCountdownStarted` and max − current points ≤ 1), on `GameAgeEnded`, `TeamVictory` and the player's `PlayerDefeat`; «Вернуть управление» runs one Autoplay turn with `setReturnAsPlayer` to hand a lost slot back (untested in game).
 18. **Scrollbars and log noise.**
     - The UI engine scrolls `overflow-y: auto` but draws no scrollbar. Every scrolling list sits in the game's `<fxs-scrollable attached-scrollbar="true">` (`.xpl-scroll`, `.xpl-scroll--fill`): the wrapper takes the list's place in the layout, and the list inside no longer scrolls. Never `innerHTML` the fxs-scrollable itself (it holds its track and thumb); refill the list div inside. The panel frame needs a fixed `height` (not only `max-height`): with a content-sized frame the scrollables fed back into its height, which jumped up and down and then stopped short of the free space.
-    - Detailed Map Tacks logs ~100 "lookup requires key to be of type 'number' or 'string'" lines per tack whenever it refreshes tacks (each turn, each placement): 180 autopilot tacks made UI.log grow by ~200 MB in 60 turns. The autopilot therefore tacks only each settlement's next 3 buildings (`placePlanTacks(..., {perSettlement: 3})`). Both the lookup warnings and our `[XPL]` lines show the same blank `:NN:23` location (a shared console wrapper), so that location does not identify the source.
+    - Detailed Map Tacks logs ~100 "lookup requires key to be of type 'number' or 'string'" lines per tack whenever it refreshes tacks (each turn, each placement): 180 autopilot tacks made UI.log grow by ~200 MB in 60 turns. The autopilot therefore tacks only each settlement's next 3 buildings (`placePlanTacks(..., {perSettlement: 3})`). Unattended, the plan's tacks are renewed at most every 5 turns (gotcha 86). Both the lookup warnings and our `[XPL]` lines show the same blank `:NN:23` location (a shared console wrapper), so that location does not identify the source.
 19. **`GameInfo` tables are not JS arrays.** They have `lookup`, `length`, `filter`, `find`, `findIndex`, `forEach` and `for…of` (all the game's own UI uses; `filter` returns a real array). `.some`, `.map`, `.every`, `.reduce`, `.includes`, `.sort`… throw "is not a function" in game: `(GameInfo.TypeTags ?? []).some(...)` stopped the autopilot. The fake engine's tables now throw on those too; in tests copy a table with `Array.from(GameInfo.X, fn)` first.
 20. **Never move a queue item ahead of one in production with progress** (wonders aside: gotcha 55).
     - **What the game does:** an item moved ahead started from its own production and the item behind kept its own, in all 11 cases of games 21 and 22; game 3 once saw the opposite.
@@ -134,10 +138,11 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **A science project goes ahead of a plain building with progress** (`projectSlot`; one-offs and Crewed Space Flight Preparation alike): nothing is lost either way (it takes the progress, or the building keeps it). Never ahead of a science site (Launch Pad, Airfield) in production. Game 11 showed why: Лянчжоу's Launch Pad overflow went into a Cannery the plan had queued behind it, and the Preparation waited 9 turns behind the Cannery.
     - **A threatened settlement's walls go first** (the user, after game 27; `wallsSlot`, `wallsFirst` in the walls step).
       - **Seen in game 27:** Ханькоу's Defensive Fortifications waited 10 turns behind a Laboratory with progress, and were done the turn its centre fell.
-      - **The rule:** they go to the very front, ahead of an item with progress. They stay behind an item done this turn, repairs and a unit at the front. Unless the centre is damaged or a war is at our door, they also stay behind a wonder in a race or a science project that would then miss the age (`holdsFront`, counting the walls' own turns).
+      - **The rule:** they go to the very front, ahead of an item with progress. They stay behind an item done this turn, repairs and a unit at the front. A science project that would then miss the age keeps the front unless the centre is damaged or a war is at our door (`holdsFront`, counting the walls' own turns). A war at our door, an unwalled centre that is damaged, or a centre below `WALLS_URGENT_SHARE` 0.5 of its health still sends them to the very front, ahead of a raced wonder too. Only walls at an already walled centre, or for another district, stay behind a raced wonder that `holdsFront` protects (and never pass a wonder in production) while the centre is at or above half its health and no war is at our door (gotcha 89; game 60: a 19-of-200 scratch on the capital's walled centre lost the Ha'amonga a Maui by one turn).
       - **Walls at the front keep it:** `toFront` never passes them, and of the units only defenders under threat go ahead of walls in production (`frontLoadUnits`).
       - **UI.log:** `queue: <city>: <walls> moved ahead of <item> with N production in it`, a probe of this gotcha's rule (`CityBuildQueue.csv` shows whether the item keeps its progress).
     - **An item the game does not complete gives way** (game 33; gotcha 55): one at 100% since an earlier turn has the next item moved ahead of it (`unstickQueues`, the production step's first edit; QUEUE_UNSTUCK), or, alone, a building queued for that (QUEUE_UNSTUCK_QUEUED); a stuck wonder gets the building that keeps the most of it (gotcha 74); never its own type nor an item on its tile, and one stuck 3 turns leaves the queue (gotcha 77). Moves may go ahead of it (`frontSlot` 0), and `toFront` neither brings it back to the front nor keeps a move behind it.
+    - **No unit passes an item done this turn** (a stuck item at 100% does not keep a defender back either), except a defender of a centre below the share; a queued repair does not move while a wonder is in production (gotcha 89).
     - **A lost wonder pours half its progress plus that turn's production into the next item**, its overflow capped (game 9: the Red Fort's 300 into a 15-cost Scout). A building, not a unit, stands right behind a wonder in production (`guardWonderRefund`).
     - **New units:** wanted units go to the city whose queue is free soonest.
 21. **Victory data spans every age.**
@@ -212,7 +217,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - Node ESM imports need `file:///` URLs for absolute Windows paths.
 30. **The treasury does not change during an autopilot pass.** Every purchase step reads the same `goldBalance()`: a purchase sent is not taken from the balance until the game handles it.
     - Seen in game 6: a town conversion and a Granary were sent in one pass (the Granary was refused); two repairs that each "fit" the gold were both sent.
-    - Every spend goes through the pass budget (`core/xpl-savings.js` `createBudget`, made by `steps.goldPlan`): `all()` for repairs, walls and defenders under threat, `forGoal()` for the savings goal's own purchase, `free()` for everything else (above the reserve and what the goal holds). New purchase code must take the budget and call `budget.spend`.
+    - Every spend goes through the pass budget (`core/xpl-savings.js` `createBudget`, made by `steps.goldPlan`): `all()` for repairs of buildings, walls, and defenders under a real attack (gotcha 89), `free()` for improvement repairs and other defenders, `forGoal()` for the savings goal's own purchase, `free()` for everything else (above the reserve and what the goal holds). New purchase code must take the budget and call `budget.spend`.
 31. **An age change keeps the gold and takes the cities** (probe P6, game 6's logs).
     - Gold carries over in full, negative gold too (E70 balance minus that turn's purchases plus M1 income = M1 balance, exactly), up to a cap (`capGold` in the game's `age-transition-post-load.js`; research/37 §5B): 6,000 entering Exploration and 9,000 entering Modern under the default Continuity setting, 3,000 under Regroup (game-speed adjusted).
     - Every city but the capital is a town again on the new age's first turn (every player had exactly 1 city on turn 1; a rival bought the same conversions twice). The legacy card «All your cities from the previous age remain cities» (`CARD_AT_EXP_GOLDEN_AGE_ECONOMIC`) brings them back when the player confirms the dedications (game 34: 5 cities at M1 right after; research/39 said turn 2, from the turn-start statistics).
@@ -231,7 +236,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - The game answers `Success: false` with `InsufficientFunds: true` while the gold is short (its buttons are disabled then): a town conversion read as `Success` alone was never a savings goal (B2; 2 conversions in game 7).
     - It sets `InsufficientFunds` by the gold alone, even for a building the city already has: check `cityHas` before taking it as a goal (B4: a University stayed the goal 29 turns after it was bought).
     - A town with a Focus may buy the buildings tagged with that Focus (`URBANCENTER` for Urban Center: Library, Observatory, Schoolhouse…; probe P3).
-35. **The game may activate our turn twice.** `PlayerTurnActivated` comes again after an automated explorer moves (24 turns of game 7 had two full passes, B9). Only the first pass of a turn (or «Сделать сейчас») plans, queues and buys; a second one orders units and ends the turn.
+35. **The game may activate our turn twice.** `PlayerTurnActivated` comes again after an automated explorer moves (24 turns of game 7 had two full passes, B9). Only the first pass of a turn (or a step: F7, «Следующий шаг») plans, queues and buys; a second one orders units and ends the turn.
 
 36. **Peace deals go through the working deal, and the AI is asked first.**
     - The game's peace screen sends `sendWorkingDeal(deal, INSPECT)`; the AI answers with a `DiplomacyStatement` (`RespondingToDealAction` INSPECT, `DealAction` ACCEPTED or REJECTED) that nobody shows. It proposes (`PROPOSED`) only after. A refusal of a proposal is shown as the leader's dialog (game 8: 8 blind white-peace proposals, 8 dialogs).
@@ -247,12 +252,14 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **The game ends at 100% of the final age:** nothing that cannot finish before it (`ageOutlook().turnsLeft` in the final age too): wonders and settlers, and since game 23 every item (gotcha 58).
 40. **Shallow water hides a land unit from land melee units** (the user, game 9). Ships, aircraft, ranged and siege units still reach it. A hurt or resting soldier (or a scout) with hostile soldiers near goes onto coast when none of those is within 4 (`escape`, TO_WATER), and stays while they wait ashore (`stayAtSea`, WATER_WAIT), else withdraws into a centre or away.
 41. **Go around danger widely; remember where units were hit** (game 10). The game's auto-explore walked a scout back to the warrior that had just hit it (hit twice on one tile); settlers retreated home and then stood stacked, two civilians that may not skip, holding the turn (gotcha 23).
-    - A rise in a unit's damage marks that tile as danger for `HIT_TURNS` 5 (`noteHits`, `dangerNear`); the unit itself may still leave it.
+    - A rise in a unit's damage marks that tile as danger for `HIT_TURNS` 5 (`noteHits`, `dangerNear`); the unit itself may still leave it. A rise the plague dealt is no hit (gotcha 87).
     - Scouts: no game auto-explore when hurt 20+, with a hostile unit within 3, or with a hit or loss within 5 (danger within 5 of any kind left 1-2 scouts idle in half of game 11's passes); badly hurt (40+) they heal on our land or go home (SCOUT_HOME); a little hurt with nothing safe to explore, they rest.
     - **A settler next to its site steps onto it and founds at once** (game 35: Бристоль's settler turned back home from the tile next to its site when an independent's Warrior came within 3 tiles, and founded 5 turns later). With a move left, the site free, no hostile unit on or next to it and room under the cap (`dashable`), it moves there (SETTLER_DASH), and the hud's unit step founds right after (`foundArrivals`). With no move left it founds on its next pass, standing on its site.
     - Settlers detour toward their site (`findDetour`: 3+ from danger, one step back allowed; SETTLER_DETOUR) instead of going home; a site reachable only around danger is still picked (`via`).
     - A civilian that may not skip (stacked) steps aside, away from raiders (`stepAside(…, {away})`), in the wait and after a released order.
 42. **An independent can be befriended only once its village is seen** (game 10). Until then its befriend project answers -3 (very likely `PROJECT_NO_VIABLE_TARGETS`). Game 10 saw «0 seen, 16 unseen» all Antiquity; the two independents that raided us could be befriended only on turns 56 and 69, and took two of our three settlements.
+    - A befriend status of -3 with the village listed at a price above our Influence is a befriending to save for, not
+      an unseen village (gotcha 78), unless its FailureReasons name LOC_DIPLOMACY_ACTION_FAILURE_NO_VISION: the game has not let us find it, so nothing is kept and a unit approaches it (gotcha 90).
     - `villagesOf(pid, true)` lists unseen villages too: scouts go in sight of the nearest ones within 12 tiles of our settlements first (`scoutVillage`, SCOUT_VILLAGE, goal `{village}`, one scout each).
     - Ships are hit only by ranged units: a settlement shot by ships gets ranged defenders (`rangedWanted`, up to 2; `bestRangedOrder`, no siege units), trained and bought; with land raiders too, a melee one first (`defenderNeed`). Game 10 trained only warriors against galleys, quadriremes and archers.
     - **Ranged guards shoot from their post** (game 27, research/31 §8).
@@ -282,6 +289,16 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
         - our own spacing aside, but never within `ANYWHERE_VILLAGE` 3 of a village, never into danger, never a war;
         - the goal carries `any`, which `tooCloseToForeign` lets through.
       - **The log:** the `settler: no order` line now judges relaxed picks by the relaxed rules (it reported them FOREIGN).
+    - **Squeezed sites count under a countdown** (game 63, won on score at M70: one settlement from our military countdown
+      for Modern's last 12 turns, room for 2-4 under the cap, two bought settlers idle; the relaxed search found 3 candidates
+      the game accepts and rejected all 3 for ROOM, and «settle anywhere» found none within its 20 tiles): while the strategy
+      says settleAnywhere, the relaxed search drops the land minimums (`siteTuning(true, {anyRoom})`: ROOM_HARD_MIN 0,
+      RING1_MIN_FREE 0; the hud's `anyRoomSites`): such a settlement is worth its 4 military points whatever its land.
+    - **Looking ahead to the final step** (game 62, Deity: lost on score, 6th of 8; our military countdown 4 settlements short at
+      Modern's end): while we trail the best rival in every other race (`trailsOtherRaces`), `militaryOutlook({lookAhead})` also
+      judges the countdown at the final step's ×1.25 when the nearer steps are out of reach. Game 62's M30: ×1.5 asked 11
+      settlements (room 6, 2 past the cap), ×1.25 asked 8: the lever started at M42 instead, and 8 settlers trained in all of
+      Modern (none bought, the gold too low) gave 4 settlements from M45 to the end.
     - **Natural wonders** count in site scoring while the culture victory is on.
 45. **Yield weights: one function, and the player's balance** (research/26 §3.2).
     - **Seen in game 14:** in Exploration we had twice the rivals' food and half their science; new citizens went to farm tiles 44 times and to specialists 8.
@@ -301,10 +318,10 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **UI.log** prints `economy: T…` every 10 turns: yields, urban/rural/specialists, where this age's new citizens went, the balance, the rivals' science and culture, per settlement F/P/S/C.
 46. **The plague hurts units, and our cities kept feeding it new ones** (game 18).
     - **The game's rule:** units that start their turn on an infected tile take 25 damage, for 6 turns (`PLOTEFFECT_PLAGUE`, `Damage` 25 in `GameInfo.PlotEffects`; fallout 50, fire 15). Tiles: `MapPlotEffects.getPlotEffects(plotIndex)` → `{effectType}`. The settlement: `city.isInfected` (the banner's status).
-    - **Moving out:** a unit of ours on such a tile (`hazardAt`) is woken and moved this turn to the nearest safe tile it reaches (`leaveHazard`, LEFT_HAZARD). A healthy soldier with raiders within 3 holds its tile.
+    - **Moving out:** a unit of ours on such a tile (`hazardAt`) is woken and moved this turn to the nearest safe tile it reaches (`leaveHazard`, LEFT_HAZARD), or by a way of up to 3 turns when no clean tile is reached this turn (gotcha 87). A healthy soldier with raiders within 3 holds its tile.
     - **Effects that hurt only on entry are ignored:** traps and dig sites (`TriggerOnEnter`).
     - **Keeping out:** no order sends a unit onto such a tile (`moveTo`), and settler sites there are HAZARD.
-    - **Training:** no unit is trained in an infected city.
+    - **Training:** no unit is trained or bought in an infected city (one is bought in our nearest clean settlement in time: gotcha 87).
     - **Explorers too, and no wanted unit but settlers in a city kept for a Launch Pad** (`padExclusion`; game 34: the culture overlay's Antiquarian took Ливерпуль M14-M37, 400 at 39 a turn, and its pad came at M47; game 35: Манчестер trained a Tank M47-M51 and finished its pad at M62).
     - **Military units only where they are done within `MILITARY_MAX_TURNS` 10** (`unitTurns`). Seen in game 18: after a war declaration a Landship got 6 production a turn, 33 turns. Defenders come from the nearest such city within `DEFENDER_REACH` 12, a city with space work last unless it defends itself (research/34 §6: game 28's capital trained Tanks for two new settlements while its Launch Pad waited M51–M73); none means the purchase step buys one.
 47. **The victory focus outlives the age change, and the final age keeps it** (game 19).
@@ -358,7 +375,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **The wonder planner and the autopilot** put an anchored tile first (`anchor`, the Wonders tab's «клетка из плана застройки»).
     - **Simulated:** a wonder planned with the buildings left the plan 3.6% better than placed after them on its best tile, in 30 of 40 random cities.
 53. **Lost wonder races: cash out, and a big building behind every wonder** (research/27 §6).
-    - **The refund rule:** a lost wonder pours half its progress plus that turn's production into the next item, up to that item's cost.
+    - **The refund rule:** a lost wonder pours half its progress plus that turn's production into the item in production when the race is lost (the next item when the wonder itself was in production; otherwise whatever stands at the front: game 60's walls), up to the room it has left (its cost less its progress; gotcha 89).
       - Game 20, Petra: Mexico started it 2 turns after us at twice our production and won on the turn we were 14 short. Our 173 became 105 in a 90-cost Pagoda.
       - The Weiyang Palace's 162 became 97 in 40-cost walls.
     - **The guard** (`guardWonderRefund`): the item right behind a wonder in production can hold that refund. A bigger building is moved there (the queue's, else the plan's next for that city, else the costliest).
@@ -393,7 +410,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **Building purchases wait in a wonder's city** (research/32 §6; `holdsWonder`).
       - **Seen in game 27:** the Serpent Mound left the queue after a Harbor was bought in its city in the same pass. That makes 4 of 8 cases with a purchase in that city at that time, each a building.
       - **The rule:** no building is bought in a city whose queue holds a wonder, or where one was ordered this turn. Units still are. Walls are bought there only against a real attack. Repairs are queued instead, and no savings goal is held there.
-      - **UI.log:** `purchases: no building bought in <city> while <wonder> is in its queue`, once a turn. Whether wonders stop leaving their queues is the test.
+      - **UI.log:** `purchases: no building bought in <city> while <wonder> is in its queue`, once a turn. Whether wonders stop leaving their queues is the test. Improvement repairs are bought there too (probe P-REP-2, gotcha 89).
 56. **Settlers: the cap within a pass, and settlers that come in pairs** (research/28 §4).
     - **The cap:** the game's settlement count does not change until it handles a founding, so every settler of a pass read the same number. Game 21 (E23): the cap rose from 8 to 9 and the three settlers waiting at the cap all founded, 11 of 9 (−5 Happiness in every settlement for each one over; Happiness 151 → 76 a turn). One of them, Фустат, was taken at E35. Foundings ordered this turn count until the game shows the settlement (`pendingFoundings` in `data/xpl-autopilot-units.js`).
     - **Pairs:** Carthage's `MOD_CIV_DOUBLE_COLONISTS` (`EFFECT_PLAYER_ADJUST_UNIT_EXTRA_COPY`, `UNIT_CLASS_CREATE_TOWN`, `PurchaseValid`) gives two settlers for one trained or bought. Training and buying count a queued settler as `settlerCopies()` (our traits' extra copies plus one; `traitEffects` in `data/xpl-autopilot-choices.js`). Game 21: two settlers wanted at the end of Antiquity gave four, and with the new age's two free ones six walked toward two places.
@@ -450,7 +467,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
       - Ranged units go too, behind the screen; one is wanted against 2+ land raiders (moved and trained, not bought).
     - **War fronts** (`warFronts()` in steps): a guard each, STAGED on our own land, from idle units or units the autopilot fortified (`restedByUs`). A front lasts 5 turns after its last warning.
     - **A strong lone raider** 3–4 tiles away (stronger than every guard there: `strong`) is an early warning (`earlyWarning`): guards, but no walls ahead of the queue and no Fort Town.
-    - **Gold:** defenders of either role come from all the gold less 3 turns of a deficit (`DEFICIT_KEEP_TURNS`). One the gold cannot buy yet but will within `DEFENDER_SAVE_TURNS` 2 turns of income becomes the pass budget's goal (SAVING «Копим: защитника (…)»): the free purchases wait (game 38: Бутооло's centre fell from 100 to 0 M7-M11 while 108 gold a turn bought buildings, one of them its own Harbor, and the cheapest defender, 540, stayed out of reach of 361-365 at +106 a turn).
+    - **Gold:** under a real attack (`realAttack`, gotcha 89) defenders of either role come from all the gold less 3 turns of a deficit; otherwise from the free gold (`DEFICIT_KEEP_TURNS`). One the gold cannot buy yet but will within `DEFENDER_SAVE_TURNS` 2 turns of income becomes the pass budget's goal (SAVING «Копим: защитника (…)»): the free purchases wait (game 38: Бутооло's centre fell from 100 to 0 M7-M11 while 108 gold a turn bought buildings, one of them its own Harbor, and the cheapest defender, 540, stayed out of reach of 361-365 at +106 a turn).
     - **Walls that hold** (game 36; `wallsHold`): walls standing on the centre (a finished FORTIFICATION building, `walled` on the threat), the centre unhit, and only independents around (a major brings siege units). The settlement then wants the one melee guard on its centre (and one more against a stronger raider), and no ranged one behind it. Манчестер, a walled town, wanted a guard per raider (4-6 Warriors that hit its centre for 8 of 200 a blow) and ended with 5 Warriors and 2 Slingers: 3 bought, 3 trained ahead of Лондон's Colossus. UI.log's `defence:` line says `walled (they hold: one guard)`.
     - **Training:** where the defender arrives soonest, training plus walking, within `DEFENDER_ARRIVAL_TURNS` 16; a queued soldier of another role does not stop the search.
     - **Air:** `airAttack` (UNITOPERATION_AIR_ATTACK: canStart with no target gives the Plots, then {X, Y}); fighters with a war at our door and enemy aircraft in sight or air raids remembered (`hostileAircraftNear`, QUEUED_INTERCEPTOR; rebasing and the ground attacker: gotcha 69). Commanders use the game's radius (`Units.getCommandRadiusPlots`).
@@ -461,7 +478,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
       - **Seen in game 29:** Modern's centres stood at 20 for 35 turns while carried Line Infantry met the old want; Ollantaytambo fell at M6 to one Line Infantry (80, then 78 damage).
       - **The memory** (`data/xpl-centre-defence.js`): this age's strongest one, in the settings' game memory (`melee` = `AGE|turn|strength|UNIT`, gotcha 57). It comes from the game's `CityProductionCompleted` (our cities, the player's own training too), our purchases and our upgrades. Another age's, or a later turn's (an earlier save), counts as none. UI.log `melee: <unit> trained|bought|upgraded in <city> (…, strength N): obtained this age, centres defend at N` (probes P-DEF-1, P-DEF-3).
       - **QUEUED_MELEE** wants one as strong as the best we can train while that beats the centres' defence now (`max(20, obtained)`), whatever we carried over. The age's first is wanted in a peaceful final push and at a deficit too; a stronger one later as before, but in the final push only under a threat or a war at our door, not a war risk alone (game 35: a Tank, 65 over our Cuirassier's 55, against Augustus's risk; no war came). Never in a space city nor one kept for a pad; in the city that has it soonest.
-      - **Bought first when the gold allows** (`buyFirstMelee`, after the defenders): an upgrade of one of ours to a strong enough melee type (`upgradeFirstMelee`), else the strongest the game sells (at least the best we train), from all the gold less 3 turns of a deficit while a settlement is threatened or exposed, else the free gold; threatened, exposed, then unguarded settlements first. A queued one made needless leaves its queue (`dropSpareMelee`).
+      - **Bought first when the gold allows** (`buyFirstMelee`, after the defenders): an upgrade of one of ours to a strong enough melee type (`upgradeFirstMelee`), else the strongest the game sells (at least the best we train), from all the gold less 3 turns of a deficit under a real attack or while a settlement is exposed (gotcha 89), else the free gold; threatened, exposed, then unguarded settlements first. A queued one made needless leaves its queue (`dropSpareMelee`).
     - **Packed and embarked units are no guards.** `guardDetail`, `threatenedSettlements`' guards, `frontGuards` and `soldierAt` skip `isOnMap === false`; an embarked one (`afloat`: `unit.isEmbarked`, else its tile) counts as on its way. `defence:` lines say `packed [...] not counted`.
     - **Rivers.** Land units are never sent onto a navigable river (`onWater`, `standsOn` in posts, steps away, detours, hazards and the ocean escape); ships may use one.
     - **Ranged posts** stand within the unit's `Unit_Stats.Range` of a raider, as far back as that allows.
@@ -488,7 +505,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
       - **Logs:** GOLD_PRESSURE when it rises, GOLD_PRESSURE_OFF when it ends; UI.log's gold line ends `gold weighs ×N (income below zero)`; `state.autopilot.gold.pressure`.
     - **The next step** (`victoryWatch` in the final age): a dominance leader is also measured against the next step's goal (⌊second × the next multiple⌋). When that raises its level (WATCH → DANGER, or none → WATCH), the entry carries `step` and `stepGoal`, and its `need` (the block) is judged at that multiple.
       - Game 31 at M27 (41% of Modern): Augustus's 164 against 250 at ×2 was a WATCH, but 164 of the 187 ×1.5 would bring is DANGER, and the block takes 126, not 95; the culture overlay spends wonders only on a block within 30 of ours at that step.
-      - A leader already near the current goal is blocked now, at the current multiple (no `step`).
+      - A leader already near the current goal takes no `step`; its block is still judged at the next step (`needAt`, gotcha 85), unless its countdown runs.
       - Logged once as RIVAL_STEP_DANGER; the tab's LOC_XPL_AP_WATCH_STEP; UI.log's watch line `(at ×1.5: goal 187)`.
 
 65. **Modern's science pace** (research/38; games 28-31: Rocketry needs 15 of the 16 Modern techs, about 22,000 Modern science, and Innovation stood flat 35-50 turns).
@@ -506,10 +523,10 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
 
 66. **Cities for the science victory** (research/39; game 32: 4 cities all game, Rocketry at M47, lost to culture).
     - **Every age change turns every city but the capital into a town**, under Continuity and Regroup (`regressCitiesToTowns`, `age-transition-post-load.js:1040-1056`); the card «All your Cities from the previous Age remain Cities» (1 of 3 Wildcard points) brings them back when the dedications are confirmed (game 34; research/39 said turn 2). The player always takes it: «expect to keep cities» (`towns.expectKeepCities`) is on by default (settings v2 moves older blobs on), so Antiquity's and Exploration's last turns still convert.
-    - **A new age's first turn is the cheapest window, until the dedications are confirmed** (only the capital counts: ~425 at E1 instead of ~1,475, ~525 at M1 instead of 2,500). While they wait, `convertBeforeDedications` (the hud, from `resumeAfterAgeChange`'s poll, once a turn) runs the window's conversions; the auto-resume itself comes after them (game 34: 5 cities stood at M1 when it switched itself on). `noteCitiesForNextAge` (every full pass) keeps the cities in the settings' game memory (`ageCities` = "AGE|x,y;…", gotcha 57); `lastAgeCities` opens the window while that is another age and fewer cities stand; `convertAtAgeStart` (the hud, after the defenders) converts the best towns that were not cities, from the gold above the reserve, one after another (each after the game counts the last: `becameCity`), up to `AGE_START_CITY_TARGET` (6 entering Exploration, 8 entering Modern) with the cities coming back. UI.log `conversion window: …`. Game 36's M1 answered the probe: Глазго, converted for 1,050 before the dedications (2,500 after), stayed a city when the card's five came back (6 cities).
+    - **A new age's first turn is the cheapest window, until the dedications are confirmed** (only the capital counts: ~425 at E1 instead of ~1,475, ~525 at M1 instead of 2,500). While they wait, `convertBeforeDedications` (the hud, from `resumeAfterAgeChange`'s poll, once a turn) runs the window's conversions; the auto-resume itself comes after them (game 34: 5 cities stood at M1 when it switched itself on). `noteCitiesForNextAge` (every full pass) keeps the cities in the settings' game memory (`ageCities` = "AGE|x,y;…", gotcha 57); `lastAgeCities` opens the window while that is another age and fewer cities stand; `convertAtAgeStart` (the hud, after the defenders) converts the best towns that were not cities, from the gold above the reserve, one after another (each after the game counts the last: `becameCity`), up to `AGE_START_CITY_TARGET` (6 entering Exploration, 8 entering Modern) with the cities coming back. UI.log `conversion window: …`. The window runs for every victory focus, or none: science and economy up to AGE_START_CITY_TARGET, any other while towns outnumber cities, last age's cities counted back (gotcha 89). The remembered victory focus counts only with «Фокус на победу» on; otherwise only the 1:1 floor (gotcha 86). Game 36's M1 answered the probe: Глазго, converted for 1,050 before the dedications (2,500 after), stayed a city when the card's five came back (6 cities). **Gold for the window** (game 61: Antiquity's last turn bought two Granaries for 156, and Exploration's window had 71 gold above the reserve against Спахан's 550, 1,500 after the card): a non-final age's last `WINDOW_BANK_TURNS` 2 turns, with no conversion to make now and the window wanting a town next age, keep the cheapest town's price × `WINDOW_PRICE_MARGIN` 1.15 as a BANK goal (WINDOW_BANK, held whole: buyAgeEndItems uses only the free gold then), and the window spends all the gold, the reserve too (less `DEFICIT_KEEP_TURNS` of a deficit). Game 61's M1 converted nothing by design: the economic focus's target of 8 came back with the card and the three towns were KEEP. Game 62 (Deity): on A69 a conversion was listed but out of reach (115 gold against 487), which dropped the bank and left no goal; the bank now stays unless the whole treasury buys a listed conversion now. A war at our door with a major still frees the gold for defence (E68-E70: Confucius).
     - **The autopilot switches itself on again** in the next age (`resumeAfterAgeChange`, option `autopilot.resumeAfterAge`, on): it was on at the last age's end (memory `apOnAge`, written every full pass; the player's own switch-off forgets it, an age's end does not), the next age is later, its first `RESUME_TURNS` 3 turns, and the dedications are chosen (no age choice holds the turn). Polled from `PlayerTurnActivated` and 5 s after load (timers `unref`'d in Node). The cards and dedications stay the player's.
       - **Switched on before the dedications** (game 33, E1 and M1: the player pressed «Включить» first): the pass stops for them (AGE_START) and arms `resumeOnChoice` for that turn, so it switches itself on again once they are chosen. Before, it stayed off until the player pressed again.
-    - **Last age's cities are no conversion on the first turn** (game 33: Брэдфорд, a city in Exploration, bought for 150 at M1, and Манчестер the goal at E1): with «expect to keep cities» on, `conversionsFrom` leaves out the towns `lastAgeCities()` names while its window is open; the card brings them back once the dedications are confirmed, and a city bought first makes every other town dearer. When nothing fits, UI.log says `conversion window: none within N gold above the reserve (<town> <price>, …)` (game 33's M1: ~1,000 a town against 714 above the reserve). Game 36's E1: Портсмут, the one town that was no city, cost 900 with 513 in the treasury; the player converted Брэдфорд, a city in Antiquity, by hand before the card for 225, which the card would have brought back. City ids are reassigned at an age change (Брэдфорд was city 196610 in Antiquity and 131073 in Exploration, Манчестер the other way round): match net_message_debug.log's `eCity` to a name within one age only; our own keys are locations (`sidOf`, `ageCities`).
+    - **Last age's cities are no conversion on the first turn** (game 33: Брэдфорд, a city in Exploration, bought for 150 at M1, and Манчестер the goal at E1): with «expect to keep cities» on, `conversionsFrom` leaves out the towns `lastAgeCities()` names while its window is open; the card brings them back once the dedications are confirmed, and a city bought first makes every other town dearer. When nothing fits, UI.log says `conversion window: none within N gold (<town> <price>, …)` (game 33's M1: ~1,000 a town against 714 above the reserve). Game 36's E1: Портсмут, the one town that was no city, cost 900 with 513 in the treasury; the player converted Брэдфорд, a city in Antiquity, by hand before the card for 225, which the card would have brought back. City ids are reassigned at an age change (Брэдфорд was city 196610 in Antiquity and 131073 in Exploration, Манчестер the other way round): match net_message_debug.log's `eCity` to a name within one age only; our own keys are locations (`sidOf`, `ageCities`).
     - **The conversion goal** (`goldPlan`): below the floor a CONVERT candidate is `anyHorizon` (game 32 had no goal at E1-E16: every town more than 12 turns of income away), and the chosen town stays the goal while it is listed (`convertGoalKey`; game 32 went back and forth between Liverpool and Leeds). `rankConversions` orders by `conversionValue`: max(production now, `PROD_POT_SHARE` 0.5 × potential) per gold (Leeds 11 for 1,087 before Liverpool 2 for 1,425).
     - **The science final age** has no towns > cities floor (`conversionRule({finalAge})`): a 2,500 city then makes ~20 production; `minCities` (a city per pad) still counts. The pad bank before Rocketry is `sized` (the horizon never drops it).
     - **Revolts** (game 32 lost Бирмингем at A61 in Antiquity's Revolts crisis; the game's `ADVISOR_WARNING_CITY_REVOLT` was only marked seen): a settlement in unrest, or below zero Happiness while a crisis is on (`revoltRisks`), buys the cheapest HAPPINESS-tagged building the game sells there from all the gold (`guardRevolts`, REVOLT_GUARD); UI.log `happiness: <settlement> N …: a revolt may take it` once a turn.
@@ -547,7 +564,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **A ground attacker** (`groundAttackersWanted`, QUEUED_GROUND_ATTACKER; a bounded experiment): at most `AIR_ATTACKERS_MAX` 1 of ours and queued, while a settlement is a lasting front (threatened `LASTING_FRONT_TURNS` 3 turns in a row by land raiders or ships), in a city whose Airfield has a free slot within the plane's Range of that front, the strongest against units (RangedCombat, not table order: the Dive Bomber's 60 over the Trench Fighter's 55); never while fighters are wanted (cover first), never from a space city or one kept for a pad. No Airfield is planned for it. With an Airfield but none in reach, UI.log `air: no ground attacker for <front>: …` once a turn.
     - **Strike targets** (`airAttack`, `airTargetScore`): a raider next to a damaged centre (`CAPTURE` 4000: a capture to prevent), then an attacker within 2 of a settlement (`ATTACKER` 2000), then its damage (a kill), less 500 under an enemy fighter's cover (its base within 4: an interception), less a point a tile. Packed planes strike: `shootRaiders` takes aircraft off the map (Phase 1).
     - **UI.log** once a turn while we have an air base or a fighter: `air: bases [airfield|squadron x,y [planes] free N intercepts R; …]; cover wanted [<settlement> (why) covered by N; …]; rebases [<plane> x,y -> x,y for <settlement>]`; `air: <plane> of pN hit ours at x,y (Tn): …` for each raid; `air: <plane> was not rebased to x,y …`.
-    - **Not built:** Squadron bases set up by us (`ESTABLISH_BASE`), carriers, Fighter Sweep / Ground Attack / Carpet Bomb commander commands, the preview before an air strike (P-AIR-4), an Airfield planned for defence.
+    - **Built later:** the preview before an air strike and an Airfield planned for defence (gotcha 81); Squadron bases, carriers and the commanders' Fighter Sweep / Ground Attack / Carpet Bomb (gotcha 82).
 
 70. **The navy: ships attack the game's way, guard the coasts ships raid, and come from the same water** (research/37 Phase 6; `core/xpl-naval.js`).
     - **Why:** game 38's Бутооло (Modern) was bombarded by an independent's Frigates, which killed an Abambowa and two Field Cannons sent against them as anti-ship defenders; and our own warships very likely never attacked: `shootRaiders` asked them only for RANGE_ATTACK, which melee ships lack.
@@ -556,7 +573,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
     - **Naval guards** (`planNavalGuards`, commandUnits after the fighters' rebases): a threatened settlement with ships wants up to `NAVAL.GUARDS_MAX` 2 of our warships within GUARD_RADIUS on the water, those there and those sent (goal `{guard, naval}`) counted; the free warship (awake or rested by us, damage below 30, every move, not guarding another such settlement) that reaches a post soonest by its own path within `POST_MAX_TURNS` 6 sails there (`navalPost`: water or a navigable river, free; a lake ship has no path: reach is a path, not a circle). NAVAL_GUARD; UI.log `naval: <settlement>: ships N; warships there […], coming […]; sent […]; n free warship(s)`. Warships are no land guards (`guardDetail` counts land units): the coast keeps its land holder.
     - **Training** (`warshipsWanted`, QUEUED_WARSHIP): a settlement threatened by ships `LASTING_FRONT_TURNS` 3 turns in a row wants up to `NAVAL.SHIPS_MAX` 2 warships, ours within 10 and those queued counted, trained only in a city on the same water (a water tile next to it in an area of a water tile next to the front: `GameplayMap.getAreaId`), the best ranged ship it can build (RangedCombat), else the best screen; never in a space city. The city where it arrives soonest (its queue's wait, `turnsUntilFree`, its training and its sailing), within `DEFENDER_ARRIVAL_TURNS` 16, and while the front lasts it moves up its queue like other wanted units (`frontLoadUnits`; `isMilitary` leaves ships out). Game 39: Мотия's Cog for Севилья, the nearest city on the water, waited at the end of its queue behind the Tomb of Askia, a Bazaar and a Sawmill E29-E49, after the raids had ended (E36). None: UI.log `naval: no warship for <front> …: no city on that water can train one` or `none arrives within 16 turns (<city> Nt, …)` once a turn.
     - **The loop:** a unit ordered before the unit loop (an army's unpacking, a fighter's rebase, a warship's post) or by a neighbour's room-making is left alone (before, an unpacking commander could be sent to its post as well).
-    - **Not built:** Fleet Commanders' focused sea attacks (`UNITCOMMAND_FOCUSED_ATTACK_SEA_*`) and their assembly, escorts, carriers, naval formations, ship upgrades by mission, land guns kept out of ships' reach.
+    - **Not built:** a fleet's assembly, escorts, naval formations, ship upgrades by mission (Fleet Commanders' focused sea attacks and carriers: gotcha 82; land guns out of ships' reach: gotcha 78).
 
 71. **Campaigns: our own settlements retaken, behind «Наступление»** (research/37 Phase 7; `core/xpl-campaign.js`).
     - **The setting:** `autopilot.offensive`, off by default (the user's decision, 18 October: defensive), and it works only with «Оборона». Off: nothing of it runs, a running campaign ends (WHY_OFF), and peace is sought as before (`seekPeace` / `answerIncomingDeals` never consult the intent). Never a war of its own, never a settlement that was not ours.
@@ -600,8 +617,7 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
       beliefs by our empire's numbers (core/xpl-religion.js `PANTHEON_YIELDS`, `BELIEF_YIELDS`; choices `pantheonFacts`
       projects tiles to the cap and 2 quarters a city; `beliefFacts` counts every settlement of ours as a follower). Missionaries
       (data/xpl-missions.js): trained where the game allows (a Temple) while 2 of ours do not follow (QUEUED_MISSIONARY, up to 2,
-      by charges), each converts the most urgent (the crisis's unhappy ones, then those of no religion, then others; urban
-      half from the centre, rural from another tile), then the city-states we are suzerain of; none while Ius Reformandi is
+      by charges), each converts the most urgent (the crisis's unhappy ones, then those of no religion, then others; from a district: the urban half from an urban one, the rural half from a rural one (gotcha 90)), then the city-states we are suzerain of; none while Ius Reformandi is
       slotted (`iusReformandiActive`), none trained in an age's last 8 turns, and a tile or settlement the game refuses is left a
       while (gotcha 74). Religion reads: data/xpl-player-facts.js `ourReligion`, `followsOurReligion`.
     - **Diplomacy** (A4, B6, B7): endeavors from the game's offer (`endeavorsOffered`, `ENDEAVOR_VALUE`: Lafayette's Reform
@@ -733,6 +749,630 @@ Run all four checks before handing anything to the user: tests, imports, syntax,
       of a pass are noted on their tiles (`notePlotOrder`), as the queues show them only next pass.
     - **The stuck probe** (UI.log `queue: <city>: stuck since …`) now says whether the game offers that tile (`offered yes|no
       (N tile(s))`): the next game shows whether a stuck item still comes from a tile the game does not offer.
+
+78. **Research/41 Phases 0-1: long log lines, the -3 befriending, commander and war probes, ships' reach** (21 October;
+    research/41-generals-training-wars.md, its notes in research/41-notes/).
+    - **UI.log cuts every line at 1,022 bytes** (not characters), its time stamp included. `log` (services/xpl-log.js) splits a message longer than `LINE_MAX` 950 bytes into numbered parts (`… [2/3]`) of at most 950 bytes each, never inside a character (`utf8Length`: Cyrillic takes 2 bytes, `…` 3). Game 60's Modern `economy:` lines stopped at 1,022 bytes, which was 904-909 characters of Russian names, so none of them was split. The `commander parameters:` line stopped at `EXPERIENCE_MAX_LE` in every game before.
+    - **Befriend status -3 is `PROJECT_NO_VIABLE_TARGETS`, and also "not enough Influence"**: the game has no other status for
+      that (the executable's enum: -4 SINGLE_INSTANCE_RUNNING, -3 NO_VIABLE_TARGETS, -2 NOT_UNLOCKED, -1 BLOCKED, 0 AVAILABLE,
+      1 ACTIVE; game 44: -3 with "not enough Influence 71/180"). When the project lists the village at a price above our
+      Influence, the Influence is kept for it (`befriendIndependents`' `short`): no endeavor meanwhile, no unit sent. With no
+      target listed (an unseen village) it stays not befriendable now (gotcha 42). Before, -3 counted as "cannot befriend" and
+      endeavors took the Influence (15-50 `status -3` lines a game in games 42-47). Unless its FailureReasons name LOC_DIPLOMACY_ACTION_FAILURE_NO_VISION, nothing is kept and a unit approaches the village (gotcha 90).
+    - **Probes** (UI.log): `xp: <commander> … level L, XP e/n, promotions P (points, commendations)` when it changes, a defeat
+      showing `onMap=false` (P-XP-2, P-DEATH-1); `xp: combat T…` for each fight of ours within 2 tiles of a land commander, with
+      the opponent (independent or major), attacker or defender, ranged, and the commander's XP then (the `Combat` listener);
+      the parameter line with `COMBAT_FOCUSED_ATTACK_*` and `UNIT_PURCHASE_MULTIPLIER` (P-XP-1); `war probe: p<id> …` for each
+      met major at peace when it changes (P-WAR-1: the declare-war popup's `canDeclareWarOn` with and without FORMAL_WAR,
+      `getTotalWarSupportBonusForPlayer` / `…ForTarget`, `getWarInfluenceBonusTarget`) and `war probe: stats T…` every 10 turns
+      (P-STAT-1: production and gold a turn, settlements, land soldiers all and seen, best melee). Only reads the game's own UI
+      makes (gotcha 75): not the executable's `Stats` getters that no screen calls. P-A5 waits for Phase 3 (we never pack yet).
+    - **Ships' reach** (games 30-47: ships killed 29 of the 56 land units we lost, 18 scouts and 11 soldiers, each within a
+      ship's reach; Field Cannons sent against Frigates in game 38).
+      - **The rules** (core/xpl-naval.js): `inShipReach` (within the ship's moves + range, and within its range of its own
+        water: `GameplayMap.getAreaId`; never the engine's reach of an enemy unit), `outGuns` (Bombard ≥ the strongest hull's
+        Combat, ×1.2 with two ships or more; Combat ≥ each ship's attack - 10, - 5 against a Range-1 ship), `outRanges` (Range
+        beyond each ship's: a Ballista shoots a Galley from two tiles inland), `fightsShips` (either). Mortars and Heavy
+        Artillery fight Frigates; Field Cannons, Field Guns and Slingers do not.
+      - **`GameplayMap.getAreaId(x, y)`** takes x and y, as the game's UI calls it: game 49's `getAreaId(index)` was refused
+        six times ("Argument conversion failed"), so every ship's water body was unknown (all water counted as its own).
+      - **Data** (units.js): `hostileShips` (visible hostile warships, read from the players' unit lists once a pass),
+        `shipsReaching`, `shipThreat(loc, def)` (the ships in reach it does not out-gun).
+      - **Against ships alone** only a unit that fights them counts as a guard, is sent, bought or trained (`guardDetail`,
+        `planDefence`'s picks, steps `shipsToOutGun` → `bestRangedOrder({outGun})`, `cheapestDefender`); none: UI.log
+        `defenders: none for …: no land unit on sale here out-guns or out-ranges their ships`. With land raiders too, a ranged
+        unit still serves against those. Threats carry `shipStats`.
+      - **Posts** (`postFor`) off the centre within reach of a ship the unit does not out-gun come last (`SHIP_POST_PENALTY`);
+        the melee holder takes the centre anyway. **Formations:** a ship is a ranged member's target only when it fights ships,
+        `FORM.SHIP_REACH` -80 for each ship in reach it does not out-gun (the centre's melee holder aside), the commander's
+        tile too.
+      - **Hurt units and scouts:** a hurt soldier within a ship's reach steps away before it heals, at its post too; `stepAway`
+        prefers tiles out of ships' reach (unless that is next to a land raider); a scout in a ship's reach steps away.
+    - **An empty, damaged centre is held:** `FORM.HOLD_DAMAGED` 200 (a melee unit screening two approaches next to it was
+      worth as much as holding it), and a hurt melee member (damage below `HOLD_HURT_MAX` 70) next to it may step onto it,
+      and only onto it (`onlyCentre`). Games 37-47 had 11 such `formation:` lines, centres at 20-65%.
+    - **Naval guards:** the `naval:` line says why each free warship stayed (`not sent [<type> at x,y (not needed | no path |
+      no free water tile | N turns)]`): 46 of 186 such lines in games 37-47 sent none and said nothing.
+
+79. **Game 48 and research/41 Phase 2: settle near, fronts facing an army, peace asks back, the plague, two generals** (21
+    October; research/game48, research/41 §4). Lost to Tubman's culture countdown; one settlement until A21; Киото lost at A59.
+    - **Settle earlier and closer** (game 48: the first settler went for 9,31, then 19,31, then 17,46 and founded at A21).
+      - Below `NEAR_SETTLEMENTS` 3 a settler walks at most `SETTLE_NEAR_TURNS` 4 (was 5), and a turn of walking weighs
+        double (`SETTLE_TURN_WEIGHT` halved in `pickSite`'s worth): a near site beats a better one 4 turns away.
+      - A settler stuck on its way founds on a free tile within `STUCK_FOUND_RADIUS` 2 it reaches this turn (`foundNearby`, from
+        `unstick`) rather than taking another far site.
+      - «Settle anywhere» looks within `ANYWHERE_RADIUS` 20 (was 8; `ANYWHERE_PATHS` 30), skipping other players' land
+        cheaply: in Modern every tile around the capital was ours, and a settler stood there M39-M49.
+      - A settler is trained where its queue is free soonest plus the walk to the nearest known site (`settlerRank`,
+        `SETTLER_TILES_A_TURN` 2), not in the big city far away.
+    - **War fronts facing an army** (Киото: one guard for 9 turns of Amina's war risk; at A54 5-7 Spearmen took its centre
+      62 → 0 in three turns, and a besieged town could buy nothing).
+      - `warFronts` carries `army`, the leader's land soldiers we see within `FRONT_ARMY_LOOK` 10. A front wants
+        `frontGuardsWanted`: one guard, one more for every `FRONT_ARMY_SHARE` 2 of them, up to `FRONT_GUARDS_MAX` 3. Those
+        guards are sent, trained (QUEUED_GUARD's want) and, with `FRONT_BUY_ARMY` 3 soldiers near, bought from the free gold
+        while it still can (`buyDefenders`, one a turn).
+      - A town at a war front is no conversion candidate (565 gold was held A50-A54 to make Киото a city).
+    - **Peace asks our settlements back** (Киото stayed Amina's after a white peace at A62). `seekPeace` first inspects a peace
+      that gives back their settlements that were ours (`settlementsToAskBack`: `getPossibleWorkingDealItems(deal, them,
+      CITIES)` items of subType `DiplomacyDealItemCityTransferTypes.OFFER` whose city's `originalOwner` is us, as the peace
+      screen offers them); refused, a white peace is inspected next. UI.log `peace: … would refuse a peace giving back …`.
+    - **The plague** (60 moves off infected tiles; our land units 23 → 18 over E61-E67).
+      - A safe tile next to the plague counts `HAZARD_EDGE` 4 more walking, one 2 away half of it: the plague spreads.
+      - Off a centre only an enemy next to a healthy soldier holds it on an infected tile (was any within 3); on a centre,
+        raiders within DANGER_RADIUS still do.
+      - UI.log `plague: N unit(s) of ours on hazardous tiles …` once a turn names each one left there and why.
+    - **Two generals** (research/41 Phase 2; core/xpl-generals.js; the user, 21 October: "all generals as close to the fight
+      as possible, also escaping as first unit if dangerous or under attack: a valuable asset").
+      - **Roles from what they took** (`roleFromPromotions`, `assignRoles`, `commanderRoles`): any Maneuver, Logistics or
+        Assault promotion makes the VANGUARD, a Bastion one the BASTION; of the undecided the one with the most XP is the
+        vanguard when none is (a lone commander is the vanguard). A campaign's leader with no Bastion promotion is the
+        vanguard. `commanderProfile` is no longer used.
+      - **Promotions:** the vanguard Mobility, Initiative, Quartermaster (or Recruitment), Regiments, then the rest of its
+        trees, then the defensive order; the bastion `PROMOTION_PREFERENCE`. Commendations: the vanguard Merit first (radius
+        2: more fights in reach), the bastion Order first (since gotcha 88 the role's key comes first, then Leadership's four to a commendation by the 5th promotion).
+      - **Posts** (`threatPost`): a damaged centre first, then by raiders (since gotcha 82 by each fight's worth after the
+        walk, and the fight it stands at first); a commander keeps its threatened post unless another
+        it reaches within 6 turns has `SWITCH_RAIDERS` 3 more raiders or a damaged centre its own lacks (game 48: both kept
+        posts with one raider while Киото had 7); a post no other commander holds first, else the fight is shared.
+      - **In peace the vanguard** waits at the settlement threatened on most of the last `RAIDED_TURNS` 20 turns, else an
+        exposed one (`noteRaids`, `mostRaided`); the bastion keeps the unhappiness rule.
+      - **Its tile at a fight** (`formCommander`): a soldier about to fight (next to a land raider, or ranged with a target in
+        range) counts `FORM.FIGHT_COVER` 30 on top of `COVER` 20: its XP comes from their fights.
+      - **Escape first** (`escapeCommanders`, before the defence plan): a land commander hit this turn, or off our centres with
+        a hostile unit (a ship too) in reach and no soldier of ours on or next to it, moves to the tile within 3 it reaches
+        this turn in the fewest hostile units' reach (our centres and tiles beside our soldiers first); COMMANDER_ESCAPED.
+      - **Strikes:** units in a general's radius shoot and strike first (`byGeneral`): their fights give it XP.
+      - **A second commander:** fewer than `GENERAL.WANTED` 2 land commanders (one off the map counts) and none queued: bought
+        from the free gold (`buyCommander`, after the defenders; COMMANDER_BOUGHT), else trained where it takes at most `TRAIN_TURNS` 8 × the game speed's factor (16 at Standard; gotcha 88) (QUEUED_COMMANDER; not in a space city or one kept for a pad), never in an age's last
+        `AGE_END_TURNS`.
+      - **Effects valued** (core/xpl-effect-value.js, `ctx.generals` from `generalsState`): EFFECT_GRANT_UNIT_PROMOTION
+        `PROMOTION_VALUE` 40 a promotion as a lump while a commander lacks its role's four key promotions;
+        EFFECT_ARMY_ADJUST_EXPERIENCE_RATE 1 a 10% while one also fights; EFFECT_ARMY_ADJUST_MOVEMENT_RATE 2 while one
+        fights. Before, all three were 0.
+      - **UI.log:** `generals: VANGUARD <type> at x,y post x,y (level …, XP …); BASTION …` once a turn; `generals: <type>
+        escaped from x,y to x,y (hit | in reach; …)`.
+      - **Not built:** walking with a soldier when hostile units are within 3, a Military Academy city first for training,
+        no training beside a raced wonder; the packed army (Phase 3).
+    - **Game 49** (research/game49; WON the economic victory at M32; both generals ended at XP 0/7):
+      - **One rule for where a commander may stand** (`commanderSafeAt`), shared by the escape and the walk: our centre, else
+        never next to a hostile land unit, and out of every hostile unit's reach (ships too) or beside a soldier of ours.
+        Seen: Йезд, 3 tiles from the capital, was raided T16-T25; the commander's way passed the raiders, so it stayed in the
+        capital, and when it walked it stopped in a raider's reach and escaped back. It reached Йезд after the last fight.
+      - **The walk** (`postCommander`): its centre reached this turn is always taken; a longer walk only by a safe way whose
+        first turn ends where it may stand (`turnStop`, the path's `steps` = the game's per-plot turns); else the tile
+        nearest its post it may stand on this turn (`commanderAdvance`, COMMANDER_ADVANCE; UI.log `generals: … advances …`).
+      - **The escape** takes a tile it may stand on nearest its post (into the threatened centre it reaches), else the fewest
+        hostile units in reach.
+      - **Roles remembered:** an undecided vanguard stays the vanguard (`assignRoles(list, previous)`; with no XP the role
+        followed the unit key's text and changed hands when the second commander came).
+      - **A queued second commander moves to the front** (`frontLoadUnits`, behind an item with progress): it waited A26-A49.
+
+80. **Game 50, village hunts and «Учебная война»: the generals' experience** (22 October; research/game50, research/41 §6-§7;
+    core/xpl-field-ops.js, units.js "field operations", choices.js `trainingWarStep`).
+    - **Why:** XP short of a commander's first level is lost at every age change (games 48, 50 and 53; past the first level
+      it is kept: game 53's 13/15 at level 1 came through), and that level needs 7 within one age at 2-3 a fight. Game 50's vanguard got 3 XP all game (one fight at A35); peaceful games level nobody. The user (21 October):
+      "hunt villages that will not be befriended: not enough points, half past the era, or even one another civilization
+      befriends if that will not cause a war"; «Учебная война» too. Research/41 §9 decision 1 (no hunts) is replaced.
+    - **Game 50's small fixes:** a commander keeps a peace post `COMMANDER_PEACE_HOLD` 10 turns after reaching it
+      (`postArrived`; the bastion walked capital ↔ Сучжоу three times in Modern and left the capital the turn it arrived); a
+      scout in danger with no tile farther from the raiders takes the tile in the fewest raiders' reach, not next to one
+      (`scoutAway`; one hit for 70 stood still and died). Scouts have 2 moves (BaseMoves): looking farther changes nothing.
+    - **Which villages** (`autopilot.huntVillages`, on by default, with «Оборона»; core `huntReason`, units `huntTargets`): seen,
+      within `HUNT.REACH` 8 of our settlements, never a city-state nor one we befriend; a crisis encampment (CRISIS), one
+      another leader befriends unless that leader is Unfriendly or Hostile with us (OTHERS: −30 with them, no war), any past
+      `HALF_AGE` 0.5 of the age (LATE), or one whose befriending price our Influence and its income for `SAVE_TURNS` 10 do not
+      reach (INFLUENCE). Befriending leaves the hunted village alone (`huntedIndependent`).
+    - **A hunt** (one operation at a time, after a campaign; `fieldOp` kind HUNT): the soldiers the defence leaves free
+      (`freeSoldiers`: 2 melee, 3 in all, 1 more than its soldiers within 3; at most 5) and a land commander, the vanguard
+      first (`fieldCommander`), gather 2 tiles from it (`stagingTile(t, 2)`); only then is war declared on it, as the map does
+      it (`declareOnIndependent`: `canDeclareWarOn`, DECLARE_WAR Type DIPLOMACY_ACTION_DECLARE_WAR). Melee members strike its
+      soldiers when the preview pays (`fieldStrike`, `strikeWorthIt`; ranged ones shoot in shootRaiders), the commander stands
+      by the village over the most members, and with no soldier of theirs on it a member steps on and disperses it
+      (`fieldAssault` → DISPERSE_MOVE → `disperseArrivals`; `dispersible(v, {hunted})` lets another's befriending pass).
+      Ends (`huntEnd`): DONE, BEFRIENDED, OFF, VICTORY, HOME (raiders of anyone else, or a damaged centre: `homeUnsafeFor`),
+      LATE 15 turns, STALL 5 without a kill, LOSSES 2 lost with no kill, FORCE; a village given up waits 15 turns.
+    - **«Учебная война»** (`autopilot.trainingWar`, off by default, with «Оборона»; core `trainingTarget`, `trainingEnd`):
+      - **Target** (choices `trainingWarStep`, each full pass): the nearest met major within 10 whose land soldiers are at most
+        half ours, best melee no stronger, production at most 60%, fewer settlements, no ally of ours nor of a third; our
+        settlements unthreatened, no other war or war risk, not an age's first 10 or last 20 turns, never the final age
+        (ideologies are not read), once an age (`trainingWarAge` in the game memory), the outcome open, no CHANCE of ours nor
+        a rival's DANGER, not science's final push; our War Support at declaration at least theirs, Influence for 2 points
+        (60/120/180 by age), and ready: a free land commander and 4 free soldiers, 2 melee (`readinessForWar`, set by the
+        unit step).
+      - **Politics:** Hostile → `DECLARE_WAR` Type DIPLOMACY_ACTION_DECLARE_FORMAL_WAR (never a surprise war); Neutral or
+        Unfriendly → `DIPLOMACY_ACTION_DENOUNCE` through `startAction`, 2 times (4 when very weak: soldiers ≤ 1/3, production
+        ≤ 40%), 10 turns apart. During it a War Support point is bought when theirs reaches ours and costs at most half the
+        spare Influence (`warSupportNet`: the ribbon's reading, `getInfluenceForNextSupport`, SUPPORT_DIPLOMATIC_ACTION).
+      - **Conduct** (`fieldOp` kind WAR, from `planTrainingWar` the pass after the declaration): the army gathers 3 tiles from
+        their settlement nearest ours, on our side, and fights their soldiers within `DEPTH` 4 of that tile, never deeper,
+        capturing nothing.
+      - **The end** (`trainingEnd`): PEACE, OFF, PROMOTED (the commander levelled), WEARINESS (`city.Happiness.hasWarWeariness`
+        or their support ahead), LOSSES, THIRD (another major at war with us), HOME, LATE 20 turns, XP_STALL 5 turns, YIELDS
+        (science + culture + gold + production 10% below the start). Until then no peace is proposed (`seekPeace`) and an
+        offered white peace is refused (TRAINING_PEACE_HELD); after it the peace asks for their town nearest us when our War
+        Support leads by 3 and the cap has room (`settlementsToAskBack`). Nothing is trained or bought for it.
+    - **UI.log:** `hunt: …` / `training war: …` once a turn (stage, members, their soldiers near, kills, losses, War Support,
+      the commander's XP), `hunt: none: …`, `training war: none: <leader>: <why>` every 10 turns, `training war: declared on …`,
+      `denounced …`, `War Support bought …`, and each end with its reason.
+    - **Not built:** Military Aid's value, levies for the army, ideologies (rotating hurt units: gotcha 82; packing: gotcha
+      81).
+    - **Games 51-53** (research/game51-53): the hud's strike step called `fieldFight` above its `const` declaration, so every
+      pass logged `ERROR autopilot step strike failed Cannot access 'fieldFight' before initialization` (832 passes) and the
+      hunt's fight ran only in the later "field" step; it is declared before the strike step now. No hunt started in those
+      games (too few free melee units, then the home rule), and «Учебная война» found no target. Their analysis and the next
+      plan (generals under soldiers, packing, sorties, air bases, nuclear weapons, the satellite): research/42-units-at-war.md.
+
+81. **Research/42: units at war** (22 October, after games 51-53; research/42-units-at-war.md, research/game51-53). Game 53
+    played on to M164 to watch the units: 14% of Modern's fights within 2 tiles of a general; the bastion killed alone on
+    Китион's 0-health centre (M72-M74) and by a Frigate on the coast (M149-M150); one focused attack all game; nothing packed;
+    15-26 free soldiers idle while 407 attacks hit us; one plane in an Aerodrome that holds 4 and no fighter; no nuclear
+    weapon (every AI made 2-15); the satellite 77 turns after the game was decided.
+    - **A. Generals under soldiers.** `commanderSafeAt`: under a healthy land soldier of ours (`shieldAt`, damage below
+      `SHIELD_DAMAGE` 50; a commander is FORMATION_CLASS_COMMAND and CORE_CLASS_SUPPORT, so it shares the soldier's tile and
+      the soldier is attacked), on our centre while its district keeps `DISTRICT_SAFE_SHARE` 0.5 of its health
+      (`districtHolds`), else out of every hostile unit's reach and never next to a land one; beside a soldier no longer
+      counts. The escape takes a commander that moved but has moves left, prefers a tile under a soldier, and UI.log says
+      when it finds none (`generals: … is in danger … and stays`). At a fight `commanderTile(…, shielded)` may stand under a
+      soldier in the front line (`FORM.SHIELD` 10, no EXPOSED or SHIP_REACH there). `escortCommanders` (after the
+      formations): a walk whose first stop is unsafe takes a free healthy soldier next to it (damage below `ESCORT_DAMAGE`
+      30; goal `{escort}` for the pass) and both go to that stop (COMMANDER_ESCORTED). Focused attacks need one unit
+      (`FOCUS_MIN_UNITS` 1: the game's text sets no minimum), a lone melee one only when the preview pays (`strikePays`);
+      Commander Attack also on a raider the preview says it beats keeping `COMMANDER_STRIKE_KEEP` 0.7 of its health.
+    - **B. The army.** In a war (not a risk alone) each front is posted `frontGuardsPosted(f, share)`: one per enemy soldier
+      seen near and an equal share of the free melee soldiers, up to `FRONT_POST_MAX` 4 (fronts carry `atWar`; training and
+      purchases keep `frontGuardsWanted`). `homeUnsafe` no longer stops campaigns and hunts for a damaged centre that is
+      guarded. Sorties (`sorties`, after the adjacent strikes): a healthy melee soldier (damage below `SORTIE_DAMAGE` 30) with
+      every move, off our centres, strikes a hostile land unit within `SORTIE_RADIUS` 3 of our settlements it reaches this
+      turn when the preview pays (`strikeTrade`), not into more than `SORTIE_CROWD` 2 others, `SORTIE_MAX` 3 a pass
+      (SORTIE). Packed marches (`packMarches`, after the escorts): posts walking `PACK_SLOW_TURNS` 3+ to one settlement or
+      front, at least `PACK_MIN` 2 of them (or free soldiers) next to a land commander not at another fight: each soldier gets
+      `UNITCOMMAND_ADD_TO_ARMY` (canStart `{}` → Plots, then {X, Y} of the commander's tile, as the add-to-army mode; never
+      PACK_ARMY), when the commander's way + 1 is no longer than their walk on average and within `PACK_MAX_TURNS` 8; its
+      members count as coming (`marchOf`, `marchTurns`); urgent with healthy members it Force Marches when the game offers
+      it; at the settlement `unpackArmies` unpacks it, and a march no longer needed unpacks where it stands (ARMY_MARCH;
+      UI.log `army: … packs … (probe P-A7)`, `army: marches […]`). A packed soldier keeps `{march}` until its march ends.
+    - **C. Air.** Fighters up to `AIR_GUARDS_MAX` 4, ground attackers `AIR_ATTACKERS_MAX` 2; bombers (`bombersWanted`,
+      UNIT_CLASS_BOMBER) up to `BOMBERS_MAX` 2 in a war at our door, or one to carry a weapon held, where a base has room and
+      the income covers `BOMBER_UPKEEP` 15 (QUEUED_BOMBER). `airfieldForRaids` (production step): a settlement raided from
+      the air that no base covers gets an Airfield in our nearest city within `AIRFIELD_COVER` 4, done within
+      `AIRFIELD_DEFENCE_TURNS` 15 (QUEUED_AIRFIELD). An air commander strikes with its planes (`airCommanderAttack`; by
+      the class each command orders since gotcha 82); a single plane's strike asks the preview (`airStrike`; only a full answer saying
+      the trade is poor holds it back: probe P-AIR-4 logs what it answers).
+    - **D. «Ядерное оружие»** (`autopilot.nuclear`, off by default; core/xpl-nuclear.js). In a war with a major: Nuclear
+      Fission's way first (TECH_FOR_NUCLEAR); the Manhattan Project where it is done soonest within `NUKE.WONDER_TURNS` 25
+      (NUCLEAR_PROJECT); with it standing and a war at our door `PROJECT_PRODUCE_WMD` up to `NUKE.WEAPONS_MAX` 2 held and
+      queued within `NUKE.PRODUCE_TURNS` 15 (NUCLEAR_WEAPON_QUEUED); a weapon held and no air base: an Airfield. The stock is
+      our own count (settings' game memory `wmd` = "made|used", from CityProductionCompleted; no screen of the game reads it).
+      The strike (`nuclearStrike`, first in the hud's strike step): an air commander whose
+      `canStart(UNITOPERATION_WMD_STRIKE, {Type: WMD_NUCLEAR_DEVICE})` lists tiles, the blast (the WMD's BlastRadius plus
+      `combatModifiers.wMDBlastRadius`, as the strike mode draws it) with the most land units of players at war with us, at
+      least `NUKE.MIN_UNITS` 3, within `NUKE.NEAR` 8 of our settlements, touching no unit or tile of ours, no third party's
+      and no settlement (armies only), never where `willActionStartWarInArea` says it starts a war; one a turn (NUKE_STRUCK).
+    - **E. The satellite.** Once the game is decided, a Launch Pad in our best producer when no city can launch it
+      (`launchSatellite({ buildPad })` → `padForSatellite`, SATELLITE_PAD_QUEUED); in a war at our door it is launched where a
+      pad stands.
+    - **Built after game 54** (gotcha 82): swapping hurt units out, Fleet Commanders, carriers, Squadron bases, the air
+      commands by class, nuclear strikes on cities (their own checkbox). Not built: Military Aid, levies for the army.
+
+82. **Game 54 and the rest of research/42: generals at the next fight, hurt soldiers swap out, the fleet and the air
+    bases, cities in a nuclear war** (22 October; research/game54). Won the economic victory at M45 (Pachacuti: Assyria,
+    Hawaii, America). The vanguard ended Antiquity at XP 0 and the bastion at 4 of 7 (lost at the age change): in the war of
+    A40-A58 both walked 4-6 turns between Ниневия and Дур-Катлимму behind the raids, the vanguard advanced out of Ашшур's
+    fight and escaped back twice, and at A44 both were posted to one fight (the vanguard had escaped, so its post was not
+    taken). Exploration's hunt of Аванти (E5-E11) went without a general: the vanguard stood 8 turns away. Modern had no war.
+    - **Posts** (`threatPost`): a fight is worth its raiders, `DAMAGED_WORTH` 3 more with its centre damaged, less
+      `TURN_COST` 0.5 a turn of the walk; the fight a general stands at (within GUARD_RADIUS) is its own before its post, and
+      it leaves it only for one worth SWITCH_RAIDERS more or a damaged centre it lacks. A war at our door with no fight in
+      reach puts each general at a war front facing their army (`ctx.fronts` with `atWar`, the biggest `army` first, one
+      each, shared from `FRONT_SHARE_ARMY` 4), its own kept while it stays one. An escaping general keeps its post taken
+      (`ctx.commanderPosts`). An advance in the open stops out of reach by `ADVANCE_MARGIN` 1 more
+      (`commanderSafeAt(…, margin)`, `hostilesInReach(loc, margin)`).
+    - **Hunts and training wars wait for their general:** `fieldCommander` within `COMMANDER_TURNS` 10 (HUNT and TRAINING);
+      no hunt starts without one while a general of ours stands on the map (`hunt: none: … no free general`); the fight waits
+      for it (`fieldReady`'s `commanderAway`) up to COMMANDER_TURNS from the start; a hunt lasts `MAX_TURNS` 20.
+    - **Hurt soldiers swap out** (research/41 Phase 4; `rotateFront` after the formations): a formation member hurt
+      `ROTATE_DAMAGE` 40 or more gives its tile to a free soldier of its role hurt less than `ROTATE_FRESH` 20: a neighbour
+      swaps places with it (`UNITOPERATION_SWAP_UNITS` {X, Y, Modifiers: NONE}, as world-input.js sends a move onto our own
+      unit), a farther one comes in once the hurt one withdraws out of every hostile unit's reach or into a centre
+      (`withdrawTile`); `ROTATE_MAX` 3 a pass; the centre's holder only for a melee unit; FORMATION_SWAP and the
+      `formation:` line's `swaps […]`. Game 54 had 57 formation stays marked "hurt".
+    - **The air commander's commands by class** (the game's text: Ground Attack, `…_AIR_TO_LAND`, orders "eligible Attack
+      Air Units", Carpet Bomb, `…_AIR_BOMB`, "Bomber Units", Fighter Sweep, `…_AIR_TO_AIR`, "all Fighter Units"; gotcha 81
+      sent Ground Attack for bombers): `AIR_COMMANDS`, `AIR_FOCUS_MIN` 2 planes of the class (AIR_CARPET_BOMB,
+      AIR_FOCUSED_ATTACK); a target an enemy fighter covers is swept first when 2 of our fighters are based there
+      (AIR_SWEEP). Carriers are air commanders (`isAirCommander`) and air bases (`airBases`), and carry a nuclear strike.
+    - **Squadron Commanders** (`establishSquadronBases`, before the rebases; the game: they "Establish Air Bases on flat
+      tiles with no Urban District that are not owned by another player", and planes rebase to one only after that): where
+      fighter cover is wanted that no other base gives, on the tile `UNITOPERATION_ESTABLISH_BASE` offers (canStart `{}` →
+      Plots, then {X, Y}, as interface-mode-establish-base.js) covering the most of them, at most every `SQUADRON_HOLD` 5
+      turns (SQUADRON_BASE). One trained (`squadronWanted`, QUEUED_SQUADRON, `SQUADRONS_MAX` 1) in a war at our door while
+      such cover is wanted; fighters for a Squadron base or a carrier come from any Airfield of ours (`interceptorsWanted`'s
+      `remote`), and rebase there.
+    - **Carriers** (`postCarriers`): sail to a water tile within GUARD_RADIUS of a settlement wanting cover no land base
+      gives (`navalPost`; CARRIER_SAILS); one trained (`carrierWanted`, QUEUED_CARRIER, `CARRIERS_MAX` 1) on that water when
+      a coast went `CARRIER_OPEN_TURNS` 5 turns uncovered in a war at our door, done within `CARRIER_MAX_TURNS` 15.
+    - **Fleet Commanders:** Focus Fire (`…_SEA_RANGED`: our ranged ships in its radius) and Coordinated Naval Attack
+      (`…_SEA_MELEE`: screens next to the target, a lone one when the preview pays) in `commanderAttacks`
+      (NAVAL_FOCUS_FIRE, NAVAL_COORDINATED_ATTACK); `postFleetCommanders` (after the naval guards) puts one on a warship's
+      tile where ships attack us, else toward those waters when its turn's stop is under a warship or out of every hostile
+      ship's reach (FLEET_COMMANDER_POST); one trained (`fleetCommanderWanted`, QUEUED_FLEET_COMMANDER) for a lasting
+      coastal front with `FLEET_MIN_WARSHIPS` 2 warships of ours.
+    - **«Ядерные удары по городам»** (`autopilot.nuclearCities`, off by default, only with «Ядерное оружие»; the tab's
+      checkbox after it): with no enemy army to strike, the city of a major at war with us within NUKE.NEAR of our
+      settlements, the nearest first (core `cityBlastVerdict`, `bestCityBlast`): never ours, a third party's, another
+      settlement, nor a city that was ours (`originalOwner`: we want it back); NUKE_CITY_STRUCK.
+    - **Founding on a front** (`onWarFront` in `siteVerdict`, reason FRONT): a site within `FRONT_SITE_DISTANCE` 6 of a
+      settlement of a major at war with us or a war risk waits while fewer than `FRONT_SITE_GUARDS` 2 melee soldiers stand
+      free; not under a countdown to block (bold).
+    - **The focus with one city** (core `unfitFocus`, `SCIENCE_MIN_CITY_LIMIT` 2): the automatic focus leaves science out
+      while `player.Cities.getCityLimit()` (0 = no limit, as the game's yield bar reads it) is below 2 (Carthage); the
+      player's own target still counts; UI.log `victory focus: SCIENCE left out: the city limit is 1`.
+    - **Probe:** both generals' `xp:` lines read `promotions 0` from Exploration's last turn on, with no point to spend;
+      whether a promotion survives an age change is open.
+    - **Not built:** a fleet's assembly (packing ships), naval escorts and formations, Military Aid, levies for the army,
+      ideologies (no training war in the final age).
+
+83. **Generals chase their experience: the vanguard's packed army, Overrun, raider hunts, focused attacks first** (22
+    October, after game 54; the user: "did we implement packing units into a commander and moving them that way to move
+    faster? and using multiple attack from inside? Will the commander chase exp much more aggressively?"). Game 54's focused
+    attacks gave 4-8 XP each (the first level needs 7); packing had fired only for slow walkers (gotcha 81), and the generals
+    sat through raiders loitering 4-6 tiles out.
+    - **The game's rules** (the Civilopedia's armies page): a commander packed with combat units gets +1 Movement (Mobility
+      +1 more on land, terrain ignored); "If an Assembled Army is attacked, it defends as a single unit"; an army "must
+      Deploy when attacked by enemies with sufficient strength"; Overrun kills a much weaker unit (about 5:1) without
+      deploying and enters its tile.
+    - **The vanguard's packed army** (`rallyVanguard`, after the field operations; `noteRapid`, before the defence plan):
+      while a war is at our door, a settlement is threatened or one was raided within GENERAL.RAIDED_TURNS (`rapidCalled`),
+      and the vanguard stands at no fight, free healthy soldiers (damage below `RAPID_DAMAGE` 20; not posted, at no front,
+      in no hunt or campaign; never the garrison) join its army up to `RAPID_SIZE` 3: one next to it at once
+      (UNITCOMMAND_ADD_TO_ARMY: canStart `{}` → Plots, then {X, Y} of its tile; VANGUARD_PACKS), one within `RALLY_TURNS` 3
+      walks to it (goal `{rally}`; VANGUARD_RALLY). In peace an army packed at an age's start (Regroup) still gives its
+      soldiers to exposed towns (gotcha 63).
+    - **While it is called** (`rapid`): the defence does not split it up (`defenceSupply`), it unpacks only at a threatened
+      settlement, not at a quiet front (`unpackArmies`), its soldiers count as coming to its post with its walk + 1
+      (`rapidTurns` in `guardDetail`), and a walk of more than a turn to a damaged centre or raiders within 2 Force Marches
+      first (`forceMarchIfUrgent`: the game offers UNITCOMMAND_FORCE_MARCH and every packed soldier is hurt less than 30).
+    - **A packed army defends itself** (`armyShields`): a commander with a healthy soldier packed is not in danger for
+      standing in reach (`commanderDanger`), nor is its walk's stop (`postCommander`); hit, it still escapes.
+    - **Overrun** (`overrunRaider`, first in `commanderAttacks` for a land commander with soldiers packed):
+      `UNITCOMMAND_ARMY_OVERRUN` (canStart `{}` → Plots, then {X, Y}, as interface-mode-army-overrun.js) on a hostile unit's
+      tile where no other hostile land unit stands next to it and no ship reaches it, the nearest our settlements first;
+      ARMY_OVERRUN; UI.log `army: … overruns …`.
+    - **Raider hunts** («Охота на рейдеров», `autopilot.huntRaiders`, on by default, with «Оборона»; core `RAIDER`,
+      `raiderEnd`; units `raiderTargets`, `startRaiderHunt`, `followRaider`: a field operation of kind RAIDERS, before the
+      village hunt in `fieldStep`): a hostile land soldier we see within `RAIDER.REACH` 6 of our settlements, on our land or
+      nobody's (`raiderGround`), not in a district, not within VILLAGE_GUARD_RADIUS of its own village (a village hunt's
+      business), only of a player already at war with us (never a war of its own); the nearest first. It starts when our
+      settlements are safe (that owner's raids aside), a general reaches it within `COMMANDER_TURNS` 3 (none without one:
+      the point is its XP) and the free soldiers within `GATHER_TURNS` 2 plus those packed in its army are enough
+      (`fieldForce`: a melee one, 2 in all, one more than their soldiers within 2); no gathering, the fight at once
+      (RAIDER_HUNT_STARTED). It follows its raider within `FOLLOW` 3 each pass and ends (`raiderEnd`): DONE (gone), OFF,
+      VICTORY, HOME, FAR (beyond REACH + 2), LATE (`MAX_TURNS` 6), STALL (3 turns without a kill), LOSSES, FORCE; that
+      owner's raiders wait `RETRY_TURNS` 3 after one that failed. RAIDER_HUNT_ENDED has its own words for DONE, STALL and
+      FAR (LOC_XPL_AP_RAIDER_WHY_*). UI.log `raiders: …` once a turn, `raiders: none: …` once a turn while one is seen.
+    - **Packed members unpack by the fight** (moveFieldOp, every field operation): within 2 of the staging tile (gathering)
+      or of the target (the fight), toward the nearest enemy soldier (UNITCOMMAND_UNPACK_ARMY; FIELD_UNPACKED). A hunt of
+      villages takes the general's packed soldiers too.
+    - **The general's tile in a field operation** (moveFieldOp): under a healthy member (where one stands or goes this
+      pass), or where `commanderSafeAt` allows, or anywhere with its army packed; a member about to fight after this pass's
+      moves is worth 20 more and any such fight 30 (its focused attack), a shield 10; with no safe tile it advances as close
+      as is safe (`commanderAdvance`), as it does when its walk's first stop is unsafe. Before, it stood by the fight in the
+      open and escaped the next pass.
+    - **Focused attacks first:** `FORM.FOCUS` 60 in `commanderTile` for a tile whose radius reaches a soldier about to fight
+      (one fight beats three idle soldiers). The hud runs the strike step again after the unit step when it unpacked an
+      army (ARMY_UNPACKED, FIELD_UNPACKED) or placed a general (FORMATION_COMMANDER, FIELD_COMMANDER): `STRIKE_AGAIN`, so
+      those soldiers fight that turn (Initiative lets unpacked soldiers move).
+    - **Not built:** the training war made less strict (the proposal's E; it stays as gotcha 80 left it), a packed army
+      roaming for raiders without a hunt, packing a far hunt's soldiers before the walk.
+
+84. **Games 55-56: free promotions, ships, the fronts before a war, packed upgrades** (22 October; research/game55-56). Two
+    culture wins (Rome, Mexico), the first games with gotcha 83's build: the generals reached levels 2-3 (games 48-54 ended at
+    XP 0), raider hunts killed 3 raiders with no loss, the vanguard's packed army unpacked for a hunt and twice for a defence.
+    Promotions survive an age change (gotcha 82's probe): the roles they gave held, and only the game's
+    `getTotalPromotionsEarned` counter starts again at 0.
+    - **A promotion the game hands out decides no role** (`freePromotions`: the `UnitPromotionType` of every
+      EFFECT_GRANT_UNIT_PROMOTION modifier; `promotionHas(…, {chosen: true})` in `commanderRoles`). Game 55: our card research
+      took Rome's Cursus honorum, which gives every Army Commander Bulwark (DISCIPLINE_ARMY_BASTION) for free; every general
+      read BASTION from A34, so there was no vanguard (no packed army, no raids watched) and the next promotion was Steadfast.
+    - **A ships-only fight takes one general** (core `threatPost`: a fight with `shipsOnly` that another general holds is no
+      candidate). Game 55: all three went to Катана, shelled by one Cog, and were hit on and around its centre.
+    - **A warship bought for a shelled settlement** (steps `warshipPurchase`, from `buyDefenders` when the need is a ranged
+      guard against ships and no land unit on sale there fights them; WARSHIP_BOUGHT): once the ships hit its centre or stayed
+      LASTING_FRONT_TURNS (a passing galley buys nothing), while no warship of ours stands within WARSHIP_NEAR; in a
+      settlement of ours on the same water (`waterAreas`), the one whose ship sails there soonest within `WARSHIP_BUY_SAIL` 5,
+      a ranged ship first, then the strongest, then the cheapest, from the defenders' pool (all the gold less a deficit's
+      cushion). The naval guards sail it there (gotcha 70). Game 55: one independent Cog shelled Катана from 100 to 0
+      E18-E24; Cogs were queued at E19 and the first sailed at E22, five turns away, while ~1,000 gold waited.
+    - **A front's army is the most seen near it lately** (`warFronts`: the peak of `armyNear` within `FRONT_ARMY_MEMORY` 10
+      turns; fronts carry `seen`; the `defence:` line says `N of their soldiers near lately, M now`). Their soldiers walk in
+      and out of sight.
+    - **Gold for a defender while a war risk lasts** (`goldPlan`): not yet at war at our door, the reserve keeps a defender's
+      price (`defenderPrice`) for each war front, at most `RISK_FRONTS_KEPT` 2, so small purchases wait; defenders use all()
+      anyway. Game 56: Trung Trac and Franklin weighed attacks on our cities from late Exploration (AI_Operation_Eval);
+      108-gold town purchases took ~1,700 during the risk, and the declaration at M18 found 246 gold against a 540 defender
+      while Керетаро's centre fell to 33%. Since gotcha 85: from the free gold only, one defender's price.
+    - **Packed soldiers upgrade** (`upgradeUnits`): a commander's packed soldiers together first, `UNITCOMMAND_UPGRADE_ARMY` on
+      the commander with NO_TARGET (the army panel's «upgrade all»: "Upgrade all eligible units in the army"), when the game
+      offers it, priced at the soldiers' `upgradeEstimate` (the game's own price is only in its tooltip,
+      `AdditionalDescription`: UI.log `upgrade: … the game says "…"`); ARMY_UPGRADED; its soldiers are not upgraded one by
+      one as well. A packed soldier counts where its army stands (`unitTile`: off the map its own location is -9999), so the
+      THREAT mode reaches it; `upgradeFirstMelee` takes packed soldiers too (the army panel selects one, and the unit panel
+      offers the same UNITCOMMAND_UPGRADE).
+    - **Not built:** a front sized by the rival's whole army: the game lets the UI read every unit of a rival (the war probe's
+      `land soldiers 11 (1 seen)`), but PLAN.md §14 keeps hidden information behind an opt-in toggle, off by default.
+
+85. **Games 57-58 and the fight simulator: the last step, settlers' reasons, the risk gold, skirmishes** (23 October;
+    research/game57, research/game58).
+    - **Game 57** (Mongolia, culture focus) was lost at M62 to Tecumseh's military and economic countdowns, both begun at
+      Modern's 80% step (×1.25 our second place).
+      - **The block is judged at the next step** (`victoryWatch`'s `needAt`): while a lower multiple is still to come in the
+        final age, `need` = the leader's points × 1.15 ÷ that multiple, unless its countdown runs (broken now, at the current
+        one). From M47 the watch said «need 71 (ours 72, 0 settlements)» at ×1.5 while ×1.25 put his 101 past our 90. The
+        economic block was out of reach anyway: GDP 3,808 against our 2,644, his lead from Antiquity on.
+      - **«Settle anywhere» says why** (`anySite`): tiles on the settler's own land (`GameplayMap.getAreaId`) before others,
+        so its ANYWHERE_PATHS ways are not spent across the water; with none, `ctx.anywhereWhy` ends the settler's `no order`
+        line: `anywhere: none of N tile(s) {"CLAIM":…, "NO_PATH":…, "UNTRIED":…}`. A settler stood ~20 turns at 64-68,19-22
+        with room for 9 under the cap, its 4 sites taken, unreachable or refused; anywhere found a tile only at M56.
+      - **The war-risk gold** (gotcha 84) is kept from the free purchases only (`budget.keep`: `free()` leaves it out,
+        `forGoal()` does not) and for one defender (`RISK_FRONTS_KEPT` 1). Two prices held ~1,100 gold M28-M62 for
+        Friedrich's risk, no war came, and each GDP Port waited 4-5 turns more. The gold line says `kept N for a defender (war
+        risk)`.
+    - **Game 58** (Dai Viet, Antiquity): Керманцы, a hostile village 3 tiles from Дыонглам.
+      - **A hunt is not called home by ships alone** (`homeUnsafeFor`: a threat counts with land raiders or a damaged centre):
+        the hunt of Керманцы ended after one turn of fighting for one galley at Хоалы, 11 tiles away; a centre the hunted owner alone hit calls none home while it keeps HOME_DAMAGE_SHARE 0.5 (gotcha 88).
+      - The bastion stood on Дыонглам's centre while our Spearman fought the village's Archer two tiles away (T63-T65), and no
+        hunt started again («not enough force (melee 0 of 2 …)»).
+    - **The fight simulator** (the user: "we need to create some fights simulator test, so we will have an idea how to better
+      implement it"; tests/fakes/fight-sim.mjs, tests/fakes/fight-scenes.mjs, tools/fight-sim.mjs, tests/fight-sim.test.mjs):
+      the autopilot's unit steps in the hud's order, each order carried out as it is sent; damage 30 × e^(0.04 × the strength
+      difference), each side of a melee fight (CombatLog.csv of games 57-58, 2,243 fights: base 29.5, ±18%), strength −1 for
+      every 10 damage; healing 20/15/10/5; XP by the game's EXPERIENCE_* parameters (melee 2, ranged 1, +1 attacking, +2 for
+      a kill, 1 from level 2 against independents, 25 for a dispersal); the village spawns a soldier every 4 turns (4 at most)
+      and its soldiers strike what pays. Game 58's scene, 20 turns, 20 seeds (XP of both generals / fights in a general's
+      radius / kills / soldiers lost / generals defeated): before 14.7 / 7.7 / 0.9 / 2.1 / 0.4; with the centre rule 21.8 /
+      12.5 / 0.8 / 2.9 / 0.1; with the skirmish too 29.6 / 15.6 / 1.4 / 2.8 / 0.1. The skirmish's first version, Archers
+      posted in the open in range of the village's soldiers: 4 lost, 0.7 generals defeated.
+      - **A general on our centre stays when its holder there is hit while the district holds** (`commanderDanger`: that hit
+        is the holder's). Before, it left the town centre every time, and the fights' XP with it.
+      - **Skirmishes** (core `SKIRMISH`, units `skirmishStep`, after the field operations, with village or raider hunts on, not
+        while one of them or a campaign runs): a hostile village within `REACH` 5 of our settlements (gotcha 88) with soldiers within 3
+        of it. Up to `SHOOTERS` 3 ranged soldiers hurt less than 40 (those by our settlement first, then the defence's free
+        ones within 3 turns) take posts on the tiles next to our settlement nearest it, never next to one of its melee
+        soldiers nor within 3 of two of its soldiers (`EXPOSURE_MAX` 1: two attacks in one turn kill an Archer at full
+        health), one in range of them first; a general (the vanguard first) stands over them, the centre first, and unpacks
+        its army there. They are ordered for the pass; the strike step shoots, again after the unit step when they arrived
+        (`STRIKE_AGAIN`: SKIRMISH_POST, SKIRMISH_COMMANDER, SKIRMISH_UNPACKED). A hurt one escapes or heals and a fresh one
+        takes its post the next pass. UI.log `skirmish: <village> at x,y: their soldiers N […]; shooters […]; commander …`,
+        or `skirmish: none: …`, once a turn.
+    - **Not built:** the simulator has no production (our losses are not replaced), walls, terrain or promotions' effects, and
+      the village's AI is our guess; units brought to a skirmish town, melee screens in front of the shooters. The plan, in
+      order: research/43-fight-simulator.md. Game 58 was won (military, M43); its generals fought in Antiquity only, and game
+      59's had no fight in two ages.
+
+86. **Game 60: the Autopilot tab, the F7 step and the turn flow; lines that rebuild a turn** (24-25 October; research/game60:
+    the ui, errors and unitlog reviews).
+    - **Seen:** 28 checkboxes, 5 dropdowns and 6 sliders in one column put the log ~17rem below the tab's bottom; it kept 80 of
+      2,171 entries (5 turns). Both hunts stood ticked with «Оборона» off. A forced pass had no end-of-turn retry (T76's town
+      converted after the production step got its queue only there). No line placed a unit by id, and 395 of 398 unit lines
+      carried the previous turn's tag.
+    - **One option spec** (`core/xpl-ap-options.js` `AP_OPTIONS`: key, default, group, text keys, `needs`): the settings read
+      it, and every pass acts on `effectiveOptions(o)`, after the settings and again after applyStrategy (the wars, hunts and
+      nuclear options need «Оборона», which the nuclear research and Manhattan Project skipped before). A new option is a spec
+      row, a label, a `_TIP` (≤ 300 characters) and the full `_TT`, in both languages (tests/ap-options.test.mjs).
+    - **The tab** (`core/xpl-ap-view.js`; no option in the HTML): a top bar (status, what holds the turn, «Следующий шаг (F7)»,
+      «Включить») over the settings and the log, each in one fill fxs-scrollable. Seven collapsible groups with a master
+      fxs-checkbox (a gold bar when mixed). An option whose needs are off is dimmed with a chip («нужна «Оборона»») and stays
+      clickable (`disabled` plays the error sound); «фаза: N» chips show the phase's values; «?» opens the full text. The log:
+      `LOG_MAX` 300, oldest first, a header per turn, «Главное | Всё | Ошибки», rows appended once a frame (`reconcileRows`),
+      following the bottom (`scroll-on-resize-when-bottom`). Forced checkbox events stay ignored (gotcha 8).
+    - **The step** (`stepNow`; F7 = input action `xpl-autopilot-step`, no context constraint, like F8): one pass with the ticked
+      options, the autopilot on or off, never ending the turn; refused off our turn (the end-turn button's `isTurnActive ==
+      false || hasSentTurnComplete()`), during a pass and during «ИИ играет». UI.log `step: T<n> by HOTKEY|BUTTON: N entries
+      in M ms; blocker <type|none>`. A new F7 binding needs a full restart.
+    - **The settle round after every pass** (core `settles(blocker, o, {endsTurn})`): up to MAX_RETRIES 2 rounds while a ticked
+      option handles what holds the turn (the player's units, off the automatic pass, only with «Пропускать юнитов»), never
+      for the age's choices (the last Antiquity pass re-planned twice, ~8 s). End-of-turn answers (a call to arms, a forced
+      card) only when the pass ends the turn (`retry: endsTurn`). `state.autopilot.blocker` keeps the game's own message.
+    - **The dedications** (E1: the pass before them queued a Sokmen, and the card's 2 settlers left one at the cap E24-E73): that
+      pass runs only the conversion window (`stopForDedications`); a queued settler with no progress leaves while those we
+      have exceed the cap's room (`dropSpareSettler`). **Tacks unattended** (`core/xpl-tack-refresh.js`; 33 MB of DMT lines in
+      30 minutes of Exploration): renewed every TACK_REFRESH_TURNS 5 or when the Buildings tab asks; between, only a
+      settlement with no tack gets one.
+    - **Lines:** every [XPL] line reads `[XPL] A67 …` (`turnStamp`); `pass: A67 full|repeat|step` opens a pass; the unit loop's
+      orders add ` u<id> from x,y`. `units:` at a turn's start (data/xpl-unit-log.js, core/xpl-unit-lines.js): ours `id@x,y`
+      with flags, commanders `L2 11/45 V {packed}`, theirs as the plot tooltip shows them plus `unseen N`; every turn near a
+      fight, else on army changes or every QUIET_TURNS 10. `places:` on settlement or village changes. `fight:` for each Combat
+      of ours (`gen 262146 r1 L2 6/45 V was L2 4 | none`, by the game's command radius; FIGHTS_MAX 40 a turn) replaces `xp:
+      combat` (40 of 110 fights T50-T100); its dN is very likely before the hit, so damage comes from CombatLog.
+    - **Tools:** `node tools/unitmap.mjs <Logs> [from= to= session= scene=]` rebuilds both sides by id each turn from the game's
+      AI logs and our lines, with the villages' births (game 60: every 8, 7, then 6 turns, plus raid parties); a launch's
+      folder holds every age (`session N of M`); `scene=` writes a replay for `tools/fight-sim.mjs scene=`. The game overwrites
+      Logs at every launch (the evening game of 23 October kept only its saves): the scheduled task «Civ7 log archive» runs
+      `tools/archive-logs.ps1` every 15 minutes (`…\LogArchive\<session start>.zip`, 12 kept).
+    - **The window's focus:** the dedications' conversion window uses the remembered victory focus only with «Фокус на победу»
+      on, otherwise only the 1:1 floor.
+
+87. **Game 60: units stay alive: danger is what we see, scouts keep their goals, settlers take escorts, the plague is left by
+    longer ways** (24-25 October; research/game60: the scouts, plague and unitlog reviews; the user: "Our units shouldn't be
+    scared of enemy scouts").
+    - **Seen:** no rule counted enemy scouts (CORE_CLASS_RECON; a pinning test keeps it so); units fled from soldiers 2-3 tiles
+      off, ships, or soldiers in the fog, which every reader saw through. Scouts came back to within a tile on 31 of 73 moving
+      turns T1-T40 (the AIs 6-15%): goals swapped every pass, a sight tile never showed Шэнле (unseen until T82 while it
+      raided the capital), and both scouts idled from E31 (rough seas). Three of four land units lost T100-T140 died on
+      Астрахань's plague T135-T137: «no safe tile reached this turn» while 2-turn ways cost ≤ 25.
+    - **What we see** (data/xpl-seen-units.js; PLAN.md §14): the plot tooltip's test, the tile VISIBLE and
+      `Visibility.isVisible(us, unit.id)`. Danger readers add units last seen there within LAST_SEEN_TURNS 2; targets take only
+      what is seen now. Every flight logs `flee: <type> at x,y <KEY> from [<type> of <owner> at d (land|ship|air, seen | seen
+      T<n>)…]`.
+    - **Scouts** (core/xpl-scouting.js): one radius SCOUT_DANGER 2; a sight tile where the village stays unseen is blind for
+      good, one fled from is left VILLAGE_RETRY_TURNS 10 (`scout: <village> unseen from x,y`). A walking scout keeps its goal
+      while the game's destination is it; only danger or a discovery reached this turn takes over. Frontiers are scored
+      (`frontierScore`: hidden tiles over 1 + turns, HEADING_BONUS 2, CROWD_PENALTY 3). In rough seas a land scout looks
+      FAR_RADIUS 25 on its landmass, else sleeps until danger, calm seas or SLEEP_TURNS 10. The second scout waits for the
+      first settler.
+    - **Settlers** (game 60: 77 settler-turns from done to founded around independents' raiders, 2-6 soldiers idle): a ship
+      counts only as a warship whose next turn reaches them, never on our garrisoned, undamaged centre. A settler whose best
+      site is DANGER or UNSAFE_WAY for one independent's soldier (ESCORT_MAX_RAIDERS 1) takes a free melee soldier within
+      ESCORT_JOIN_TURNS 3 (`escortSettlers`, with «Поселенцы» and «Оборона» or «Армия»): SETTLER_ESCORT_COMING, then
+      SETTLER_ESCORTED stop by stop, founding on arrival when the cap allows. A settlement short of guards ends it.
+    - **The plague** (core/xpl-unit-safety.js, `leaveHazard`): ways within PLAGUE.LOOK 5 and ESCAPE_TURNS 3, costing 25 a turn's
+      stop on the plague while it lasts (MapPlotEffects `duration`) plus HOSTILE_COST 30 by a hostile, taken when cheaper than
+      staying (LEFT_HAZARD_WALK; the errand comes back after). The plague's damage is no hit; a soldier steps off the one clean
+      tile for the most hurt (PLAGUE_ROOM); no rest or fortification on it. Walks go around it a turn at a time (`cleanStep`)
+      and are re-planned when a stop is infected (WALK_HAZARD). Units are bought in a clean settlement in time (`unitShop`).
+      UI.log `plague: … (no way out: N infected, …; the cheapest costs C in Nt; staying costs S)`.
+    - **Steps away** (`stepAway`): tiles reached this turn (STEP_AWAY_MAX 4), never next to a land hostile, the fewest reaching
+      it next turn (`reachOf`, ships too; game 60 T96: a 3-move scout looked 2 tiles out, into two Warriors' reach). A hurt
+      unit rests no nearer than VILLAGE_REST_KEEP 4 to a hostile village. A ranged or hurt soldier is not sent on a walk whose
+      first night is by a raider (`firstStopUnsafe`: T66's Slinger; `defence: … not sent [… (unsafe way)]`).
+    - **Not built:** packing a hurt unit into a neighbouring army (the plague line names the case), an opt-in to read through
+      the fog, a watch duty for idle scouts.
+    - **Merge fixes:** the plague walk's step (`cleanStep`) never picks a tile another unit was sent to in the same pass; a hurt
+      soldier (under 50 damage) standing on a general's tile rests there instead of withdrawing or escaping in the same pass
+      (`sheltersCommander`).
+
+88. **Game 60: the generals level up at any game speed** (24-25 October; research/game60's war review).
+    - **Seen** (Standard: CostMultiplier 100, levels at 15/30/45/60, each counted afresh): one general all Antiquity. It reached
+      level 3 (11/60, ~101 XP), the first of ours to get that far, with three promotions in three trees and no commendation;
+      62 of our 194 fights were in its radius, 3 raider hunts started, no skirmish. No second commander was queued:
+      TRAIN_TURNS 8 was tuned at Online, and the want asked the gold a savings goal held.
+    - **Speed** (`speedFactor`: CostMultiplier / TUNED_COST_MULTIPLIER 50): a commander is trained within 8 × the factor turns
+      (16 at Standard) and only while the age leaves FIRST_LEVEL_TURNS 10 × the factor for its first level (`commanderLate`).
+      The want asks the free gold; none trained in time makes it the COMMANDER goal («Копим: второго командира»), after every
+      other kind, by the training's city rules (`commanderCityOk`). UI.log `generals: no second commander: …` every 10 turns.
+    - **A commendation by the 5th promotion** (every army tree ends after 4; only Leadership's ends grant one): the role's key
+      (Mobility, Steadfast), then `LEADERSHIP_WAY` (Zeal, Field Commission, Old Guard, Barrage), then the role's own trees.
+    - **Independents give 1 XP a fight from level 2** (EXPERIENCE_MAX_BARB_LEVEL 2, BARB_SOFT_CAP 1: 54 XP in 48 fights):
+      `threatPost` counts such fights at a third, and the lowest-level general is posted first and takes their hunts. In a
+      general's radius a strike takes a closer trade where it still gains full XP (STRIKE_TRADE_GENERAL 1.2, ours keeping
+      STRIKE_KEEP_GENERAL 0.6): game 60 refused 30/30 and 32/28 on a hunted Archer, and the hunt ended STALL. What each fight
+      gave: every general in a `fight:` line carries `was L<level> <xp>` (its XP when last read, core/xpl-unit-lines.js), and
+      `xp: after the fight T…: <type> <key> XP L1 4 -> L1 7` follows XP_AFTER_MS 250 later for generals within 2 tiles.
+    - **Posts:** a settlement fought at within FIGHT_MEMORY 2 turns keeps its general; a damaged centre more than FAR_TURNS 3
+      away counts only below FAR_DAMAGED_SHARE 0.75 (A88-A98: 6 turns from Тула's live fight to Самара at 171/200).
+    - **Hunts:** guards in time count, and a centre only the hunted owner hit calls none home above HOME_DAMAGE_SHARE 0.5. A
+      raider hunt may take the general posted where the raider threatens, tied to it (20 of 73 `raiders: none` lines). While
+      its general comes (RAIDER.COMMANDER_TURNS 3) our soldiers, ships and planes leave the raider to it (`raiderHold`) unless
+      in its radius, at a siege, or facing the raider's killing blow (A109-A111 a SORTIE killed it 3 tiles off: 0 XP). Kills
+      come from the Combat events; FIELD_STRUCK needs a Combat naming the striker (`field: … strike on x,y not carried out`).
+    - **Hostile commanders** (`hostileCommander`; one pillaged by Тула T89-T139): danger to civilians, a hunt, strike and sortie
+      target (a lone one when the preview says we take nothing), never a raider for walls or defenders (UI.log `hostile
+      commander: …`). A hostile scout is a sortie target only in a general's radius, SORTIE_SCOUTS 1 a pass.
+    - **Skirmishes** reach 5 (Шэнле stood 5 from two towns) and say why not (`skirmish: none: nearest <village> at d tiles …`,
+      every 10 turns). The formation general takes only a tile `commanderSafeAt` allows (the simulator caught it alone under a
+      withdrawing Warrior or 2 tiles from an Archer in 4 of 10 seeds).
+    - **The simulator:** paths count the zone of control; scene `raids60` (`node tools/fight-sim.mjs 20 10 raids60`: game 60's
+      raids on four settlements from far villages), beside the `scene=` replays (gotcha 86). On the war build, 20 seeds: XP
+      13.1 → 24.4, fights in a radius 6.3 → 15.5, generals defeated 0.6 → 0. On the merged simulator (20 turns): game 58's village, 10 seeds, XP 69.2, fights in a radius 26.9, generals defeated 0; `raids60`, 20 seeds, XP 25.1, fights in a radius 11.7, kills 7.7, lost 2.9, defeated 0.1.
+    - **Not built:** air and Fleet Commanders' focused attacks held for a hunt's general, an attack-move in one order.
+    - **Merge fixes:** a hit on a tile where a healthy soldier still stands counts as the soldier's, so the general does not
+      leave it (`commanderDanger`, like the centre's holder); the vanguard's rally leaves alone soldiers the defence posted or the
+      formation moves this pass.
+    - **Gold sources** (game 62, Deity: our gold 50-80 a turn against the AIs' 109-1,036): with every economy line, UI.log
+      `gold sources: T<n>: net N = cities C + towns T - units U + other O; units [<type> upkeep]; settlements [<name>(t <Focus>)
+      gold]`, read as the game's yields report reads it (`logGoldSources`; Treasury.getMaintenanceForAllUnitsOfType per type).
+    - **Game 61** (Xerxes, won economic at M46; research/game61): the second general led a village hunt and walked alone for
+      three turns to 54,23, next to a Heavy Archer standing on the staging tile, its soldiers 2-5 tiles behind; it was shot at
+      E11 and E12 and died. Gathering it now takes only a tile `commanderSafeAt` allows (or with its army packed), else advances
+      as close as is safe; the turn-stop check covers gathering too; and a general already walking whose next stop (or a
+      destination reached this turn) it may no longer stand on has its walk cancelled (`stopUnsafeWalk`, COMMANDER_WALK_STOPPED;
+      UI.log `generals: … the walk is cancelled`). Its escape then found "19 safer, none reached this turn" while the game listed
+      3 tiles it reached: the `is in danger … and stays` line now counts why (no way, more than a turn, a war, refused).
+
+89. **Game 60: walls, wonders, the plan's share, repairs and the gold pools** (24-25 October; research/game60: the adjacency,
+    economy and errors reviews). The capital put 24% of 3,357 production into buildings (none A40-A79); 1 of 5 wonders ordered
+    was built; ~70% of 6,559 gold went to all-gold spends while a conversion goal held up to 950 on 89 turns.
+    - **Walls** (`wallsSlot(city, threat, def, loc)`): a war at our door, an unwalled centre that is damaged, or a centre below
+      WALLS_URGENT_SHARE 0.5 of its health still sends walls to the very front, ahead of a raced wonder too (the user's rule after
+      game 27, kept). Only walls at an already walled centre, or for another district, stay behind an item in progress and never
+      pass a wonder in production, while the centre is at or above half its health and no war is at our door. Seen at A105: a
+      district's walls passed the Ha'amonga a Maui two turns from done on a 19-of-200 scratch of the walled centre (181/200);
+      Prussia won by a turn, ~230 of the refund lost in the walls. No more walls at a walled centre that holds or faces ships
+      only (`wallsEnough`: ~520 production on four districts; `walls: <s> … no more walls`).
+    - **Wonders:** the ETA counts what a wonder waits behind (`wonderWait`; units unless its race keeps the front) and the race
+      is judged there; none is ordered behind more than WONDER_WAIT_TURNS + WONDER_WAIT_MARGIN 2; one out of production
+      WONDER_STARVE_TURNS 5 leaves (WONDER_STARVED: the Hanging Gardens stood 14 turns behind walls and units). A queued
+      wonder's turns are min(the game's getTurnsLeft, ours) + the wait (probe `wonders: probe: …`). No unit passes an item done
+      this turn. A refund goes into the item in production, up to its room (`roomIn`). A wonder's tile charges a worked
+      improvement its whole yields (RURAL_LOSS_IMPROVED 1: Byrsa took a mine).
+    - **The plan's share:** a queue holding no building gets the plan's next (`buildsNoBuilding`, QUEUED_PLAN). **The age's
+      end:** the game's count for the head, no margin on an exact clock (`exactClock`); a city in unrest puts a Happiness
+      building first (AGE_END_HAPPINESS; the capital's Altar was lost at 107/121).
+    - **Repairs** (core/xpl-repairs.js; game 60: 54 repairs for 1,408 gold behind one independent's Army Commander, 31 pillaged
+      again within 5 turns): an improvement is bought from the free gold, in a wonder city too (probe P-REP-2), queued only
+      where it cannot be bought, and waits while a land unit at war with us stands within REPAIR.SAFE_RADIUS 2 (commanders
+      too), REPEAT_TURNS 6 after its repair, or for the age-end conversion (REPAIR_DEFERRED; `repairs: waiting [...]`). A
+      building's repair keeps all the gold; QUEUED_MAX 1 a queue; none moves while a wonder is in production.
+    - **Pools:** all the gold for a defender, or the age's first melee unit, only under a real attack (`realAttack`: a war at
+      our door, a damaged centre, raiders where walls do not hold, ships for LASTING_FRONT_TURNS 3); else the free gold and no
+      DEFENDER goal. Ships alone at a walled centre unhit for CENTRE_HIT_TURNS 5 buy no ranged guard (`shipsHeldOff`).
+    - **Conversions:** on a non-final age's last turn (CONVERT_LAST_LEFT 1), income ≥ 0 and «expect to keep cities», the goal
+      takes the reserve too (`noReserve`; T139: Самара's 950 was missed by 13 and cost 2,350 from E2); the first-turn window
+      runs for every focus to the 1:1 floor; `conversions: <town> left the list: <why>`.
+    - **Revolts:** plague unrest is none (no purchase is possible in unrest: `happiness: X in unrest from the plague: …`); a city
+      in unrest queues its cheapest Happiness building and moves it up (REVOLT_QUEUED, REVOLT_FIRST), never past a wonder,
+      project, walls or science site in production.
+    - **Probes and quarters:** `plan: <city>: …` every PLAN_LOG_EVERY 10 turns; `buildings audit: …` on the game's
+      ConstructibleBuildCompleted; GROWTH_TILE names the best specialist (55 citizens to tiles, 0 specialists). Quarter yields
+      of our traits, slotted cards and pantheons (REQUIREMENT_PLOT_IS_QUARTER: Russia's +1 Culture) are valued by the plan
+      (core/xpl-quarter-yields.js; `quarters` in inputSignature).
+    - **Not built:** an unfinished wonder's district timed from its ETA, quarter yields from beliefs or buildings.
+    - **Merge fixes:** a repair waits only for hostile units we see or saw in the last 2 turns (`unitsSeenAt`); the revolt guard
+      queues or moves Happiness buildings only with «Производство» on (otherwise only its `happiness:` log line); an age's last
+      turns move no Happiness building ahead for unrest from the plague.
+
+90. **Game 60: befriending, the pantheon, Altars and great works, Missionaries, stories, merchants; mementos by age**
+    (24-25 October; research/game60's mechanics review).
+    - **Befriending** (choices `befriendIndependents`): a village the game has not let us find (FailureReasons
+      LOC_DIPLOMACY_ACTION_FAILURE_NO_VISION) keeps no Influence and is approached (49 passes held it; `befriend: <X>: village
+      not found, …`). None starts when another leader's finishes first (`getCompletionData(uniqueID).turnsToCompletion`) or
+      ours ends after the age (`befriendTurns`: 30 at Standard), and support goes in only where it can still win
+      (`supportedTurns`): 2 of 6 were lost to a rival who started first. One reserve (`befriendReserve`, on its own turn)
+      replaces "any threat stops diplomacy": endeavors and steals take turns with a befriending we save for (2 endeavors and 0
+      steals all Antiquity, threats on 90 of 140 turns).
+    - **The pantheon is structural research** (PANTHEON_WORTH 2 while an exclusive one is claimable, 1 shareable, 0 once ours;
+      a node also counts what it opens): ours came last of 10 at T77, behind civics researched for wonders never started. The
+      culture path researches only wonders whose race is HIGH or MEDIUM (`unlockRace` when locked) or our own, and the
+      celebration tracker (Entertainment, FOCUS_VP_TRACKER: celebrations before it earned 0).
+    - **Altars and great works** (data/xpl-building-extras.js): the Altar carries our pantheon's yields in its settlement, towns
+      too (one Altar stood in 7 settlements); great-work slots are worth the archived works that fit (this age's
+      Constructible_GreatWorks rows), in the best producer (3 codices waited all Antiquity, no Library). The culture path
+      pushes Temples while relics wait, no more than wait (`templeRoom`). Pantheon and archive are in inputSignature.
+    - **Religion:** Lay Followers, Ecclesiasticism and Charoen are worth 0 (they pay only for converting another
+      civilization's settlement); a settlement of no religion is converted from a district, the urban half from an urban one,
+      the rural half from a rural one (9 of 29 spreads were refused off one).
+    - **Stories and merchants:** options are valued by their rewards' modifiers (`storyRewardValue`: an attribute point ≥
+      STORY_ATTRIBUTE_MIN 3, a production percent at that share of the copies' cost; quests at STORY_QUEST_SHARE 0.5): A89
+      lost a point to +25% toward walls. One merchant for any focus while a route pays it back twice (MERCHANT_PAYBACK 2) and 2
+      resource slots are free.
+    - **Mementos by age** (the game allows any civilization in any age: Catherine played Russia, a Modern one, in Antiquity):
+      every pair is scored in every age with that age's ability (`python -I tools/memento-advisor/build_table.py`, TABLE_VERSION
+      2, keys `<LEADER>|<CIV>@<AGE_TYPE>`, then `<LEADER>|*@<AGE>`, then `*|*@<AGE>`; 5,817 picks, 394 KB, decoded on first
+      read). The age chosen for (`ageReaders` in mma-context.js): the start age in the front end; in game the successor of
+      Game.age, the 'Age' parameter's next by sortIndex the fallback. The row names it («Екатерина II + Россия (Античность)»),
+      and `[MMA] advice for <L> + <C> in <AGE> (Age parameter X, next by sortIndex Y, successor of Game.age Z)` each time the
+      tab opens (`; they disagree: the successor is taken` when they do).
+    - **Not built:** a push for triumphs one step away (four in Antiquity), converting rival settlements (opt-in).
 
 ## Conventions
 - **Layering:**

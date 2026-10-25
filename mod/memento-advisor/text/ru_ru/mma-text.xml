@@ -2,13 +2,13 @@
 <Database>
   <LocalizedText>
     <Replace Tag="LOC_MMA_FOR_PAIR" Language="ru_RU">
-      <Text>Советуем памятные вещи для: {1_Leader} + {2_Civ}</Text>
+      <Text>Советуем памятные вещи для: {1_Leader} + {2_Civ} ({3_Age})</Text>
     </Replace>
     <Replace Tag="LOC_MMA_FOR_LEADER" Language="ru_RU">
-      <Text>Советуем памятные вещи для: {1_Leader}</Text>
+      <Text>Советуем памятные вещи для: {1_Leader} ({2_Age})</Text>
     </Replace>
     <Replace Tag="LOC_MMA_FOR_ANY" Language="ru_RU">
-      <Text>Советуем памятные вещи:</Text>
+      <Text>Советуем памятные вещи ({1_Age}):</Text>
     </Replace>
     <Replace Tag="LOC_MMA_MODE_AUTO" Language="ru_RU">
       <Text>Авто ({1_Victory})</Text>
@@ -29,7 +29,7 @@
       <Text>Военная</Text>
     </Replace>
     <Replace Tag="LOC_MMA_MODE_AUTO_TT" Language="ru_RU">
-      <Text>Победа, которая подходит этому лидеру и цивилизации (предпочтение лидера для эпохи цивилизации, иначе по их характеристикам). Номера на карточках — лучшие памятные вещи для неё, 1 — лучшая; неоткрытые пропускаются.</Text>
+      <Text>Победа, которая подходит этому лидеру и цивилизации (предпочтение лидера для эпохи, на которую выбираются вещи, иначе по их характеристикам). Номера на карточках — лучшие памятные вещи для неё, 1 — лучшая; неоткрытые пропускаются.</Text>
     </Replace>
     <Replace Tag="LOC_MMA_MODE_TT" Language="ru_RU">
       <Text>Расставить памятные вещи под эту цель (Баланс — среднее четырёх побед). Выбор запоминается.</Text>

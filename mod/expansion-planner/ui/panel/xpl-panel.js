@@ -60,6 +60,7 @@ class XplPanel extends Panel {
         this.tabBar = MustGetElement(".xpl-tabs", this.Root);
         this.profileDropdown = MustGetElement(".xpl-priority__dropdown", this.Root);
         this.statusElement = MustGetElement(".xpl-status", this.Root);
+        this.footerElement = this.Root.querySelector(".xpl-footer");
         this.versionElement = MustGetElement(".xpl-version", this.Root);
         this.sizeButton = this.Root.querySelector(".xpl-size-toggle");
         this.applySize();
@@ -212,9 +213,14 @@ class XplPanel extends Panel {
         }
     }
 
+    /**
+     * The footer says only that Detailed Map Tacks is missing (tacks cannot be placed then); the version stands by the title, so
+     * every screenshot still shows the build (game 60's review, UI-9: the footer took a line of every tab for «активен»).
+     */
     renderStatus() {
-        const level = dmtLevel();
-        this.statusElement.textContent = Locale.compose(level === "L0" ? "LOC_XPL_STATUS_DMT_OFF" : "LOC_XPL_STATUS_DMT_ON");
+        const missing = dmtLevel() === "L0";
+        this.footerElement?.classList.toggle("hidden", !missing);
+        this.statusElement.textContent = Locale.compose(missing ? "LOC_XPL_STATUS_DMT_OFF" : "LOC_XPL_STATUS_DMT_ON");
     }
 }
 

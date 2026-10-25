@@ -34,9 +34,9 @@ test("mementos the player cannot equip are skipped; the spares fill in, ranks st
 
 test("an unknown pair falls back to the leader alone, then to any leader", () => {
     const leaderOnly = getPicks("LEADER_BENJAMIN_FRANKLIN", "RANDOM");
-    assert.equal(leaderOnly, MEMENTO_TABLE.picks["LEADER_BENJAMIN_FRANKLIN|*"]);
+    assert.equal(leaderOnly, MEMENTO_TABLE.picks["LEADER_BENJAMIN_FRANKLIN|*@AGE_ANTIQUITY"]);
     const any = getPicks("RANDOM", "RANDOM");
-    assert.equal(any, MEMENTO_TABLE.picks["*|*"]);
+    assert.equal(any, MEMENTO_TABLE.picks["*|*@AGE_ANTIQUITY"]);
     assert.equal(rankMementos(any, "AUTO").size, SHOWN);
     assert.equal(rankMementos(null, "AUTO").size, 0);
 });

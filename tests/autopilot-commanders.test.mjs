@@ -37,31 +37,43 @@ const run = (options) => units.commandUnits(DEFAULT_SETTINGS, { explore: false, 
 const idx = (x, y) => GameplayMap.getIndexFromXY(x, y);
 const dist = (a, b) => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y);
 
-test("a commander's promotion: our order (Bastion before Assault), promotions before commendations, and commendations are spent", () => {
+// Two generals (research/41 Phase 2): a lone commander is the vanguard (Mobility, Initiative, Quartermaster, Regiments; Merit
+// first of the commendations), a second one the bastion (the defensive order; Order first). A role comes from what it took.
+test("a commander's promotion: the vanguard's way or the bastion's, promotions before commendations, and commendations are spent", () => {
     GameInfo.UnitPromotionClassSets = [
         { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_ASSAULT" },
         { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_BASTION" },
         { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_COMMENDATION_ORDER" },
+        { PromotionClassType: "PROMOTION_CLASS_LAND_COMMANDER", UnitPromotionDisciplineType: "DISCIPLINE_ARMY_COMMENDATION_MERIT" },
     ];
     GameInfo.UnitPromotionDisciplineDetails = [
         { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_ASSAULT", UnitPromotionType: "PROMOTION_ARMY_INITIATIVE" },
         { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_BASTION", UnitPromotionType: "PROMOTION_ARMY_STEADFAST" },
         { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_COMMENDATION_ORDER", UnitPromotionType: "PROMOTION_COMMENDATION_ARMY_ORDER" },
+        { UnitPromotionDisciplineType: "DISCIPLINE_ARMY_COMMENDATION_MERIT", UnitPromotionType: "PROMOTION_COMMENDATION_ARMY_MERIT" },
     ];
     const promos = {
         PROMOTION_ARMY_INITIATIVE: { Name: "Initiative" },
         PROMOTION_ARMY_STEADFAST: { Name: "Steadfast" },
         PROMOTION_COMMENDATION_ARMY_ORDER: { Name: "Order", Commendation: true },
+        PROMOTION_COMMENDATION_ARMY_MERIT: { Name: "Merit", Commendation: true },
     };
     GameInfo.UnitPromotions = { lookup: (t) => promos[t] ?? null };
-    const promoted = (earnable) => {
-        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS, promotions: { can: true, has: [], earnable } }], { unitCommandOk: (_id, op) => op === UnitCommandTypes.PROMOTE });
+    // Commander 1 promotes; `other` is a second commander's promotions (none: commander 1 is alone).
+    const promoted = (earnable, other = null, has = []) => {
+        const list = [{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS, promotions: { can: true, has, earnable } }];
+        if (other) list.push({ id: 2, type: "UNIT_ARMY_COMMANDER", x: 6, y: 5, promotions: { can: false, has: other, earnable: [] } });
+        fresh(list, { unitCommandOk: (_id, op) => op === UnitCommandTypes.PROMOTE });
         const out = units.promoteUnits();
         const cmd = fake.sent.find((s) => s.op === UnitCommandTypes.PROMOTE);
         return [cmd?.args.PromotionType, out.length];
     };
-    assert.deepEqual(promoted(["PROMOTION_ARMY_INITIATIVE", "PROMOTION_ARMY_STEADFAST", "PROMOTION_COMMENDATION_ARMY_ORDER"]), [Database.makeHash("PROMOTION_ARMY_STEADFAST"), 1], "Bastion's Steadfast, though Assault comes first in the game's tables");
+    const all = ["PROMOTION_ARMY_INITIATIVE", "PROMOTION_ARMY_STEADFAST", "PROMOTION_COMMENDATION_ARMY_ORDER", "PROMOTION_COMMENDATION_ARMY_MERIT"];
+    assert.deepEqual(promoted(all), [Database.makeHash("PROMOTION_ARMY_INITIATIVE"), 1], "alone: the vanguard's Initiative");
+    assert.deepEqual(promoted(all, ["PROMOTION_ARMY_INITIATIVE"]), [Database.makeHash("PROMOTION_ARMY_STEADFAST"), 1], "beside a vanguard: the bastion's Steadfast, though Assault comes first in the game's tables");
     assert.deepEqual(promoted(["PROMOTION_ARMY_INITIATIVE", "PROMOTION_COMMENDATION_ARMY_ORDER"]), [Database.makeHash("PROMOTION_ARMY_INITIATIVE"), 1], "a promotion before a commendation (one a pass)");
+    assert.deepEqual(promoted(["PROMOTION_COMMENDATION_ARMY_ORDER", "PROMOTION_COMMENDATION_ARMY_MERIT"]), [Database.makeHash("PROMOTION_COMMENDATION_ARMY_MERIT"), 1], "the vanguard's commendation: Merit");
+    assert.deepEqual(promoted(["PROMOTION_COMMENDATION_ARMY_ORDER", "PROMOTION_COMMENDATION_ARMY_MERIT"], ["PROMOTION_ARMY_INITIATIVE"]), [Database.makeHash("PROMOTION_COMMENDATION_ARMY_ORDER"), 1], "the bastion's: Order");
     assert.deepEqual(promoted(["PROMOTION_COMMENDATION_ARMY_ORDER"]), [Database.makeHash("PROMOTION_COMMENDATION_ARMY_ORDER"), 1], "a stored commendation is spent: Order");
 });
 
@@ -155,7 +167,7 @@ test("a commander's way to its post never passes next to a hostile unit", () => 
     assert.equal(moveOf(1), undefined, "the straight way to Sparta passes the warrior");
 });
 
-test("Focus Fire: two ranged units in the commander's radius that can shoot the raider; one is not enough", async () => {
+test("Focus Fire: the ranged units in the commander's radius that can shoot the raider; one is enough (the game sets no minimum: research/42 A4)", async () => {
     const raider = { x: 7, y: 5, owner: 1, type: "UNIT_WARRIOR" };
     const result = (_id, op) => ({ Success: false, Plots: op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED" ? [idx(raider.x, raider.y)] : [] });
     const archers = [{ id: 2, type: "UNIT_ARCHER", x: 4, y: 5, ranged: 20, melee: 10 }, { id: 3, type: "UNIT_ARCHER", x: 6, y: 5, ranged: 20, melee: 10 }];
@@ -167,7 +179,8 @@ test("Focus Fire: two ranged units in the commander's radius that can shoot the 
     assert.ok(r.ordered.has("0:2") && r.ordered.has("0:3"), "the archers took part: no other order");
     fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, archers[1]], { wars: [1], enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
     await units.strikeRaiders();
-    assert.deepEqual(orders().map((s) => [s.id.id, s.op]), [[3, "UNITOPERATION_RANGE_ATTACK"]], "one archer: it shoots on its own (game 27: shootRaiders)");
+    // One archer: the commander orders it anyway (+2 Combat Strength for the shot; game 53 refused 49 such attacks).
+    assert.deepEqual(orders().map((s) => [s.id.id, s.op]), [[1, "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED"]], JSON.stringify(orders()));
     // Not a hostile unit (no war): nothing.
     fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], { enemies: [raider], unitCommandResult: result, rangeTargets: () => [raider] });
     await units.strikeRaiders();
@@ -256,7 +269,8 @@ test("a Coordinated Attack's unit whose attack never came (the raider died first
 });
 
 test("the game's experience and army parameters are logged once (their values are compiled into the game)", () => {
-    GameInfo.GlobalParameters = [{ Name: "EXPERIENCE_MAX_BARB_LEVEL", Value: "2" }, { Name: "ARMY_MAX_UNITS", Value: "4" }, { Name: "CITY_MIN_RANGE", Value: "3" }];
+    GameInfo.GlobalParameters = [{ Name: "EXPERIENCE_MAX_BARB_LEVEL", Value: "2" }, { Name: "ARMY_MAX_UNITS", Value: "4" }, { Name: "CITY_MIN_RANGE", Value: "3" },
+        { Name: "COMBAT_FOCUSED_ATTACK_BASE_BONUS", Value: "5" }];
     const warn = console.warn;
     const lines = [];
     console.warn = (...a) => lines.push(a.join(" "));
@@ -269,7 +283,26 @@ test("the game's experience and army parameters are logged once (their values ar
     }
     const logged = lines.filter((l) => l.includes("commander parameters"));
     assert.equal(logged.length, 1, JSON.stringify(lines));
-    assert.match(logged[0], /EXPERIENCE_MAX_BARB_LEVEL=2, ARMY_MAX_UNITS=4$/);
+    assert.match(logged[0], /EXPERIENCE_MAX_BARB_LEVEL=2, ARMY_MAX_UNITS=4, COMBAT_FOCUSED_ATTACK_BASE_BONUS=5$/, "P-XP-1: the focused attack's bonus too");
+});
+
+test("P-XP-2: a commander's level and XP are logged when they change (research/41 §2; each fight of ours: tests/unit-log.test.mjs)", () => {
+    const warn = console.warn;
+    const lines = [];
+    console.warn = (...a) => lines.push(a.join(" "));
+    const raider = { x: 7, y: 5, owner: 1, type: "UNIT_WARRIOR" };
+    try {
+        fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS, xp: { level: 2, points: 7, next: 12 } }, { id: 2, type: "UNIT_WARRIOR", x: 6, y: 5 }], { wars: [1], enemies: [raider] });
+        Game.turn = 31;
+        units.probeMilitary();
+        Game.turn = 32;
+        units.probeMilitary();
+        const xp = lines.filter((l) => l.includes("xp: UNIT_ARMY_COMMANDER"));
+        assert.equal(xp.length, 1, "unchanged: written once");
+        assert.match(xp[0], /level 2, XP 7\/12/);
+    } finally {
+        console.warn = warn;
+    }
 });
 
 test("a commander's radius is the game's own (Units.getCommandRadiusPlots): an archer 2 tiles away joins Focus Fire (research/36 §6)", async () => {
@@ -280,10 +313,10 @@ test("a commander's radius is the game's own (Units.getCommandRadiusPlots): an a
     const focus = () => orders().find((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED");
     try {
         fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], base);
-        await units.strikeRaiders();
-        assert.equal(focus(), undefined, "radius 1 without Merit: one archer in it");
+        let r = await units.strikeRaiders();
+        assert.deepEqual(r.entries.map((e) => [e.key, e.args[4]]), [["FOCUS_FIRE", 1], ["RANGED", undefined]], "radius 1 without Merit: one archer in it; the other shoots on its own");
         fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }, ...archers], { ...base, commandRadius: () => [ATHENS, { x: 4, y: 5 }, { x: 3, y: 5 }, { x: 6, y: 5 }].map((p) => idx(p.x, p.y)) });
-        const r = await units.strikeRaiders();
+        r = await units.strikeRaiders();
         assert.deepEqual([focus()?.args.X, focus()?.args.Y], [raider.x, raider.y], JSON.stringify(orders()));
         assert.deepEqual(r.entries.map((e) => [e.key, e.args[4]]), [["FOCUS_FIRE", 2]]);
     } finally {
@@ -309,4 +342,33 @@ test("a commander finishes a half-dead raider with its own attack; with raiders 
     fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [{ ...raider, x: 20, y: 15 }], unitCommandResult: result });
     await units.strikeRaiders();
     assert.deepEqual(orders(), []);
+});
+
+// Research/42 A4-A5 (game 53: one Coordinated Attack all game, 49 refused for `at most 0-1 of ours joining (need 2)`).
+test("a Coordinated Attack with one melee unit when the game's preview says its strike pays; not when it does not", async () => {
+    const C = ATHENS;
+    const target = { x: C.x + 2, y: C.y };
+    const beside = { x: C.x + 1, y: C.y };
+    assert.equal(dist(beside, target), 1);
+    const result = (_id, op) => ({ Success: false, Plots: op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE" ? [idx(target.x, target.y)] : [] });
+    const raider = { ...target, owner: 1, type: "UNIT_WARRIOR", damage: 30 };
+    const list = [{ id: 1, type: "UNIT_ARMY_COMMANDER", ...C }, { id: 2, type: "UNIT_WARRIOR", ...beside }];
+    fresh(list, { wars: [1], enemies: [raider], unitCommandResult: result, combat: () => ({ dealt: 60, taken: 15 }) });
+    let r = await units.strikeRaiders();
+    assert.deepEqual(r.entries.map((e) => [e.key, e.args[4]]), [["COORDINATED_ATTACK", 1]], JSON.stringify(orders()));
+    // A poor trade: no focused attack (and no strike of its own either).
+    fresh(list, { wars: [1], enemies: [raider], unitCommandResult: result, combat: () => ({ dealt: 10, taken: 45 }) });
+    r = await units.strikeRaiders();
+    assert.equal(orders().find((s) => s.op === "UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE"), undefined, JSON.stringify(orders()));
+});
+
+test("Commander Attack on an unhurt raider only when the game's preview says the commander beats it keeping 70% of its health", async () => {
+    const raider = { x: 6, y: 5, owner: 1, type: "UNIT_WARRIOR", damage: 0 };
+    const result = (_id, op) => (op === "UNITCOMMAND_COMMANDER_ATTACK" ? { Success: false, Plots: [idx(raider.x, raider.y)] } : { Success: false, Plots: [] });
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [raider], unitCommandResult: result, combat: () => ({ dealt: 60, taken: 10 }) });
+    let r = await units.strikeRaiders();
+    assert.ok(r.entries.some((e) => e.key === "COMMANDER_ATTACK"), JSON.stringify(orders()));
+    fresh([{ id: 1, type: "UNIT_ARMY_COMMANDER", ...ATHENS }], { wars: [1], enemies: [raider], unitCommandResult: result, combat: () => ({ dealt: 80, taken: 35 }) });
+    r = await units.strikeRaiders();
+    assert.ok(!r.entries.some((e) => e.key === "COMMANDER_ATTACK"), "a good trade, but it would keep 65%: not worth risking it");
 });

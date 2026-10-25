@@ -536,8 +536,10 @@ test("no wonder waits behind a project or a wonder in production: none is ordere
     try {
         athens.queue = { type: "PROJECT_CHART_THE_STARS", turns: 6, pct: 30 };
         athens.queued = [];
-        const picks = steps.chooseWonders(DEFAULT_SETTINGS, 1);
-        assert.equal([...picks.keys()][0], `c:${A.x}-${A.y}`);
+        // The wait counts when choosing (game 60): the project's 6 turns put the Pyramids past 15 turns in Athens, Sparta takes them.
+        assert.equal([...steps.chooseWonders(DEFAULT_SETTINGS, 1).keys()][0], `c:${B.x}-${B.y}`);
+        // A pick for Athens all the same (chosen before the project came): not ordered behind it.
+        const picks = new Map([[`c:${A.x}-${A.y}`, { type: "WONDER_PYRAMIDS", name: "LOC_WONDER_PYRAMIDS_NAME", x: A.x + 1, y: A.y, plots: [], race: "HIGH" }]]);
         fake.sent.length = 0;
         steps.fillProduction(picks);
         assert.equal(wonderOrders().filter((s) => s.id.id === 0).length, 0, "not behind Chart the Stars");

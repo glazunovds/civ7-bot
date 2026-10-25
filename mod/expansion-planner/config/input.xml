@@ -2,8 +2,10 @@
 <Database>
   <InputActions>
     <Row ActionId="open-expansion-planner" DeviceType="Keyboard" Name="LOC_XPL_OPEN" Description="LOC_XPL_OPEN_DESC" />
+    <Row ActionId="xpl-autopilot-step" DeviceType="Keyboard" Name="LOC_XPL_STEP" Description="LOC_XPL_STEP_DESC" />
   </InputActions>
   <InputActionDefaultGestures>
     <Row ActionId="open-expansion-planner" Index="0" GestureType="KBMouse" GestureData="KEY_F8" />
+    <Row ActionId="xpl-autopilot-step" Index="0" GestureType="KBMouse" GestureData="KEY_F7" />
   </InputActionDefaultGestures>
 </Database>

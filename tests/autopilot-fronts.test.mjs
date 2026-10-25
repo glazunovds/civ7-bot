@@ -181,7 +181,8 @@ test("the settlement in most danger gets the free soldier first, and a settlemen
 });
 
 test("a defender is bought from all the gold, ranged ones too, less 3 turns of a deficit; UI.log says why none is (research/36 §8)", () => {
-    const ships = threat(FRONT, "Front", { land: 0, ships: 2 });
+    // Ships that hit the centre: a real attack (game 60: ships that have not hit it buy from the free gold only).
+    const ships = threat(FRONT, "Front", { land: 0, ships: 2, damaged: true });
     // The reproduction of research/36: 500 gold all reserved, income below zero, an archer for 120.
     reset([{ id: 1, type: "UNIT_WARRIOR", ...FRONT }], { goldIncome: -10, canBuy: sells({ UNIT_ARCHER: 120 }) });
     steps.buyDefenders([ships], { budget: createBudget({ gold: 500, reserve: 500 }) });
@@ -316,4 +317,174 @@ test("a defender bought this turn counts when training is decided: no second one
     steps.buyDefenders([two], { budget: createBudget({ gold: 500, reserve: 0 }) });
     steps.fillProduction(new Map(), { threats: [two] });
     assert.equal(queuedFor().length, 1);
+});
+
+// Game 48 (research/game48): Киото, a town on Amina's front, kept one guard for 9 turns of her war risk while the gold plan
+// held 565 to make it a city; at A54 her 5-7 Spearmen took its centre from 62 to 0 in three turns, and besieged it could buy
+// nothing. A front now wants a guard for every two of that leader's soldiers near it (up to 3), buys one while it can, and is
+// no conversion goal.
+const russianArmy = (n) => Array.from({ length: n }, (_, i) => ({ x: 30, y: 3 + i, owner: 1, type: "UNIT_WARRIOR" }));
+
+test("a war front facing an army wants a guard for every two of that leader's soldiers near it, up to 3 (game 48: Киото)", () => {
+    const base = Game.turn;
+    Game.turn = 10;
+    try {
+        const free = [12, 13, 14, 15].map((x, i) => ({ id: 20 + i, type: "UNIT_WARRIOR", x, y: 7 }));
+        reset(free, { relations: { 1: "UNFRIENDLY" }, enemies: russianArmy(5) });
+        steps.assessWar([]);
+        const fronts = steps.warFronts();
+        assert.deepEqual(fronts.map((f) => [f.settlement.name, f.army]), [["Second", 5]]);
+        assert.equal(units.frontGuardsWanted(fronts[0]), 3);
+        const r = run({ fronts });
+        assert.deepEqual(keys(r).filter((k) => k === "STAGED"), ["STAGED", "STAGED", "STAGED"], JSON.stringify(r.entries));
+        // No army near: one guard, as before.
+        reset(free, { relations: { 1: "UNFRIENDLY" } });
+        steps.assessWar([]);
+        assert.deepEqual(keys(run({ fronts: steps.warFronts() })).filter((k) => k === "STAGED"), ["STAGED"]);
+    } finally {
+        Game.turn = base;
+    }
+});
+
+test("a war front facing an army has its extra guards trained; without the army one guard is enough (game 48)", () => {
+    const base = Game.turn;
+    Game.turn = 10;
+    const guardsQueued = () => trained().filter(([type]) => type === "UNIT_WARRIOR").length;
+    try {
+        const one = [{ id: 20, type: "UNIT_WARRIOR", x: 12, y: 7 }];
+        reset(one, { relations: { 1: "UNFRIENDLY" }, canBuild: trains("UNIT_WARRIOR"), costOf: () => 30 });
+        steps.assessWar([]);
+        steps.warFronts();
+        steps.fillProduction(new Map(), { defend: true });
+        assert.equal(guardsQueued(), 0, "one risky leader, one guard: none wanted");
+        reset(one, { relations: { 1: "UNFRIENDLY" }, enemies: russianArmy(5), canBuild: trains("UNIT_WARRIOR"), costOf: () => 30 });
+        steps.assessWar([]);
+        steps.warFronts();
+        const out = steps.fillProduction(new Map(), { defend: true });
+        assert.equal(guardsQueued(), 2, JSON.stringify(out));
+    } finally {
+        Game.turn = base;
+    }
+});
+
+test("a war front facing an army and short of guards buys one from the free gold while it can, one a turn (game 48)", () => {
+    const base = Game.turn;
+    Game.turn = 10;
+    try {
+        reset([], { relations: { 1: "UNFRIENDLY" }, enemies: russianArmy(5), canBuy: sells({ UNIT_WARRIOR: 60 }) });
+        steps.assessWar([]);
+        steps.warFronts();
+        steps.buyDefenders([], { budget: createBudget({ gold: 500, reserve: 0 }) });
+        assert.deepEqual(bought(), [["UNIT_WARRIOR", 2]], "Second");
+        // Two soldiers near: no purchase (a passing patrol is no army).
+        reset([], { relations: { 1: "UNFRIENDLY" }, enemies: russianArmy(2), canBuy: sells({ UNIT_WARRIOR: 60 }) });
+        steps.assessWar([]);
+        steps.warFronts();
+        steps.buyDefenders([], { budget: createBudget({ gold: 500, reserve: 0 }) });
+        assert.deepEqual(bought(), []);
+    } finally {
+        Game.turn = base;
+    }
+});
+
+test("a town at a war front is no conversion candidate (game 48: 565 gold held A50-A54 to make Киото, Amina's front, a city)", async () => {
+    const { clearEngineCache } = await import("../mod/expansion-planner/ui/data/xpl-engine-cache.js");
+    const base = Game.turn;
+    Game.turn = 10;
+    const second = cities[2];
+    const was = { ...second };
+    Object.assign(second, { isTown: true, pop: 8, prod: 30, cost: 300 });
+    try {
+        reset([], {});
+        steps.assessWar([]);
+        steps.warFronts();
+        clearEngineCache();
+        const names = () => steps.conversionCandidates(DEFAULT_SETTINGS).map((r) => r.town.name);
+        assert.deepEqual(names(), ["Second"], "no front: a candidate");
+        reset([], { relations: { 1: "UNFRIENDLY" } });
+        steps.assessWar([]);
+        steps.warFronts();
+        clearEngineCache();
+        assert.deepEqual(names(), [], "Russia's front");
+    } finally {
+        Object.keys(second).forEach((k) => delete second[k]);
+        Object.assign(second, was);
+        Game.turn = base;
+    }
+});
+
+// Game 53 (research/42 B1): in Modern's war each front kept one guard (`melee 1 of 1`) while 15-26 soldiers stood free, and
+// Китион's reinforcements came one at a time, 2-6 turns out, while its centre fell in five turns.
+test("in a war (not a risk alone) the free soldiers go to its fronts: a share each, up to 4; training keeps the old want", () => {
+    const base = Game.turn;
+    Game.turn = 10;
+    try {
+        const free = [12, 13, 14, 15, 16].map((x, i) => ({ id: 20 + i, type: "UNIT_WARRIOR", x, y: 7 }));
+        reset(free, { wars: [1] });
+        steps.assessWar([]);
+        const fronts = steps.warFronts();
+        assert.deepEqual(fronts.map((f) => [f.settlement.name, f.atWar]), [["Second", true]]);
+        assert.equal(units.frontGuardsWanted(fronts[0]), 1, "training and purchases: one guard");
+        let r = run({ fronts });
+        assert.deepEqual(keys(r).filter((k) => k === "STAGED").length, 4, JSON.stringify(r.entries));
+        // A risk alone: one guard.
+        reset(free, { relations: { 1: "UNFRIENDLY" } });
+        steps.assessWar([]);
+        r = run({ fronts: steps.warFronts() });
+        assert.deepEqual(keys(r).filter((k) => k === "STAGED").length, 1, JSON.stringify(r.entries));
+    } finally {
+        Game.turn = base;
+    }
+});
+
+// Game 56: Керетаро's front saw 0-1 of Trung Trac's soldiers; at M18 he declared war and 5 land units and 4 ships came.
+test("a war front's army is the most of their soldiers seen near it within 10 turns: they walk out of sight (game 56)", () => {
+    const base = Game.turn;
+    try {
+        Game.turn = 10;
+        reset([], { relations: { 1: "UNFRIENDLY" }, enemies: russianArmy(5) });
+        steps.assessWar([]);
+        assert.equal(steps.warFronts()[0].army, 5);
+        world.enemies = [];
+        Game.turn = 14;
+        steps.assessWar([]);
+        const f = steps.warFronts()[0];
+        assert.deepEqual([f.army, f.seen], [5, 0], "out of sight 4 turns: still 5");
+        assert.equal(units.frontGuardsWanted(f), 3);
+        Game.turn = 21;
+        steps.assessWar([]);
+        assert.equal(steps.warFronts()[0].army, 0, "11 turns: forgotten");
+    } finally {
+        Game.turn = base;
+    }
+});
+
+// Game 56: town purchases took about 1,700 gold during the war risk; the declaration found 246 gold against a 540 defender.
+// Game 57: two prices held ~1,100 for 35 turns of a risk that never came, and the GDP goal's Ports waited for them.
+test("while a war risk lasts the free gold keeps one defender's price, not the savings goal's; none in peace (games 56-57)", () => {
+    const base = Game.turn;
+    try {
+        Game.turn = 10;
+        reset([], { relations: { 1: "UNFRIENDLY" }, canBuild: trains("UNIT_WARRIOR"), buyCost: () => 60 });
+        steps.resetGoldPlan();
+        steps.assessWar([]);
+        assert.equal(steps.warFronts().length, 1);
+        const b = steps.goldPlan(DEFAULT_SETTINGS, { reserveTurns: 0 }).budget;
+        assert.deepEqual([b.keep, b.reserve], [60, 0], "one front: one Warrior's price, kept");
+        assert.deepEqual([b.free(), b.forGoal()], [440, 500], "small purchases leave it; the goal's own purchase may use it");
+        // Two fronts: still one defender's price.
+        reset([], { relations: { 1: "UNFRIENDLY" }, canBuild: trains("UNIT_WARRIOR"), buyCost: () => 60, cities: [...cities, { owner: 0, x: 30, y: 12, name: "South", pop: 4, prod: 10 }] });
+        steps.resetGoldPlan();
+        steps.assessWar([]);
+        assert.equal(steps.warFronts().length, 2);
+        assert.equal(steps.goldPlan(DEFAULT_SETTINGS, { reserveTurns: 0 }).budget.keep, 60, "two fronts: one price");
+        reset([], { canBuild: trains("UNIT_WARRIOR"), buyCost: () => 60 });
+        steps.resetGoldPlan();
+        steps.assessWar([]);
+        steps.warFronts();
+        assert.equal(steps.goldPlan(DEFAULT_SETTINGS, { reserveTurns: 0 }).budget.keep, 0, "peace");
+    } finally {
+        delete world.buyCost;
+        Game.turn = base;
+    }
 });

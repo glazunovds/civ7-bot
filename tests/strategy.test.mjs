@@ -6,7 +6,7 @@ import { applyStrategy, padsWanted, phaseOf, planStrategy, strategyLines } from 
 import { getProfile } from "../mod/expansion-planner/ui/core/xpl-profiles.js";
 import { conversionRule } from "../mod/expansion-planner/ui/core/xpl-savings.js";
 import { focusOfProfile } from "../mod/expansion-planner/ui/core/xpl-effect-value.js";
-import { dominanceMultiple, militaryOutlook, nextDominanceMultiple, scorePlaces, victoryWatch } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
+import { dominanceMultiple, militaryOutlook, nextDominanceMultiple, scorePlaces, trailsOtherRaces, victoryWatch } from "../mod/expansion-planner/ui/core/xpl-victory-focus.js";
 
 const facts = (o) => ({ age: "AGE_ANTIQUITY", ageFrac: 0.1, finalAge: false, settlements: 2, cap: 5, cities: 1, towns: 1, ...o });
 
@@ -98,8 +98,11 @@ test("science Commit: towns may become cities until a city stands for every Laun
 const race = (o) => ({ cls: "CULTURE", scoring: "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION", enabled: true, goal: 1552, board: [{ id: 5, points: 1400 }, { id: 2, points: 388 }, { id: 0, points: 300 }], ...o });
 
 test("watch: a culture leader at 90% of the game's dominance goal is DANGER; our need = leader × 1.15 ÷ multiple", () => {
-    const [w] = victoryWatch([race({})], 0, { age: "AGE_MODERN", ageFrac: 0.1 });
+    const [w] = victoryWatch([race({})], 0, { age: "AGE_EXPLORATION", ageFrac: 0.9 });
     assert.deepEqual([w.level, w.multiple, w.need, w.ours, w.leader], ["DANGER", 4, 403, 300, 5]);
+    // The final age: judged at the next step's multiple (Modern 10%: ×3 comes at 20%).
+    const [m] = victoryWatch([race({})], 0, { age: "AGE_MODERN", ageFrac: 0.1 });
+    assert.deepEqual([m.level, m.multiple, m.need, m.needAt], ["DANGER", 4, 537, 3], "⌈1400 × 1.15 ÷ 3⌉");
     assert.equal(victoryWatch([race({ board: [{ id: 5, points: 1000 }, { id: 2, points: 388 }] })], 0)[0].level, "WATCH", "64%");
     assert.equal(victoryWatch([race({ board: [{ id: 5, points: 500 }, { id: 2, points: 388 }] })], 0)[0].level, null, "32%");
     assert.equal(victoryWatch([race({ board: [{ id: 5, points: 500, dominant: true, turns: 3 }, { id: 2, points: 388 }] })], 0)[0].level, "DANGER", "its countdown runs");
@@ -118,15 +121,26 @@ test("watch: in the final age a leader the next step would put near its goal is 
     assert.equal(late.step, null);
     const before = victoryWatch([g31()], 0, { age: "AGE_EXPLORATION", ageFrac: 0.9 })[0];
     assert.deepEqual([before.level, before.step, before.need], ["WATCH", null, 95]);
-    // Already near the current goal: blocked now, at the current multiple (no step).
+    // Already near the current goal: in danger now (no step), its block still judged at the next step (game 57).
     const near = victoryWatch([g31({ board: [{ id: 5, points: 230 }, { id: 2, points: 125 }, { id: 0, points: 95 }] })], 0, { age: "AGE_MODERN", ageFrac: 0.41 })[0];
-    assert.deepEqual([near.level, near.step, near.need], ["DANGER", null, 133]);
+    assert.deepEqual([near.level, near.step, near.need, near.needAt], ["DANGER", null, 177, 1.5], "⌈230 × 1.15 ÷ 1.5⌉");
+    // Its countdown runs: broken now, at the current multiple.
+    const counting = victoryWatch([g31({ board: [{ id: 5, points: 260, dominant: true, turns: 4 }, { id: 2, points: 125 }, { id: 0, points: 95 }] })], 0, { age: "AGE_MODERN", ageFrac: 0.41 })[0];
+    assert.deepEqual([counting.need, counting.needAt], [150, null], "⌈260 × 1.15 ÷ 2⌉");
     // The culture overlay spends wonders only on a block within reach at that step: 95 of 126 is not (95 of 95 at ×2 was).
     const f = facts({ age: "AGE_MODERN", finalAge: true, ageFrac: 0.41, settlements: 5 });
     const calm = planStrategy(f, "SCIENCE");
     assert.equal(planStrategy(f, "SCIENCE", { watch: [w] }).wonders, calm.wonders);
     const [close] = victoryWatch([g31({ board: [{ id: 5, points: 164 }, { id: 2, points: 125 }, { id: 0, points: 100 }] })], 0, { age: "AGE_MODERN", ageFrac: 0.41 });
     assert.equal(planStrategy(f, "SCIENCE", { watch: [close] }).wonders, calm.wonders + 1, "100 of 126: within 30");
+});
+
+test("watch: a military leader near its goal now is blocked at the next step's goal too (game 57)", () => {
+    // Game 57, Modern 67%: Tecumseh's 92 near 108 (×1.5 our 72) read «need 71 (ours 72, 0 settlements)»; at 80% ×1.25 put
+    // his 101 past our 90 and his countdown won.
+    const mil = { cls: "MILITARY", scoring: "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION", enabled: true, goal: 108, board: [{ id: 7, points: 92 }, { id: 0, points: 72 }, { id: 1, points: 60 }] };
+    const [w] = victoryWatch([mil], 0, { age: "AGE_MODERN", ageFrac: 0.67 }).filter((x) => !x.own);
+    assert.deepEqual([w.level, w.step, w.need, w.needAt, w.block], ["DANGER", null, 85, 1.25, 4], "⌈92 × 1.15 ÷ 1.25⌉ = 85: 13 points, 4 settlements");
 });
 
 test("watch: our own countdown within reach is a CHANCE: our goal = the multiple × the best of the others (research/24 F2)", () => {
@@ -180,13 +194,14 @@ test("a rival near a culture win: one more wonder, any kind, worth more, explore
     const f = facts({ ageFrac: 0.5, settlements: 5 });
     // We hold 380 of the 403 that block it (within 30 points): worth wonders.
     const close = [race({ board: [{ id: 5, points: 1400 }, { id: 2, points: 388 }, { id: 0, points: 380 }] })];
-    const watch = victoryWatch(close, 0, { age: "AGE_MODERN", ageFrac: 0.1 });
+    // Exploration's ×4 (no step left to judge it at: the final age would ask ⌈1400 × 1.15 ÷ 3⌉ = 537).
+    const watch = victoryWatch(close, 0, { age: "AGE_EXPLORATION", ageFrac: 0.9 });
     const calm = planStrategy(f, "SCIENCE");
     const plan = planStrategy(f, "SCIENCE", { watch });
     assert.deepEqual([plan.wonders, plan.wonderKind, plan.explorers, plan.denyWonders, plan.noFutureTech], [calm.wonders + 1, "ANY", true, true, true]);
     assert.ok(strategyLines(plan).some((l) => l.key === "LOC_XPL_AP_STRATEGY_TT_BLOCK_CULTURE"));
     // 300 of 403 (game 16: 97 of about 255): out of reach, no wonders spent on it; Future Tech still held back.
-    const far = planStrategy(f, "SCIENCE", { watch: victoryWatch([race({})], 0, { age: "AGE_MODERN", ageFrac: 0.1 }) });
+    const far = planStrategy(f, "SCIENCE", { watch: victoryWatch([race({})], 0, { age: "AGE_EXPLORATION", ageFrac: 0.9 }) });
     assert.deepEqual([far.wonders, far.wonderKind, far.denyWonders, far.noFutureTech], [calm.wonders, calm.wonderKind, undefined, true]);
     assert.ok(!strategyLines(far).some((l) => l.key === "LOC_XPL_AP_STRATEGY_TT_BLOCK_CULTURE"));
     // The final push: Launch Pad cities stay out of wonders even when a block is within reach.
@@ -223,6 +238,29 @@ test("Rocketry late stays late until its estimate is clearly back in time (resea
 
 // research/26 §3.3: game 11 ended with our military 55 to the leader's 60 (goal 68 = ⌊1.24 × our 55⌋).
 const MIL = (o) => ({ cls: "MILITARY", scoring: "COUNTDOWN_VICTORY_SCORING_TYPE_DOMINATION", enabled: true, goal: 68, board: [{ id: 3, points: 60 }, { id: 0, points: 55 }, { id: 4, points: 40 }], ...o });
+
+// Game 62 (Deity), M30: ours 44, the best other 59, 2× now (the game's 112 on 56) and 1.5× next; 6 settlements of room and 2
+// past the cap. At 1.5 (88) 11 settlements: out of reach, so the lever waited to M42. At the final step (×1.25: 73) 8.
+test("military outlook looks ahead to the final step while we trail every other race (game 62): reachable from M30, not at M42", () => {
+    const g62 = { cls: "MILITARY", enabled: true, goal: 112, board: [{ id: 3, points: 59 }, { id: 1, points: 56 }, { id: 0, points: 44 }] };
+    const m30 = { age: "AGE_MODERN", ageFrac: 0.43, room: 6, over: 2 };
+    let o = militaryOutlook(g62, 0, m30);
+    assert.deepEqual([o.multiple, o.need, o.reachable], [1.5, 11, false], "without the look-ahead: judged at ×1.5");
+    o = militaryOutlook(g62, 0, { ...m30, lookAhead: true });
+    assert.deepEqual([o.multiple, o.goal, o.need, o.reachable, o.pastCap], [1.25, 73, 8, true, 2], "⌊59 × 1.25⌋ = 73: 29 short, 8");
+    o = militaryOutlook(g62, 0, { ...m30, room: 2, over: 1, lookAhead: true });
+    assert.equal(o.reachable, false, "out of reach even then: the nearer step's outlook stays");
+    o = militaryOutlook(g62, 0, { ...m30, age: "AGE_EXPLORATION", lookAhead: true });
+    assert.notEqual(o?.multiple, 1.25, "the final age only");
+    // Game 62's M70 races: behind in science, culture and the economy; leading the military one.
+    const races = [
+        { cls: "MILITARY", enabled: true, points: 64, rival: 62 }, { cls: "CULTURE", enabled: true, points: 84, rival: 459 },
+        { cls: "ECONOMIC", enabled: true, points: 3395, rival: 7235 }, { cls: "SCIENCE", enabled: true, points: 41, rival: 76 },
+    ];
+    assert.equal(trailsOtherRaces(races), true);
+    assert.equal(trailsOtherRaces(races.map((r) => (r.cls === "SCIENCE" ? { ...r, points: 80 } : r))), false, "leading science: no look-ahead");
+    assert.equal(trailsOtherRaces(races.map((r) => (r.cls === "CULTURE" ? { ...r, enabled: false } : r))), true, "a race switched off does not count");
+});
 
 test("military outlook: settlements (4 points each) to our own countdown, at the next step's multiple; Operation Ivy (25) when it counts", () => {
     const late = { age: "AGE_MODERN", ageFrac: 0.85 };

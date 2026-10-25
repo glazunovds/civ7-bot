@@ -60,7 +60,7 @@ test("a Missionary walks to the settlement to convert and spreads our religion t
         // 20 October: the game crashed on getActivationPlots asked for this operation (our first Missionary's first order).
         assert.deepEqual(world.crashes, [], "no call that crashes the game");
         assert.equal(r.entries.find((e) => e.key.startsWith("MISSION"))?.key, "MISSION_MOVE");
-        // Arrived inside Capua's borders (it follows no religion: any of its tiles).
+        // Arrived inside Capua's borders (it follows no religion: any of its districts, a rural one here).
         world.units = [{ id: 4, type: "UNIT_MISSIONARY", x: CAPUA.x - 1, y: CAPUA.y }];
         r = run();
         assert.ok(spread(4), JSON.stringify(r.entries));

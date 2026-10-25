@@ -4,11 +4,13 @@ Unit of value: "points" = percent added to one age's output, weighted by how
 much that output matters to the focus. +10% Science in a science game = 10
 points; one extra policy slot = 10 points in every focus.
 
-A memento is evaluated for ONE age: the age of the civilization it is chosen
-with. The game offers memento selection again at every age transition
-(AgeTransitionPlayerMemento* parameters), so each pick only has to be good
-until the next transition. Permanent gains (attribute points) carry a horizon
-factor for the ages still to come.
+A memento is evaluated for ONE age: the age it is chosen for (the start age,
+or the next age at a transition). The game offers memento selection again at
+every age transition (AgeTransitionPlayerMemento* parameters), so each pick
+only has to be good until the next transition; and any civilization may play
+in any age, so that age is not always the civilization's own (build_table.py
+scores every pair in every age). Permanent gains (attribute points) carry a
+horizon factor for the ages still to come.
 """
 import re
 

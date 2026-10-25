@@ -54,36 +54,47 @@
           <Item>ui/panel/xpl-panel.html</Item>
           <Item>ui/core/xpl-adjacency-rules.js</Item>
           <Item>ui/core/xpl-air.js</Item>
+          <Item>ui/core/xpl-ap-options.js</Item>
+          <Item>ui/core/xpl-ap-view.js</Item>
           <Item>ui/core/xpl-campaign.js</Item>
           <Item>ui/core/xpl-combat.js</Item>
           <Item>ui/core/xpl-component-id.js</Item>
           <Item>ui/core/xpl-constants.js</Item>
           <Item>ui/core/xpl-deals.js</Item>
           <Item>ui/core/xpl-effect-value.js</Item>
+          <Item>ui/core/xpl-field-ops.js</Item>
           <Item>ui/core/xpl-formation.js</Item>
+          <Item>ui/core/xpl-generals.js</Item>
           <Item>ui/core/xpl-heap.js</Item>
           <Item>ui/core/xpl-hex.js</Item>
           <Item>ui/core/xpl-legacy.js</Item>
           <Item>ui/core/xpl-naval.js</Item>
+          <Item>ui/core/xpl-nuclear.js</Item>
           <Item>ui/core/xpl-placement-model.js</Item>
           <Item>ui/core/xpl-placement-solver.js</Item>
           <Item>ui/core/xpl-popups.js</Item>
           <Item>ui/core/xpl-profiles.js</Item>
           <Item>ui/core/xpl-purchase-advisor.js</Item>
+          <Item>ui/core/xpl-quarter-yields.js</Item>
           <Item>ui/core/xpl-religion.js</Item>
+          <Item>ui/core/xpl-repairs.js</Item>
           <Item>ui/core/xpl-research-value.js</Item>
           <Item>ui/core/xpl-rule-book.js</Item>
           <Item>ui/core/xpl-savings.js</Item>
           <Item>ui/core/xpl-scarcity.js</Item>
+          <Item>ui/core/xpl-scouting.js</Item>
           <Item>ui/core/xpl-site-pipeline.js</Item>
           <Item>ui/core/xpl-site-roles.js</Item>
           <Item>ui/core/xpl-site-scorer.js</Item>
           <Item>ui/core/xpl-site-selector.js</Item>
           <Item>ui/core/xpl-strategy.js</Item>
+          <Item>ui/core/xpl-tack-refresh.js</Item>
           <Item>ui/core/xpl-town-advisor.js</Item>
           <Item>ui/core/xpl-town-focus.js</Item>
           <Item>ui/core/xpl-town-scorer.js</Item>
           <Item>ui/core/xpl-tuning.js</Item>
+          <Item>ui/core/xpl-unit-lines.js</Item>
+          <Item>ui/core/xpl-unit-safety.js</Item>
           <Item>ui/core/xpl-victory-focus.js</Item>
           <Item>ui/core/xpl-victory-levers.js</Item>
           <Item>ui/core/xpl-wonder-race.js</Item>
@@ -92,6 +103,7 @@
           <Item>ui/data/xpl-autopilot-choices.js</Item>
           <Item>ui/data/xpl-autopilot-steps.js</Item>
           <Item>ui/data/xpl-autopilot-units.js</Item>
+          <Item>ui/data/xpl-building-extras.js</Item>
           <Item>ui/data/xpl-building-job.js</Item>
           <Item>ui/data/xpl-centre-defence.js</Item>
           <Item>ui/data/xpl-city-actions.js</Item>
@@ -101,12 +113,17 @@
           <Item>ui/data/xpl-growth-job.js</Item>
           <Item>ui/data/xpl-map-facts.js</Item>
           <Item>ui/data/xpl-missions.js</Item>
+          <Item>ui/data/xpl-plan-probes.js</Item>
           <Item>ui/data/xpl-player-facts.js</Item>
+          <Item>ui/data/xpl-quarter-sources.js</Item>
+          <Item>ui/data/xpl-repair-watch.js</Item>
           <Item>ui/data/xpl-rules-loader.js</Item>
+          <Item>ui/data/xpl-seen-units.js</Item>
           <Item>ui/data/xpl-settle-oracle.js</Item>
           <Item>ui/data/xpl-site-job.js</Item>
           <Item>ui/data/xpl-tack-orders.js</Item>
           <Item>ui/data/xpl-town-job.js</Item>
+          <Item>ui/data/xpl-unit-log.js</Item>
           <Item>ui/data/xpl-victory.js</Item>
           <Item>ui/data/xpl-wonder-job.js</Item>
           <Item>ui/hud/xpl-autopilot-popups.js</Item>

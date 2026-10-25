@@ -11,10 +11,13 @@ import { nearCentres, userTackSignature } from '../data/xpl-building-job.js';
 import { getEngineMap } from '../data/xpl-engine-map.js';
 import { unlockedUniqueQuarters } from '../data/xpl-rules-loader.js';
 import { FOCUS_POPULATION } from '../core/xpl-town-focus.js';
+import { blockerText } from '../core/xpl-ap-options.js';
 
 const TURNS_BEFORE_SUGGESTING = 10;  // timing priorities drift as the age goes on; new land gets explored
 const SITE_CITY_RANGE = 6;           // a city founded or lost this close to a pick changes its room
 const TACK_CHECK_DELAY_MS = 600;
+const STEP_NOTE_MS = 3000;           // a step's outcome stays next to the toolbar button this long (game 60's review, UI-3)
+let stepNoteTimer = 0;
 
 function compose(key, ...args) {
     try {
@@ -196,17 +199,46 @@ export function refreshDockAdvice() {
         } else if (reasons.length === 0 && badge) {
             badge.remove();
         }
-        // A green dot (other corner) while the autopilot is on.
-        const autoOn = !!state.get().autopilot?.enabled;
+        // A green dot (other corner) while the autopilot is on, amber while a pass works (a step with it off too).
+        const ap = state.get().autopilot ?? {};
+        const autoOn = !!ap.enabled;
+        const working = !!ap.running;
         let auto = button.querySelector(".xpl-dock-auto");
-        if (autoOn && !auto) {
+        if ((autoOn || working) && !auto) {
             auto = document.createElement("div");
             auto.classList.add("xpl-dock-auto");
             button.appendChild(auto);
-        } else if (!autoOn && auto) {
+        } else if (!autoOn && !working && auto) {
             auto.remove();
         }
-        const tip = compose("LOC_XPL_DOCK_TT") + (autoOn ? `[N]${compose("LOC_XPL_DOCK_AUTOPILOT")}` : "") + (reasons.length > 0 ? `[N][N]${compose("LOC_XPL_DOCK_ADVICE", reasons.join(", "))}` : "");
+        auto?.classList.toggle("xpl-dock-auto--working", working);
+        // A step's outcome (F7, «Следующий шаг») for a few seconds next to the button: done, or why it was refused.
+        const step = ap.lastStep ?? null;
+        const age = step ? Date.now() - (Number(step.at) || 0) : Infinity;
+        let note = button.querySelector(".xpl-dock-note");
+        if (age < STEP_NOTE_MS) {
+            if (!note) {
+                note = document.createElement("div");
+                note.classList.add("xpl-dock-note");
+                button.appendChild(note);
+            }
+            note.textContent = step.refused ? compose(`LOC_XPL_DOCK_STEP_${step.refused}`) : compose("LOC_XPL_DOCK_STEP_DONE", step.entries ?? 0);
+            clearTimeout(stepNoteTimer);
+            stepNoteTimer = setTimeout(refreshDockAdvice, STEP_NOTE_MS - age + 50);
+        } else if (note) {
+            note.remove();
+        }
+        // What holds the turn after this turn's last pass (game 60's review, M3).
+        const turn = (() => {
+            try {
+                return Game.turn;
+            } catch (_e) {
+                return null;
+            }
+        })();
+        const blocker = ap.blocker && ap.blocker.turn === turn ? `[N]${blockerText(ap.blocker, compose)}` : "";
+        const status = autoOn ? `[N]${compose("LOC_XPL_DOCK_AUTOPILOT")}` : working ? `[N]${compose("LOC_XPL_AP_STATUS_STEPPING")}` : "";
+        const tip = compose("LOC_XPL_DOCK_TT") + status + blocker + (reasons.length > 0 ? `[N][N]${compose("LOC_XPL_DOCK_ADVICE", reasons.join(", "))}` : "");
         button.setAttribute("data-tooltip-content", tip);
     } catch (error) {
         log.debug("dock advice failed", error);

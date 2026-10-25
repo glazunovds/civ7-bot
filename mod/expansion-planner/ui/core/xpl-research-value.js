@@ -15,6 +15,7 @@ export const STRUCTURE_EFFECTS = Object.freeze({
     EFFECT_DISTRICT_ADJUST_WORKER_CAP: "SPECIALIST",
     EFFECT_PLAYER_GRANT_SYNCRETIC_CHOICE: "SYNCRETIC",   // a unique quarter or a culture slot (root gotcha 13)
     EFFECT_ADJUST_CITY_LIMIT: "CITY_LIMIT",              // Joseon's and Carthage's city limit
+    EFFECT_PLAYER_UNLOCK_PANTHEON: "PANTHEON",           // Mysticism: a pantheon, first come first served (game 60: ours T77, last of 10)
 });
 
 // When the game's effect tables do not answer (the test fixtures have none): the modifier's own name.
@@ -23,9 +24,20 @@ const STRUCTURE_NAMES = [
     [/TRADITION_SLOT/, "SLOT"],
     [/SPECIALIST_CAP_INCREASE/, "SPECIALIST"],
     [/^MOD_SYNCRETISM$/, "SYNCRETIC"],
+    [/^MOD_PANTHEON_UNLOCK$/, "PANTHEON"],
 ];
 
 export const CAP_ROOM = 2;               // a settlement cap counts while we are within this many settlements of it
+// A pantheon's unlock: worth this while an exclusive pantheon is still unclaimed (the AIs take the best ones first: game 60's
+// four AISelectionBin 1 pantheons were gone by T56), less while only shareable ones are left, nothing once we have one.
+export const PANTHEON_WORTH = Object.freeze({ EXCLUSIVE: 2, SHAREABLE: 1, NONE: 0 });
+
+/** What a pantheon's unlock is worth now (PANTHEON_WORTH): `have` one already, an exclusive one still `exclusiveFree`, any `anyFree`. */
+export function pantheonWorth({ have = false, exclusiveFree = false, anyFree = true } = {}) {
+    if (have) return PANTHEON_WORTH.NONE;
+    if (exclusiveFree) return PANTHEON_WORTH.EXCLUSIVE;
+    return anyFree ? PANTHEON_WORTH.SHAREABLE : PANTHEON_WORTH.NONE;
+}
 export const STRUCTURE_MIN_TURNS = 8;    // a structural node this quick always qualifies...
 export const STRUCTURE_TURN_SHARE = 2;   // ...else up to this many times the median node's turns
 
@@ -41,13 +53,15 @@ export function structureKinds(targets, effectOf = () => null) {
 
 /**
  * What these gains are worth (1 a slot, a syncretic choice, a city limit; a settlement cap only while it binds soon,
- * `capRoom` ≤ CAP_ROOM; a specialist cap 1 for the science focus, which lives on specialists (root gotcha 49), else 0.5).
+ * `capRoom` ≤ CAP_ROOM; a specialist cap 1 for the science focus, which lives on specialists (root gotcha 49), else 0.5;
+ * a pantheon `pantheon`, pantheonWorth's).
  */
-export function structureValue(kinds, { capRoom = Infinity, science = false } = {}) {
+export function structureValue(kinds, { capRoom = Infinity, science = false, pantheon = PANTHEON_WORTH.SHAREABLE } = {}) {
     let v = 0;
     for (const k of kinds ?? []) {
         if (k === "CAP") v += capRoom <= CAP_ROOM ? 1 : 0;
         else if (k === "SPECIALIST") v += science ? 1 : 0.5;
+        else if (k === "PANTHEON") v += Number(pantheon) || 0;
         else v += 1;
     }
     return v;
@@ -77,19 +91,32 @@ export function futureInTime(at, k, turnsLeft, perFuture) {
 
 /**
  * The structural node to research first: the most value per turn among the non-repeatable candidates whose gains count,
- * within max(STRUCTURE_MIN_TURNS, STRUCTURE_TURN_SHARE × the median candidate's turns); ties to the quicker.
- * @param candidates [{ node, nodeType, targets, turns, repeat }] @returns { ...candidate, kinds, value } or null
+ * within max(STRUCTURE_MIN_TURNS, STRUCTURE_TURN_SHARE × the median candidate's turns); ties to the quicker. A candidate's
+ * `opens` are the nodes whose last missing prerequisite it is: their own gains count too, over both nodes' turns (game 60:
+ * Code of Laws' policy slot needs Mysticism and Discipline, and waited about 60 turns behind Mysticism).
+ * @param candidates [{ node, nodeType, targets, turns, repeat, opens: [{ nodeType, targets, turns }] }]
+ * @returns { ...candidate, kinds, value } or null
  */
-export function pickStructural(candidates, { capRoom = Infinity, science = false, effectOf = () => null } = {}) {
+export function pickStructural(candidates, { capRoom = Infinity, science = false, pantheon = PANTHEON_WORTH.SHAREABLE, effectOf = () => null } = {}) {
     const list = (candidates ?? []).filter((c) => !c.repeat);
     const limit = turnLimit(list);
+    const opts = { capRoom, science, pantheon };
     let best = null;
     for (const c of list) {
-        const kinds = structureKinds(c.targets, effectOf);
-        const value = structureValue(kinds, { capRoom, science });
+        const counts = (k) => structureValue([k], opts) > 0;
+        const kinds = structureKinds(c.targets, effectOf).filter(counts);
+        let value = structureValue(kinds, opts);
         const t = Math.max(1, Number(c.turns) || 99);
+        let score = value / t;
+        for (const o of c.opens ?? []) {
+            const k = structureKinds(o.targets, effectOf).filter(counts);
+            const v = structureValue(k, opts);
+            if (v <= 0) continue;
+            value += v;
+            score += v / (t + Math.max(1, Number(o.turns) || t));
+            kinds.push(...k);
+        }
         if (value <= 0 || t > limit) continue;
-        const score = value / t;
         if (!best || score > best.score || (score === best.score && t < best.t)) best = { ...c, kinds, value, score, t };
     }
     return best;

@@ -16,6 +16,7 @@
  * @returns { YIELD_X: n } per turn
  */
 import { SCIENCE_PROJECTS } from './xpl-victory-levers.js';
+import { GENERAL } from './xpl-generals.js';
 
 export const LUMP_TURNS = 10;       // a one-off grant counts as this many turns of income
 const BUILDING_SHARE = 0.5;         // city production going into buildings
@@ -89,6 +90,20 @@ export function effectYields(effects, ctx = {}) {
                 break;
             case "EFFECT_ADJUST_PLAYER_OR_CITY_BUILDING_PURCHASE_EFFICIENCY":
                 add("YIELD_GOLD", percent * Math.max(0, Number(ctx.gold) || 0) * PURCHASE_SHARE);
+                break;
+            // The generals (research/41 §4E; ctx.generals: { commanders, wanting, fighting }): a free promotion while one still
+            // lacks its role's key promotions (Militaristic node 09 gives every commander one; Feudal Monarchy's celebration,
+            // stories); more XP and movement while one fights. Small: they decide ties, before this they were 0.
+            case "EFFECT_GRANT_UNIT_PROMOTION": {
+                const g = ctx.generals;
+                if (g?.wanting) add("YIELD_PRODUCTION", (GENERAL.PROMOTION_VALUE * Math.min(2, Math.max(1, Number(g.commanders) || 1)) * (Number(args.Amount) || 1)) / LUMP_TURNS);
+                break;
+            }
+            case "EFFECT_ARMY_ADJUST_EXPERIENCE_RATE":
+                if (ctx.generals?.fighting && ctx.generals?.wanting) add("YIELD_PRODUCTION", GENERAL.XP_RATE_VALUE * ((Number(args.Percent) || 0) / 10));
+                break;
+            case "EFFECT_ARMY_ADJUST_MOVEMENT_RATE":
+                if (ctx.generals?.fighting) add("YIELD_PRODUCTION", GENERAL.MOVEMENT_VALUE * (Number(args.Amount) || 1));
                 break;
             case "EFFECT_CITY_DAMAGE_CONSTRUCTIBLES":
                 // Our own buildings damaged (research/40 A2): the religious crisis's Ius Reformandi damages 3 in every

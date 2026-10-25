@@ -140,10 +140,17 @@ test("never a settlement that was not ours, never without a war, never one far a
 
 test("defence first: no campaign while a settlement of ours needs guards or a front takes a soldier; a running one gives its soldiers back (HOME)", () => {
     const threat = { settlement: { ...HOME, name: "Home" }, count: 2, land: 2, damaged: true, owners: [{ id: 1, independent: false }] };
+    // Three raiders at Home, two melee guards there and nobody free to send: Home needs its soldiers.
     reset();
-    let out = run({ threats: [threat] });
+    let out = run({ threats: [{ ...threat, count: 3, land: 3 }] });
     assert.equal(units.campaignState(), null);
     assert.ok(out.said.some((l) => l.includes("a settlement of ours needs its soldiers")), JSON.stringify(out.said));
+    // Home damaged but guarded, and three soldiers free elsewhere: the campaign takes them (research/42 B4; game 53: a damaged
+    // centre anywhere blocked the retaking of Китион while 15-26 soldiers stood free).
+    reset();
+    world.units.push({ id: 4, type: "UNIT_WARRIOR", x: 9, y: 8 }, { id: 5, type: "UNIT_WARRIOR", x: 9, y: 9 }, { id: 6, type: "UNIT_SLINGER", x: 10, y: 8 });
+    out = run({ threats: [threat] });
+    assert.deepEqual([...(units.campaignState()?.members ?? [])].sort(), ["0:4", "0:5", "0:6"], JSON.stringify(out.said));
     // A war front at Home keeps the warrior standing there: one melee soldier is left, not enough (two fronts never take
     // the same troops).
     reset();
@@ -308,9 +315,11 @@ test("the campaign's commander takes Initiative first; a veteran defender keeps 
     };
     try {
         const earnable = ["PROMOTION_ARMY_INITIATIVE", "PROMOTION_ARMY_STEADFAST", "PROMOTION_ARMY_HOLD_THE_LINE"];
+        // A vanguard far away (research/41 Phase 2): commander 9, undecided, is the bastion.
         reset({ unitCommandOk: (_id, op) => op === UnitCommandTypes.PROMOTE });
+        world.units.push({ id: 31, type: "UNIT_ARMY_COMMANDER", x: 1, y: 16, promotions: { can: false, has: ["PROMOTION_ARMY_INITIATIVE"], earnable: [] } });
         world.units.find((u) => u.id === 9).promotions = { can: true, has: [], earnable };
-        assert.equal(promoted(), Database.makeHash("PROMOTION_ARMY_STEADFAST"), "no campaign: the defensive order");
+        assert.equal(promoted(), Database.makeHash("PROMOTION_ARMY_STEADFAST"), "no campaign: the bastion's defensive order");
         run();
         assert.equal(units.campaignState()?.commander, "0:9");
         assert.equal(promoted(), Database.makeHash("PROMOTION_ARMY_INITIATIVE"), "leading a campaign: Initiative");

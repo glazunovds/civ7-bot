@@ -404,12 +404,18 @@ class GameData:
                 if r.get("CivilizationType") and r.get("LeaderType"):
                     bias.setdefault(r["CivilizationType"], []).append(
                         {"leader": r["LeaderType"], "bias": int(r.get("Bias", "0") or 0)})
+        def item(i):
+            return {"type": i.get("Type"), "kind": i.get("Kind"), "nameTag": i.get("Name"),
+                    "descTag": i.get("Description")}
         for ct, c in self.civs.items():
             dom = [d for d, a in AGE_BY_DOMAIN.items() if a == c["age"]][0]
             its = items.get((ct, dom), [])
-            # Ability rows exist once per age domain; keep the civ's own age.
-            c["items"] = [{"type": i.get("Type"), "kind": i.get("Kind"), "nameTag": i.get("Name"),
-                           "descTag": i.get("Description")} for i in its]
+            # Ability rows exist once per age domain: the game lets any civilization play in any age,
+            # with that age's ability text (Russia's in Antiquity lacks the Hermitage line). The
+            # civ's own age's rows are its items; every age's ability rows are kept in ageTraits.
+            c["items"] = [item(i) for i in its]
+            c["ageTraits"] = {age: [item(i) for i in items.get((ct, d), []) if i.get("Kind") == "KIND_TRAIT"]
+                              for d, age in AGE_BY_DOMAIN.items()}
             c["configTags"] = sorted(t for t in tags.get(ct, set()) if t and t.startswith("TAG_TRAIT_"))
             c["leaderBias"] = sorted(bias.get(ct, []), key=lambda b: -b["bias"])
 

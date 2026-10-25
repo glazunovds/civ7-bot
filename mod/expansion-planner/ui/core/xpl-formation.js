@@ -17,7 +17,9 @@
  */
 
 export const FORM = Object.freeze({
-    HOLD: 100,        // a melee unit of ours on the centre
+    HOLD: 100,        // a melee unit of ours on the centre...
+    HOLD_DAMAGED: 200, // ...a damaged one: a raider stepping onto it empty takes the settlement (research/41 §3: 11 empty damaged
+                       // centres in games 37-47, each with a melee unit next to it screening two approaches, worth as much)
     SCREEN: 50,       // each melee unit screening a sector, up to its need
     SCREEN_MAX: 2,    // a sector's need: one melee unit a raider in it, at most this many
     SECTOR_LINK: 3,   // raiders this close to each other come by one approach
@@ -26,13 +28,20 @@ export const FORM = Object.freeze({
     IN_RANGE: 60,     // a ranged unit with a raider (or a ship) within its range
     EXPOSED: 40,      // a ranged unit or a commander next to a land raider
     BACK: 5,          // a ranged unit's distance from the nearest land raider, up to its range
-    COVER: 20,        // a soldier of ours within the commander's radius
+    COVER: 20,        // a soldier of ours within the commander's radius...
+    FIGHT_COVER: 30,  // ...more for one about to fight (next to a land raider, or a ranged one with a target in range): its XP
+                      // comes from their fights (research/41 §4D)
     CENTRE: 5,        // the commander on the centre (a tie goes to the district)
     FORTIFIED: 15,    // a fortified unit gives its fortification up to move
     MIN_GAIN: 20,     // less than this, nobody moves...
     COMMANDER_GAIN: 40, // ...and a commander moves only to cover two more soldiers (game 38: it stepped 14,19 -> 14,20 -> 15,20
                         // -> 14,20 on three turns in a row as the soldiers around it moved, the last for +20)
     COMMANDER_HOLD: 2,  // nor within this many turns of its last formation move
+    SHIP_REACH: 80,     // a member (or the commander) within reach of a ship it does not out-gun, for each such ship
+                        // (research/41 §3: ships killed 29 of our 56 land units lost in games 30-47); the centre's melee holder aside
+    SHIELD: 10,         // the commander under a healthy soldier of ours (research/42 A2: the soldier is attacked, not it)
+    FOCUS: 60,          // its radius reaches a soldier about to fight: a focused attack this turn (after game 54: 4-8 XP
+                        // each, its first level needs 7)
 });
 
 /**
@@ -62,8 +71,10 @@ const same = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y;
 
 /**
  * The formation's value with each member at `at` (unit key -> tile).
- * @param f { centre, sectors: [[{x,y}]], land: [{x,y}] (land raiders), targets: [{x,y}] (every raider a ranged unit may
- *   shoot: land and ships), members: [{ key, role: "melee" | "ranged", range }], dist, defence(loc) -> terrain modifier }
+ * @param f { centre, damaged (the centre's health is down), sectors: [[{x,y}]], land: [{x,y}] (land raiders), targets: [{x,y,ship}] (every raider a ranged unit may
+ *   shoot: land and ships), members: [{ key, role: "melee" | "ranged", range }], dist, defence(loc) -> terrain modifier,
+ *   outGuns(key) -> the member out-guns the ships in sight (a ship counts as its target only then),
+ *   shipThreat(key, loc) -> how many ships in reach of that tile it does not out-gun }
  */
 export function formationValue(f, at) {
     const dist = f.dist;
@@ -86,12 +97,13 @@ export function formationValue(f, at) {
             }
         } else if (m.role === "ranged") {
             const range = Math.max(1, Number(m.range) || 1);
-            const inRange = f.targets.some((h) => dist(loc, h) <= range);
+            const inRange = f.targets.some((h) => dist(loc, h) <= range && (!h.ship || !f.outGuns || f.outGuns(m.key)));
             value += terrain + (inRange ? FORM.IN_RANGE : 0) - FORM.EXPOSED * adjacent(loc);
             if (f.land.length > 0) value += FORM.BACK * Math.min(range, near(loc, f.land));
         }
+        if (f.shipThreat && !(m.role === "melee" && same(loc, f.centre))) value -= FORM.SHIP_REACH * (Number(f.shipThreat(m.key, loc)) || 0);
     }
-    if (held) value += FORM.HOLD;
+    if (held) value += f.damaged ? FORM.HOLD_DAMAGED : FORM.HOLD;
     f.sectors.forEach((s, i) => {
         value += FORM.SCREEN * Math.min(Math.min(FORM.SCREEN_MAX, s.length), screens[i]);
     });
@@ -101,7 +113,8 @@ export function formationValue(f, at) {
 /**
  * The moves that improve the formation, best first, each worth MIN_GAIN after its cost: greedy, one move a unit, onto
  * a tile of `tiles` (free now) no other move takes; a melee unit may take the centre, a ranged one never does; the unit
- * on the centre never moves. Ties go to the shorter step, then the lower tile.
+ * on the centre never moves; a member marked `onlyCentre` (hurt: research/41 §3) moves only onto the centre. Ties go to
+ * the shorter step, then the lower tile.
  * @param opts { tiles: [{x,y}], movable: Set(unit key), reach(key, loc) -> bool (this turn, legal), cost(key) -> number }
  * @returns { moves: [{ key, from, to, gain }], at: Map(unit key -> tile after the moves) }
  */
@@ -119,7 +132,7 @@ export function planFormation(f, { tiles, movable, reach, cost = () => 0 } = {})
             if (!from || moved.has(m.key) || !movable?.has(m.key) || same(from, f.centre)) continue;
             const options = [];
             for (const t of tiles ?? []) {
-                if (taken.has(keyOf(t)) || same(t, from) || (m.role !== "melee" && same(t, f.centre))) continue;
+                if (taken.has(keyOf(t)) || same(t, from) || (m.role !== "melee" && same(t, f.centre)) || (m.onlyCentre && !same(t, f.centre))) continue;
                 at.set(m.key, t);
                 const gain = formationValue(f, at) - now - (Number(cost(m.key)) || 0);
                 at.set(m.key, from);
@@ -140,16 +153,24 @@ export function planFormation(f, { tiles, movable, reach, cost = () => 0 } = {})
 
 /**
  * The commander's tile: covering the most soldiers (`soldiers`, their tiles after the formation's moves) within its
- * radius, never onto a tile next to a land raider (research/37 §6B: protected), the centre on a tie; a move only for
- * `minGain` (COMMANDER_GAIN: two more soldiers covered) or more.
- * @param c { at, radius } @param tiles candidate tiles (free for a commander, legal) @returns { to, gain } or null (stay)
+ * radius, never onto a tile next to a land raider (research/37 §6B: protected), out of ships' reach (f.shipThreat with
+ * the commander's key), the centre on a tie; a move only for `minGain` (COMMANDER_GAIN: two more soldiers covered) or more.
+ * Under a healthy soldier of ours (`shielded`: research/42 A2, the soldier is the one attacked) it may stand in the front
+ * line: next to a raider and in a ship's reach, with SHIELD more. A tile whose radius reaches any soldier about to fight is
+ * worth FOCUS more: a focused attack there this turn (after game 54).
+ * @param c { at, radius, key } @param tiles candidate tiles (free for a commander, legal) @returns { to, gain } or null (stay)
  */
-export function commanderTile(f, c, soldiers, tiles, reach, minGain = FORM.COMMANDER_GAIN) {
+export function commanderTile(f, c, soldiers, tiles, reach, minGain = FORM.COMMANDER_GAIN, fighters = [], shielded = () => false) {
     const dist = f.dist;
-    const value = (loc) => FORM.COVER * soldiers.filter((s) => dist(loc, s) <= c.radius).length
-        - FORM.EXPOSED * f.land.filter((h) => dist(loc, h) === 1).length + (same(loc, f.centre) ? FORM.CENTRE : 0);
+    const value = (loc) => {
+        const fighting = (fighters ?? []).filter((s) => dist(loc, s) <= c.radius).length;
+        const cover = FORM.COVER * soldiers.filter((s) => dist(loc, s) <= c.radius).length
+            + FORM.FIGHT_COVER * fighting + (fighting > 0 ? FORM.FOCUS : 0) + (same(loc, f.centre) ? FORM.CENTRE : 0);
+        if (shielded(loc)) return cover + FORM.SHIELD;
+        return cover - FORM.EXPOSED * f.land.filter((h) => dist(loc, h) === 1).length - FORM.SHIP_REACH * (Number(f.shipThreat?.(c.key, loc)) || 0);
+    };
     const now = value(c.at);
-    const options = (tiles ?? []).filter((t) => !same(t, c.at) && f.land.every((h) => dist(t, h) > 1))
+    const options = (tiles ?? []).filter((t) => !same(t, c.at) && (shielded(t) || f.land.every((h) => dist(t, h) > 1)))
         .map((t) => ({ to: t, gain: value(t) - now, step: dist(c.at, t) }))
         .filter((o) => o.gain >= minGain)
         .sort((a, b) => b.gain - a.gain || a.step - b.step || a.to.y - b.to.y || a.to.x - b.to.x);

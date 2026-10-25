@@ -138,6 +138,8 @@ export class PlanState {
                 owned: s.owned ?? new Set(),
                 adjMult: s.adjMult ?? 1,
                 specialists: s.specialists ?? null,
+                // [F, P, G, S, C, H, I] our modifiers give each quarter here (core/xpl-quarter-yields.js; null: none).
+                quarterYields: s.quarterYields ?? null,
                 wonderPlots: s.wonderPlots ?? null,
                 fixedEta: s.fixedEta ?? null,
                 engineValid: s.engineValid ?? null,
@@ -508,7 +510,20 @@ export class PlanState {
             if (info && info.t !== undefined && t.items.some((i) => i.planned)) uq = this.uqBonus * this.wt(info.t);
         }
         const specialists = s.specialists ? specialistGain(s.specialists, adjacency, standing) : adjacency * (s.adjMult - 1);
-        return adjacency + specialists + base + uq + this.nextAgeValue(t, views, future);
+        return adjacency + specialists + base + uq + this.quarterValue(t, s) + this.nextAgeValue(t, views, future);
+    }
+
+    /**
+     * What our modifiers give this tile as a quarter (adjacency F8: Russia's +1 Culture on every quarter of a city, the
+     * urban pantheons): from the turn it becomes one for the age's remaining share, the next age's share too when the
+     * quarter lasts (lastingQuarter). Only where the plan puts something (as the unique quarter's bonus).
+     */
+    quarterValue(tile, s) {
+        if (!s.quarterYields || !tile.items.some((i) => i.planned && !i.obsolete)) return 0;
+        const q = this.quarterInfo(tile);
+        if (!q.is) return 0;
+        const lasting = this.nextAge > 0 && this.lastingQuarter(this.activeTypes(tile));
+        return dot(this.weights, s.quarterYields) * (this.wt(q.t) + (lasting ? this.nextAge : 0));
     }
 
     /** The share `nextAge` of the adjacency this tile's ageless buildings keep after the age change. */

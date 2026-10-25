@@ -64,6 +64,8 @@ test("research: the path's unlocks first (a codex mastery once the base is resea
         // Civics: Literacy (a codex) for science, Code of Laws (merchants) for economy; Foundation's
         // codex needs a scientific attribute trait, so it is not counted.
         // Code of Laws also grants a tradition slot (research/40 A1): as quick as Literacy, it goes first for every focus.
+        // Our pantheon is founded: Mysticism is no structural research any more (game 60's M3).
+        world.pantheons = [hash("PANTHEON_BONUS_10")];
         world.research = { tech: { available: [] }, culture: { available: [N("NODE_CIVIC_AQ_MAIN_MYSTICISM"), N("NODE_CIVIC_AQ_MAIN_LITERACY"), N("NODE_CIVIC_AQ_MAIN_CODE_OF_LAWS"), N("NODE_CIVIC_AQ_FOUNDATION")] } };
         fake.sent.length = 0;
         assert.equal(steps.chooseResearch("culture", DEFAULT_SETTINGS, "SCIENCE")?.key, "STRUCTURAL_CIVIC");
@@ -82,6 +84,7 @@ test("research: the path's unlocks first (a codex mastery once the base is resea
     } finally {
         GameInfo.ProgressionTreePrereqs = prereqs;
         delete world.treeRecs;
+        delete world.pantheons;
         world.research = { tech: { available: [] }, culture: { available: [] } };
     }
 });

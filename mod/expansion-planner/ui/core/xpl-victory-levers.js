@@ -178,15 +178,28 @@ export const LEVER_BUILDINGS = {
         AGE_EXPLORATION: [],                                       // convoys and the Distant Lands (units)
         AGE_MODERN: ["BUILDING_RAIL_STATION", "BUILDING_PORT", "BUILDING_FACTORY", "BUILDING_STOCK_EXCHANGE"],
     },
+    CULTURE: {
+        // The Exploration path counts relics on display: a Temple's relic slot, while relics wait in the archive (LEVER_WHILE;
+        // game 60: 10 relics archived E89-E127, up to ~37 turns each; the relic triumph ended 19/20).
+        AGE_EXPLORATION: ["BUILDING_TEMPLE"],
+    },
 };
 
-export function leverBuildings(focus, age) {
-    return LEVER_BUILDINGS[focus]?.[age] ?? [];
+// A lever building wanted only while a condition holds (the data layer's numbers, passed to leverBuildings): its name.
+const LEVER_WHILE = Object.freeze({ BUILDING_TEMPLE: "relicsWaiting" });
+
+/** The path's buildings of an age; one in LEVER_WHILE only while its number in `now` is above 0. */
+export function leverBuildings(focus, age, now = {}) {
+    return (LEVER_BUILDINGS[focus]?.[age] ?? []).filter((t) => !(t in LEVER_WHILE) || (Number(now[LEVER_WHILE[t]]) || 0) > 0);
 }
 
 // The mark steps adds to a node's unlocks when one of them is a wonder granting Innovation (research/23 S2:
 // game 8, Society's mastery and the Abbasids' Al-Jabr unlock the House of Wisdom; Egypt built it).
 export const INNOVATION_WONDER = "INNOVATION_WONDER";
+// The mark steps adds to a node's unlocks when one of them switches on a victory point tracker of the focus's victory
+// (EFFECT_PLAYER_ACTIVATE_VICTORY_POINT_TRACKER: Entertainment's celebrations, 2 culture points each; game 60's celebrations
+// at A43 and A80 earned nothing, Entertainment came at A94).
+export const FOCUS_VP_TRACKER = "FOCUS_VP_TRACKER";
 
 // Research worth taking first for the path: what a node's next research unlocks
 // (GameInfo.ProgressionTreeNodeUnlocks TargetType), or the node itself.
@@ -205,11 +218,13 @@ const RESEARCH_TARGETS = {
     // (Antiquity's path), relics and their slots (Exploration's: Theology, the masteries' relics), artifacts (Modern's:
     // Natural History's Explorers and Museums, Hegemony's archaeology), and the masteries granting culture points.
     CULTURE: [
-        /^WONDER_/,
+        /^WONDER_/,                                // steps leaves out a wonder whose race is not ours (game 60: Discipline, Tactics)
         /RELIC/,
         /ARCHAEOLOGY$/,
         "UNIT_EXPLORER", "BUILDING_MUSEUM",
         /_(CULTURE|TOURISM)_VP(_UI)?$/,
+        /_CELEBRATION_VP$/,                        // MOD_AQ_ENTERTAINMENT_CELEBRATION_VP (when the effect tables do not answer)
+        FOCUS_VP_TRACKER,
     ],
     ECONOMIC: [
         "UNIT_MERCHANT",                           // trade routes import resources

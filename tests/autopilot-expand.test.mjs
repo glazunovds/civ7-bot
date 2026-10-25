@@ -78,7 +78,7 @@ test("independents are befriended nearest first, one a pass; ongoing or unafford
     choices.befriendIndependents();
     assert.deepEqual(started(), [6], "the next pass: the next one");
     reset();
-    world.befriend = { 5: { status: DiplomacyProjectStatus.PROJECT_NOT_ENOUGH_INFLUENCE } };
+    world.befriend = { 5: { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS, cost: 80 } };
     choices.befriendIndependents();
     assert.deepEqual(started(), [], "not enough influence");
     delete world.befriend;
@@ -313,6 +313,9 @@ test("threat: an independent at peace with us (NEUTRAL) is no threat; only one a
 test("threat: a village's own units at home (within 2 of it) are no threat, unless next to the settlement or it is under attack", () => {
     // Seen in game 6: a crisis encampment 4 tiles from two towns kept its units at home all age and
     // never attacked; both towns were "threatened" for 20 turns (walls, soldiers, gold gone).
+    // The land east of York in sight: units in the fog do not count (game 60, SCM-2).
+    const tiles = world.tiles;
+    world.tiles = (x, y) => ({ ...tiles(x, y), revealed: x < 20 });
     try {
         world.villages = [{ owner: 5, x: YORK.x + 4, y: YORK.y }];
         world.enemies = [{ x: YORK.x + 3, y: YORK.y, owner: 5 }, { x: YORK.x + 3, y: YORK.y + 1, owner: 5 }, { x: YORK.x + 2, y: YORK.y, owner: 5 }];
@@ -330,6 +333,7 @@ test("threat: a village's own units at home (within 2 of it) are no threat, unle
         world.enemies = [{ x: YORK.x + 3, y: YORK.y, owner: 5 }, { x: YORK.x + 3, y: YORK.y + 1, owner: 5 }];
         assert.deepEqual(units.threatenedSettlements().map((t) => [t.settlement.name, t.count]), [["York", 2]]);
     } finally {
+        world.tiles = tiles;
         delete world.villages;
         delete world.enemies;
         delete world.districtHealth;
@@ -554,9 +558,9 @@ test("under threat: befriending that independent first, more Influence if alread
     choices.befriendIndependents(threats);
     assert.deepEqual(choices.unbefriendable(), [6], "no viable target");
     reset();
-    world.befriend = { 6: { status: DiplomacyProjectStatus.PROJECT_NOT_ENOUGH_INFLUENCE } };
+    world.befriend = { 6: { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS, cost: 80 } };
     choices.befriendIndependents(threats);
-    assert.deepEqual(choices.unbefriendable(), [], "short of Influence: it waits, no unit sent");
+    assert.deepEqual(choices.unbefriendable(), [], "short of Influence (the game's -3 with its price listed): it waits, no unit sent");
     delete world.befriend;
 });
 
@@ -578,7 +582,7 @@ test("befriending: a village counts by its own tile (it is not a city), those at
         assert.deepEqual(started(), [6], "the hostile one, though farthest");
         // The first one in order cannot be afforded yet: the Influence is kept for it, nothing else starts.
         reset();
-        world.befriend[6].status = DiplomacyProjectStatus.PROJECT_NOT_ENOUGH_INFLUENCE;
+        world.befriend[6] = { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS, cost: 80 };
         choices.befriendIndependents([]);
         assert.deepEqual(started(), [], "saving for the hostile one");
     } finally {

@@ -29,10 +29,14 @@ const project = (actionType, target, cost = 60, status = DiplomacyProjectStatus.
 const started = () => fake.sent.filter((s) => s.kind === "player" && String(s.op).startsWith("OP_")).map((s) => [s.args.Type, s.args.Player2]);
 const reset = (extra = {}) => {
     fake.sent.length = 0;
-    for (const k of ["projects", "relations", "relationLevels", "events", "notifications", "diplomacy", "wars", "befriend", "allies", "blocker", "nextCallToArms", "peaceOk", "pendingDeals", "formalWarOk", "dealAnswer", "incomingDeals"]) delete world[k];
+    for (const k of ["projects", "relations", "relationLevels", "events", "notifications", "diplomacy", "wars", "befriend", "allies", "blocker", "nextCallToArms", "peaceOk", "pendingDeals", "formalWarOk", "dealAnswer", "incomingDeals", "warSupport", "possibleDealItems"]) delete world[k];
     world.influence = 200;
+    choices.resetBefriending();
     Object.assign(world, extra);
 };
+// A threat by independent 5 (threatenedSettlements' shape) and its befriending short of Influence: the reserve.
+const threatBy5 = [{ settlement: { x: 2, y: 2, name: "Rome" }, count: 2, owners: [{ id: 5, independent: true }] }];
+const saving = { 5: { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS, cost: 300 } };
 const caught = (initialPlayer, revealed = true) => ({
     notifications: [{ name: "NOTIFICATION_DIPLOMATIC_ACTION_ESPIONAGE", target: { id: 70 } }],
     diplomacy: { 70: { initialPlayer, targetPlayer: initialPlayer === 0 ? 1 : 0, revealed } },
@@ -84,15 +88,16 @@ test("counter-spy also against a leader whose espionage reached us as a proposal
     assert.deepEqual(started().filter(([t]) => t === A.DIPLOMACY_ACTION_COUNTER_SPY), [], "no spy: no counter-spy");
 });
 
-test("reconciliation with an Unfriendly leader; nothing but counter-spy while a settlement is threatened", () => {
+test("reconciliation with an Unfriendly leader; nothing but counter-spy while we save for a threatening independent's befriending", () => {
     const projects = { 1: [project(A.DIPLOMACY_ACTION_SEND_DELEGATION, 1)], 2: [project(A.DIPLOMACY_ACTION_SEND_DELEGATION, 2)] };
     reset({ projects, relations: { 1: "UNFRIENDLY", 2: "FRIENDLY" } });
     const out = choices.tendDiplomacy(DEFAULT_SETTINGS);
     assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_SEND_DELEGATION, 1]]);
     assert.equal(out[0].key, "RECONCILE");
-    reset({ projects, relations: { 1: "UNFRIENDLY" } });
-    choices.tendDiplomacy(DEFAULT_SETTINGS, { threatened: true });
-    assert.deepEqual(started(), []);
+    reset({ projects, relations: { 1: "UNFRIENDLY" }, befriend: saving });
+    choices.befriendIndependents(threatBy5);
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started(), [], "200 Influence kept for a 300 befriending of the independent that threatens us");
     reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_SEND_DELEGATION, 2)] }, relations: { 2: "NEUTRAL" } });
     choices.tendDiplomacy(DEFAULT_SETTINGS);
     assert.deepEqual(started(), [], "no reconciliation needed with a Neutral leader");
@@ -116,15 +121,21 @@ test("an endeavor that fits the priority, with the leader we stand worst with (n
     assert.deepEqual(started(), [], "not enough Influence");
 });
 
-test("no endeavor while Influence goes to befriending independents", () => {
+test("a befriending we save for takes turns with endeavors: one endeavor, then the Influence is kept for it (game 60, M6)", () => {
     const projects = { 2: [project(A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2)] };
     reset({ projects, befriend: { 5: { status: DiplomacyProjectStatus.PROJECT_AVAILABLE } } });
     const canStart = Game.PlayerOperations.canStart;
     try {
-        // The befriend project is offered but the Influence is short: we are saving for it.
+        // The befriend project is offered but the Influence is short; no threat: an endeavor first (game 60: a waiting
+        // befriending kept every endeavor out, 2 in Antiquity, none in Exploration).
         Game.PlayerOperations.canStart = (_p, op) => ({ Success: op !== "DIPLOMACY_ACTION_BEFRIEND" });
         choices.befriendIndependents([]);
         fake.sent.length = 0;
+        choices.tendDiplomacy(DEFAULT_SETTINGS);
+        assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2]], "befriending's turn comes after an endeavor");
+        // The next pass: befriending's turn, we are saving for it.
+        fake.sent.length = 0;
+        choices.befriendIndependents([]);
         choices.tendDiplomacy(DEFAULT_SETTINGS);
         assert.deepEqual(started(), []);
         // Nothing to befriend: the endeavor goes ahead.
@@ -134,6 +145,43 @@ test("no endeavor while Influence goes to befriending independents", () => {
         assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2]]);
     } finally {
         Game.PlayerOperations.canStart = canStart;
+    }
+});
+
+test("the game's -3 with the village listed above our Influence is a befriending to save for; -3 with no target is not (research/41: game 44)", () => {
+    // Game 44: "status -3" came with the target's failure "not enough Influence 71/180", and the Influence went to
+    // endeavors (befriending read -3 as "cannot befriend").
+    const projects = { 2: [project(A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2)] };
+    reset({ projects, influence: 100, befriend: { 5: { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS, cost: 160 } } });
+    choices.befriendIndependents(threatBy5);
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started(), [], "saving for the village: no endeavor");
+    // No target listed (its village unseen): nothing to save for, the endeavor goes ahead.
+    reset({ projects, influence: 100, befriend: { 5: { status: DiplomacyProjectStatus.PROJECT_NO_VIABLE_TARGETS } } });
+    choices.befriendIndependents(threatBy5);
+    choices.tendDiplomacy(DEFAULT_SETTINGS);
+    assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_RESEARCH_COLLABORATION, 2]]);
+});
+
+test("P-WAR-1 and P-STAT-1: what the declare-war popup reads for each met major at peace, written when it changes; the majors' strength every 10 turns (research/41 §2)", () => {
+    reset({ relations: { 1: "HOSTILE", 2: "NEUTRAL" }, formalWarOk: [1], wars: [3], warSupport: { 1: { ours: 1, theirs: 0, influence: 0 }, 2: { ours: -2, theirs: 2, influence: 40 } } });
+    const warn = console.warn;
+    const lines = [];
+    console.warn = (...a) => lines.push(a.join(" "));
+    try {
+        Game.turn = 40;
+        choices.probeWars();
+        const war = (id) => lines.filter((l) => l.includes(`war probe: p${id} `));
+        assert.match(war(1)[0] ?? "", /: HOSTILE; surprise war yes; formal war yes; war support ours 1 theirs 0; their Influence \+0$/, lines.join(" | "));
+        assert.match(war(2)[0] ?? "", /: NEUTRAL; surprise war yes; formal war no; war support ours -2 theirs 2; their Influence \+40$/);
+        assert.equal(war(3).length, 0, "at war with us: not asked");
+        assert.equal(lines.filter((l) => l.includes("war probe: stats T40 p0 (us)")).length, 1, "the strength line, ours first");
+        lines.length = 0;
+        Game.turn = 41;
+        choices.probeWars();
+        assert.deepEqual(lines, [], "nothing changed: nothing written (stats every 10 turns)");
+    } finally {
+        console.warn = warn;
     }
 });
 
@@ -222,6 +270,32 @@ test("peace: the AI is first asked privately (INSPECT, nothing shown), white pea
         assert.deepEqual(dealSends(), [P.INSPECT, P.PROPOSED], "three turns later: again");
     } finally {
         Game.turn = turn;
+    }
+});
+
+test("peace: our settlement they hold is asked back first; refused, a white peace (game 48: Киото stayed Amina's after a white peace)", async () => {
+    // Carthage's second city was ours (originalOwner 0); the peace screen offers it from them (OFFER).
+    world.cities.push({ owner: 1, x: 22, y: 6, name: "Kyoto", originalOwner: 0 });
+    const kyoto = { owner: 1, id: 1 };
+    const offer = { type: DiplomacyDealItemTypes.CITIES, subType: DiplomacyDealItemCityTransferTypes.OFFER, cityId: kyoto };
+    const theirs = { type: DiplomacyDealItemTypes.CITIES, subType: DiplomacyDealItemCityTransferTypes.OFFER, cityId: { owner: 1, id: 0 } };
+    try {
+        choices.resetPeace();
+        reset({ wars: [1], peaceOk: [1], possibleDealItems: { 1: [theirs, offer] }, dealAnswer: () => P.ACCEPTED });
+        await choices.seekPeace();
+        assert.deepEqual(deals().filter((d) => d.op === "add").map((d) => d.item), [
+            { type: DiplomacyDealItemTypes.AGREEMENTS, agreementType: DiplomacyDealItemAgreementTypes.MAKE_PEACE }, offer,
+        ], "Kyoto, not Carthage itself");
+        assert.deepEqual(dealSends(), [P.INSPECT, P.PROPOSED]);
+        // Refused with Kyoto, accepted without: the white peace is inspected and proposed in the same pass.
+        choices.resetPeace();
+        reset({ wars: [1], peaceOk: [1], possibleDealItems: { 1: [offer] }, dealAnswer: (_id, items) => (items.some((i) => i.cityId) ? P.REJECTED : P.ACCEPTED) });
+        const out = await choices.seekPeace();
+        assert.deepEqual(dealSends(), [P.INSPECT, P.INSPECT, P.PROPOSED]);
+        assert.deepEqual(deals().filter((d) => d.op === "add").map((d) => !!d.item.cityId), [false, true, false], "the second deal is white");
+        assert.equal(out[0]?.key, "PEACE_PROPOSED");
+    } finally {
+        world.cities.pop();
     }
 });
 
@@ -371,9 +445,11 @@ test("Lafayette's Reform is started with every leader the game allows, whatever 
     let out = choices.startReforms();
     assert.deepEqual(started(), [[A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2]]);
     assert.equal(out[0].key, "REFORM");
-    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2, 140)] } });
-    choices.startReforms({ threatened: true });
-    assert.deepEqual(started(), [], "a threat: the Influence goes to befriending");
+    reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2, 140)] }, befriend: saving });
+    choices.befriendIndependents(threatBy5);
+    fake.sent.length = 0;
+    choices.startReforms();
+    assert.deepEqual(started(), [], "a threat: the Influence is kept for its independent's befriending");
     reset({ projects: { 2: [project(A.DIPLOMACY_ACTION_GRANT_POLICY_SLOT, 2, 400)] } });
     choices.startReforms();
     assert.deepEqual(started(), [], "not enough Influence");

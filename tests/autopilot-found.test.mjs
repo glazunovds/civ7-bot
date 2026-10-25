@@ -283,7 +283,8 @@ test("production: nothing else to build: a project, else the strongest soldier, 
 test("exploring: cities train scouts first until there are two (counting those in training)", async () => {
     const steps = await import("../mod/expansion-planner/ui/data/xpl-autopilot-steps.js");
     const scout = GameInfo.Units.lookup("UNIT_SCOUT").$hash;
-    world.units = [{ id: 20, type: "UNIT_SCOUT", x: 3, y: 3 }];
+    // The second one comes once a settler is trained (game 60): one stands here.
+    world.units = [{ id: 20, type: "UNIT_SCOUT", x: 3, y: 3 }, { id: 21, type: "UNIT_SETTLER", x: 4, y: 3 }];
     fake.sent.length = 0;
     let out = steps.fillProduction(new Map(), { explore: true });
     const queued = () => fake.sent.filter((s) => s.kind === "operation").map((s) => s.args);

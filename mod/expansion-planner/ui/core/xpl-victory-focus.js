@@ -44,10 +44,11 @@ export function dominanceMultiple(age, ageFrac) {
  * multiple = G ÷ second, need = ⌈leader × BLOCK_MARGIN ÷ multiple⌉ (the score we must hold as second),
  * level DANGER (share ≥ DANGER_SHARE or the leader's countdown runs) or WATCH (share ≥ WATCH_SHARE).
  * In the final age the next step's lower multiple counts too (`step`, `stepGoal`): a leader that step would put nearer
- * its goal takes that step's level now, and the block it takes is judged at that step (game 31: Augustus's culture, 220 against
- * a goal of 284 at ×2, began its countdown when ×1.5 came at Modern's 60%, and won five turns later).
+ * its goal takes that step's level now (game 31: Augustus's culture, 220 against a goal of 284 at ×2, began its countdown when
+ * ×1.5 came at Modern's 60%, and won five turns later). The block is judged at the next step whenever one comes (`needAt`),
+ * unless the leader's countdown runs (game 57).
  * @param races victoryRaces() @param me our player id
- * @returns [{ cls, leader, points, goal, share, multiple, ours, need, level, countdown, step, stepGoal }]
+ * @returns [{ cls, leader, points, goal, share, multiple, ours, need, needAt, level, countdown, step, stepGoal }]
  */
 export function victoryWatch(races, me, { age = null, ageFrac = 0, military = null } = {}) {
     const out = [];
@@ -85,15 +86,20 @@ export function victoryWatch(races, me, { age = null, ageFrac = 0, military = nu
         const next = nextDominanceMultiple(age, ageFrac);
         const stepGoal = next && next < multiple && second > 0 ? Math.floor(second * next) : 0;
         const stepShare = stepGoal > 0 ? leader.points / stepGoal : 0;
-        // Only when the step raises its level: a leader near the current goal is blocked now, at the current multiple.
+        // Its level from the step only when that raises it (its block: needAt below).
         const rank = (x) => (x >= DANGER_SHARE ? 2 : x >= WATCH_SHARE ? 1 : 0);
         const atStep = !leader.dominant && rank(stepShare) > rank(share);
         const top = atStep ? stepShare : share;
         const level = leader.dominant || top >= DANGER_SHARE ? "DANGER" : top >= WATCH_SHARE ? "WATCH" : null;
-        const need = Math.ceil((leader.points * BLOCK_MARGIN) / (atStep ? next : multiple));
+        // The block holds only if it holds at the next step too (the multiple only falls): judged there whenever one comes,
+        // a running countdown aside (broken now, at the current multiple). Game 57: from Modern's 67% Tecumseh's military 92
+        // stood near its goal of 108 at ×1.5, «need 71 (ours 72, 0 settlements)»; at 80% ×1.25 made his 101 a countdown
+        // against our 90, and he won.
+        const needAt = stepGoal > 0 && !leader.dominant ? next : null;
+        const need = Math.ceil((leader.points * BLOCK_MARGIN) / (needAt ?? multiple));
         out.push({
             cls: r.cls, leader: leader.id, points: leader.points, goal, share: Math.round(share * 100) / 100,
-            multiple: Math.round(multiple * 100) / 100, ours, need,
+            multiple: Math.round(multiple * 100) / 100, ours, need, needAt,
             step: atStep ? next : null, stepGoal: atStep ? stepGoal : null,
             // Military points are settlements, 4 each: the settlements that would hold `need` (research/31 §3: game 25 was
             // second, so its own settlements set Ashoka's goal; two more by M67 would have stopped his countdown).
@@ -172,12 +178,15 @@ export function nextDominanceMultiple(age, ageFrac) {
  * ⌊multiple × the best other⌋; at the current multiple when the settlements it takes are within reach, else at the next
  * step's when it is lower (a settler takes turns to found; the multiple only falls). Rivals' own growth is not foreseen.
  * @param race the MILITARY victoryRaces entry (board sorted, the game's goal) @param me our player id
+ * With `lookAhead` (we trail the best rival in every other race: game 62, Deity), the final step's multiple (×1.25) counts
+ * too when nearer steps are out of reach: there the lever was within reach from M30 (8 settlements: room 6, 2 past the cap)
+ * but started at M42, and 25 turns of training gave 4 settlements (the countdown stayed 4 short at the age's end).
  * @param { age, ageFrac, room: settlements we may still found, over: more past the cap (research/30 §1), ivy: Operation
- * Ivy can still be ours in time }
+ * Ivy can still be ours in time, lookAhead }
  * @returns { ours, top, multiple, goal, need, needIvy, room, over, reachable, withIvy, pastCap: settlements it takes past
  * the cap } or null (no race yet)
  */
-export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, over = 0, ivy = false } = {}) {
+export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, over = 0, ivy = false, lookAhead = false } = {}) {
     const board = race?.board ?? [];
     const ours = Number(board.find((b) => b.id === me)?.points) || 0;
     const top = Number(board.filter((b) => b.id !== me)[0]?.points) || 0;
@@ -208,7 +217,18 @@ export function militaryOutlook(race, me, { age = null, ageFrac = 0, room = 0, o
     // the lever trained and bought no more settlers). The next step's multiple only when the current one is out of reach.
     const current = at(now);
     const next = nextDominanceMultiple(age, ageFrac);
-    return next && next < now && !current.reachable ? at(next) : current;
+    const judged = next && next < now && !current.reachable ? at(next) : current;
+    if (!lookAhead || judged.reachable || age !== "AGE_MODERN") return judged;
+    const last = dominanceMultiple(age, MODERN_STEPS[MODERN_STEPS.length - 1]);
+    if (!(last < judged.multiple)) return judged;
+    const final = at(last);
+    return final.reachable ? final : judged;
+}
+
+/** We trail the best rival in every race but the military one (militaryOutlook's lookAhead; game 62). @param races victoryRaces() */
+export function trailsOtherRaces(races) {
+    const others = (races ?? []).filter((r) => r.enabled !== false && r.cls !== "MILITARY");
+    return others.length > 0 && others.every((r) => Number(r.points) < Number(r.rival));
 }
 
 /** The watch entry of a reachable military lever: our own CHANCE, with the settlements it takes. */
@@ -316,6 +336,16 @@ export function raceStandings(races) {
  * @param options { disabled: Set of classes whose victory is switched off in this game }
  * @returns [{ cls, score, progress, lead, ours, rival, goal, lean }] in FOCUS_CLASSES order (classes we know)
  */
+/**
+ * The victories our civilization cannot run (research/42 F; game 53: Carthage keeps every settlement but the capital a town,
+ * MOD_FORBID_CITIES_FROM_TOWNS, and the science focus had Innovation 34 at M70 and its first Launch Pad at M143): science while
+ * the game's city limit (`player.Cities.getCityLimit()`, 0 = none) is below SCIENCE_MIN_CITY_LIMIT. @returns Set of classes
+ */
+export const SCIENCE_MIN_CITY_LIMIT = 2;
+export function unfitFocus({ cityLimit = 0 } = {}) {
+    return Number(cityLimit) > 0 && Number(cityLimit) < SCIENCE_MIN_CITY_LIMIT ? new Set(["SCIENCE"]) : new Set();
+}
+
 export function scoreFocus(standings, leaning = null, triumphs = [], { disabled = new Set() } = {}) {
     const close = closeTriumphs(triumphs);
     const out = [];

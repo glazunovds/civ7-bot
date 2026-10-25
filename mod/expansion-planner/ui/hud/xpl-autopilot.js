@@ -14,26 +14,32 @@
  */
 import { gameKey, settings } from '../services/xpl-settings.js';
 import { state } from '../services/xpl-state.js';
-import { log } from '../services/xpl-log.js';
+import { log, turnStamp } from '../services/xpl-log.js';
 import { adviceFor, clearAdvice } from '../services/xpl-advice.js';
 import { allTarget, hasPlanTacks, listTargets, placePlanTacks, startBuildingPlan } from '../data/xpl-building-job.js';
 import { startSiteSearch } from '../data/xpl-site-job.js';
 import { RELAXED_MIN_PICKS } from '../core/xpl-tuning.js';
-import { placeTacks } from '../integrations/xpl-dmt-bridge.js';
+import { placeTacks, tackExists } from '../integrations/xpl-dmt-bridge.js';
 import * as steps from '../data/xpl-autopilot-steps.js';
 import { goldBalance } from '../data/xpl-city-actions.js';
 import { probeDistricts } from '../data/xpl-growth-job.js';
+import { logPlanOrder } from '../data/xpl-plan-probes.js';
+import { ageOutlook } from '../data/xpl-town-job.js';
 import { createBudget } from '../core/xpl-savings.js';
-import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, incorporateCityState, levyDefenders, makeChoices, nextEvent, proposeOpenBorders, sabotageSpace, startReforms, tendDiplomacy, turnBlocker, unbefriendable } from '../data/xpl-autopilot-choices.js';
-import { campaignAssault, campaignState, commandUnits, disbandSurplus, disperseArrivals, foundArrivals, leadersNearExplorers, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, keepRetaken, strikeRaiders, threatenedSettlements, upgradeUnits } from '../data/xpl-autopilot-units.js';
-import { chooseFocus, closeTriumphs, FOCUS_CHANGE_SHARE, FOCUS_CLASSES, militaryOutlook, profileForFocus, raceStandings, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, victoryWatch, wondersAtOnce } from '../core/xpl-victory-focus.js';
+import { befriendIndependents, considerTownProjects, diplomacyScreenOpen, incorporateCityState, levyDefenders, makeChoices, nextEvent, probeWars, proposeOpenBorders, sabotageSpace, startReforms, tendDiplomacy, trainingWarStep, turnBlocker, unbefriendable, turnBlockerMessage } from '../data/xpl-autopilot-choices.js';
+import { campaignAssault, campaignState, commandUnits, disbandSurplus, disperseArrivals, entryUnit, fieldAssault, fieldOpState, foundArrivals, keepRetaken, leadersNearExplorers, nuclearStrike, probeMilitary, releaseStuckOrders, settlerGoals, settlersStarved, strikeRaiders, threatenedSettlements, upgradeUnits, plagueArrivals } from '../data/xpl-autopilot-units.js';
+import { snapshotUnits } from '../data/xpl-unit-log.js';
+import { chooseFocus, closeTriumphs, FOCUS_CHANGE_SHARE, FOCUS_CLASSES, militaryOutlook, profileForFocus, raceStandings, scoreFocus, scorePlaces, TRIUMPH_CATEGORY, unfitFocus, victoryWatch, wondersAtOnce, trailsOtherRaces } from '../core/xpl-victory-focus.js';
 import { INNOVATION_TARGETS } from '../core/xpl-victory-levers.js';
 import { disabledVictories, leaderLeaning, saveFocus, savedFocus, scoreBoard, scoreVictoryOn, triumphs, victoryOutcomeNow, victoryRaces } from '../data/xpl-victory.js';
 import { applyStrategy, planStrategy, strategyLines } from '../core/xpl-strategy.js';
+import { blockerText, effectiveOptions, settles } from '../core/xpl-ap-options.js';
+import { tackRefreshMode, untackedFirsts } from '../core/xpl-tack-refresh.js';
 
 const START_DELAY_MS = 1500; // let the game finish its turn-start work first
 const STEP_PAUSE_MS = 250;   // between steps, so the game processes each request
-const LOG_MAX = 80;
+// The tab's log: ~18 turns at game 60's median of 16 entries a turn (80 kept about 5; game 60's review, UI-6).
+export const LOG_MAX = 300;
 const PLAN_BUDGET_MS = 8;
 const FOUND_WAIT_MS = 3000;  // a founded settlement appears when the game handles the order
 const RETRY_WAIT_MS = 600;   // before an end-of-turn retry: moves sent in the pass are done
@@ -75,12 +81,24 @@ function setAp(patch) {
     state.set({ autopilot: { ...ap(), ...patch } });
 }
 
+let recorded = 0; // entries recorded this session: a step counts its own (game 60's review, UI-3)
+
 function record(entries) {
     const list = (entries ?? []).filter(Boolean);
     if (list.length === 0) return;
+    const first = recorded + 1;
+    recorded += list.length;
     const turn = Game.turn;
-    setAp({ log: [...list.map((e) => ({ turn, ...e })), ...(ap().log ?? [])].slice(0, LOG_MAX) });
-    for (const e of list) log.info(`autopilot: ${e.key} ${JSON.stringify(e.args)}`);
+    // `seq` numbers the entries in the order recorded: the tab appends only those it has not shown (game 60's review, UI-6).
+    setAp({ log: [...list.map((e, i) => ({ turn, ...e, seq: first + i })), ...(ap().log ?? [])].slice(0, LOG_MAX) });
+    for (const e of list) log.info(`autopilot: ${e.key} ${JSON.stringify(e.args)}${unitOf(e)}`);
+}
+
+// UI.log only (not the tab): the unit an order went to and the tile it stood on (game 60's review: the entries named a unit by
+// its Russian name and its destination only).
+function unitOf(e) {
+    const u = entryUnit(e);
+    return u?.id !== null && u?.id !== undefined ? ` u${u.id}${u.at ? ` from ${u.at.x},${u.at.y}` : ""}` : "";
 }
 
 export function isAutopilotOn() {
@@ -155,9 +173,13 @@ export async function convertBeforeDedications() {
     // Probe P-LEG-1 (research/40): the legacy points the age change gives us, by class, while the dedications wait.
     safe(() => steps.probeLegacyPoints(), null);
     const o = settings.get().autopilot ?? {};
-    if (o.focus === false || o.towns === false || o.purchases === false) return [];
+    // Every focus, none too: the 1:1 floor holds for each (steps.convertAtAgeStart; game 60's culture focus never tried it).
+    if (o.towns === false || o.purchases === false) return [];
     const budget = createBudget({ gold: goldBalance(), reserve: steps.goldReserve(Number(o.reserveTurns ?? 2)) });
-    const out = await steps.convertAtAgeStart(budget, safe(() => savedFocus(), null));
+    // The remembered focus only while «Фокус победы» is on (as stopForDedications names it): with it off the 1:1 floor alone
+    // (the integration review of game 60's packages: a science focus remembered from an earlier age took the town window to
+    // its city target with the option off).
+    const out = await steps.convertAtAgeStart(budget, o.focus ? safe(() => savedFocus(), null) : null);
     record(out);
     return out;
 }
@@ -208,8 +230,46 @@ export function tackLimits(o = {}) {
     return o.endTurn ? { perSettlement: 1, nextSites: 0 } : { perSettlement: PLAN_TACKS_PER_SETTLEMENT, nextSites: SETTLE_TACKS };
 }
 
+// The plan's tacks while the autopilot plays unattended (core/xpl-tack-refresh.js; game 60's review, E7): renewed at most every
+// TACK_REFRESH_TURNS turns or when the player asks (the Buildings tab), else only the missing ones added.
+let tacksRenewed = -Infinity; // the turn of the last full renewal
+let tacksAsked = false;       // the player asked for one since
+
+/** The player opened the Buildings tab or recalculated there: the next pass renews the plan's tacks. */
+export function askTackRefresh() {
+    tacksAsked = true;
+}
+
+/** Forgets the last renewal (tests; a new age loads the file afresh). */
+export function resetTackRefresh() {
+    tacksRenewed = -Infinity;
+    tacksAsked = false;
+}
+
+/**
+ * The plan's tacks after a recalculation: renewed (ours the plan drops removed, never a queued building's) or, while the
+ * autopilot ends turns between renewals, only the first planned building of a settlement none of whose planned buildings has
+ * a tack. @returns log entries
+ */
+export async function refreshPlanTacks(p, o, { unattended = false } = {}) {
+    const perSettlement = o?.tacks !== false ? tackLimits(o).perSettlement : 0;
+    const mode = tackRefreshMode({ unattended, turn: Game.turn, last: tacksRenewed, asked: tacksAsked });
+    if (mode === "FULL") {
+        const r = await placePlanTacks(p, { perSettlement });
+        tacksRenewed = Game.turn;
+        tacksAsked = false;
+        return [{ key: "TACKS", args: [r.placed.length - r.kept, r.removed] }];
+    }
+    const add = untackedFirsts(p.placements, (x) => safe(() => tackExists(x.x, x.y, x.type), false))
+        .map((x) => ({ x: x.x, y: x.y, type: x.type }));
+    if (add.length === 0) return [];
+    const r = await placeTacks(add, "build", { replacePrevious: false });
+    const added = r.placed.length - r.kept;
+    return added > 0 ? [{ key: "TACKS", args: [added, 0] }] : [];
+}
+
 /** Recalculates "all my settlements" when the plan is missing, old, or events made it stale. */
-async function replanIfDue(s) {
+async function replanIfDue(s, { unattended = false } = {}) {
     const every = Number(s.autopilot?.replanEvery) || 0;
     if (every <= 0) return [];
     const plans = state.get().results.plans;
@@ -227,10 +287,7 @@ async function replanIfDue(s) {
     const out = [{ key: "REPLANNED", args: [p.placements.length, p.incremental ? p.incremental.changed : p.members.length] }];
     // Tacks for the plan: with the "map tacks" option each settlement's next buildings only;
     // without it, the player's own full-plan tacks are kept in line.
-    if (s.autopilot?.tacks !== false || hasPlanTacks(p)) {
-        const r = await placePlanTacks(p, { perSettlement: s.autopilot?.tacks !== false ? tackLimits(s.autopilot).perSettlement : 0 });
-        out.push({ key: "TACKS", args: [r.placed.length - r.kept, r.removed] });
-    }
+    if (s.autopilot?.tacks !== false || hasPlanTacks(p)) out.push(...await refreshPlanTacks(p, s.autopilot, { unattended }));
     return out;
 }
 
@@ -256,7 +313,8 @@ async function refreshSitesIfDue(s) {
     // Sites ran out while far below the cap: search again with looser rules (research/22 A1).
     if ((picks.length < RELAXED_MIN_PICKS && deficit) || starved) {
         if (starved) relaxedTurn = Game.turn;
-        await startSiteSearch({ ...s, relaxedSites: true }).promise;
+        // A military countdown to start or block (the strategy's settleAnywhere): any land a settlement can stand on (game 63).
+        await startSiteSearch({ ...s, relaxedSites: true, anyRoomSites: !!s.strategy?.settleAnywhere }).promise;
         picks = state.get().results.sites?.picks ?? [];
         return [{ key: "SITES_RELAXED", args: [picks.length] }];
     }
@@ -301,6 +359,10 @@ function compose(key, ...args) {
  * off go to UI.log once a turn. @returns log entries (when the focus changes, when our
  * countdown to a victory starts)
  */
+let unfitNoted = -1; // the turn UI.log said which victory the focus left out
+// The unit step's entries after which the strike step runs again (after game 54).
+export const STRIKE_AGAIN = new Set(["ARMY_UNPACKED", "FIELD_UNPACKED", "FORMATION_COMMANDER", "FIELD_COMMANDER", "SKIRMISH_POST", "SKIRMISH_COMMANDER", "SKIRMISH_UNPACKED"]);
+
 function updateFocus(target = "AUTO") {
     const all = triumphs();
     let disabled = disabledVictories();
@@ -318,8 +380,20 @@ function updateFocus(target = "AUTO") {
     } catch (error) {
         log.debug("autopilot: victory races unknown", error);
     }
-    // The victories' own points (legacy paths count nothing in this game version: games 42-43).
-    const scores = scoreFocus(raceStandings(races), leaderLeaning(), all, { disabled });
+    // The victories' own points (legacy paths count nothing in this game version: games 42-43). The automatic focus leaves
+    // out what our civilization cannot run (unfitFocus: science with a city limit of 1, Carthage's).
+    let cityLimit = 0;
+    try {
+        cityLimit = Number(Players.get(local()).Cities.getCityLimit()) || 0;
+    } catch (_e) {
+        cityLimit = 0;
+    }
+    const unfit = target === "AUTO" ? unfitFocus({ cityLimit }) : new Set();
+    if (unfit.size > 0 && unfitNoted !== Game.turn && [...unfit].some((c) => !disabled.has(c))) {
+        unfitNoted = Game.turn;
+        log.info(`victory focus: ${[...unfit].join(", ")} left out: the city limit is ${cityLimit}`);
+    }
+    const scores = scoreFocus(raceStandings(races), leaderLeaning(), all, { disabled: new Set([...disabled, ...unfit]) });
     const before = ap().focus?.races ?? [];
     // Rivals near a dominance victory that is switched on (research/21 §3.4; decision 6).
     let watch = [];
@@ -330,7 +404,10 @@ function updateFocus(target = "AUTO") {
         const max = Number(apm.getMaxAgeProgressionPoints()) || 0;
         ageFrac = max > 0 ? (Number(apm.getCurrentAgeProgressionPoints()) || 0) / max : 0;
         // The final age: the settlements we may still found (and Operation Ivy) for our own military countdown.
-        military = finalAge ? steps.militaryRoom() : null;
+        // Trailing the best rival in every other race (game 62, Deity), the lever judges our countdown at the final step too.
+        const room = finalAge ? steps.militaryRoom() : null;
+        const lookAhead = trailsOtherRaces(races.filter((r) => r.enabled));
+        military = room ? { ...room, lookAhead } : null;
         watch = victoryWatch(races.filter((r) => r.enabled), local(), { age: ageType(), ageFrac, military })
             .map((w) => (w.own ? w : { ...w, leaderName: compose(Players.get(w.leader)?.leaderName ?? "?") }));
     } catch (error) {
@@ -368,7 +445,7 @@ function updateFocus(target = "AUTO") {
         // The final age: the score that decides a game nobody wins (research/30 §1: lost 923 to 933, last in the economy);
         // not while the score victory is off (research/31 §1: game 26 printed «score: ours 0 …» every turn).
         if (finalAge && scoreVictoryOn()) logScore(races);
-        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.step ? ` (at ×${w.step}: goal ${w.stepGoal})` : ""}${w.need !== null ? ` need ${w.need} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.countdown != null ? ` countdown ${w.countdown}` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
+        if (watch.length > 0) log.warn(`victory watch: ${watch.map((w) => w.own ? `${w.cls} ours ${w.ours}/${w.goal} CHANCE${w.settlements !== undefined ? ` (${w.settlements} settlements${w.withIvy ? " + Ivy" : ""})` : ""}` : `${w.cls} p${w.leader} ${w.points}/${w.goal ?? "-"}${w.multiple ? ` ×${w.multiple}` : ""}${w.step ? ` (at ×${w.step}: goal ${w.stepGoal})` : ""}${w.need !== null ? ` need ${w.need}${w.needAt && !w.step ? ` at ×${w.needAt}` : ""} (ours ${w.ours}${w.block !== undefined ? `, ${w.block} settlements` : ""})` : ""}${w.countdown != null ? ` countdown ${w.countdown}` : ""}${w.level ? ` ${w.level}` : ""}`).join(", ")}`);
     }
     // Our countdown to a victory has just started: worth a line in the tab's log.
     const out = noteWatch(watch);
@@ -409,7 +486,8 @@ function noteOutcome(outcome) {
  */
 function noteStrategy(plan, facts) {
     const before = ap().strategy;
-    setAp({ strategy: { phase: plan.phase, age: plan.age, focus: plan.focus, profile: plan.profile, gateLate: !!plan.gateLate, noFutureTech: !!plan.noFutureTech, lines: strategyLines(plan) } });
+    // The phase's own reserve and wonders replace the tab's two choices (game 60's review, UI-7: the tab showed the player's).
+    setAp({ strategy: { phase: plan.phase, age: plan.age, focus: plan.focus, profile: plan.profile, gateLate: !!plan.gateLate, noFutureTech: !!plan.noFutureTech, reserveTurns: plan.reserveTurns, wonders: plan.wonders, lines: strategyLines(plan) } });
     if (strategyLoggedTurn !== Game.turn) {
         strategyLoggedTurn = Game.turn;
         const gate = facts.gate?.known ? `${facts.gate.open ? "open" : "no"} ${Math.round((facts.gate.progress ?? 0) * 100) / 100}` : "-";
@@ -504,9 +582,33 @@ export function ageChoiceKey(blocker, focus = null) {
     return focus === "SCIENCE" ? `${base}_SCIENCE` : base;
 }
 
+/** What holds the turn now, for the tab and the dock (game 60's review, M3): { turn, type, message } (type null: nothing). */
+function blockerNow() {
+    const type = safe(() => turnBlocker(), null);
+    return { turn: Game.turn, type, message: type ? safe(() => turnBlockerMessage(), null) : null };
+}
+
+/**
+ * The dedications of a new age wait (the player switched the autopilot on, or pressed F7, before them: game 60, E1): their cards
+ * bring settlers, a policy slot and last age's cities back, so nothing is decided before them but the first turn's conversion
+ * window (convertBeforeDedications). The turn is not marked done: the pass after them is a full one. Switched on, the
+ * autopilot switches off and on again once they are chosen (game 33).
+ */
+async function stopForDedications(o) {
+    await guarded("towns", () => convertBeforeDedications());
+    record([{ key: ageChoiceKey("NOTIFICATION_AGE_TRANSITION", o.focus ? safe(() => savedFocus(), null) : null), args: [] }]);
+    log.info("autopilot: the dedications wait: only the conversion window ran");
+    if (!isAutopilotOn()) return;
+    setAutopilot(false, { keepResume: true });
+    if (settings.get().autopilot?.resumeAfterAge !== false) {
+        resumeOnChoice = Game.turn;
+        watchResume();
+    }
+}
+
 /**
  * One pass over this turn's decisions. Runs on the local player's turn start while the
- * autopilot is on; force = once now (the "Do it now" button).
+ * autopilot is on; force = once now (the step: F7 or the tab's button, stepNow).
  */
 export async function runTurn(force = false) {
     if (running || (!force && !isAutopilotOn())) return;
@@ -519,8 +621,19 @@ export async function runTurn(force = false) {
     // turn; nothing is bought, queued or proposed twice (research/22 B9).
     const full = force || ap().lastTurn !== Game.turn;
     try {
+        // Which pass this is, so every line after it can be read with its pass (game 60: 173 turn activations for 140 turns).
+        log.info(`pass: ${turnStamp() || `T${Game.turn}`} ${force ? "step" : full ? "full" : "repeat"}`);
+        // Our units and the hostile ones near us, at the turn's start (data/xpl-unit-log.js; once a turn).
+        if (full) await guarded("unit log", () => snapshotUnits());
         let s = settings.get();
-        let o = s.autopilot ?? {};
+        // The options this pass acts on: one that needs another switched off acts as off (core/xpl-ap-options.js; game 60's
+        // review, UI-5: «Ядерное оружие» researched and built with «Оборона» off, while the strike needs it).
+        s = { ...s, autopilot: effectiveOptions(s.autopilot ?? {}) };
+        let o = s.autopilot;
+        if (safe(() => turnBlocker(), null) === "NOTIFICATION_AGE_TRANSITION") {
+            await stopForDedications(o);
+            return;
+        }
         // After the win (game 40): our countdown to a fixed-score victory runs with its goal reached, or the game is decided
         // (a victory awarded, a game played on): no focus, strategy, victory work or space push; research takes everything
         // else before Future Tech, and what serves only a victory leaves the queues (steps.dropVictoryWork).
@@ -566,6 +679,7 @@ export async function runTurn(force = false) {
             });
         } else if (ap().strategy) setAp({ strategy: null });
         s = applyStrategy(s, plan);
+        s = { ...s, autopilot: effectiveOptions(s.autopilot ?? {}) };
         // The balance of the focus's own (core/xpl-profiles.js biasFor): science starts with Еда ×0.7, Наука ×1.5. While the
         // gold income stays below zero, gold weighs more in every choice (steps.goldPressureNow; game 31).
         let gold = { factor: 1 };
@@ -592,8 +706,13 @@ export async function runTurn(force = false) {
         const orderedAt = new Map();
         const released = new Set(); // their order did not take: skipped, not ordered again this turn
         let threats = [];
+        let unitKeys = []; // the unit step's entries: a second strike follows some (after game 54)
         const orderUnits = async () => {
-            if (!(o.explore || o.settlers || o.defend || o.merchants || o.roam || o.focus)) return;
+            if (!(o.explore || o.settlers || o.defend || o.merchants || o.roam || o.focus)) {
+                // No unit step: no generals' line from an earlier pass in the tab.
+                if (ap().generals || ap().fieldOp) setAp({ generals: null, fieldOp: null });
+                return;
+            }
             const r = commandUnits(s, {
                 explore: !!o.explore, settlers: !!o.settlers, defend: !!o.defend, merchants: !!o.merchants, roam: !!o.roam,
                 approach: unbefriendable(), leave: released, threats: o.defend || o.roam ? threats : [], riskOwners: steps.warState().risk,
@@ -612,12 +731,21 @@ export async function runTurn(force = false) {
                 // «Наступление» (research/37 Phase 7): campaigns with the soldiers defence leaves free, none while a victory
                 // of ours other than the military one is near (a settlement retaken counts there).
                 offensive: !!o.offensive && !!o.defend,
+                // Village hunts and «Учебная война» (research/41 §6-§7): with «Оборона».
+                hunt: !!o.huntVillages && !!o.defend,
+                trainingWar: !!o.trainingWar && !!o.defend,
+                // «Охота на рейдеров» (after game 54): a general with free soldiers goes after raiders near our land.
+                huntRaiders: !!o.huntRaiders && !!o.defend,
                 victoryNear: (ap().focus?.watch ?? []).some((w) => w.own && w.cls !== "MILITARY"),
             });
             record(r.entries);
+            // The generals and the field operation for the tab (game 60's review, UI-8); none without «Оборона» or «Бродить»
+            // (commandUnits gives null then), so the line from an earlier pass does not stay.
+            setAp({ generals: r.generals ?? null, fieldOp: r.fieldOp ?? null });
+            unitKeys = r.entries.map((e) => e.key);
             const founded = [...r.entries];
-            // A settler that stepped onto its site past hostile units founds there now (game 35).
-            if (r.entries.some((e) => e.key === "SETTLER_DASH")) {
+            // A settler that stepped onto its site past hostile units founds there now (game 35), an escorted one too (game 60).
+            if (r.entries.some((e) => e.key === "SETTLER_DASH" || e.key === "SETTLER_ESCORTED")) {
                 await wait(STEP_PAUSE_MS);
                 const f = foundArrivals();
                 record(f);
@@ -627,6 +755,11 @@ export async function runTurn(force = false) {
             if (r.entries.some((e) => e.key === "DISPERSE_MOVE")) {
                 await wait(STEP_PAUSE_MS);
                 record(disperseArrivals());
+            }
+            // A unit on the plague moves into the tile a soldier of ours freed for it (game 60: Астрахань's Archer at T133).
+            if (r.entries.some((e) => e.key === "PLAGUE_ROOM")) {
+                await wait(STEP_PAUSE_MS);
+                record(plagueArrivals());
             }
             for (const k of r.ordered) ordered.add(k);
             for (const [k, at] of r.orderedAt ?? []) orderedAt.set(k, at);
@@ -646,16 +779,23 @@ export async function runTurn(force = false) {
             record(steps.assessWar(threats, { watch: ap().focus?.watch ?? [] }).entries);
             steps.noteThreats(threats); // a lasting threat: walls are researched (D7)
         });
-        if (full && o.befriend !== false) await guarded("befriend", () => record(befriendIndependents(threats)));
-        // Other leaders: counter-spy, reconciliation, endeavors (after befriending: Influence goes there first).
-        if (full && o.diplomacy) await guarded("diplomacy", () => record(tendDiplomacy(s, { threatened: threats.length > 0 })));
+        if (full && o.befriend !== false) await guarded("befriend", () => record(befriendIndependents(threats, { ageTurnsLeft: safe(() => ageOutlook().turnsLeft, Infinity) })));
+        // Other leaders: counter-spy, reconciliation, endeavors (after befriending: the Influence it keeps comes first).
+        if (full && o.diplomacy) await guarded("diplomacy", () => record(tendDiplomacy(s)));
         // Lafayette's Reform: a policy slot for good per leader, whatever «Дипломатия» says (research/40 A4).
-        if (full && o.befriend !== false) await guarded("reform", () => record(startReforms({ threatened: threats.length > 0 })));
+        if (full && o.befriend !== false) await guarded("reform", () => record(startReforms()));
         // A rival near the science victory: our spies sabotage its space program (research/40 B6).
         if (full && o.befriend !== false) await guarded("sabotage", () => record(sabotageSpace(ap().focus?.watch ?? [])));
         // City-states we are suzerain of (research/40 B7): a soldier for a threatened settlement short of guards; incorporated
         // while settlements count (the final age's fill of the cap, the military lever, a settlement milestone).
         if (full && o.defend) await guarded("levy", () => record(levyDefenders(threats)));
+        // «Учебная война» (research/41 §7): its target, the denunciations toward it, the formal war, our War Support.
+        if (full && o.defend) {
+            await guarded("training war", () => record(trainingWarStep(s, {
+                threats, war: steps.warState(), watch: ap().focus?.watch ?? [], afterWin: s.afterWin, strategy: s.strategy, focus,
+                ageTurnsLeft: ageOutlook()?.turnsLeft,
+            })));
+        }
         if (full && o.befriend !== false) await guarded("incorporate", () => {
             const stats = Players.get(GameContext.localPlayerID)?.Stats;
             const room = (Number(stats?.settlementCap) || 0) - (Number(stats?.numSettlements) || 0);
@@ -663,12 +803,24 @@ export async function runTurn(force = false) {
             record(incorporateCityState({ want, room }));
         });
         if (o.settlers) await guarded("sites", async () => record(await refreshSitesIfDue(s)));
+        // A village hunt's or a training war's fight; a member that stepped onto the village disperses it. Declared before
+        // the strike step that calls it (games 51-53: called above its declaration, it failed on every pass).
+        const fieldFight = async () => {
+            const fa = await fieldAssault();
+            record(fa);
+            if (fa.some((e) => e.key === "DISPERSE_MOVE")) {
+                await wait(STEP_PAUSE_MS);
+                record(disperseArrivals());
+            }
+        };
         // Melee soldiers strike raiders next to them when the game's own prediction says it pays. Their units are not kept
         // from the skip step: each attack was waited for (its Combat event), and one that did not happen leaves a unit the
         // game waits for (game 36 T49: a Coordinated Attack's raider died after two of its three Warriors, and the third,
         // never skipped, held the turn).
         if (o.defend) {
             await guarded("strike", async () => {
+                // «Ядерное оружие» (research/42 D3): a strike on an enemy army attacking us, before the other attacks.
+                if (o.nuclear) record(await nuclearStrike({ cities: !!o.nuclearCities }));
                 const r = await strikeRaiders();
                 record(r.entries);
                 // A campaign's assault (research/37 Phase 7), after the raiders near our settlements; a settlement taken is kept.
@@ -676,9 +828,26 @@ export async function runTurn(force = false) {
                     record(await campaignAssault());
                     record(keepRetaken());
                 }
+                // A village hunt's or a training war's fight (research/41 §6-§7); a member that stepped onto the village
+                // disperses it.
+                if (o.huntVillages || o.trainingWar || o.huntRaiders) await fieldFight();
             });
         }
         await guarded("units", orderUnits);
+        // Soldiers unpacked by a fight, or a general placed where its radius reaches one, attack now (Initiative lets unpacked
+        // soldiers move; a general's focused attack is 4-8 XP: after game 54).
+        if (o.defend && unitKeys.some((k) => STRIKE_AGAIN.has(k))) {
+            await guarded("strike again", async () => {
+                await wait(STEP_PAUSE_MS);
+                record((await strikeRaiders()).entries);
+            });
+        }
+        if (o.defend && (o.huntVillages || o.trainingWar || o.huntRaiders) && fieldOpState()?.stage === "FIGHT") {
+            await guarded("field", async () => {
+                await wait(STEP_PAUSE_MS);
+                await fieldFight();
+            });
+        }
         // Members that came close this pass may still attack.
         if (o.defend && o.offensive && campaignState()?.stage === "ASSAULT") {
             await guarded("campaign", async () => {
@@ -713,28 +882,40 @@ export async function runTurn(force = false) {
         if (full && o.defend && o.purchases !== false) await guarded("defenders", () => record(steps.buyDefenders(threats, { reserveTurns, budget })));
         // The age's first melee unit, which sets every centre's defence (research/37 §2), bought when the gold allows.
         if (full && o.defend && o.purchases !== false) await guarded("defenders", () => record(steps.buyFirstMelee(threats, { reserveTurns, budget })));
+        // A second general from the free gold (research/41 Phase 2).
+        if (full && (o.defend || o.roam) && o.purchases !== false && budget) await guarded("defenders", () => record(steps.buyCommander(budget)));
         // A new age's first turn: the cheapest conversions of the age, while only the capital counts (research/39 §4.1).
         if (full && o.towns !== false && o.purchases !== false && budget) await guarded("towns", async () => record(await steps.convertAtAgeStart(budget, focus)));
         // A settlement a revolt may take: a Happiness building bought there (research/39 §4.4: game 32 lost Бирмингем at A61).
-        if (full && o.purchases !== false && budget) await guarded("revolts", () => record(steps.guardRevolts(budget)));
+        if (full && o.purchases !== false && budget) await guarded("revolts", () => record(steps.guardRevolts(budget, { queue: o.production !== false })));
         const unitOptions = {
             explore: !!o.explore, settlers: !!o.settlers, merchants: !!o.merchants, defend: !!o.defend, threats: o.defend || o.roam ? threats : [], profile: s.profile, victory: focus,
             exposed: o.defend ? steps.exposedSettlements(threats) : [],
             explorers: o.explorers ?? !!o.explore, trainSettlers: o.trainSettlers ?? !!o.settlers, strategy: s.strategy ?? null,
             afterWin: s.afterWin,
+            // A bomber to carry a nuclear weapon we hold (research/42 D2).
+            nuclear: !!o.nuclear,
+            // Purchases off: no second general is bought (buyCommander), so the production wants one (W1).
+            purchases: o.purchases !== false,
         };
         const produce = async () => {
             // sid -> types the victory step queued in this run (H2: the game's isEmpty is stale until it handles them). Fresh for
             // each end-of-turn retry: by then the game has handled them, and one it refused must not keep a queue empty (game
             // 32, E64: Liverpool's empty queue was skipped in every retry and «Выбрать производство» held the turn).
             const victoryQueued = new Map();
-            record(await replanIfDue(s));
+            record(await replanIfDue(s, { unattended: !!o.endTurn && isAutopilotOn() && !force }));
             // An item the game does not complete gives way first (game 33: Брэдфорд's City Park at 945 of 451).
             record(steps.unstickQueues());
             // After the win: what serves only a victory leaves the queues.
             if (!chasing) record(steps.dropVictoryWork());
-            // Playing on after the game is decided: the satellite once, which reveals the map.
-            if (decided) record(steps.launchSatellite());
+            // Playing on after the game is decided: the satellite once, which reveals the map (a Launch Pad first when none
+            // stands: research/42 E); in a war at our door too, where a pad stands (it shows the enemy's armies).
+            if (decided) record(steps.launchSatellite({ buildPad: true }));
+            else if (o.defend && steps.warState().near) record(steps.launchSatellite());
+            // An Airfield where enemy aircraft raid us and no base covers (research/42 C2); «Ядерное оружие»: the Manhattan
+            // Project and the weapons in a war (D2).
+            if (o.defend) record(steps.airfieldForRaids());
+            if (o.nuclear) record(steps.nuclearWork(s));
             // The victory focus's own work first (science projects and a Launch Pad; the path's buildings of this age).
             if (focus) record(steps.pushVictoryWork(focus, { settlers: !!o.settlers, pads: s.strategy?.pads ?? null, queued: victoryQueued, strategy: s.strategy ?? null }));
             // Operation Ivy when the settlements alone fall short of our military countdown (research/26 §3.4).
@@ -815,8 +996,12 @@ export async function runTurn(force = false) {
         if (pass) await guarded("gold", () => steps.logGold(pass));
         // Every 10 turns: yields, population and where new citizens went (research/26 §3.2).
         if (full) await guarded("economy", () => steps.logEconomy(s));
+        // Every 10 turns: each settlement's first planned buildings (game 60: where did the plan rank the Library?).
+        if (full) await guarded("economy", () => logPlanOrder());
         // UI.log probes for the next military phases: armies, reinforcements, aircraft (research/37 §3F).
         if (full) await guarded("probes", () => probeMilitary());
+        // What a training war would face: the declare-war answers and each major's strength (research/41 §2).
+        if (full) await guarded("probes", () => probeWars());
         // How close our urban districts come to the age's science triumph mark (growth.probeDistricts; game 35).
         if (full) await guarded("probes", () => probeDistricts());
         // Every legacy path's points, the settlement milestone and the cheap ones off the focus (research/40 B2, B3).
@@ -831,31 +1016,38 @@ export async function runTurn(force = false) {
         });
         const skip = async () => record(await steps.skipIdleUnits(ordered));
         if (o.skipUnits) await guarded("skip", skip);
-        if (o.endTurn && isAutopilotOn() && !force) {
+        // The settle round, after every pass (a step too): something may have appeared during the pass (a city founded or
+        // converted late, a new choice, a citizen), so the steps that handle what holds the turn run again, at most MAX_RETRIES
+        // times (game 60's review, M1: Астрахань, converted at T76, got its queue only in this round, which a step skipped).
+        // Not for the age's choices, the player's (game 60, E8: the last Antiquity pass re-ran the plan and production twice).
+        // What only ending the turn needs is the automatic pass's alone: an ally's call to arms declined (or joined), the least
+        // bad card forced into an empty slot, screens marked seen (makeChoices' retry), and units held only by the player's own
+        // (a step, or «Завершать ход» off: the player is at the keyboard; the review of game 60's step).
+        const endsTurn = !!o.endTurn && isAutopilotOn() && !force;
+        await wait(STEP_PAUSE_MS);
+        for (let attempt = 0; attempt < MAX_RETRIES && settles(turnBlocker(), o, { endsTurn }); attempt++) {
+            await wait(RETRY_WAIT_MS);
+            // Orders the game did not carry out: those units may be skipped now.
+            await guarded("units", () => {
+                const stuck = releaseStuckOrders(orderedAt);
+                for (const k of stuck) {
+                    ordered.delete(k);
+                    orderedAt.delete(k);
+                    released.add(k);
+                }
+                if (stuck.length > 0) record([{ key: "ORDERS_NOT_TAKEN", args: [stuck.length] }]);
+            });
+            await guarded("units", orderUnits);
+            if (o.skipUnits) await guarded("skip", skip);
+            if (o.research !== false) await guarded("research", research);
+            if (o.choices !== false) await guarded("choices", async () => record(await makeChoices(s, { retry: endsTurn })));
+            if (o.production !== false) await guarded("production", produce);
+            // A citizen that arrived later in the pass (a story reward, a purchase...).
+            if (o.growth !== false) await guarded("growth", growth);
             await wait(STEP_PAUSE_MS);
-            // Like the game's end turn button: not while a choice still holds the turn. Something
-            // may have appeared during the pass (a city founded late, a new choice): one more try.
-            for (let attempt = 0; attempt < MAX_RETRIES && turnBlocker(); attempt++) {
-                await wait(RETRY_WAIT_MS);
-                // Orders the game did not carry out: those units may be skipped now.
-                await guarded("units", () => {
-                    const stuck = releaseStuckOrders(orderedAt);
-                    for (const k of stuck) {
-                        ordered.delete(k);
-                        orderedAt.delete(k);
-                        released.add(k);
-                    }
-                    if (stuck.length > 0) record([{ key: "ORDERS_NOT_TAKEN", args: [stuck.length] }]);
-                });
-                await guarded("units", orderUnits);
-                if (o.skipUnits) await guarded("skip", skip);
-                if (o.research !== false) await guarded("research", research);
-                if (o.choices !== false) await guarded("choices", async () => record(await makeChoices(s, { retry: true })));
-                if (o.production !== false) await guarded("production", produce);
-                // A citizen that arrived later in the pass (a story reward, a purchase...).
-                if (o.growth !== false) await guarded("growth", growth);
-                await wait(STEP_PAUSE_MS);
-            }
+        }
+        // Like the game's end turn button: not while a choice still holds the turn. Only the automatic pass ends it.
+        if (o.endTurn && isAutopilotOn() && !force) {
             const blocker = turnBlocker();
             // Choices of the age change are the player's: the next civilization when the age is
             // over (the new age loads as a new game, where the autopilot is off anyway) and the
@@ -890,7 +1082,7 @@ export async function runTurn(force = false) {
                 }
             }
         }
-        setAp({ lastTurn: Game.turn });
+        setAp({ lastTurn: Game.turn, blocker: blockerNow() });
     } catch (error) {
         log.error("autopilot pass failed", error);
         record([{ key: "ERROR", args: [String(error?.message ?? error)] }]);
@@ -901,9 +1093,48 @@ export async function runTurn(force = false) {
     }
 }
 
+// ---- the step: F7 or the tab's «Следующий шаг (F7)» (game 60's review, UI-2, UI-3) -------------------------------------
+// One pass with the ticked options, the autopilot on or off, then the settle round; it never ends the turn. Refused, with an
+// entry the tab and the dock show, when it is not our turn (the game's own test: its end-turn button), while a pass runs, and
+// while the game's AI plays our civilization. Every step leaves state.autopilot.lastStep and a UI.log `step:` line, so a review
+// tells a stepped turn from an automatic one.
+
+/** Our turn, as the game's end-turn button tests it (panel-action.js: isTurnActive false or the turn already sent). */
+function ourTurn() {
+    const p = safe(() => Players.get(local()), null);
+    if (!p || p.isTurnActive == false) return false;
+    return !safe(() => GameContext.hasSentTurnComplete(), false);
+}
+
+/** @returns { refused } or { entries, ms, blocker } */
+export async function stepNow({ source = "HOTKEY" } = {}) {
+    const refused = running ? "BUSY" : isAiPlaying() ? "AI" : !ourTurn() ? "NOT_YOUR_TURN" : null;
+    if (refused) {
+        record([{ key: `STEP_${refused}`, args: [] }]);
+        setAp({ lastStep: { turn: Game.turn, source, refused, at: Date.now() } });
+        log.info(`step: T${Game.turn} by ${source}: refused (${refused})`);
+        return { refused };
+    }
+    const before = recorded;
+    const started = Date.now();
+    // runTurn sets `running` before its first await: a second press while it works is refused.
+    await runTurn(true);
+    const entries = recorded - before;
+    const ms = Date.now() - started;
+    const blocker = ap().blocker?.turn === Game.turn ? ap().blocker : blockerNow();
+    record([{ key: "STEP_DONE", args: [entries, Math.round(ms / 100) / 10, blockerText(blocker, compose)] }]);
+    setAp({ lastStep: { turn: Game.turn, source, entries, ms, blocker, at: Date.now() } });
+    log.info(`step: T${Game.turn} by ${source}: ${entries} entries in ${ms} ms; blocker ${blocker.type ?? "none"}`);
+    return { entries, ms, blocker };
+}
+
 engine.on("PlayerTurnActivated", (data) => {
     if (data?.player === local() && isAutopilotOn()) schedule(START_DELAY_MS);
-    else if (data?.player === local()) watchResume();
+    else if (data?.player === local()) {
+        watchResume();
+        // Played by hand: the unit log still notes the turn's start (the first pass does it while the autopilot is on).
+        safe(() => snapshotUnits());
+    }
 });
 // The next age loads with the autopilot off: its first turn may have begun before this file loaded.
 {

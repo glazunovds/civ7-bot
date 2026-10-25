@@ -656,15 +656,29 @@ test("raiders: a melee soldier strikes one next to it when the game's prediction
     fresh([{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { ...AT_WAR, enemies: [{ ...raider, damage: 70 }], combat: () => ({ dealt: 35, taken: 30 }) });
     await units.strikeRaiders();
     assert.ok(attackOf(4));
-    // A ranged unit (it shoots instead), no attack left, a raider in a settlement's defences, one not next to it: no.
+    // A ranged unit (it shoots instead), no attack left, a raider in a settlement's defences: no.
     const good = () => ({ dealt: 60, taken: 20 });
     for (const [list, extra, why] of [
         [[{ id: 4, type: "UNIT_ARCHER", x: 5, y: 5, ranged: 25, melee: 15 }], {}, "ranged"],
         [[{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5, attacks: 0 }], {}, "no attack left"],
         [[{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { districtAt: (x, y) => x === 6 && y === 5 }, "a settlement"],
-        [[{ id: 4, type: "UNIT_WARRIOR", x: 4, y: 5 }], {}, "two tiles away"],
     ]) {
         fresh(list, { ...AT_WAR, enemies: [raider], combat: good, ...extra });
+        await units.strikeRaiders();
+        assert.deepEqual(orders(), [], why);
+    }
+    // Two tiles away, off our centre, healthy, every move: it goes out to strike it (a sortie: research/42 B3).
+    fresh([{ id: 4, type: "UNIT_WARRIOR", x: 4, y: 5 }], { ...AT_WAR, enemies: [raider], combat: good });
+    r = await units.strikeRaiders();
+    assert.deepEqual([attackOf(4)?.X, attackOf(4)?.Y], [6, 5], JSON.stringify(orders()));
+    assert.deepEqual(r.entries.map((e) => e.key), ["SORTIE"]);
+    // No sortie: hurt 40, from our centre (it holds it), into a poor trade.
+    for (const [list, extra, why] of [
+        [[{ id: 4, type: "UNIT_WARRIOR", x: 4, y: 5, damage: 30 }], { enemies: [raider] }, "hurt 30"],
+        [[{ id: 4, type: "UNIT_WARRIOR", x: 5, y: 5 }], { enemies: [foe(7, 5)] }, "on Athens' centre"],
+        [[{ id: 4, type: "UNIT_WARRIOR", x: 4, y: 5 }], { enemies: [raider], combat: () => ({ dealt: 20, taken: 40 }) }, "a poor trade"],
+    ]) {
+        fresh(list, { ...AT_WAR, combat: good, ...extra });
         await units.strikeRaiders();
         assert.deepEqual(orders(), [], why);
     }
@@ -1333,6 +1347,38 @@ test("plague: a healthy soldier with raiders near holds its city; a badly hurt o
     }
 });
 
+// Game 48 (research/game48): 60 moves off plague tiles, each to the nearest safe one, and units still died (23 -> 18 over
+// E61-E67 with one combat loss): a tile next to the plague is caught next, and soldiers in the field held infected tiles with
+// raiders 3 tiles away.
+test("plague: a unit leaves for a tile clear of the plague's edge, and in the field holds an infected tile only with an enemy next to it", () => {
+    // The plague around 20,10 (radius 1); our Warrior in the field at 21,10.
+    const sick = (x, y) => (GameplayMap.getPlotDistance(x, y, 20, 10) <= 1 ? ["PLOTEFFECT_PLAGUE"] : []);
+    fresh([{ id: 4, type: "UNIT_WARRIOR", x: 21, y: 10 }], { plotEffects: sick });
+    try {
+        run({ defend: true });
+        const to = moveOf(4);
+        assert.ok(to && GameplayMap.getPlotDistance(to.X, to.Y, 20, 10) >= 3, `clear of the edge: ${JSON.stringify(to)}`);
+        // A raider 3 tiles away no longer holds a soldier in the field there; one next to it does.
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 21, y: 10 }], { ...AT_WAR, enemies: [{ x: 24, y: 10, owner: 1, type: "UNIT_WARRIOR" }], plotEffects: sick });
+        assert.ok(run({ defend: true }).entries.some((e) => e.key === "LEFT_HAZARD"), "raiders 3 tiles away");
+        fresh([{ id: 4, type: "UNIT_WARRIOR", x: 21, y: 10 }], { ...AT_WAR, enemies: [{ x: 22, y: 10, owner: 1, type: "UNIT_WARRIOR" }], plotEffects: sick });
+        const warn = console.warn;
+        const lines = [];
+        console.warn = (...a) => lines.push(a.join(" "));
+        let r;
+        try {
+            r = run({ defend: true });
+        } finally {
+            console.warn = warn;
+        }
+        assert.ok(!r.entries.some((e) => e.key === "LEFT_HAZARD"), "an enemy next to it");
+        assert.ok(lines.some((l) => l.includes("plague: 1 unit(s) of ours on hazardous tiles") && l.includes("UNIT_WARRIOR at 21,10") && l.includes("holds: a hostile unit next to it")), lines.join(" | "));
+    } finally {
+        delete world.plotEffects;
+        delete world.wars;
+    }
+});
+
 test("plague: no order sends a unit onto an infected tile (a settler takes its other site)", () => {
     fresh([{ id: 2, type: "UNIT_SETTLER", x: 5, y: 5 }], { plotEffects: (x, y) => (x === 12 && y === 5 ? ["PLOTEFFECT_PLAGUE"] : []) });
     try {
@@ -1407,6 +1453,42 @@ test("a countdown to block (the strategy's settleAnywhere) and no site for a tur
         run({ settlers: true, anywhere: true });
         assert.deepEqual(orderOf(2).map((s) => s.op), ["UNITOPERATION_FOUND_CITY"]);
     } finally {
+        Game.turn = turn;
+        state.set({ results: { ...state.get().results, sites: picks } });
+    }
+});
+
+// Game 57: a settler stood about 20 turns under a military countdown, its sites taken or out of reach; «settle anywhere» found a
+// tile only at M56 and said nothing meanwhile.
+test("settle anywhere: a tile on the settler's own land before a nearer one on another; with none, the «no order» line says why (game 57)", () => {
+    const picks = state.get().results.sites;
+    const turn = Game.turn;
+    const lines = [];
+    const warn = console.warn;
+    state.set({ results: { ...state.get().results, sites: { picks: [] } } });
+    const twoTurns = (extra, base) => {
+        fresh([{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }], extra);
+        for (let t = 1; t <= 2; t++) {
+            Game.turn = turn + base + t;
+            fake.sent.length = 0;
+            world.units = [{ id: 2, type: "UNIT_SETTLER", x: 14, y: 6 }];
+            run({ settlers: true, anywhere: true });
+        }
+    };
+    try {
+        // 17,6 lies across the water from it (another area), 10,6 on its own land, a tile farther.
+        const areaId = (x, y) => (x >= 16 ? 2 : 0);
+        assert.ok(GameplayMap.getPlotDistance(14, 6, 17, 6) < GameplayMap.getPlotDistance(14, 6, 10, 6));
+        twoTurns({ areaId, claimOk: (x, y) => (x === 17 || x === 10) && y === 6 }, 0);
+        assert.deepEqual([moveOf(2)?.X, moveOf(2)?.Y], [10, 6], "its own land first");
+        // No tile the game accepts: the line counts why.
+        console.warn = (...a) => lines.push(a.join(" "));
+        twoTurns({ claimOk: () => false }, 10);
+        const line = lines.filter((l) => l.includes("settler: no order")).at(-1) ?? "";
+        assert.match(line, /anywhere: none of \d+ tile\(s\) \{"CLAIM":\d+\}/, line);
+    } finally {
+        console.warn = warn;
+        delete world.areaId;
         Game.turn = turn;
         state.set({ results: { ...state.get().results, sites: picks } });
     }
@@ -1504,4 +1586,25 @@ test("a settler next to its site with a raider near steps onto it and founds at 
     const r2 = run({ settlers: true });
     assert.ok(!r2.entries.some((e) => e.key === "SETTLER_DASH"), JSON.stringify(r2.entries));
     delete world.wars;
+});
+
+// Game 50 (research/game50): a scout hit for 70 by a Frigate and two Line Infantry found no tile farther from them within 2
+// and stood there the next turn; it died. With no tile farther from them it now takes the one in the fewest hostile units'
+// reach, not next to one when it can.
+test("a scout in danger with no tile farther from the raiders steps to the tile in the fewest raiders' reach", () => {
+    const tiles = world.tiles;
+    // Mountains all around 10,15 but 8,15: a raider next to it (11,15), three more 3 tiles away; 8,15 is next to one of
+    // them (7,15) but in reach of two, not four.
+    const open = new Set(["10,15", "8,15"]);
+    world.tiles = (x, y) => (GameplayMap.getPlotDistance(x, y, 10, 15) <= 2 && !open.has(`${x},${y}`) ? { terrain: "TERRAIN_MOUNTAIN", yields: {} } : tiles(x, y));
+    try {
+        const raiders = [[11, 15], [13, 14], [13, 16], [7, 15]].map(([x, y]) => ({ x, y, owner: 1, type: "UNIT_WARRIOR" }));
+        fresh([{ id: 4, type: "UNIT_SCOUT", x: 10, y: 15, damage: 70 }], { ...AT_WAR, enemies: raiders });
+        const r = run({ explore: true });
+        assert.deepEqual([moveOf(4)?.X, moveOf(4)?.Y], [8, 15], JSON.stringify(r.entries));
+        assert.ok(r.entries.some((e) => e.key === "UNIT_AWAY"));
+    } finally {
+        world.tiles = tiles;
+        delete world.wars;
+    }
 });

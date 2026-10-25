@@ -204,8 +204,8 @@ test("the commander never stands on water: the coast covering two soldiers is no
 });
 
 test("the commander moves where its radius covers the most soldiers, on land, when that is worth two of them; not again soon", () => {
-    // On land: 17,8 covers all three (+60, the centre's +5 lost); with two (+35) it stays (game 38: +20 moves on three
-    // turns in a row as the soldiers around it moved).
+    // On land: 17,8 and 18,8 cover all three (+60, the centre's +5 lost); 18,8 under a soldier of ours (+10: research/42
+    // A2); with two (+35) it stays (game 38: +20 moves on three turns in a row as the soldiers around it moved).
     reset({ enemies: [raider(13, 9), raider(13, 7)] });
     world.units = [
         { id: 9, type: "UNIT_ARMY_COMMANDER", ...YORK },
@@ -216,7 +216,7 @@ test("the commander moves where its radius covers the most soldiers, on land, wh
     assert.deepEqual(movesOf(9), [], `two more covered: not worth a move ${JSON.stringify(r.entries)}`);
     world.units.push({ id: 2, type: "UNIT_WARRIOR", x: 18, y: 8, moved: true });
     r = run();
-    assert.deepEqual(movesOf(9), [at(17, 8)], JSON.stringify(r.entries));
+    assert.deepEqual(movesOf(9), [at(18, 8)], JSON.stringify(r.entries));
     assert.ok(formationKeys(r).includes("FORMATION_COMMANDER"));
     // The next turn it stands at 17,8 and the three soldiers have gone west (15,8 would cover them all: +60): it stays;
     // two turns on it may move again.
@@ -231,4 +231,79 @@ test("the commander moves where its radius covers the most soldiers, on land, wh
     fake.sent.length = 0;
     r = run();
     assert.equal(movesOf(9).length, 1, JSON.stringify(r.entries));
+});
+
+// Research/41 §4D (the generals): its XP comes from the fights of the soldiers in its radius, so a soldier next to a raider
+// counts FORM.FIGHT_COVER more than one standing by.
+test("the commander stands under the soldier about to fight: next to a raider it is worth the move, standing by it is not", () => {
+    reset({ enemies: [raider(19, 8), raider(20, 8)] });
+    world.units = [
+        { id: 9, type: "UNIT_ARMY_COMMANDER", ...YORK },
+        { id: 1, type: "UNIT_WARRIOR", x: 18, y: 8, moved: true },
+    ];
+    let r = run();
+    // Under it, in the front line (research/42 A2: the soldier is the one attacked): +20 +30 +10, the centre's 5 lost.
+    assert.deepEqual(movesOf(9), [at(18, 8)], `+${FORM.COVER + FORM.FIGHT_COVER + FORM.SHIELD - FORM.CENTRE}: ${r.lines.join(" | ")}`);
+    // The same soldier two tiles from the raiders (not fighting): +20 is not worth leaving the centre.
+    reset({ enemies: [raider(20, 8), raider(20, 7)] });
+    world.units = [
+        { id: 9, type: "UNIT_ARMY_COMMANDER", ...YORK },
+        { id: 1, type: "UNIT_WARRIOR", x: 18, y: 8, moved: true },
+    ];
+    r = run();
+    assert.deepEqual(movesOf(9), [], JSON.stringify(r.entries));
+});
+
+// Research/41 Phase 4, built after game 54 (57 `formation:` stays were "hurt" while free soldiers stood near): a hurt member
+// gives its tile to a fresh soldier: a neighbour swaps places with it (the game's own move onto our unit), a farther one comes
+// in after the hurt one withdraws out of reach. None near: it stays.
+test("a hurt screen swaps out for a fresh soldier: a neighbour swaps places with it, a farther one takes its tile as it withdraws", () => {
+    const swap = (_id, op) => (op === "UNITOPERATION_SWAP_UNITS" ? { Success: true } : undefined);
+    const swaps = () => fake.sent.filter((s) => s.op === "UNITOPERATION_SWAP_UNITS").map((s) => [s.id.id, s.args.X, s.args.Y]);
+    // Two raiders east of York: two guards wanted; the holder, the hurt screen and two more there (one of them a spare).
+    const raiders = [raider(19, 8), raider(19, 7)];
+    reset({ enemies: raiders, unitCanStart: swap });
+    world.units = [
+        { id: 1, type: "UNIT_WARRIOR", ...YORK },
+        { id: 2, type: "UNIT_WARRIOR", x: 17, y: 8, damage: 45 },
+        { id: 3, type: "UNIT_WARRIOR", x: 17, y: 9 },
+        { id: 4, type: "UNIT_WARRIOR", x: 15, y: 8 },
+    ];
+    let r = run();
+    assert.deepEqual(swaps(), [[3, 17, 8]], JSON.stringify(r.entries));
+    assert.ok(r.entries.some((e) => e.key === "FORMATION_SWAP"));
+    assert.ok(r.lines.find((l) => l.includes("formation: York"))?.includes("swaps ["), JSON.stringify(r.lines));
+    assert.ok(r.lines.some((l) => l.includes("defence: York") && l.includes("(swapping in for a hurt one)")), JSON.stringify(r.lines.filter((l) => l.includes("defence:"))));
+    // The fresh one farther: the hurt one withdraws out of the raiders' reach, the fresh one takes its tile.
+    reset({ enemies: raiders, unitCanStart: swap });
+    world.units = [
+        { id: 1, type: "UNIT_WARRIOR", ...YORK },
+        { id: 2, type: "UNIT_WARRIOR", x: 17, y: 8, damage: 45 },
+        { id: 3, type: "UNIT_WARRIOR", x: 18, y: 10 },
+        { id: 4, type: "UNIT_WARRIOR", x: 15, y: 8 },
+    ];
+    r = run();
+    const [back] = movesOf(2);
+    assert.ok(back && raiders.every((h) => d(back, h) > 3), `out of reach: ${JSON.stringify(r.entries)}`);
+    assert.deepEqual(movesOf(3), [at(17, 8)], JSON.stringify(fake.sent));
+    // Raiders on both sides: no tile within its reach out of theirs: the hurt one stays, and nobody comes in.
+    reset({ enemies: [...raiders, raider(14, 8), raider(14, 9)], unitCanStart: swap });
+    world.units = [
+        { id: 1, type: "UNIT_WARRIOR", ...YORK },
+        { id: 2, type: "UNIT_WARRIOR", x: 17, y: 8, damage: 45 },
+        { id: 3, type: "UNIT_WARRIOR", x: 18, y: 10 },
+        { id: 4, type: "UNIT_WARRIOR", x: 15, y: 8 },
+        { id: 5, type: "UNIT_WARRIOR", x: 15, y: 9 },
+        { id: 6, type: "UNIT_WARRIOR", x: 16, y: 7 },
+        { id: 7, type: "UNIT_WARRIOR", x: 16, y: 9 },
+    ];
+    r = run();
+    assert.ok(!r.entries.some((e) => e.key === "FORMATION_SWAP"), JSON.stringify(r.entries));
+    assert.ok(!movesOf(3).some((m) => m.x === 17 && m.y === 8), JSON.stringify(fake.sent));
+    // No fresh soldier: it stays.
+    reset({ enemies: raiders, unitCanStart: swap });
+    world.units = [{ id: 1, type: "UNIT_WARRIOR", ...YORK }, { id: 2, type: "UNIT_WARRIOR", x: 17, y: 8, damage: 45 }];
+    r = run();
+    assert.deepEqual(swaps(), [], JSON.stringify(r.entries));
+    assert.ok(!r.entries.some((e) => e.key === "FORMATION_SWAP"));
 });

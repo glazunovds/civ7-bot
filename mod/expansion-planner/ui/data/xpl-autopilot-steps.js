@@ -17,7 +17,7 @@ import { applyTownFocus, buyPlanned, goldBalance, purchaseAdvice, queueNextBuild
 import { growthAdvice } from './xpl-growth-job.js';
 import { runWonderPlanner } from './xpl-wonder-job.js';
 import { tierValue } from '../core/xpl-wonder-tiers.js';
-import { bestAbsorber, raceLost } from '../core/xpl-wonder-race.js';
+import { bestAbsorber, raceLabel, raceLost } from '../core/xpl-wonder-race.js';
 import { ageHasEnd, ageOutlook, productionToGoldRatio, runTownAdvisor } from './xpl-town-job.js';
 import { getRules } from './xpl-rules-loader.js';
 import { FOCUS_POPULATION } from '../core/xpl-town-focus.js';
@@ -25,23 +25,30 @@ import { biasFor, biasKey, profileFor } from '../core/xpl-profiles.js';
 import { H, yieldIndex, YIELD_KEYS } from '../core/xpl-yields.js';
 import { GOLD_PRESSURE, goldPressure, happinessWorth, unhappinessShare } from '../core/xpl-scarcity.js';
 const HAPPINESS = yieldIndex("YIELD_HAPPINESS");
-import { FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MASTERY_INNOVATION, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, PROJECT_PRODUCTION_TRADITIONS, rankInnovationResearch, REACH_MAX_TURNS, REPEATABLE_PROJECTS, RESEARCH_INNOVATION, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
+import { FOCUS_VP_TRACKER, FOCUS_YIELD_TAG, INNOVATION_WONDER, gateTargets, innovationReach, isGateResearch, LAUNCH_PAD, leverBuildings, MASTERY_INNOVATION, MERCHANTS_AT_ONCE, ONE_OFF_INNOVATION, oneOffNext, pickBonusResearch, pickVictoryResearch, PROJECT_INNOVATION, PROJECT_PRODUCTION_TRADITIONS, rankInnovationResearch, REACH_MAX_TURNS, REPEATABLE_PROJECTS, RESEARCH_INNOVATION, researchToward, SCIENCE_PROJECTS, scienceSites, SITE_MAX_TURNS, STANDING_SITE_PROJECTS, wantedResearch } from '../core/xpl-victory-levers.js';
 import { disabledVictories, innovationNeed, scoreVictoryOn, triumphs } from './xpl-victory.js';
 import { settlementMilestone, triumphLine, triumphsUnderWay } from '../core/xpl-legacy.js';
 import { idString, sameId } from '../core/xpl-component-id.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
-import { afloat, airBases, airRaidTargets, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, guardDeadline, guardDetail, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, shipRole, unitKey, upgradeFirstMelee } from './xpl-autopilot-units.js';
-import { NAVAL, isWarship } from '../core/xpl-naval.js';
+import { afloat, airBases, bestOpenRoute, isCarrier, isFleetCommander, isSquadronCommander, isLandCommander, airRaidTargets, MANHATTAN, nuclearArsenal, allowedOperations, antiShipStrength, artifactSites, earlyWarning, fighterCover, frontGuards, frontGuardsWanted, guardDeadline, guardDetail, guardsFor, guardsWanted, holderDetail, hostileAircraft, isIdle, isRangedGuard, isSiegeGuard, NO_TARGET, openTradeRoutes, plannedRoleAt, rangedWanted, readyForOrders, safeSiteFrom, seasBlocked, settlerGoals, shipRole, unitKey, upgradeFirstMelee, centreLow, wallsHold, cleanPostNear } from './xpl-autopilot-units.js';
+import { NAVAL, fightsShips, isWarship } from '../core/xpl-naval.js';
+import { GENERAL, commanderTrainTurns, speedFactor, timeForFirstLevel } from '../core/xpl-generals.js';
+import { NUKE } from '../core/xpl-nuclear.js';
+import { effectiveOptions } from '../core/xpl-ap-options.js';
 import { villagesOf } from './xpl-player-facts.js';
 import { CENTRE_BASE, meleeStrength, meleeThisAge, noteMeleeObtained } from './xpl-centre-defence.js';
+import { seenNow } from './xpl-seen-units.js';
 import { TUNING } from '../core/xpl-tuning.js';
 import { focusOfProfile } from '../core/xpl-effect-value.js';
-import { cardGains, greatWorksWaiting, hostileActs, modifierEffect, traitEffects } from './xpl-autopilot-choices.js';
-import { futureClockTurns, futureInTime, pickCardResearch, pickStructural } from '../core/xpl-research-value.js';
+import { cardGains, greatWorksWaiting, hostileActs, modifierEffect, trackerClassOf, traitEffects } from './xpl-autopilot-choices.js';
+import { relicsWaiting } from './xpl-building-extras.js';
+import { futureClockTurns, futureInTime, pantheonWorth, pickCardResearch, pickStructural } from '../core/xpl-research-value.js';
 import { isMissionary, MISSIONARIES_AT_ONCE, MISSIONARY_CHARGES, MISSION_LATE_TURNS, MISSION_MIN, missionNeed } from './xpl-missions.js';
 import { chooseGoal, conversionRule, conversionValue, createBudget, noteGoalBought, rankConversions, TOWN_SHARE } from '../core/xpl-savings.js';
 import { CITY_TARGETS } from '../core/xpl-strategy.js';
+import { REPAIR, improvementRepairWait, isImprovementRepair } from '../core/xpl-repairs.js';
+import { hostileLandNear, noteRepaired, repairedAgo } from './xpl-repair-watch.js';
 import { gameKey, settings } from '../services/xpl-settings.js';
 
 export const MAX_GROWTH_PER_CITY = 3;  // citizens placed per city and turn
@@ -177,14 +184,17 @@ export function resetWar() {
     defenderTrainers.clear();
     trainedFor.clear();
     defenderBought.clear();
+    shopBought.clear();
     fronts.clear();
     meleeOrders.clear();
     frontSince.clear();
     groundNoted = -1;
     warshipNoted = -1;
+    centreHits.clear();
 }
 
 const FRONT_HOLD_TURNS = 5; // a war front stays this many turns after its leader was last at war with us or a risk
+const RISK_FRONTS_KEPT = 1;  // while a war risk lasts, the free gold keeps a defender's price for this many war fronts (game 57: 2 held ~1,100 for 35 turns)
 const FRONTS_PER_RISK = 2;  // a war risk's fronts: our settlements nearest to it (within WAR_RISK_DISTANCE; the nearest always)
 const fronts = new Map();   // sid -> { settlement: { x, y, name }, leader, turn }
 
@@ -208,12 +218,42 @@ export function warFronts() {
         const near = ours.map((o) => ({ o, d: Math.min(...theirs.map((c) => safe(() => GameplayMap.getPlotDistance(c.location.x, c.location.y, o.location.x, o.location.y), Infinity))) }))
             .sort((a, b) => a.d - b.d);
         const pick = atWar.has(id) ? near.filter((x) => x.d <= WAR_NEAR_DISTANCE) : near.filter((x, i) => i === 0 || x.d <= WAR_RISK_DISTANCE).slice(0, FRONTS_PER_RISK);
-        for (const { o } of pick) fronts.set(sidOf(o), { settlement: { x: o.location.x, y: o.location.y, name: nameOf(o) }, leader: leaderOf(id), turn: Game.turn });
+        for (const { o } of pick) {
+            // Its army is the most of their soldiers seen near it within FRONT_ARMY_MEMORY turns: soldiers walk in and out
+            // of sight (after game 56: Керетаро's front saw 0-1 of Trung Trac's soldiers, and 5 land units and 4 ships came).
+            const seen = armyNear(id, o.location);
+            const was = fronts.get(sidOf(o));
+            const kept = was && Game.turn >= (was.peakTurn ?? Infinity) && Game.turn - was.peakTurn <= FRONT_ARMY_MEMORY && (was.peak ?? 0) >= seen;
+            const peak = kept ? { peak: was.peak, peakTurn: was.peakTurn } : { peak: seen, peakTurn: Game.turn };
+            fronts.set(sidOf(o), { settlement: { x: o.location.x, y: o.location.y, name: nameOf(o) }, leader: leaderOf(id), turn: Game.turn, army: peak.peak, seen, ...peak, atWar: atWar.has(id) });
+        }
     }
     const alive = new Set(ours.map(sidOf));
     for (const [k, f] of [...fronts]) if (!alive.has(k) || Game.turn - f.turn > FRONT_HOLD_TURNS) fronts.delete(k);
-    return [...fronts.values()].map(({ settlement, leader }) => ({ settlement, leader }));
+    return [...fronts.values()].map(({ settlement, leader, army, seen, atWar: war }) => ({ settlement, leader, army, seen, atWar: !!war }));
 }
+
+const FRONT_ARMY_MEMORY = 10; // a front's army: the most of that leader's soldiers seen near it within this many turns
+
+const FRONT_ARMY_LOOK = 10; // a front counts the leader's land soldiers we see this close to it
+
+/** That leader's land soldiers we see within FRONT_ARMY_LOOK of a settlement of ours (commanders aside). */
+function armyNear(id, at) {
+    const VISIBLE = globalThis.RevealedStates?.VISIBLE;
+    let n = 0;
+    for (const u of safe(() => Players.get(id).Units.getUnits(), []) ?? []) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (def?.Domain !== "DOMAIN_LAND" || def.CoreClass !== "CORE_CLASS_MILITARY" || u.isCommanderUnit || !u.location) continue;
+        if (VISIBLE !== undefined && safe(() => GameplayMap.getRevealedState(pid(), u.location.x, u.location.y), VISIBLE) !== VISIBLE) continue;
+        // The unit itself visible to us too (the plot tooltip's test: game 60, SCM-2).
+        if (!seenNow(u)) continue;
+        if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, at.x, at.y), Infinity) <= FRONT_ARMY_LOOK) n++;
+    }
+    return n;
+}
+
+/** Is this settlement of ours a war front now (warFronts' memory)? */
+const isFront = (x, y) => fronts.has(`c:${x}-${y}`);
 
 /** With a war risk, a conversion leaves two defenders' price (research/23 D3); it is part of the goal's need (research/24 G1). */
 const conversionKeep = () => (war.risk.length > 0 ? 2 * defenderPrice() : 0);
@@ -546,13 +586,13 @@ function wayStep(target, holder, available) {
     return best;
 }
 
-function researchTowardPath(focus, candidates) {
+function researchTowardPath(focus, candidates, keepTarget = () => true) {
     const { prereqs, firstUnlocks, researched } = treeFacts();
     if (prereqs.size === 0) return null;
     const goals = [];
     for (const def of GameInfo.ProgressionTreeNodes ?? []) {
         const type = def.ProgressionTreeNodeType;
-        if (!prereqs.has(type) || !wantedResearch(focus, { nodeType: type, targets: firstUnlocks.get(type) ?? [] })) continue;
+        if (!prereqs.has(type) || !wantedResearch(focus, { nodeType: type, targets: (firstUnlocks.get(type) ?? []).filter(keepTarget) })) continue;
         if (!researched(type)) goals.push(type);
     }
     return researchToward(goals, candidates, (t) => prereqs.get(t), researched);
@@ -721,6 +761,15 @@ export function chooseResearch(kind, settings, focus = null) {
             return { key: "TECH_FOR_MELEE", args: [safe(() => Locale.compose(m.name), m.unitType), safe(() => Locale.compose(step.name), step.nodeType), m.strength] };
         }
     }
+    // «Ядерное оружие» in a war with a major (research/42 D1; game 53: Fission came only after the game was decided):
+    // Nuclear Fission and its way first. Only with «Оборона», which the strike needs (game 60's review, UI-5).
+    if (kind === "tech" && effectiveOptions(settings?.autopilot).nuclear && war.atWar.length > 0) {
+        const step = wayStep(FISSION, holder, available);
+        if (step && safe(() => Game.PlayerOperations.canStart(pid(), op, { ProgressionTreeNodeType: step.node }, false), null)?.Success) {
+            Game.PlayerOperations.sendRequest(pid(), op, { ProgressionTreeNodeType: step.node });
+            return { key: "TECH_FOR_NUCLEAR", args: [safe(() => Locale.compose(step.name), step.nodeType)] };
+        }
+    }
     // A settler's only sites lie across rough seas (Exploration): Shipbuilding and the way to it first, any focus
     // (research/22 A1: game 7, a settler stood idle 28 turns until Shipbuilding came by chance).
     if (kind === "tech" && safe(() => seasBlocked(), false)) {
@@ -744,6 +793,16 @@ export function chooseResearch(kind, settings, focus = null) {
         // codices archived); the Academy's way stays wanted (a lever building).
         if (safe(() => codexRoom(), 1) <= 0) for (const c of candidates) c.targets = c.targets.filter((t) => !/CODEX/.test(String(t)));
     }
+    // Culture: a wonder only while its race is ours (game 60: Discipline at A8 and Tactics at A44 for Dur-Sharrukin and the
+    // Terracotta Army, both rated LOW and never started, while Mysticism waited); our civilization's own wonder always. The
+    // way toward the path's research leaves them out too.
+    const wonderOpen = focus === "CULTURE" ? safe(() => wonderRaceOpen(), null) : null;
+    const keepTarget = (t) => !wonderOpen || !/^WONDER_/.test(String(t)) || wonderOpen(String(t));
+    if (wonderOpen) for (const c of candidates) c.targets = c.targets.filter(keepTarget);
+    // A victory point tracker of the focus's victory the node switches on (game 60: celebrations before Entertainment
+    // earned no culture points).
+    const victoryClass = focus ? `VICTORY_CLASS_${focus}` : null;
+    if (victoryClass) for (const c of candidates) if (c.targets.some((t) => safe(() => trackerClassOf(t), null) === victoryClass)) c.targets.push(FOCUS_VP_TRACKER);
     // A gate of this age not reached yet (science: Spherical Earth / Chart the Stars, the Calculus and
     // Heliocentric masteries, Rocketry): only its way, the path's wanted research on it first.
     // Rocketry cannot come in time (the strategy's gateLate): no gate, the Innovation masteries first
@@ -794,7 +853,7 @@ export function chooseResearch(kind, settings, focus = null) {
     const toward = civicWay ?? (focus && !innovation && !victory
         // On a gate's way: toward the path's nearest wanted research through it (Pottery to Writing's
         // Library, both on the way to Mathematics), else the quickest step.
-        ? (gate ? (gate.pool.some((c) => gate.goals.has(c.nodeType)) ? null : safe(() => researchTowardPath(focus, gate.pool), null) ?? { via: quickest(gate.pool), goal: gate.goal }) : safe(() => researchTowardPath(focus, candidates), null))
+        ? (gate ? (gate.pool.some((c) => gate.goals.has(c.nodeType)) ? null : safe(() => researchTowardPath(focus, gate.pool), null) ?? { via: quickest(gate.pool), goal: gate.goal }) : safe(() => researchTowardPath(focus, candidates, keepTarget), null))
         : null);
     // Nothing of the path left to research or reach: what grants its victory points by itself.
     const bonus = focus && !innovation && !victory && !toward ? (gate ? gate.pool.find((c) => gate.goals.has(c.nodeType)) ?? null : pickBonusResearch(focus, candidates)) : null;
@@ -848,13 +907,58 @@ const STRUCTURE_QUICK_TURNS = 3; // a structural node this quick goes ahead of t
 
 /**
  * The structural node to research now (core pickStructural): the settlement cap's room counts the settlements we have
- * (Stats), the specialist cap weighs more for the science focus. @returns a candidate with `kinds`, or null
+ * (Stats), the specialist cap weighs more for the science focus, a pantheon while one is left for us (pantheonOpen). Each
+ * candidate also carries the nodes it is the last missing prerequisite of (`opens`). @returns a candidate with `kinds`, or null
  */
 function structuralStep(holder, available, focus) {
     const stats = safe(() => Players.get(pid()).Stats, null);
     const cap = Number(stats?.settlementCap) || 0;
     const room = cap > 0 ? cap - (Number(stats?.numSettlements) || 0) : Infinity;
-    return pickStructural(researchCandidates(holder, available), { capRoom: room, science: focus === "SCIENCE", effectOf: (t) => safe(() => modifierEffect(t), null) });
+    const candidates = researchCandidates(holder, available);
+    const { prereqs, firstUnlocks, researched } = treeFacts();
+    for (const c of candidates) {
+        c.opens = [];
+        for (const [node, before] of prereqs) {
+            if (!before.includes(c.nodeType) || researched(node) || !before.every((n) => n === c.nodeType || researched(n))) continue;
+            const hash = safe(() => GameInfo.ProgressionTreeNodes.lookup(node)?.$hash, null);
+            const turns = Number(hash !== null ? safe(() => holder.getTurnsForNode(hash), NaN) : NaN);
+            c.opens.push({ nodeType: node, targets: firstUnlocks.get(node) ?? [], turns: Number.isFinite(turns) && turns > 0 ? turns : c.turns });
+        }
+    }
+    return pickStructural(candidates, { capRoom: room, science: focus === "SCIENCE", pantheon: safe(() => pantheonOpen(), undefined), effectOf: (t) => safe(() => modifierEffect(t), null) });
+}
+
+/**
+ * What a pantheon's unlock is worth now (core pantheonWorth): none once we have one (player.Religion.getPantheons(), as the
+ * pantheon-complete panel reads it), more while an exclusive one (not Shareable) is still claimable (Game.Religion.isBeliefClaimable,
+ * the belief picker's test).
+ */
+function pantheonOpen() {
+    const have = (safe(() => Players.get(pid()).Religion.getPantheons(), []) ?? []).length > 0;
+    const defs = GameInfo.Beliefs?.filter((b) => b.BeliefClassType === "BELIEF_CLASS_PANTHEON") ?? [];
+    if (defs.length === 0) return pantheonWorth({ have });
+    const free = defs.filter((b) => safe(() => Game.Religion.isBeliefClaimable(b.BeliefType), true));
+    const shareable = (b) => b.Shareable === true || b.Shareable === "true" || b.Shareable === 1;
+    return pantheonWorth({ have, exclusiveFree: free.some((b) => !shareable(b)), anyFree: free.length > 0 });
+}
+
+/**
+ * The culture path's wonders worth researching for (research/game60 M3): our civilization's own (CivilizationFavoredWonders)
+ * always; else by the wonder planner's race (state.results.wonders): none built elsewhere or ours, a locked one by the race
+ * its unlock would start (`unlockRace`), HIGH or MEDIUM. A wonder the planner has not judged counts. @returns (type) -> bool
+ */
+function wonderRaceOpen() {
+    const civ = safe(() => GameInfo.Civilizations.lookup(Players.get(pid()).civilizationType)?.CivilizationType, null);
+    const favored = new Set((GameInfo.CivilizationFavoredWonders?.filter((r) => r.CivilizationType === civ) ?? []).map((r) => r.FavoredWonderType));
+    const rows = new Map((safe(() => state.get().results.wonders?.rows, []) ?? []).map((r) => [r.type, r]));
+    return (type) => {
+        if (favored.has(type)) return true;
+        const row = rows.get(type);
+        if (!row) return true;
+        if (row.status === "BUILT" || row.status === "OURS") return false;
+        const race = row.status === "LOCKED" ? row.unlockRace ?? row.race : row.race;
+        return !race || race.label === "HIGH" || race.label === "MEDIUM";
+    };
 }
 
 /**
@@ -990,7 +1094,7 @@ function unitWanted(def, unitOptions) {
     if (isSettler(def)) return false;
     if (isMerchant(def)) return !!unitOptions.merchants && unitCount(isMerchant) < Math.min(MERCHANTS_AT_ONCE, openTradeRoutes({ profile: unitOptions.profile }));
     if (isExplorer(def)) return !!(unitOptions.explorers ?? unitOptions.explore) && unitCount(isExplorer) < EXPLORERS_WANTED;
-    if (isScout(def)) return !!unitOptions.explore && unitCount(isScout) < SCOUTS_WANTED;
+    if (isScout(def)) return !!unitOptions.explore && unitCount(isScout) < scoutsWanted();
     return false;
 }
 
@@ -1267,18 +1371,31 @@ function isWallsType(h) {
  * Where a threatened settlement's walls go (the user, game 27: Ханькоу's walls waited 10 turns behind a Laboratory with
  * progress and were done the turn its centre fell): the very front, ahead of an item in production with progress (root
  * gotcha 20: an item moved ahead started from its own production and the item behind kept its own, 11 cases of 12). Not
- * ahead of an item done this turn; nor, unless the centre is damaged or a war is at our door, of a wonder in a race or a
- * one-off science project that would then miss the age (holdsFront, with the walls' own turns). Behind repairs and a
- * unit at the front (toFront).
+ * ahead of an item done this turn; nor of a one-off science project that would then miss the age, unless the centre is
+ * damaged or a war is at our door; nor of a wonder in a race (holdsFront, with the walls' own turns), unless the centre is
+ * below WALLS_URGENT_SHARE of its health (centreLow; game 60: a walled centre at 181 of 200 sent walls ahead of the Ha'amonga
+ * a Maui, two turns from done, and it was lost by a turn). Walls for another district (`loc` not the centre, or the centre
+ * walled already) guard no centre: they wait their turn (frontSlot) and never pass a wonder in production (game 60: Byrsa at
+ * 81% waited 9 turns behind them), unless the centre is below the share or a war is at our door: then the centre's rule (a
+ * settlement falls only once every fortified district is taken). Behind repairs and a unit at the front (toFront).
  */
-function wallsSlot(city, threat, def) {
+function wallsSlot(city, threat, def, loc = null) {
     const slot = frontSlot(city);
+    const head = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+    const outer = !!threat?.walled || (!!loc && (loc.x !== city.location.x || loc.y !== city.location.y));
+    if (outer && !war.near && !centreLow(threat)) return isWonderType(head) ? Math.max(1, slot) : slot;
     if (slot === 0) return 0;
     const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
     if (left > 0 && left <= 1) return slot;
-    if (threat?.damaged || war.near) return 0;
+    // The user's rule after game 27: a war at our door or an unwalled centre under attack sends the walls first, a raced
+    // wonder too (game 60 changed only the walled centre's case: a scratch on it against independents is no attack).
+    if (centreLow(threat) || war.near || (threat?.damaged && !threat?.walled)) return 0;
     const turns = itemTurns(city, def.$hash);
-    return safe(() => holdsFront(city, null, Number.isFinite(turns) ? turns : 99), false) ? slot : 0;
+    if (!safe(() => holdsFront(city, null, Number.isFinite(turns) ? turns : 99), false)) return 0;
+    // A raced wonder keeps the front from walls on a walled centre above the share (a lost race aside: the cash-out's); a
+    // science project gives way to a damaged centre.
+    if (isWonderType(head)) return lostWonderRows().has(typeNameOf(head)) ? 0 : slot;
+    return threat?.damaged || war.near ? 0 : slot;
 }
 
 /**
@@ -1399,6 +1516,45 @@ function victoryRanks(levers, nextOneOff = new Map()) {
     };
 }
 
+/** The focus's lever buildings of this age now (core leverBuildings): the culture path's Temple while relics wait (M1). */
+function leversOf(focus) {
+    return leverBuildings(focus, currentAge(), { relicsWaiting: focus === "CULTURE" ? Number(safe(() => relicsWaiting(), 0)) || 0 : 0 });
+}
+const RELIC_TEMPLE = "BUILDING_TEMPLE";
+
+/**
+ * Temples to queue for the culture path: the relics waiting less the Temples queued already (each takes one), those ordered
+ * this pass too (the queues show them only next pass).
+ */
+function templeRoom() {
+    const temple = safe(() => GameInfo.Constructibles.lookup(RELIC_TEMPLE)?.$hash, null);
+    const queued = temple === null ? 0 : ownSettlements().filter((c) => queueTypes(c).includes(temple) || builtThisPass(c).has(RELIC_TEMPLE)).length;
+    return (Number(safe(() => relicsWaiting(), 0)) || 0) - queued;
+}
+
+/**
+ * Does buying (or saving for) this path item take a relic's room (templeRoom)? Only a Temple, and not one already in its
+ * city's queue (that one counts there already). `null`: a Temple ordered there this pass, not bought on top of it.
+ */
+function takesTempleRoom(item) {
+    if (item.def.ConstructibleType !== RELIC_TEMPLE) return false;
+    if (builtThisPass(item.city).has(RELIC_TEMPLE)) return null;
+    return !queueTypes(item.city).includes(item.def.$hash);
+}
+
+/**
+ * The culture path's Temple purchases and goals within the relics waiting (research/game60 M1; the first build bought 3
+ * Temples in one pass for one relic): those that take a relic's room, in their order, while room is left (`room.n`).
+ */
+function withinTempleRoom(items, room = { n: templeRoom() }) {
+    return items.filter((i) => {
+        const takes = takesTempleRoom(i);
+        if (takes === null || (takes && room.n <= 0)) return false;
+        if (takes) room.n--;
+        return true;
+    });
+}
+
 /**
  * Is this building a science site for this city? The Airfield and the Radio Station are only where no Launch Pad stands
  * or is queued (research/32 §3, 38 C1): there Crewed Space Flight Preparation brings more Innovation, and the Radio
@@ -1456,7 +1612,7 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
     // Science: the cities running space work put the production buildings that pay for themselves first; their move is
     // the city's queue edit of this pass, and nothing of the victory work moves ahead of them (research/31 §2.4).
     if (focus === "SCIENCE") productionFirstStep(cities, out, note, strategy);
-    const levers = leverBuildings(focus, currentAge()).map((t) => safe(() => GameInfo.Constructibles.lookup(t), null)).filter(Boolean);
+    const levers = leversOf(focus).map((t) => safe(() => GameInfo.Constructibles.lookup(t), null)).filter(Boolean);
     const nextOneOff = new Map(); // sid -> a one-off that runs ahead of Preparation there (oneOffNext)
     const rankOf = victoryRanks(levers, nextOneOff);
     // A move of this item never passes an item of the same or a higher rank, nor what `also` names.
@@ -1484,6 +1640,8 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
         if (!loc) return false;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash, X: loc.x, Y: loc.y });
         note(city, def.$hash);
+        // A Temple takes a relic's room this pass (templeRoom: the purchases read it after this step).
+        if (def.ConstructibleType === RELIC_TEMPLE) noteBuilt(city, RELIC_TEMPLE);
         if (front) toFront(city, def.$hash, null, { behind: behindOwn(city, def.$hash) });
         out.push({ key: "VICTORY_WORK", args: [nameOf(city), safe(() => Locale.compose(def.Name), def.ConstructibleType)] });
         return true;
@@ -1670,8 +1828,14 @@ export function pushVictoryWork(focus, { settlers = false, pads = null, queued =
     // The path's buildings last: never ahead of a queued wonder or project (research/23 S1: game 8, the University and
     // Shwedagon, the Academy and Chart the Stars swapped places every pass, the queue read being a pass late), nor of the
     // space work. Only where it is built soon (leverSoon); a slower city may buy it (victoryPurchases lists every city's).
+    // The culture path's Temples: no more queued than relics wait (templeRoom).
+    let temples = levers.some((d) => d.ConstructibleType === RELIC_TEMPLE) ? templeRoom() : 0;
     for (const c of cities) {
-        for (const def of levers) if (!queueTypes(c).includes(def.$hash) && leverSoon(c, def)) place(c, def, { front: false });
+        for (const def of levers) {
+            if (queueTypes(c).includes(def.$hash) || !leverSoon(c, def)) continue;
+            if (def.ConstructibleType === RELIC_TEMPLE && temples <= 0) continue;
+            if (place(c, def, { front: false }) && def.ConstructibleType === RELIC_TEMPLE) temples--;
+        }
         const first = levers.find((def) => queueTypes(c).includes(def.$hash) && leverSoon(c, def));
         if (first) toFront(c, first.$hash, leverSlot(c), { behind: behindOwn(c, first.$hash, wonderOrProject) });
     }
@@ -2240,7 +2404,7 @@ function ownsScienceFactoryResource() {
 export function victoryPurchases(focus, { pads = null, sitesFirst = false } = {}) {
     const out = [];
     const lookup = (t) => safe(() => GameInfo.Constructibles.lookup(t), null);
-    const levers = leverBuildings(focus, currentAge()).map(lookup).filter(Boolean);
+    const levers = leversOf(focus).map(lookup).filter(Boolean);
     const sites = focus === "SCIENCE" ? activeSites(pads).map((site) => lookup(site.type)).filter(Boolean) : [];
     // A town also tries the path's buildings an Urban Center opens (the Observatory; research/22 C2).
     const forTowns = townLevers(focus).filter((d) => !levers.some((l) => l.$hash === d.$hash));
@@ -2339,11 +2503,16 @@ export function buyVictoryWork(focus, reserveTurns, purchases = { bought: new Se
     const out = [];
     const b = budgetOf(purchases, reserveTurns);
     const siteTypes = new Set(scienceSites(currentAge(), { pads }).map((site) => site.type));
+    // The culture path's Temples: no more bought than relics wait (templeRoom; a LEVER goal is bought here, not by buyGoal).
+    const temples = { n: templeRoom() };
     for (const item of victoryPurchases(focus, { pads, sitesFirst: commit })) {
         // The final age: science sites (Launch Pads) are not limited, every one the gold covers is bought.
         if (out.length >= MAX_PURCHASES && !(commit && siteTypes.has(item.def.ConstructibleType))) continue;
         if (!item.ok || !item.args || b.bought.has(item.key)) continue;
         if (item.cost > b.poolFor(item.key)) continue;
+        const takes = takesTempleRoom(item);
+        if (takes === null || (takes && temples.n <= 0)) continue;
+        if (takes) temples.n--;
         const goal = b.isGoal(item.key);
         Game.CityCommands.sendRequest(item.city.id, CityCommandTypes.PURCHASE, item.args);
         const name = safe(() => Locale.compose(item.def.Name), item.def.ConstructibleType);
@@ -2381,55 +2550,196 @@ function damagedOf(city) {
 }
 
 /**
- * Repairs come first (the user's priority): every damaged building or improvement is bought
- * with gold when the gold covers it (before the gold reserve, which only holds back new
- * buildings), else queued in its city and moved to the front of the queue. Same requests as the
- * production list's repair: PURCHASE / BUILD {ConstructibleType, X, Y} per damaged tile.
- * Every repair is counted in the pass budget (seen in game 6: two repairs that each fit the same
- * gold were both sent). @param options { buy, queue, budget }
+ * Repairs come first (the user's priority): every damaged building is bought with gold when the
+ * gold covers it (before the gold reserve, which only holds back new buildings), else queued in its
+ * city (at most REPAIR.QUEUED_MAX there) and moved to the front of the queue. An improvement (a rural
+ * tile; game 60) is bought from the free gold, also where a wonder is queued; queued only where it
+ * cannot be bought (unrest, purchases off) and no wonder is queued; it
+ * waits while a hostile land unit stands near it, a while after we repaired it, and while a town's
+ * conversion takes the gold on a non-final age's last turns (core/xpl-repairs.js; REPAIR_DEFERRED once
+ * a turn). Same requests as the production list's repair: PURCHASE / BUILD {ConstructibleType, X, Y}
+ * per damaged tile. Every repair is counted in the pass budget (seen in game 6: two repairs that each
+ * fit the same gold were both sent). @param options { buy, queue, budget }
  */
 export function repairBuildings({ buy = true, queue = true, budget = null } = {}) {
     const out = [];
     const b = budget ?? createBudget({ gold: goldBalance() });
+    const turn = Number(Game.turn) || 0;
+    const conversion = lastTurnsConversion(b);
+    const waits = [];
     for (const city of ownSettlements()) {
         const damaged = damagedOf(city);
+        const recorded = queuedRepairs(city);
+        let queued = new Set([...damaged.filter((d) => d.inQueue).map((d) => d.def.$hash), ...recorded]).size;
+        // «Settlements suffering from Unrest cannot purchase … Improvements, or Repairs» (Civilopedia), unless an effect allows
+        // it (city.Gold.canPurchaseWhileInUnrest, as the production chooser reads it); production still runs there.
+        const shut = !!safe(() => city.Happiness.hasUnrest, false) && !safe(() => city.Gold.canPurchaseWhileInUnrest, true);
+        // Queues this repair, at most REPAIR.QUEUED_MAX in the city's queue, never on a tile a wonder of ours is queued or
+        // ordered on (one order per tile: game 42). @returns true when sent
+        const queueRepair = (d, loc, args, name) => {
+            if (!queue || city.isTown || d.inQueue || queued >= REPAIR.QUEUED_MAX) return false;
+            if (tileTaken(loc, { wondersOnly: true }) !== null) return false;
+            if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) return false;
+            Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
+            notePlotOrder(loc, d.def.$hash);
+            noteRepairQueued(city, d.def.$hash);
+            queued++;
+            out.push({ key: "REPAIR_QUEUED", args: [name, nameOf(city)] });
+            return true;
+        };
         for (const d of damaged) {
             for (const plot of d.plots) {
                 const loc = safe(() => GameplayMap.getLocationFromIndex(plot), null);
                 if (!loc) continue;
                 const args = { ConstructibleType: d.def.$hash, X: loc.x, Y: loc.y };
+                const name = safe(() => Locale.compose(d.def.Name), d.def.ConstructibleType);
+                // An improvement: bought from the free gold (game 60: four repairs queued in the capital waited 21-33 turns
+                // behind its wonder, then took a turn of production each, ~107 lost to the overflow cap).
+                if (isImprovementRepair(d.def)) {
+                    const wait = improvementRepairWait({ hostile: hostileLandNear(loc, REPAIR.SAFE_RADIUS), repairedAgo: repairedAgo(loc, turn), conversion });
+                    if (wait && wait.why !== "CONVERT") {
+                        waits.push({ name, city, loc, wait });
+                        continue;
+                    }
+                    // Where it cannot be bought (unrest, «Покупки» off) it is queued as before, where no wonder waits in the
+                    // queue; the conversion's gold does not pay for that.
+                    if ((!buy || shut) && !wonderHeldIn(city) && queueRepair(d, loc, args, name)) break;
+                    if (wait) {
+                        waits.push({ name, city, loc, wait });
+                        continue;
+                    }
+                    if (!buy) continue;
+                    const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
+                    const cost = Number(r?.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, d.def.ConstructibleType), Infinity));
+                    if (!r?.Success || !Number.isFinite(cost) || cost > b.free()) {
+                        waits.push({ name, city, loc, wait: { why: "GOLD", cost, free: b.free(), refused: r?.Success ? null : r?.FailureReasons ?? [] } });
+                        continue;
+                    }
+                    Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, args);
+                    b.spend(cost, { kind: "REPAIR", label: `${name} (${nameOf(city)})` });
+                    noteRepaired(loc, turn);
+                    // Probe: research/32 §6 found wonders leaving a queue after a building was bought in their city; does a
+                    // repaired improvement do it too (the wonder watch says when one leaves its queue unbuilt)?
+                    const wonder = wonderHeldIn(city);
+                    if (wonder) log.info(`repairs: ${d.def.ConstructibleType} at ${loc.x},${loc.y} bought in ${nameOf(city)} while ${wonder} is in its queue (probe P-REP-2: does the wonder stay?)`);
+                    out.push({ key: "REPAIR_BOUGHT", args: [name, nameOf(city), cost] });
+                    continue;
+                }
                 // Queued instead where a wonder is queued (research/32 §6).
                 if (buy && !holdsWonder(city)) {
                     const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
                     const cost = Number(r?.Cost ?? safe(() => city.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, d.def.ConstructibleType), Infinity));
                     if (r?.Success && Number.isFinite(cost) && cost <= b.all()) {
                         Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, args);
-                        const name = safe(() => Locale.compose(d.def.Name), d.def.ConstructibleType);
                         b.spend(cost, { kind: "REPAIR", label: `${name} (${nameOf(city)})` });
                         out.push({ key: "REPAIR_BOUGHT", args: [name, nameOf(city), cost] });
                         continue;
                     }
                 }
-                if (!queue || city.isTown || d.inQueue) continue;
-                // Never a second order on a tile a wonder of ours is queued or ordered on (one order per tile: game 42).
-                if (tileTaken(loc, { wondersOnly: true }) !== null) continue;
-                if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
-                Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
-                notePlotOrder(loc, d.def.$hash);
-                out.push({ key: "REPAIR_QUEUED", args: [safe(() => Locale.compose(d.def.Name), d.def.ConstructibleType), nameOf(city)] });
-                break; // the rest of this type next pass (one queue entry per type)
+                // At most REPAIR.QUEUED_MAX repairs in a city's queue: each takes a turn of production and its overflow.
+                if (queueRepair(d, loc, args, name)) break; // the rest of this type next pass (one queue entry per type)
             }
         }
-        // A repair waiting behind other items goes to the front (behind an item with progress: frontSlot).
+        // A repair waiting behind other items goes to the front (behind an item with progress: frontSlot); ours by our own
+        // record and a queued building standing damaged on its tile too (queuedRepairs; game 60: REPAIR_FIRST never came in
+        // 140 turns, very likely because the game lists a queued repair without its tiles).
         if (!queue || city.isTown) continue;
-        const repairs = new Set(damaged.filter((d) => d.inQueue).map((d) => d.def.$hash));
+        // Not while a wonder is in production: the repair waits for it either way, the place right behind it is the refund
+        // guard's (guardWonderRefund: a big building there), and the two would take the city's one queue edit (root gotcha 54)
+        // turn about; ahead of a wonder the wonder step puts it back.
+        if (isWonderType(safe(() => city.BuildQueue.currentProductionTypeHash, null))) continue;
+        const repairs = new Set([...damaged.filter((d) => d.inQueue).map((d) => d.def.$hash), ...recorded]);
         const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
         const to = frontSlot(city);
         const i = items.findIndex((q, j) => j > to && repairs.has(queueItemType(q)));
         if (i <= to || !moveInQueue(city, i, to)) continue;
         out.push({ key: "REPAIR_FIRST", args: [nameOf(city)] });
     }
+    out.push(...noteRepairWaits(waits));
     return out;
+}
+
+const repairOrders = new Map(); // city key -> Map(type hash -> the turn we queued its repair)
+
+/** Notes a repair we queued in this city. */
+function noteRepairQueued(city, hash) {
+    const k = sidOf(city);
+    if (!repairOrders.has(k)) repairOrders.set(k, new Map());
+    repairOrders.get(k).set(hash, Number(Game.turn) || 0);
+}
+
+/**
+ * The repairs in this city's queue: those we queued that still stand there (one of this turn counts: the queue shows it
+ * later), and, as that record is runtime state (a reload or a restart forgets it), each queued building standing damaged on
+ * its own tile (standsDamaged).
+ */
+function queuedRepairs(city) {
+    const out = new Set();
+    const items = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+    const types = new Set(items.map(queueItemType));
+    const mine = repairOrders.get(sidOf(city));
+    for (const [hash, turn] of [...(mine ?? [])]) {
+        if (!types.has(hash) && turn !== Game.turn) mine.delete(hash);
+        else out.add(hash);
+    }
+    for (const q of items) {
+        const h = queueItemType(q);
+        if (!out.has(h) && standsDamaged(city, h, q?.location)) out.add(h);
+    }
+    return out;
+}
+
+/**
+ * Does this building stand damaged (pillaged) in this city: on `loc`, the tile its queue entry was ordered on, else on any
+ * tile of the city when the game lets it stand there once only (Buildings.MultiplePerCity: walls and bridges may stand on
+ * several)? Constructibles' `damaged`, as the city details panel reads it.
+ */
+function standsDamaged(city, h, loc) {
+    const def = safe(() => GameInfo.Constructibles.lookup(h), null);
+    if (def?.ConstructibleClass !== "BUILDING") return false;
+    const multiple = safe(() => GameInfo.Buildings.lookup(def.ConstructibleType)?.MultiplePerCity, false);
+    const tiles = loc && loc.x >= 0 ? [loc]
+        : multiple === true || multiple === "true" ? []
+            : (safe(() => city.getPurchasedPlots(), []) ?? []).map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter(Boolean);
+    for (const t of tiles) {
+        for (const id of safe(() => MapConstructibles.getHiddenFilteredConstructibles(t.x, t.y), []) ?? []) {
+            const c = safe(() => Constructibles.getByComponentID(id), null);
+            if (c?.damaged === true && c.complete !== false && safe(() => GameInfo.Constructibles.lookup(c.type)?.ConstructibleType, null) === def.ConstructibleType) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * A conversion goal paid on a non-final age's last turns, which the gold covers now (goldPlan's `noReserve`: the gold
+ * carries over in full, so the reserve keeps nothing then): its town, else null. Improvement repairs wait for it (game 60:
+ * T139's 24-gold repair and the 181 reserve left Самара's 950 conversion 13 short; it cost 2,350 in Exploration).
+ */
+function lastTurnsConversion(b) {
+    const g = b?.goal;
+    if (!g || g.done || g.kind !== "CONVERT" || !g.noReserve) return null;
+    return g.cost <= b.all() ? g.town ?? g.label : null;
+}
+
+let repairWaitsNoted = -1; // the turn UI.log listed the improvements waiting for their repair
+
+/** UI.log, once a turn: the improvements whose repair waits and why; a REPAIR_DEFERRED entry for the first rule-held one. */
+function noteRepairWaits(waits) {
+    const turn = Number(Game.turn) || 0;
+    if (waits.length === 0 || repairWaitsNoted === turn) return [];
+    repairWaitsNoted = turn;
+    const text = (w) => w.why === "HOSTILE" ? `${w.unit}${w.owner !== null && w.owner !== undefined ? ` of p${w.owner}` : ""} ${w.d} tile(s) away`
+        : w.why === "RECENT" ? `repaired ${w.turns} turn(s) ago`
+            : w.why === "CONVERT" ? `the gold goes to ${w.town}'s conversion`
+                : `${Number.isFinite(w.cost) ? `costs ${Math.round(w.cost)}, ${Math.round(w.free)} free gold` : "no price"}${w.refused?.length ? ` (${w.refused.join("; ")})` : ""}`;
+    log.info(`repairs: waiting [${waits.map((x) => `${x.name} (${nameOf(x.city)}) ${x.loc.x},${x.loc.y}: ${text(x.wait)}`).join("; ")}]`);
+    const first = waits.find((x) => x.wait.why !== "GOLD");
+    if (!first) return [];
+    const w = first.wait;
+    const unit = w.unit ? composeOr(safe(() => GameInfo.Units.lookup(w.unit)?.Name, w.unit)) : "";
+    const why = w.why === "HOSTILE" ? composeOr("LOC_XPL_AP_REPAIR_WHY_HOSTILE", unit, w.d)
+        : w.why === "RECENT" ? composeOr("LOC_XPL_AP_REPAIR_WHY_RECENT", w.turns) : composeOr("LOC_XPL_AP_REPAIR_WHY_CONVERT", w.town);
+    return [{ key: "REPAIR_DEFERRED", args: [first.name, nameOf(first.city), why] }];
 }
 
 // ---- resources ----------------------------------------------------------------------
@@ -2540,6 +2850,31 @@ export function resourcesPay() {
     return (safe(() => traitEffects(), []) ?? []).some((e) => RESOURCE_PAY_EFFECTS.has(e.effect));
 }
 
+const MERCHANTS_OTHER_FOCUS = 1;      // merchants at a time for a focus other than the economy...
+const MERCHANT_PAYBACK = 2;            // ...while the best open route, over the age's turns left, pays this many times its cost
+const MERCHANT_FREE_SLOTS = 2;         // ...and our settlements have this many free resource slots for the imports
+const MERCHANT_TURNS_NO_END = 60;      // the turns a route counts in an age with no end on the clock
+
+/**
+ * Does a merchant pay for itself without the economic focus (research/game60 M12)? A trade route is open now, the best one's
+ * worth a turn (its yields, weighed) over the age's turns left is above MERCHANT_PAYBACK times the merchant's cost (weighed as
+ * production), and our settlements have MERCHANT_FREE_SLOTS free resource slots or more for what it imports.
+ */
+function merchantPays(unitOptions) {
+    const best = bestOpenRoute({ profile: unitOptions.profile });
+    if (!best) return false;
+    let free = 0;
+    for (const c of ownSettlements()) free += Math.max(0, (Number(safe(() => c.Resources.getAssignedResourcesCap(), 0)) || 0) - (safe(() => c.Resources.getAssignedResources(), []) ?? []).length);
+    if (free < MERCHANT_FREE_SLOTS) return false;
+    const def = GameInfo.Units?.find((d) => isMerchant(d) && !d.TraitType);
+    const city = ownSettlements().find((c) => !c.isTown);
+    const cost = def && city ? Number(safe(() => city.Production.getUnitProductionCost(def.UnitType), def.Cost ?? 0)) || 0 : 0;
+    const left = Number(safe(() => ageOutlook().turnsLeft, NaN));
+    const turns = Number.isFinite(left) ? left : MERCHANT_TURNS_NO_END;
+    const weights = profileFor({ profile: unitOptions.profile }).y;
+    return best.value * turns > MERCHANT_PAYBACK * cost * (weights[yieldIndex("YIELD_PRODUCTION")] ?? 1);
+}
+
 /** Do trade routes pay our civilization or leader: a trait paying per route or widening them, or a merchant of our own? */
 export function tradePays() {
     if ((safe(() => traitEffects(), []) ?? []).some((e) => TRADE_PAY_EFFECTS.has(e.effect))) return true;
@@ -2558,6 +2893,16 @@ function unitCount(test) {
         for (const q of safe(() => city.BuildQueue.getQueue(), []) ?? []) if (test(queueUnitDef(q))) n++;
     }
     return n;
+}
+
+/**
+ * Scouts wanted: SCOUTS_WANTED once a settler was trained or is queued (one stands, one is in a queue, or we have a second
+ * settlement), else one (game 60: the second scout took the capital's first 6 turns and the first settler came at T19).
+ */
+function scoutsWanted() {
+    const settlements = Number(safe(() => Players.get(pid()).Stats.numSettlements, NaN));
+    const more = (Number.isFinite(settlements) ? settlements : ownSettlements().length) >= 2;
+    return more || settlerSupply(1) > 0 ? SCOUTS_WANTED : 1;
 }
 
 /** Units of a kind in our queues (not those we have). */
@@ -2609,7 +2954,7 @@ function settlerOffer(threats = [], { fill = false, past = 0, anywhere = false }
     const threatened = new Set((threats ?? []).map((t) => `c:${t.settlement.x}-${t.settlement.y}`));
     // A city holding a late settler first: the purchase takes its place.
     const holding = (c) => late.some((l) => sidOf(l.city) === sidOf(c));
-    for (const city of ownSettlements().filter((c) => !threatened.has(sidOf(c))).sort((a, b) => Number(holding(b)) - Number(holding(a)) || (b.population ?? 0) - (a.population ?? 0))) {
+    for (const city of ownSettlements().filter((c) => !threatened.has(sidOf(c)) && !infected(c)).sort((a, b) => Number(holding(b)) - Number(holding(a)) || (b.population ?? 0) - (a.population ?? 0))) {
         // Only where a safe site lies within reach of a settler starting there (X7); a countdown takes any tile.
         if (!anywhere && !safe(() => safeSiteFrom(city.location, war.risk), true)) continue;
         for (const def of defs) {
@@ -2896,7 +3241,7 @@ export function dropVictoryWork() {
  * of the queue of the city with a Launch Pad that runs it soonest. Nothing while it is queued or running somewhere.
  * @returns log entries
  */
-export function launchSatellite() {
+export function launchSatellite({ buildPad = false } = {}) {
     const def = safe(() => GameInfo.Projects.lookup(SATELLITE), null);
     if (!def) return [];
     let best = null;
@@ -2909,10 +3254,100 @@ export function launchSatellite() {
         const turns = itemTurns(c, def.$hash) + Number(safe(() => c.BuildQueue.currentTurnsLeft, 0) || 0);
         if (!best || turns < best.turns) best = { city: c, turns };
     }
-    if (!best) return [];
+    if (!best) return buildPad ? padForSatellite() : [];
     Game.CityOperations.sendRequest(best.city.id, CityOperationTypes.BUILD, { ProjectType: def.$hash });
     noteBuilt(best.city, SATELLITE);
     return [{ key: "SATELLITE_QUEUED", args: [nameOf(best.city), safe(() => Locale.compose(def.Name), SATELLITE)] }];
+}
+
+/**
+ * No city can launch the satellite: a Launch Pad in our best producing city that can build one, when none stands or is
+ * queued anywhere (research/42 E; game 53: decided at M70, its first pad came at M143 and the satellite at M147). A pad is a
+ * building like any other once the race is over (+18 Science). @returns log entries
+ */
+function padForSatellite() {
+    const pad = safe(() => GameInfo.Constructibles.lookup(LAUNCH_PAD), null);
+    if (!pad) return [];
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    if (cities.some((c) => cityHas(c, LAUNCH_PAD) || queueTypes(c).includes(pad.$hash) || builtThisPass(c).has(LAUNCH_PAD))) return [];
+    const prod = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+    for (const c of [...cities].sort((a, b) => prod(b) - prod(a))) {
+        const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ConstructibleType: pad.$hash }, false), null);
+        if (!r?.Success) continue;
+        const loc = (r.Plots ?? []).length > 0 ? bestLocFor(c, pad.$hash, r.Plots) : null;
+        Game.CityOperations.sendRequest(c.id, CityOperationTypes.BUILD, loc ? { ConstructibleType: pad.$hash, X: loc.x, Y: loc.y } : { ConstructibleType: pad.$hash });
+        noteBuilt(c, LAUNCH_PAD);
+        if (loc) notePlotOrder(loc, LAUNCH_PAD);
+        return [{ key: "SATELLITE_PAD_QUEUED", args: [nameOf(c)] }];
+    }
+    return [];
+}
+
+const FISSION = "NODE_TECH_MO_NUCLEAR_FISSION";
+const WMD_PROJECT = "PROJECT_PRODUCE_WMD";
+
+/**
+ * «Ядерное оружие» (research/42 D2; game 53: our Manhattan Project gave one weapon, never used; every AI made 2-15): in a war
+ * with a major, the Manhattan Project in the city that has it soonest (within NUKE.WONDER_TURNS, on a tile the game offers);
+ * with it standing and a war at our door, PROJECT_PRODUCE_WMD up to NUKE.WEAPONS_MAX weapons held and queued, where it is
+ * done within NUKE.PRODUCE_TURNS; and with a weapon held and no air base, an Airfield in our best producing city (only an
+ * air commander with a Bomber delivers one). @returns log entries
+ */
+export function nuclearWork(s) {
+    // Only with «Оборона», which the strike needs (game 60's review, UI-5: a weapon built and never used).
+    if (!effectiveOptions(s?.autopilot).nuclear || war.atWar.length === 0) return [];
+    const cities = ownSettlements().filter((c) => !c.isTown);
+    const wonder = safe(() => GameInfo.Constructibles.lookup(MANHATTAN), null);
+    if (!wonder || cities.length === 0) return [];
+    const have = cities.some((c) => cityHas(c, MANHATTAN));
+    const wait = (c) => Number(safe(() => c.BuildQueue.currentTurnsLeft, 0) || 0);
+    if (!have) {
+        if (cities.some((c) => queueTypes(c).includes(wonder.$hash) || builtThisPass(c).has(MANHATTAN))) return [];
+        let best = null;
+        for (const c of cities) {
+            const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ConstructibleType: wonder.$hash }, false), null);
+            if (!r?.Success || !(r.Plots?.length > 0)) continue;
+            const turns = itemTurns(c, wonder.$hash) + wait(c);
+            if (turns <= NUKE.WONDER_TURNS && (!best || turns < best.turns)) best = { c, turns, plots: r.Plots };
+        }
+        if (!best) return [];
+        const plots = best.plots.map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter(Boolean);
+        const name = safe(() => Locale.compose(wonder.Name), MANHATTAN);
+        if (!orderWonder(best.c, { type: MANHATTAN, x: plots[0].x, y: plots[0].y, plots, name, race: "HIGH" })) return [];
+        return [{ key: "NUCLEAR_PROJECT", args: [nameOf(best.c), name, best.turns] }];
+    }
+    const held = safe(() => nuclearArsenal(), 0);
+    if (held > 0 && (safe(() => airBases(), []) ?? []).length === 0) {
+        const def = safe(() => GameInfo.Constructibles.lookup(AIRFIELD), null);
+        if (def && !cities.some((c) => queueTypes(c).includes(def.$hash) || builtThisPass(c).has(AIRFIELD))) {
+            const prod = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+            for (const c of [...cities].sort((a, b) => prod(b) - prod(a))) {
+                const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
+                if (!r?.Success) continue;
+                const loc = (r.Plots ?? []).length > 0 ? bestLocFor(c, def.$hash, r.Plots) : null;
+                Game.CityOperations.sendRequest(c.id, CityOperationTypes.BUILD, loc ? { ConstructibleType: def.$hash, X: loc.x, Y: loc.y } : { ConstructibleType: def.$hash });
+                noteBuilt(c, AIRFIELD);
+                if (loc) notePlotOrder(loc, AIRFIELD);
+                return [{ key: "QUEUED_AIRFIELD", args: [nameOf(c), safe(() => Locale.compose(wonder.Name), MANHATTAN)] }];
+            }
+        }
+    }
+    if (!war.near) return [];
+    const project = safe(() => GameInfo.Projects.lookup(WMD_PROJECT), null);
+    if (!project) return [];
+    const queued = cities.reduce((n, c) => n + queueTypes(c).filter((t) => t === project.$hash).length + (builtThisPass(c).has(WMD_PROJECT) ? 1 : 0), 0);
+    if (held + queued >= NUKE.WEAPONS_MAX) return [];
+    let best = null;
+    for (const c of cities) {
+        const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ProjectType: project.$hash }, false), null);
+        if (!r?.Success) continue;
+        const turns = itemTurns(c, project.$hash) + wait(c);
+        if (turns <= NUKE.PRODUCE_TURNS && (!best || turns < best.turns)) best = { c, turns };
+    }
+    if (!best) return [];
+    Game.CityOperations.sendRequest(best.c.id, CityOperationTypes.BUILD, { ProjectType: project.$hash });
+    noteBuilt(best.c, WMD_PROJECT);
+    return [{ key: "NUCLEAR_WEAPON_QUEUED", args: [nameOf(best.c), held + queued + 1, best.turns] }];
 }
 
 /** Below the settlement cap (plus `extra` the military lever goes past it): a settler would be wanted? */
@@ -2955,6 +3390,22 @@ function settlerSupply(copies = settlerCopies()) {
 }
 
 /**
+ * Where a settler comes from (game 48: Modern's settlers came from the capital and walked 15 turns to the free land): the
+ * city whose queue is free soonest plus the walk from it to the nearest site the Settlements search knows (SETTLER_TILES_A_TURN
+ * tiles a turn); without a known site, null (the soonest city, as before).
+ */
+const SETTLER_TILES_A_TURN = 2;
+function settlerRank(unitOptions) {
+    const picks = state.get().results.sites?.picks ?? [];
+    if (picks.length === 0) return null;
+    const ahead = unitsMayOvertake(unitOptions);
+    return (city) => {
+        const walk = Math.min(...picks.map((p) => safe(() => GameplayMap.getPlotDistance(city.location.x, city.location.y, p.x, p.y), Infinity)));
+        return turnsUntilFree(city, ahead) + (Number.isFinite(walk) ? walk / SETTLER_TILES_A_TURN : 0);
+    };
+}
+
+/**
  * Units the autopilot wants trained now, in order: scouts (exploring) up to SCOUTS_WANTED,
  * then settlers (settling): two in flight while we have fewer than EARLY_SETTLEMENTS
  * settlements, then one at a time, never past the settlement cap.
@@ -2966,9 +3417,24 @@ function unitsWanted(unitOptions) {
     // guardedSettlements).
     if (unitOptions.defend && (war.near || (war.risk.length > 0 && goldIncome() >= 0))) {
         const guard = (def) => meleeStrength(def) > 0;
-        const want = guardedSettlements();
+        // A front facing an army wants more than one (frontGuardsWanted; game 48: Киото's one guard against 5-7 Spearmen).
+        const want = guardedSettlements() + [...fronts.values()].reduce((n, f) => n + Math.max(0, frontGuardsWanted(f) - 1), 0);
         const n = Math.min(GUARDS_AT_ONCE, want - unitCount(guard));
         if (n > 0) out.push({ test: guard, n, key: "QUEUED_GUARD", target: want, order: (city) => bestDefenderOrder(city) });
+    }
+    // A second general (research/41 Phase 2; the user, 21 October: "depending on gold or production"): while we have fewer
+    // than GENERAL.WANTED land commanders (one waiting to respawn counts), trained where it is done within TRAIN_TURNS (at this
+    // game speed), unless the free gold buys one (buyCommander, the hud's purchase step before production). Not in an age's
+    // last turns.
+    if ((unitOptions.defend || unitOptions.roam) && !commanderLate()) {
+        // Bought only from the gold buyCommander spends (the pass's free gold: W1, a savings goal held the rest), so one of the
+        // two always acts; one bought this turn counts.
+        // With purchases off, buyCommander does not run (the hud): trained whatever the gold (the review of W1).
+        const free = passBudget?.turn === Game.turn ? passBudget.budget.free() : goldBalance() - goldReserve(2);
+        const have = commandersHad();
+        if (have < GENERAL.WANTED && !(unitOptions.purchases !== false && commanderPurchase(free))) {
+            out.push({ test: isLandCommander, n: GENERAL.WANTED - have, key: "QUEUED_COMMANDER", target: GENERAL.WANTED });
+        }
     }
     // Enemy aircraft over us with a war at our door (research/36 §7: game 29's Russian Bomber hit our centres M60-M65 and
     // we had no aircraft): fighters, up to AIR_GUARDS_MAX, before the centres' strength below. A fighter intercepts only
@@ -2981,10 +3447,25 @@ function unitsWanted(unitOptions) {
         const want = groundAttackersWanted(unitOptions.threats ?? []);
         if (want) out.push({ test: isGroundAttacker, n: want.n, key: "QUEUED_GROUND_ATTACKER", target: want.target, order: want.order, rank: want.rank });
     }
+    // Bombers in a war at our door (research/42 C1), and one to carry a nuclear weapon we hold («Ядерное оружие», D2).
+    if (unitOptions.defend) {
+        const want = bombersWanted(unitOptions);
+        if (want) out.push({ test: isBomber, n: want.n, key: "QUEUED_BOMBER", target: want.target, order: want.order });
+    }
     // Warships for a lasting coastal front (research/37 §8B), from a city on the same water.
     if (unitOptions.defend) {
         const want = warshipsWanted(unitOptions.threats ?? [], unitsMayOvertake(unitOptions));
         if (want) out.push({ test: isWarshipDef, n: want.n, key: "QUEUED_WARSHIP", target: want.target, order: want.order, rank: want.rank });
+    }
+    // Commanders for the air and the sea (game 54's review): a Squadron Commander where cover is wanted that no air base
+    // covers, a carrier for a coast that stays so, a Fleet Commander for the warships at a lasting coastal front.
+    if (unitOptions.defend) {
+        const squadron = squadronWanted();
+        if (squadron) out.push({ test: isSquadronCommander, n: squadron.n, key: "QUEUED_SQUADRON", target: squadron.target, order: squadron.order, rank: squadron.rank });
+        const carrier = carrierWanted();
+        if (carrier) out.push({ test: isCarrier, n: carrier.n, key: "QUEUED_CARRIER", target: carrier.target, order: carrier.order, rank: carrier.rank });
+        const fleet = fleetCommanderWanted(unitOptions.threats ?? []);
+        if (fleet) out.push({ test: isFleetCommander, n: fleet.n, key: "QUEUED_FLEET_COMMANDER", target: fleet.target, order: fleet.order, rank: fleet.rank });
     }
     // Defence: every settlement centre defends at the strongest melee unit obtained this age (research/37 §2; 20 with
     // none), whatever we carried over from the last age (game 29: carried Line Infantry met this want, and Modern's
@@ -3004,8 +3485,11 @@ function unitsWanted(unitOptions) {
         }
     }
     if (unitOptions.explore) {
-        const n = SCOUTS_WANTED - unitCount(isScout);
-        if (n > 0) out.push({ test: isScout, n, key: "QUEUED_SCOUT", target: SCOUTS_WANTED });
+        // The second scout only after the first settler is trained or queued (game 60: it took the capital's first 6 turns,
+        // the settler came at T19); one lost is replaced at once.
+        const want = scoutsWanted();
+        const n = want - unitCount(isScout);
+        if (n > 0) out.push({ test: isScout, n, key: "QUEUED_SCOUT", target: want });
     }
     // Explorers (artifacts): with «Разведка», unless the strategy leaves them out (science and economy:
     // museums are culture's; research/21 E3).
@@ -3024,6 +3508,11 @@ function unitsWanted(unitOptions) {
         const want = Math.min(MERCHANTS_AT_ONCE, openTradeRoutes({ profile: unitOptions.profile }));
         const n = want - unitCount(isMerchant);
         if (n > 0) out.push({ test: isMerchant, n, key: "QUEUED_MERCHANT", target: want });
+    } else if (unitOptions.merchants) {
+        // Any other focus: one merchant while a route pays for it (research/game60 M12: one trade route all Antiquity, from
+        // the free merchant of Code of Laws). The routes are projected only when one is missing (every settlement's slots).
+        const n = MERCHANTS_OTHER_FOCUS - unitCount(isMerchant);
+        if (n > 0 && safe(() => merchantPays(unitOptions), false)) out.push({ test: isMerchant, n, key: "QUEUED_MERCHANT", target: MERCHANTS_OTHER_FOCUS });
     }
     // Missionaries for our own settlements (research/40 B1; data/xpl-missions.js): while MISSION_MIN of ours do not follow our
     // religion, enough for their charges, up to MISSIONARIES_AT_ONCE; none while Ius Reformandi is slotted. Trained where a
@@ -3054,7 +3543,7 @@ function unitsWanted(unitOptions) {
         // One training may give several (settlerCopies: Carthage's colonists come in pairs).
         const copies = settlerCopies();
         const n = Math.ceil((want - settlerSupply(copies)) / copies);
-        if (n > 0) out.push({ test: isSettler, n, key: "QUEUED_SETTLER", target: want });
+        if (n > 0) out.push({ test: isSettler, n, key: "QUEUED_SETTLER", target: want, rank: settlerRank(unitOptions) });
     }
     return out;
 }
@@ -3063,7 +3552,7 @@ const isMilitary = (def) => !!def && def.CoreClass === "CORE_CLASS_MILITARY" && 
 const isSoldierDef = (def) => !!def && def.CoreClass === "CORE_CLASS_MILITARY";
 /** A ground attacker (UNIT_CLASS_GROUND_ATTACKER: Trench Fighter, Dive Bomber, Stuka): made to strike units (research/37 §7A). */
 const isGroundAttacker = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_GROUND_ATTACKER");
-const AIR_ATTACKERS_MAX = 1;   // ground attackers wanted at most (research/37 §7C: a bounded experiment)
+const AIR_ATTACKERS_MAX = 2;   // ground attackers wanted at most (research/37 §7C; research/42 C1: game 53's Aerodrome held 1 plane of 4)
 const LASTING_FRONT_TURNS = 3; // a settlement threatened this many turns in a row is a lasting front
 const frontSince = new Map();  // settlement "x,y" -> { first, last }: the turns it has been threatened in a row
 let groundNoted = -1;          // the turn UI.log said no Airfield could take a ground attacker for a lasting front
@@ -3124,6 +3613,165 @@ function groundAttackersWanted(threats) {
         return null;
     }
     return { n, target: AIR_ATTACKERS_MAX, order, rank: (city) => Math.min(Infinity, ...fronts.map((t) => dist(city.location, t.settlement))) };
+}
+
+/** A bomber (UNIT_CLASS_BOMBER: Bomber, Heavy Bomber): it strikes units and districts, and carries a nuclear weapon. */
+const isBomber = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_BOMBER");
+/** Any aircraft (not an air commander). */
+const isAircraftDef = (def) => !!def && def.Domain === "DOMAIN_AIR" && def.CoreClass === "CORE_CLASS_MILITARY" && !GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_COMMAND");
+const BOMBERS_MAX = 2;     // bombers wanted in a war at our door...
+const BOMBER_UPKEEP = 15;  // ...while the gold income covers one more (UNIT_BOMBER Maintenance)
+
+/**
+ * Bombers (research/42 C1; game 53: the Aerodrome held one Dive Bomber of 4 planes): up to BOMBERS_MAX in a war at our door,
+ * and one with «Ядерное оружие» while we hold a weapon (only a Bomber based with an air commander delivers it), trained in
+ * a city whose air base has a free slot (counting the aircraft queued there), while the gold income covers their upkeep.
+ * @returns { n, target, order(city) } or null
+ */
+function bombersWanted(unitOptions) {
+    const nuke = !!unitOptions.nuclear && safe(() => nuclearArsenal(), 0) > 0;
+    const target = war.near ? BOMBERS_MAX : nuke ? 1 : 0;
+    const n = target - unitCount(isBomber);
+    if (n <= 0 || !(goldIncome() >= BOMBER_UPKEEP)) return null;
+    const bases = (safe(() => airBases(), []) ?? []).filter((b) => b.city && b.free > 0);
+    if (bases.length === 0) return null;
+    const queuedAir = (city) => (safe(() => city.BuildQueue.getQueue(), []) ?? []).filter((q) => isAircraftDef(queueUnitDef(q))).length;
+    const order = (city) => {
+        const b = bases.find((x) => sameId(x.city, city.id));
+        return b && b.free - queuedAir(city) > 0 ? strongestOrder(city, isBomber) : null;
+    };
+    return { n, target, order };
+}
+
+const AIRFIELD = "BUILDING_AIRFIELD";
+const AIRFIELD_COVER = 4;          // a new Airfield's fighters cover this far (3, +1 at an Airfield: research/37 §3E)...
+const AIRFIELD_DEFENCE_TURNS = 15; // ...one is built for a raided settlement only where it is done within this many turns
+
+/**
+ * An Airfield where enemy aircraft raid us (research/42 C2; game 53: Bombers hit Фена and Малет 11 times, out of the only
+ * Airfield's reach, and `air: no fighter for Фена, Малет: no Airfield of ours with a free slot covers them`): a settlement
+ * hit from the air lately (airRaidTargets) that no air base of ours covers gets an Airfield in the city of ours nearest it
+ * within AIRFIELD_COVER, done within AIRFIELD_DEFENCE_TURNS, on the plan's tile or the game's best it offers; one at a time.
+ * Its fighters come from there (interceptorsWanted). @returns log entries
+ */
+export function airfieldForRaids() {
+    const raids = safe(() => airRaidTargets(), []) ?? [];
+    if (raids.length === 0) return [];
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const bases = safe(() => airBases(), []) ?? [];
+    const open = raids.filter((r) => !bases.some((b) => dist(b.at, r) <= b.range));
+    if (open.length === 0) return [];
+    const def = safe(() => GameInfo.Constructibles.lookup(AIRFIELD), null);
+    if (!def) return [];
+    let best = null;
+    for (const c of ownSettlements()) {
+        if (c.isTown) continue;
+        const covers = open.filter((r) => dist(c.location, r) <= AIRFIELD_COVER);
+        if (covers.length === 0) continue;
+        if (cityHas(c, AIRFIELD) || queueTypes(c).includes(def.$hash) || builtThisPass(c).has(AIRFIELD)) return [];
+        const r = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
+        if (!r?.Success) continue;
+        const turns = itemTurns(c, def.$hash);
+        if (!(turns <= AIRFIELD_DEFENCE_TURNS)) continue;
+        const d = Math.min(...covers.map((x) => dist(c.location, x)));
+        if (!best || covers.length > best.covers.length || (covers.length === best.covers.length && d < best.d)) best = { c, covers, d, plots: r.Plots ?? [] };
+    }
+    if (!best) return [];
+    const loc = best.plots.length > 0 ? bestLocFor(best.c, def.$hash, best.plots) : null;
+    const args = loc ? { ConstructibleType: def.$hash, X: loc.x, Y: loc.y } : { ConstructibleType: def.$hash };
+    Game.CityOperations.sendRequest(best.c.id, CityOperationTypes.BUILD, args);
+    noteBuilt(best.c, AIRFIELD);
+    if (loc) notePlotOrder(loc, AIRFIELD);
+    const names = best.covers.map((x) => x.name ?? `${x.x},${x.y}`);
+    log.info(`air: an Airfield queued in ${nameOf(best.c)} for ${names.join(", ")}: raided from the air, no base of ours covers them`);
+    return [{ key: "QUEUED_AIRFIELD", args: [nameOf(best.c), names.join(", ")] }];
+}
+
+/** Our settlements wanting fighter cover (airCoverTargets) that no air base of ours covers (land bases only: `landOnly`). */
+function uncoveredCover(landOnly = false) {
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const bases = (safe(() => airBases(), []) ?? []).filter((b) => !landOnly || !isCarrier(safe(() => GameInfo.Units.lookup(b.type), null)));
+    return (safe(() => airCoverTargets(), []) ?? []).filter((t) => !bases.some((b) => dist(b.at, t) <= b.range));
+}
+
+const SQUADRONS_MAX = 1;        // Squadron Commanders wanted at most
+const CARRIERS_MAX = 1;         // carriers wanted at most...
+const CARRIER_OPEN_TURNS = 5;   // ...for a coast wanting cover no land base gives this many turns in a row
+const CARRIER_MAX_TURNS = 15;   // ...where one is trained within this many turns
+const coverOpenSince = new Map(); // settlement "x,y" -> { first, last }: the turns it wanted cover no land base gave
+
+/**
+ * A Squadron Commander (game 54's review: it sets up an air base on a flat tile no other player owns, and fighters based
+ * there intercept within their range; units.js establishSquadronBases): with a war at our door, a settlement wanting fighter
+ * cover that no air base covers, and none of ours or queued; trained where the game allows (canStart), nearest those
+ * settlements. @returns { n, target, order(city), rank(city) } or null
+ */
+function squadronWanted() {
+    if (!war.near) return null;
+    const open = uncoveredCover();
+    if (open.length === 0 || unitCount(isSquadronCommander) >= SQUADRONS_MAX) return null;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    return {
+        n: SQUADRONS_MAX - unitCount(isSquadronCommander), target: SQUADRONS_MAX,
+        order: (city) => strongestOrder(city, isSquadronCommander),
+        rank: (city) => Math.min(Infinity, ...open.map((t) => dist(city.location, t))),
+    };
+}
+
+/**
+ * A carrier (game 54's review: "a powerful, mobile, Naval Squadron Commander that can extend the range of your airforce across
+ * the sea"; units.js postCarriers sails it there): with a war at our door, a coastal settlement wanting fighter cover that no
+ * land base (Airfield or Squadron) has given for CARRIER_OPEN_TURNS turns in a row, none of ours or queued; trained in a city
+ * on that water within CARRIER_MAX_TURNS. @returns { n, target, order(city), rank(city) } or null
+ */
+function carrierWanted() {
+    const turn = Number(Game.turn) || 0;
+    const open = war.near ? uncoveredCover(true).filter((t) => (waterAreas(t)?.size ?? 0) > 0) : [];
+    for (const t of open) {
+        const k = `${t.x},${t.y}`;
+        const f = coverOpenSince.get(k);
+        if (!f || f.last < turn - 1 || f.first > turn) coverOpenSince.set(k, { first: turn, last: turn });
+        else f.last = Math.max(f.last, turn);
+    }
+    for (const [k, f] of [...coverOpenSince]) if (f.last < turn - 1 || f.first > turn) coverOpenSince.delete(k);
+    const lasting = open.filter((t) => {
+        const f = coverOpenSince.get(`${t.x},${t.y}`);
+        return !!f && turn - f.first + 1 >= CARRIER_OPEN_TURNS;
+    });
+    if (lasting.length === 0 || unitCount(isCarrier) >= CARRIERS_MAX) return null;
+    const water = new Set(lasting.flatMap((t) => [...(waterAreas(t) ?? [])]));
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const order = (city) => {
+        const mine = waterAreas(city.location);
+        if (mine !== null && ![...mine].some((a) => water.has(a))) return null;
+        const o = strongestOrder(city, isCarrier);
+        return o && unitTurns(city, o.args.UnitType) <= CARRIER_MAX_TURNS ? o : null;
+    };
+    return { n: CARRIERS_MAX - unitCount(isCarrier), target: CARRIERS_MAX, order, rank: (city) => Math.min(Infinity, ...lasting.map((t) => dist(city.location, t))) };
+}
+
+const FLEET_COMMANDERS_MAX = 1; // Fleet Commanders wanted at most...
+const FLEET_MIN_WARSHIPS = 2;   // ...while we have this many warships
+
+/**
+ * A Fleet Commander (game 54's review: its Focus Fire and Coordinated Naval Attack strike with every heavy or light ship in its
+ * radius, +2 each; units.js postFleetCommanders and commanderAttacks): a lasting coastal front (threatened by ships
+ * LASTING_FRONT_TURNS turns in a row), FLEET_MIN_WARSHIPS warships of ours, none of ours or queued; trained in a city on that
+ * front's water. @returns { n, target, order(city), rank(city) } or null
+ */
+function fleetCommanderWanted(threats) {
+    const fronts = lastingFronts(threats).filter((t) => Number(t.ships) > 0);
+    if (fronts.length === 0 || unitCount(isFleetCommander) >= FLEET_COMMANDERS_MAX) return null;
+    const warships = (safe(() => Players.get(pid()).Units.getUnits(), []) ?? []).filter((u) => isWarshipDef(safe(() => GameInfo.Units.lookup(u.type), null))).length;
+    if (warships < FLEET_MIN_WARSHIPS) return null;
+    const water = new Set(fronts.flatMap((t) => [...(waterAreas(t.settlement) ?? [])]));
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const order = (city) => {
+        const mine = waterAreas(city.location);
+        if (mine !== null && water.size > 0 && ![...mine].some((a) => water.has(a))) return null;
+        return strongestOrder(city, isFleetCommander);
+    };
+    return { n: FLEET_COMMANDERS_MAX - unitCount(isFleetCommander), target: FLEET_COMMANDERS_MAX, order, rank: (city) => Math.min(Infinity, ...fronts.map((t) => dist(city.location, t.settlement))) };
 }
 
 /** A warship (core/xpl-naval.js: a screen, a ranged ship or a submarine). */
@@ -3237,7 +3885,7 @@ export function airCoverTargets() {
 
 /** A fighter: it intercepts enemy aircraft within its range from its base by itself (UNIT_CLASS_INTERCEPTOR). */
 const isInterceptor = (def) => !!def && !!GameInfo.TypeTags?.find((t) => t.Type === def.UnitType && t.Tag === "UNIT_CLASS_INTERCEPTOR");
-const AIR_GUARDS_MAX = 2; // interceptors wanted at most
+const AIR_GUARDS_MAX = 4; // interceptors wanted at most (research/42 C1: an Aerodrome holds 4; game 53 had none against 11 Bomber raids)
 let airNoted = -1;        // the turn UI.log said no city could train a fighter where it is needed
 
 /**
@@ -3265,8 +3913,10 @@ function interceptorsWanted(threats) {
         + cities.filter((c) => baseOf(c)).reduce((n, c) => n + queuedIn(c), 0);
     const n = target - have;
     if (n <= 0) return null;
+    // A Squadron base or a carrier covering one with room: fighters trained at any Airfield of ours rebase to it (game 54's review).
+    const remote = bases.some((b) => !b.city && b.free > 0 && covers(b.at, b.range));
     const open = (city) => {
-        const b = baseOf(city);
+        const b = baseOf(city) ?? (remote ? bases.find((x) => x.city && sameId(x.city, city.id)) : null);
         return !!b && b.free - queuedIn(city) > 0;
     };
     if (!cities.some(open)) {
@@ -3348,15 +3998,23 @@ function bestTrainableMelee() {
 }
 
 /**
+ * The ships a land defender must out-gun at a threatened settlement (research/41 §3): their Unit_Stats rows when ships alone
+ * threaten it, else null (with land raiders a ranged unit also serves against those).
+ */
+const shipsToOutGun = (t) => (Number(t?.ships) > 0 && !(Number(t?.land) > 0) && (t.shipStats ?? []).length > 0 ? t.shipStats : null);
+
+/**
  * The strongest ranged land unit (RangedCombat; not a siege unit) this city can train now, or buy now within `budget`
  * (game 10: ships shot our towns for 20 turns and only warriors came). Against ships (`ships`) the one with the highest
  * Bombard, siege units too: land units fire at ships with it (research/37 §3D: a Ballista 30, an Archer 10).
  * @returns { args, name, strength, cost } or null
  */
-function bestRangedOrder(city, { buy = false, budget = Infinity, ships = false } = {}) {
+function bestRangedOrder(city, { buy = false, budget = Infinity, ships = false, outGun = null } = {}) {
     let best = null;
     for (const def of GameInfo.Units ?? []) {
         if (!(isRangedGuard(def) || (ships && isSiegeGuard(def))) || def.CanTrain === false || def.CanTrain === "false") continue;
+        // Against ships alone, only one that out-guns or out-ranges them (research/41 §3: one that does not dies on the coast).
+        if (outGun && !fightsShips(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null), outGun)) continue;
         const strength = ships ? antiShipStrength(def) : Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.RangedCombat, 0)) || 0;
         if (best && strength <= best.strength) continue;
         const args = { UnitType: def.$hash };
@@ -3379,11 +4037,14 @@ function bestRangedOrder(city, { buy = false, budget = Infinity, ships = false }
  * land army out (a purchase buys only what holds the settlement). @returns "MELEE" | "RANGED" | null
  */
 function defenderNeed(t, threats, { within = Infinity, support = true } = {}) {
-    // Bought this turn: the game shows them only later, so they count here.
-    const b = defenderBought.get(`${t.settlement.x},${t.settlement.y}`);
+    // Bought this turn: the game shows them only later, so they count here; bought elsewhere earlier: until they are sent.
+    const key = `${t.settlement.x},${t.settlement.y}`;
+    const b = defenderBought.get(key);
     const extra = b?.turn === Game.turn ? b : { melee: 0, ranged: 0 };
-    const melee = guardsWanted(t) > guardsFor(t, undefined, threats, { within }) + extra.melee;
-    const ranged = rangedWanted(t, { support }) > guardsFor(t, undefined, threats, { ranged: true, within }) + extra.ranged;
+    const gm = guardsFor(t, undefined, threats, { within });
+    const gr = guardsFor(t, undefined, threats, { ranged: true, within });
+    const melee = guardsWanted(t) > gm + extra.melee + shopPending(key, "MELEE", () => gm);
+    const ranged = rangedWanted(t, { support }) > gr + extra.ranged + shopPending(key, "RANGED", () => gr);
     if (melee && ranged) return (Number(t.land) || 0) > 0 ? "MELEE" : "RANGED";
     return melee ? "MELEE" : ranged ? "RANGED" : null;
 }
@@ -3474,7 +4135,8 @@ function trainDefenders(threats, used, exposed = []) {
     const holderless = (e) => {
         const b = defenderBought.get(`${e.settlement.x},${e.settlement.y}`);
         const h = holderDetail(e);
-        return h.present.length + h.incoming.length === 0 && !(b?.turn === Game.turn && b.melee > 0);
+        return h.present.length + h.incoming.length === 0 && !(b?.turn === Game.turn && b.melee > 0)
+            && shopPending(`${e.settlement.x},${e.settlement.y}`, "HOLDER", () => 0) === 0;
     };
     for (const t of [...threats, ...exposed.map((e) => ({ ...e, exposed: true, count: 0 }))]) {
         // Melee guards: one per land raider, one on the centre whatever the raiders (research/24 W2); ranged ones
@@ -3485,9 +4147,11 @@ function trainDefenders(threats, used, exposed = []) {
         const mine = trainedFor.get(key);
         if (mine && cities.some((c) => sidOf(c) === mine.sid && queueHasUnit(c, mine.hash))) continue;
         trainedFor.delete(key);
-        // Against ships, siege units too (their Bombard: research/37 §3D).
+        // Against ships, siege units too (their Bombard: research/37 §3D); against ships alone, only one that out-guns or
+        // out-ranges them (research/41 §3), and no other soldier in its place.
         const ships = Number(t.ships) > 0;
-        const role = (def) => (need === "RANGED" ? isRangedGuard(def) || (ships && isSiegeGuard(def)) : meleeStrength(def) > 0);
+        const outGun = shipsToOutGun(t);
+        const role = (def) => (need === "RANGED" ? (isRangedGuard(def) || (ships && isSiegeGuard(def))) && (!outGun || fightsShips(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null), outGun)) : meleeStrength(def) > 0);
         const own = (c) => c.location?.x === t.settlement.x && c.location?.y === t.settlement.y;
         // A city with space work only when no other within reach can, or for its own defence (research/34 §6: game 28's
         // capital trained Tanks for Sirjan and Ardebil, new settlements, while its Launch Pad, ordered M51, waited until M73).
@@ -3517,7 +4181,7 @@ function trainDefenders(threats, used, exposed = []) {
             // A melee unit (it holds the centre, and the centres' defence follows it), else the strongest; ranged: the
             // strongest ranged unit.
             // An exposed settlement's holder: a melee unit only.
-            const o = need === "RANGED" ? bestRangedOrder(c, { ships }) ?? bestMilitaryOrder(c) : bestDefenderOrder(c) ?? (t.exposed ? null : bestMilitaryOrder(c));
+            const o = need === "RANGED" ? bestRangedOrder(c, { ships, outGun }) ?? (outGun ? null : bestMilitaryOrder(c)) : bestDefenderOrder(c) ?? (t.exposed ? null : bestMilitaryOrder(c));
             if (!o) continue;
             const def = safe(() => GameInfo.Units.lookup(o.args.UnitType), null);
             // Done within MILITARY_MAX_TURNS (game 18: a Landship at 6 production a turn, 33 turns); none: the purchase
@@ -3572,6 +4236,53 @@ function unitTurns(city, unitType) {
 /** Is this settlement infected with the plague (the city banner's status: city.isInfected)? */
 const infected = (city) => !!safe(() => city.isInfected, false);
 
+/**
+ * Where a unit for this settlement is bought: there, or while it is infected (a unit bought there appears on the plague, as
+ * gotcha 46's trained ones did; game 60's Астрахань was threatened by ships and infected at once, T133-T138) our nearest clean
+ * settlement whose unit walks there within `turns` (two tiles a turn); one with a soldier of its own on its centre first
+ * (`held`: the first soldier standing in a city stays as its garrison, so there the one bought is free to go).
+ * @returns { city, turns, held } or null (none in reach)
+ */
+function unitShop(city, turns) {
+    if (!infected(city)) return { city, turns: 0, held: true };
+    let best = null;
+    for (const c of ownSettlements()) {
+        if (sidOf(c) === sidOf(city) || infected(c)) continue;
+        const t = travelTurns(null, safe(() => GameplayMap.getPlotDistance(c.location.x, c.location.y, city.location.x, city.location.y), Infinity));
+        if (t > turns) continue;
+        const held = soldierAt(c.location, 0);
+        if (!best || (held && !best.held) || (held === best.held && t < best.turns)) best = { city: c, turns: t, held };
+    }
+    return best;
+}
+
+/** UI.log's words for a defender bought elsewhere while a settlement is infected. */
+const shopNote = (city, shop) => (shop && shop.city !== city ? ` (in ${nameOf(shop.city)}, ${shop.turns} turn(s) away: ${nameOf(city)} is infected)` : "");
+
+// Defenders bought elsewhere for an infected settlement (unitShop): the game shows them in that city the next turn, and the
+// defence plan sends them from there; one it cannot send yet (no post free, more urgent elsewhere, a longer walk than two tiles
+// a turn) still counts as coming for its walk and a turn, until more of ours stand there or come in time than when it was
+// bought (the review of game 60's package: a Warrior bought in Selby for York every turn, none sent). Only from a city with a
+// soldier of its own (`held`): elsewhere the one bought stays as its garrison, and the next turn buys the one that goes.
+const shopBought = new Map(); // settlement "x,y" -> [{ role: MELEE | RANGED | HOLDER | FRONT, turn, until, have }]
+
+function noteShopBought(key, shop, role, have) {
+    if (!shop.held) return;
+    const list = (shopBought.get(key) ?? []).filter((e) => e.until >= Game.turn && e.turn <= Game.turn);
+    list.push({ role, turn: Game.turn, until: Game.turn + shop.turns + 1, have });
+    shopBought.set(key, list);
+}
+
+/**
+ * Defenders of this role bought elsewhere on an earlier turn and not yet among ours there or coming (`now`: the count the
+ * purchase compares with; `have` was it when each was bought). @returns how many still count as coming
+ */
+function shopPending(key, role, now) {
+    const list = (shopBought.get(key) ?? []).filter((e) => e.role === role && e.turn < Game.turn && e.until >= Game.turn);
+    if (list.length === 0) return 0;
+    return Math.max(0, list.length - Math.max(0, now() - Math.min(...list.map((e) => e.have))));
+}
+
 /** A unit of this kind the city can train now, as BUILD args (not the turn-1 Founder). */
 function unitOrder(city, test) {
     for (const def of GameInfo.Units ?? []) {
@@ -3593,6 +4304,8 @@ function trainWantedUnits(unitOptions) {
     if (unitOptions.defend) dropSpareMelee();
     // Defenders first: a settlement under threat cannot wait for scouts or settlers; then exposed settlements' holders.
     const entries = trainDefenders(unitOptions.threats ?? [], used, unitOptions.defend ? unitOptions.exposed ?? [] : []);
+    // A queued settler the settlers we have already fill the cap's room for (game 60: the dedications' card gave two).
+    if (unitOptions.settlers) entries.push(...dropSpareSettler(unitOptions.strategy));
     // The city free soonest first (it would not move the unit ahead of an item with progress), then the biggest.
     const ahead = unitsMayOvertake(unitOptions) || (expansionDeficit() && unitOptions.strategy?.phase !== "COMMIT") || leverSettlers(unitOptions);
     const cities = ownSettlements().filter((c) => !c.isTown)
@@ -3611,11 +4324,12 @@ function trainWantedUnits(unitOptions) {
     };
     // Units the overlays and options want (explorers, settlers, scouts, merchants) never come from a space city in the
     // final push (game 11: the capital built Antiquarians on turns 56-58 instead of science projects).
-    const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE", "QUEUED_GROUND_ATTACKER", "QUEUED_WARSHIP", "QUEUED_MISSIONARY", "QUEUED_GREAT_PERSON"]);
+    const spaceUnits = new Set(["QUEUED_EXPLORER", "QUEUED_SETTLER", "QUEUED_SCOUT", "QUEUED_MERCHANT", "QUEUED_MELEE", "QUEUED_GROUND_ATTACKER", "QUEUED_WARSHIP", "QUEUED_MISSIONARY", "QUEUED_GREAT_PERSON", "QUEUED_COMMANDER", "QUEUED_SQUADRON", "QUEUED_CARRIER", "QUEUED_FLEET_COMMANDER"]);
     // Explorers neither from a city kept for a Launch Pad nor where they take long (game 34: Ливерпуль's Antiquarian, 400
     // at 39 a turn, took its production M14-M37, and its pad came at M47).
     const padKept = safe(() => padExclusion(unitOptions.strategy), null);
     const left = ageEndTurns(); // an age's last turns (the final age: all of it)
+    let commanderMiss = null; // the soonest city a second commander was refused in (W1's log)
     for (const w of unitsWanted(unitOptions)) {
         let n = w.n;
         // The centres' melee unit: the city that has it soonest, its wait plus its training (research/37 §2); a want's own
@@ -3643,6 +4357,16 @@ function trainWantedUnits(unitOptions) {
             if (isSoldierDef(safe(() => GameInfo.Units.lookup(order.args.UnitType), null)) && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             if (w.key === "QUEUED_EXPLORER" && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             if (w.key === "QUEUED_GREAT_PERSON" && unitTurns(city, order.args.UnitType) > GREAT_PERSON_TURNS) continue;
+            // A second commander where it is done within the limit at this game speed and in time for its first level (W1).
+            if (w.key === "QUEUED_COMMANDER") {
+                const c = commanderTrainingIn(city);
+                if (!c.ok) {
+                    if (!commanderMiss || c.turns < commanderMiss.turns) commanderMiss = { ...c, city };
+                    continue;
+                }
+            }
+            // Air and sea commanders (support units) as soldiers: only where they are done soon.
+            if ((w.key === "QUEUED_SQUADRON" || w.key === "QUEUED_FLEET_COMMANDER") && unitTurns(city, order.args.UnitType) > MILITARY_MAX_TURNS) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, order.args);
             if (w.key === "QUEUED_GUARD") noteGuardOrder(city, order.args.UnitType);
             if (w.key === "QUEUED_MELEE") meleeOrders.set(sidOf(city), order.args.UnitType);
@@ -3650,6 +4374,7 @@ function trainWantedUnits(unitOptions) {
             used.add(sidOf(city));
             n--;
         }
+        if (w.key === "QUEUED_COMMANDER" && n > 0) noteNoCommander(commanderMiss);
     }
     return { entries, used };
 }
@@ -3675,7 +4400,9 @@ export function frontLoadUnits(unitOptions = {}) {
     const wanted = (def) => defender(def) || guard(def) || (melee > 0 && meleeStrength(def) >= melee)
         || (coastal && isWarshipDef(def))
         || (unitOptions.defend && war.near && isInterceptor(def))
-        || (unitOptions.explore && isScout(def)) || (unitOptions.settlers && isSettler(def));
+        || (unitOptions.explore && isScout(def)) || (unitOptions.settlers && isSettler(def))
+        // The second general (game 49: queued at A26 at the end of Тегеран's queue, started at A49).
+        || ((unitOptions.defend || unitOptions.roam) && isLandCommander(def) && landCommandersOwned() < GENERAL.WANTED);
     const ahead = unitsMayOvertake(unitOptions);
     // Settlers overtake while far below the cap, not in the final push (research/24 P2: two settlers ahead of Oxford,
     // lost by 97 production), unless they start our own military countdown (research/26 §3.3; holdsFront still keeps
@@ -3691,9 +4418,17 @@ export function frontLoadUnits(unitOptions = {}) {
     // tie with Spain's, cashed out at T29).
     const units = underThreat ? safe(() => Players.get(pid()).Units.getUnits(), []) ?? [] : [];
     const threats = unitOptions.threats ?? [];
-    const holdsOut = (city) => !war.near && threats
-        .filter((t) => (nearestCity(t.settlement) ? sidOf(nearestCity(t.settlement)) === sidOf(city) : false) || trainedFor.get(`${t.settlement.x},${t.settlement.y}`)?.sid === sidOf(city))
-        .every((t) => !t.damaged && safe(() => guardDetail(t, units, threats).present.length, 0) > 0);
+    const defends = (city) => threats.filter((t) => (nearestCity(t.settlement) ? sidOf(nearestCity(t.settlement)) === sidOf(city) : false) || trainedFor.get(`${t.settlement.x},${t.settlement.y}`)?.sid === sidOf(city));
+    const holdsOut = (city) => !war.near && defends(city).every((t) => !t.damaged && safe(() => guardDetail(t, units, threats).present.length, 0) > 0);
+    // An item done this turn keeps the front from every unit, but a defender of a centre below WALLS_URGENT_SHARE of its health
+    // (game 60: Slingers for towns whose centres stood at 100/100 went ahead of the capital's walls at 85-98% three times, A67-A72,
+    // while the Hanging Gardens waited behind them and were lost). Not an item stuck at 100%: it may read a turn left for as long
+    // as it is stuck, and items may pass it (frontSlot, root gotcha 20).
+    const doneNow = (city) => {
+        const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+        return left > 0 && left <= 1 && stuckHeadSince(city) === null
+            && (Number(safe(() => city.BuildQueue.getPercentComplete(city.BuildQueue.currentProductionTypeHash), 0)) || 0) > 0;
+    };
     const moved = new Set();
     for (const city of ownSettlements()) {
         if (city.isTown) continue;
@@ -3707,6 +4442,7 @@ export function frontLoadUnits(unitOptions = {}) {
             // A Crewed Space Flight Preparation run nearly done keeps the front unless the centre is damaged or a war is at our
             // door (research/38 §4 E2: game 29's run at 510 of 1,000 lost to two Tanks and two walls, M53-M64).
             if (prepNearlyDone(city) && !hardPressed) return 1;
+            if (doneNow(city) && !(defender(def) && defends(city).some(centreLow))) return 1;
             // A defender for settlements that hold on their own goes where other units go past a wonder or a project.
             const calm = defender(def) && wonderOrProject(safe(() => city.BuildQueue.currentProductionTypeHash, null)) && holdsOut(city);
             if (defender(def) && defenderCities.has(sidOf(city)) && !calm) return 0;
@@ -3808,15 +4544,21 @@ function prepNearlyDone(city) {
 function guardWonderRefund(city, lost = lostWonderRows()) {
     const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
     const first = queue.length > 0 ? safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[0])), null) : null;
-    if (first?.ConstructibleClass !== "WONDER") return;
+    if (first?.ConstructibleClass !== "WONDER") {
+        noteRefundAtFront(city, queue, lost);
+        return;
+    }
     // A race we lose is the cash-out's (cashOutLostWonders): it puts a building ahead of the wonder, not behind it.
     if (lost.has(first.ConstructibleType)) return;
+    // Walls right behind it hold that place by wallsSlot's rule (a threatened settlement's walls, moved back there every pass: a
+    // building moved ahead of them would take turns with them).
+    if (queue[1] && isWallsType(queueItemType(queue[1]))) return;
     // A lost wonder pours half its progress and that turn's production into the next item, up to that item's
     // cost (game 20: Petra's 105 into a 90-cost Pagoda, the Weiyang Palace's 97 into 40-cost walls).
     const prod = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
     const refund = (currentProgress(city) ?? 0) / 2 + prod;
     const next = queue[1] ? safe(() => GameInfo.Constructibles.lookup(queueItemType(queue[1])), null) : null;
-    const nextKeeps = next?.ConstructibleClass === "BUILDING" ? Math.min(costIn(city, next.ConstructibleType), refund) : 0;
+    const nextKeeps = next?.ConstructibleClass === "BUILDING" ? Math.min(roomIn(city, next.ConstructibleType), refund) : 0;
     if (nextKeeps >= refund - 0.5) return;
     const further = bestAbsorber(absorberCandidates(city).filter((c) => c.index >= 2), refund);
     if (further && further.keeps > nextKeeps + 0.5) {
@@ -3833,14 +4575,46 @@ function guardWonderRefund(city, lost = lostWonderRows()) {
 
 const costIn = (city, type) => Number(safe(() => city.Production.getConstructibleProductionCost(type), 0)) || Number(safe(() => GameInfo.Constructibles.lookup(type)?.Cost, 0)) || 0;
 
-/** Buildings in this city's queue behind the item in production: [{ index, type, cost }]. */
+/**
+ * The production a building can still take: its cost less its own progress (getPercentComplete). Game 60: the cash-out took a
+ * Monument at 61% as keeping 44 of a lost wonder's progress (room 38), and the Great Stele's 22 came when it stood at 86%: ~30
+ * lost to the overflow cap.
+ */
+function roomIn(city, type) {
+    const h = safe(() => GameInfo.Constructibles.lookup(type)?.$hash, null);
+    const pct = h === null ? 0 : Math.min(100, Math.max(0, Number(safe(() => city.BuildQueue.getPercentComplete(h), 0)) || 0));
+    return costIn(city, type) * (1 - pct / 100);
+}
+
+/** Buildings in this city's queue behind the item in production: [{ index, type, cost, room }]. */
 function absorberCandidates(city) {
     const out = [];
     (safe(() => city.BuildQueue.getQueue(), []) ?? []).forEach((q, index) => {
         const def = index > 0 ? safe(() => GameInfo.Constructibles.lookup(queueItemType(q)), null) : null;
-        if (def?.ConstructibleClass === "BUILDING") out.push({ index, type: def.ConstructibleType, cost: costIn(city, def.ConstructibleType) });
+        if (def?.ConstructibleClass === "BUILDING") out.push({ index, type: def.ConstructibleType, cost: costIn(city, def.ConstructibleType), room: roomIn(city, def.ConstructibleType) });
     });
     return out;
+}
+
+const refundNoted = new Map(); // sid -> the turn UI.log said a waiting wonder's refund would overflow the item in production
+
+/**
+ * A lost wonder's refund lands in the item in production, not in the one behind the wonder (game 60, row 110: the Ha'amonga a
+ * Maui's 164 went into walls at 89 of 100 that had passed it, ~230 lost; the Amphitheater the guard had put behind the wonder got
+ * none). When a wonder in a race with progress waits behind an item with less room than its refund, UI.log says so once a turn
+ * (walls at a centre under attack and urgent defenders keep that front by their own rules).
+ */
+function noteRefundAtFront(city, queue, lost) {
+    const at = queue.findIndex((q, i) => i > 0 && isWonderType(queueItemType(q)) && !lost.has(typeNameOf(queueItemType(q))));
+    if (at < 0 || refundNoted.get(sidOf(city)) === Game.turn) return;
+    const held = queuedProgress(city, queue[at]);
+    if (!(held > 0)) return;
+    const head = queueItemType(queue[0]);
+    const refund = held / 2 + productionOf(city);
+    const room = Math.max(0, itemCost(city, head).cost - (currentProgress(city) ?? 0));
+    if (room >= refund - 0.5) return;
+    refundNoted.set(sidOf(city), Game.turn);
+    log.warn(`queue: ${nameOf(city)}: ${typeNameOf(queueItemType(queue[at]))} waits behind ${typeNameOf(head)} with ${Math.round(held)} production in it: a rival finishing it would pour about ${Math.round(refund)} into ${typeNameOf(head)}, which has room for ${Math.round(room)}`);
 }
 
 /** The plan's buildings for this city not queued yet that it can place now on their tile: [{ type, cost, args }]. */
@@ -3854,20 +4628,61 @@ function plannedAbsorbers(city) {
         if (def?.ConstructibleClass !== "BUILDING") continue;
         const args = { ConstructibleType: def.$hash, X: p.x, Y: p.y };
         if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
-        out.push({ type: p.type, cost: costIn(city, p.type), args });
+        out.push({ type: p.type, cost: costIn(city, p.type), room: roomIn(city, p.type), args });
     }
     return out;
+}
+
+// A queued wonder's estimate this many turns past the age's end is lost at once; one just past it is lost only if it still is on
+// the next turn (adjacency M3, game 60: the Colosseum, ordered at 13 turns with 15 left, was dropped as AGE_ENDS the next pass).
+const AGE_ENDS_SLACK = 1;
+const ageOverSince = new Map(); // wonder type -> the first turn its estimate stood just past the age's end
+
+let queuedTurnsProbed = false; // UI.log compared the game's turns for a queued wonder with ours, once a session
+
+/**
+ * A queued wonder's turns: its own and the wait of the items that stay ahead of it (wonderWait, in its race). In production, the
+ * game's own count (the planner's getTurnsLeft). Behind other items, the lesser of the game's number and ours (itemTurns): whether
+ * the game's number for an item behind the head counts the wait ahead is not known, and the wait would then count twice (a race
+ * lost, a winnable wonder dropped); ours misses the game's production multipliers. UI.log compares them once a session.
+ */
+function ourWonderTurns(r) {
+    const city = ownSettlements().find((c) => sidOf(c) === r.inQueue?.cityKey);
+    const types = city ? queueTypes(city) : [];
+    const at = types.findIndex((h) => typeNameOf(h) === r.type);
+    if (!city || at <= 0) return Number(r.inQueue?.turns) || 0;
+    const game = Number(safe(() => city.BuildQueue.getTurnsLeft(r.type), -1));
+    const ours = Number(safe(() => itemTurns(city, types[at]), Infinity));
+    const own = Number.isFinite(ours) ? (game > 0 ? Math.min(game, ours) : ours) : game > 0 ? game : Number(r.inQueue?.turns) || 0;
+    const wait = safe(() => wonderWait(city, at, { turns: own, rivalTurns: r.rivalTurns ?? null, rivalsSeen: r.rivalsSeen }), 0);
+    if (!queuedTurnsProbed && game > 0 && wait > 0) {
+        queuedTurnsProbed = true;
+        log.info(`wonders: probe: ${r.type} at ${at} in ${nameOf(city)}'s queue [${queueNames(city)}]: the game's turns left ${game}, ours ${Number.isFinite(ours) ? ours : "?"}, the wait ahead ${wait} (does the game's count include the wait?)`);
+    }
+    return own + wait;
 }
 
 /** Our queued wonders whose race is lost (research/27 §6): type -> "RIVAL_AHEAD" | "AGE_ENDS". */
 function lostWonderRows() {
     const w = state.get().results.wonders;
     const out = new Map();
+    const queued = new Set();
     for (const r of w?.rows ?? []) {
         if (r.status !== "IN_PROGRESS" || !r.inQueue) continue;
-        const lost = raceLost({ ourTurns: r.inQueue.turns, rivalTurns: r.rivalTurns, ageTurnsLeft: w.ageTurnsLeft });
+        queued.add(r.type);
+        // One estimate for choosing and for the race (adjacency M3): its own turns and the items staying ahead of it.
+        const ourTurns = ourWonderTurns(r);
+        let lost = raceLost({ ourTurns, rivalTurns: r.rivalTurns, ageTurnsLeft: w.ageTurnsLeft });
+        if (lost === "AGE_ENDS" && ourTurns - w.ageTurnsLeft <= AGE_ENDS_SLACK) {
+            const since = Math.min(ageOverSince.get(r.type) ?? Game.turn, Game.turn);
+            ageOverSince.set(r.type, since);
+            // Its first turn just past the age's end: lost now only to a rival who finishes first (raceLost reads the age first).
+            if (since === Game.turn) lost = raceLost({ ourTurns, rivalTurns: r.rivalTurns, ageTurnsLeft: null });
+        } else ageOverSince.delete(r.type);
         if (lost) out.set(r.type, lost);
     }
+    // A wonder gone from our queues starts afresh when it is ordered again.
+    for (const k of [...ageOverSince.keys()]) if (!queued.has(k)) ageOverSince.delete(k);
     return out;
 }
 
@@ -3894,14 +4709,17 @@ export function cashOutLostWonders() {
         const queue = city ? safe(() => city.BuildQueue.getQueue(), []) ?? [] : [];
         const at = queue.findIndex((q) => typeNameOf(queueItemType(q)) === r.type);
         if (at < 0) continue;
-        const why = Locale.compose(lost === "AGE_ENDS" ? "LOC_XPL_AP_WONDER_LOST_AGE" : "LOC_XPL_AP_WONDER_LOST_RIVAL", Math.min(...(r.rivalTurns ?? [0])), r.inQueue.turns);
-        const progress = at === 0 ? currentProgress(city) ?? 0 : null; // behind a unit: wait until it is in production again
+        const ours = ourWonderTurns(r);
+        const why = Locale.compose(lost === "AGE_ENDS" ? "LOC_XPL_AP_WONDER_LOST_AGE" : "LOC_XPL_AP_WONDER_LOST_RIVAL", Math.min(...(r.rivalTurns ?? [0])), ours);
+        // Behind other items: one holding no more than a turn's production leaves the queue as well (game 60: the Hanging Gardens
+        // held a wonder slot behind walls and units until Mexico finished them); one holding more waits until it is in production.
+        const progress = at === 0 ? currentProgress(city) ?? 0 : queuedProgress(city, queue[at]) <= productionOf(city) ? 0 : null;
         if (at === 0 && progress > 0) {
             const queued = bestAbsorber(absorberCandidates(city), progress);
             const outside = bestAbsorber(plannedAbsorbers(city), progress) ?? bestAbsorber([costliestBuilding(city)].filter(Boolean), progress);
             if (queued && (!outside || queued.keeps >= outside.keeps - 0.5)) {
                 if (!moveInQueue(city, queued.index, 0)) continue;
-                log.warn(`wonders: ${nameOf(city)} stopped ${r.type} (${lost}: rivals ${JSON.stringify(r.rivalTurns ?? [])} turns, ours ${r.inQueue.turns}): ${queued.type} goes ahead of its ${Math.round(progress)} production (game 21: the wonder kept it; CityBuildQueue.csv shows which)`);
+                log.warn(`wonders: ${nameOf(city)} stopped ${r.type} (${lost}: rivals ${JSON.stringify(r.rivalTurns ?? [])} turns, ours ${ours}): ${queued.type} goes ahead of its ${Math.round(progress)} production (game 21: the wonder kept it; CityBuildQueue.csv shows which)`);
                 out.push({ key: "WONDER_CASHED_OUT", args: [nameOf(city), r.name, Math.round(progress), Locale.compose(GameInfo.Constructibles.lookup(queued.type)?.Name ?? queued.type), Math.round(queued.keeps), why] });
             } else if (outside && !builtThisPass(city).has(outside.type)) {
                 Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, outside.args);
@@ -3912,6 +4730,52 @@ export function cashOutLostWonders() {
             out.push({ key: "WONDER_DROPPED", args: [nameOf(city), r.name, why] });
         }
     }
+    out.push(...dropStarvedWonders());
+    return out;
+}
+
+/** This city's net production a turn. */
+const productionOf = (city) => Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+
+/** The production a queue entry holds (getPercentComplete, root gotcha 37, × its cost). */
+function queuedProgress(city, entry) {
+    const h = queueItemType(entry);
+    const pct = Math.min(100, Math.max(0, Number(safe(() => city.BuildQueue.getPercentComplete(h), 0)) || 0));
+    return pct > 0 ? (pct / 100) * itemCost(city, h).cost : 0;
+}
+
+// A wonder in our queue that gets no production this many turns leaves it, its wonder slot freed (game 60: the Hanging Gardens,
+// ordered at A66, waited behind walls, Slingers and a settler and never entered production; Mexico started them at T75 and
+// finished at T81, while "wonders: none to start (room 1)" A67-A70).
+export const WONDER_STARVE_TURNS = 5;
+const wonderFed = new Map(); // "sid|type" -> the last turn that wonder was in production (or first seen in our queue)
+
+/** Wonders starved in our queues (above) leave them while they hold no more than a turn's production. @returns log entries */
+function dropStarvedWonders() {
+    const out = [];
+    const seen = new Set();
+    for (const city of ownSettlements()) {
+        if (city.isTown) continue;
+        const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+        queue.forEach((q, i) => {
+            const h = queueItemType(q);
+            if (!isWonderType(h)) return;
+            const k = `${sidOf(city)}|${typeNameOf(h)}`;
+            seen.add(k);
+            const fed = wonderFed.get(k);
+            if (i === 0 || fed === undefined || fed > Game.turn) {
+                wonderFed.set(k, Game.turn);
+                return;
+            }
+            const starved = Game.turn - fed;
+            if (starved < WONDER_STARVE_TURNS || queuedProgress(city, q) > productionOf(city)) return;
+            if (!removeFromQueue(city, i)) return;
+            wonderFed.delete(k);
+            log.warn(`wonders: ${typeNameOf(h)} leaves ${nameOf(city)}'s queue: no production for ${starved} turns behind [${queueNames(city)}]`);
+            out.push({ key: "WONDER_STARVED", args: [nameOf(city), itemName(h), starved] });
+        });
+    }
+    for (const k of [...wonderFed.keys()]) if (!seen.has(k)) wonderFed.delete(k);
     return out;
 }
 
@@ -3927,7 +4791,7 @@ function costliestBuilding(city, accept = null) {
         if (!probe?.Success || probe.InQueue || plots.length === 0 || builtThisPass(city).has(def.ConstructibleType)) continue;
         const loc = bestLocFor(city, def.$hash, plots);
         if (!loc) continue;
-        best = { args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, type: def.ConstructibleType, cost };
+        best = { args: { ConstructibleType: def.$hash, X: loc.x, Y: loc.y }, type: def.ConstructibleType, cost, room: roomIn(city, def.ConstructibleType) };
     }
     return best;
 }
@@ -4060,10 +4924,11 @@ const DEFENDER_SAVE_TURNS = 2;    // a defender the gold cannot buy yet but will
 const savingNoted = new Map();    // settlement -> the turn the autopilot's log said it saves for a defender there
 
 /** The cheapest unit of a defender's role the game sells here, short of gold or not: { type, cost } or null. */
-function cheapestDefender(city, ranged, ships = false) {
+function cheapestDefender(city, ranged, ships = false, outGun = null) {
     let best = null;
     for (const def of GameInfo.Units ?? []) {
         if (ranged ? !(isRangedGuard(def) || (ships && isSiegeGuard(def))) : !isMilitary(def) || isSiege(def)) continue;
+        if (ranged && outGun && !fightsShips(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null), outGun)) continue;
         if (def.CanTrain === false || def.CanTrain === "false") continue;
         const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, { UnitType: def.$hash }, false), null);
         if (!r?.Success && !r?.InsufficientFunds) continue;
@@ -4086,7 +4951,8 @@ function noteNoDefender(city, why) {
  * seen in game 5, a defender queued behind a building came out the turn after its town fell, and
  * not one unit was bought all game while 230-950 gold sat in the treasury during each siege):
  *  - a threatened settlement with fewer of our soldiers around it (guardsFor) than hostile units:
- *    the strongest melee unit it can buy, with all the gold (no reserve: it cannot wait);
+ *    the strongest melee unit it can buy, with all the gold (no reserve: it cannot wait) under a real attack
+ *    (realAttack), else with the free gold (walls that hold, ships that have not hit the centre: game 60);
  *  - then an exposed one (exposedSettlements: within EXPOSED_RADIUS of a village at war with us, e.g. the
  *    previous age's city-states, back at war on turn 1 of the new age) with no holder on or next to its
  *    centre nor coming soon (holderDetail): one, with the free gold, the nearest to a village first.
@@ -4098,10 +4964,11 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
     const all = ownSettlements();
     const bought = new Set();
     const b = budget ?? createBudget({ gold: goldBalance(), reserve: goldReserve(reserveTurns) });
-    const buy = (city, order, kind) => {
+    const buy = (city, order, kind, served = city) => {
         Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, order.args);
         b.spend(order.cost, { kind, label: `${safe(() => Locale.compose(order.name), "?")} (${nameOf(city)})` });
         bought.add(sidOf(city));
+        bought.add(sidOf(served));
         // A melee unit bought raises every centre's defence this age (research/37 §2).
         noteMeleeObtained(safe(() => GameInfo.Units.lookup(order.args.UnitType), null), "bought", nameOf(city));
     };
@@ -4121,24 +4988,56 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
             noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; ${WAR_SOLDIERS_PER_SETTLEMENT} soldiers per settlement already`);
             continue;
         }
+        // Not where it would stand on the plague: our nearest clean settlement in time buys it (game 60); a warship still may
+        // come from a clean city on the same water (warshipPurchase). Bought elsewhere, a land unit walks only to a clean post:
+        // with every post infected none is bought (it would stand in that city, and the next turn buy another).
+        const shop = unitShop(city, within);
+        const postless = !!shop && shop.city !== city && !cleanPostNear(t.settlement);
         // One pool for every role (research/36 §8: a ranged defender came only from the gold above the reserve at an
         // income below zero, while a melee one could take it all; the reserve itself keeps a defender's price for each
         // settlement short of guards: goldPlan): all the gold, less DEFICIT_KEEP_TURNS turns of a deficit (game 8: a
         // Catapult took 220 of 239 gold at −22 a turn). Against ships a ranged unit (they cannot be fought otherwise;
         // game 10), else a melee one.
         const income = goldIncome();
-        const pool = Math.max(0, b.all() - (income < 0 ? DEFICIT_KEEP_TURNS * -income : 0));
+        // No real attack (game 60): walls that hold, or ships that have not hit the centre: the free gold only.
+        const real = realAttack(t, threats);
+        const pool = real ? Math.max(0, b.all() - (income < 0 ? DEFICIT_KEEP_TURNS * -income : 0)) : b.free();
         const ships = Number(t.ships) > 0;
-        const order = need === "RANGED" ? bestRangedOrder(city, { buy: true, budget: pool, ships }) : defenderPurchase(city, pool, pool);
+        const outGun = shipsToOutGun(t);
+        // Ships alone at a walled centre they have not hit: the ranged guard is trained or sent, not bought (shipsHeldOff).
+        const held = need === "RANGED" && shipsHeldOff(t);
+        const order = held || !shop || postless ? null : need === "RANGED" ? bestRangedOrder(shop.city, { buy: true, budget: pool, ships, outGun }) : defenderPurchase(shop.city, pool, pool);
+        // Ships no land unit on sale here can fight: a warship bought in a city of ours on the same water (after game 55).
+        if (!order && need === "RANGED" && ships) {
+            const w = warshipPurchase(t, threats, pool);
+            if (w) {
+                Game.CityCommands.sendRequest(w.city.id, CityCommandTypes.PURCHASE, w.args);
+                b.spend(w.cost, { kind: "DEFENDER", label: `${safe(() => Locale.compose(w.name), "?")} (${nameOf(w.city)})` });
+                const k = `${t.settlement.x},${t.settlement.y}`;
+                const was = defenderBought.get(k)?.turn === Game.turn ? defenderBought.get(k) : { turn: Game.turn, melee: 0, ranged: 0 };
+                defenderBought.set(k, { ...was, ships: (was.ships ?? 0) + 1 });
+                log.warn(`defenders: ${w.type} bought in ${nameOf(w.city)} for ${nameOf(city)} (${Math.round(w.cost)} gold, ${w.sail} turn(s) to sail): no land unit on sale there fights their ships`);
+                out.push({ key: "WARSHIP_BOUGHT", args: [Locale.compose(w.name), nameOf(w.city), Math.round(w.cost), nameOf(city)] });
+                continue;
+            }
+        }
+        if (!order && held) {
+            noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; ships only at its walled centre, unhit for ${CENTRE_HIT_TURNS} turns: a ranged guard is trained or sent, not bought`);
+            continue;
+        }
+        if (!order && (!shop || postless)) {
+            noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; infected (plague), ${postless ? "every post by it is infected" : `no clean settlement of ours within ${within} turn(s)`}`);
+            continue;
+        }
         if (!order) {
-            const cheapest = cheapestDefender(city, need === "RANGED", ships);
-            const why = !cheapest ? `the game sells no ${need === "RANGED" ? "ranged" : "land"} soldier here`
-                : `the cheapest, ${cheapest.type}, costs ${Math.round(cheapest.cost)}; ${Math.round(pool)} of ${Math.round(b.all())} gold usable${income < 0 ? ` (${DEFICIT_KEEP_TURNS} turns of the ${income} deficit kept)` : ""}`;
-            noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; ${why}`);
+            const cheapest = cheapestDefender(shop.city, need === "RANGED", ships, outGun);
+            const why = !cheapest ? (outGun && need === "RANGED" ? "no land unit on sale here out-guns or out-ranges their ships (a warship or walls must)" : `the game sells no ${need === "RANGED" ? "ranged" : "land"} soldier here`)
+                : `the cheapest, ${cheapest.type}, costs ${Math.round(cheapest.cost)}; ${Math.round(pool)} of ${Math.round(b.all())} gold usable${real ? "" : ` (the free gold: ${wallsHold(t) ? "walls hold" : "ships only, the centre unhit"})`}${income < 0 ? ` (${DEFICIT_KEEP_TURNS} turns of the ${income} deficit kept)` : ""}`;
+            noteNoDefender(city, `guards ${have}/${want} within ${within}t, ${ranged}; ${why}${shopNote(city, shop)}`);
             // Save for it while the gap closes within DEFENDER_SAVE_TURNS turns of income: the free gold waits (the pass
             // budget's goal; game 38: Бутооло's centre fell from 100 to 0 M7-M11 while 108 gold a turn bought buildings,
             // one of them its own Harbor, and the cheapest defender, 540, stayed out of reach of 361-365 at +106 a turn).
-            if (cheapest && income > 0 && cheapest.cost - pool <= DEFENDER_SAVE_TURNS * income && !(b.goal?.kind === "DEFENDER" && !b.goal.done)) {
+            if (real && cheapest && income > 0 && cheapest.cost - pool <= DEFENDER_SAVE_TURNS * income && !(b.goal?.kind === "DEFENDER" && !b.goal.done)) {
                 const label = composeOr("LOC_XPL_AP_GOAL_DEFENDER", nameOf(city));
                 b.setGoal({ kind: "DEFENDER", key: `defender|${sidOf(city)}`, label, cost: cheapest.cost, hold: cheapest.cost });
                 if (savingNoted.get(sidOf(city)) !== Game.turn) {
@@ -4148,14 +5047,21 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
             }
             continue;
         }
-        buy(city, order, "DEFENDER");
+        buy(shop.city, order, "DEFENDER", city);
+        if (shop.city !== city) log.warn(`defenders: ${safe(() => Locale.compose(order.name), "?")} bought for ${nameOf(city)}${shopNote(city, shop)}`);
         {
             const k = `${t.settlement.x},${t.settlement.y}`;
             const was = defenderBought.get(k)?.turn === Game.turn ? defenderBought.get(k) : { turn: Game.turn, melee: 0, ranged: 0 };
             const def = safe(() => GameInfo.Units.lookup(order.args.UnitType), null);
-            defenderBought.set(k, { ...was, melee: was.melee + (meleeStrength(def) > 0 ? 1 : 0), ranged: was.ranged + (isRangedGuard(def) || isSiegeGuard(def) ? 1 : 0) });
+            const melee = meleeStrength(def) > 0;
+            const rangedOne = isRangedGuard(def) || isSiegeGuard(def);
+            defenderBought.set(k, { ...was, melee: was.melee + (melee ? 1 : 0), ranged: was.ranged + (rangedOne ? 1 : 0) });
+            if (shop.city !== city) {
+                if (melee) noteShopBought(k, shop, "MELEE", guardsFor(t, undefined, threats, { within }));
+                if (rangedOne) noteShopBought(k, shop, "RANGED", guardsFor(t, undefined, threats, { ranged: true, within }));
+            }
         }
-        out.push({ key: "DEFENDER_BOUGHT", args: [Locale.compose(order.name), nameOf(city), Math.round(order.cost), t.count] });
+        out.push({ key: "DEFENDER_BOUGHT", args: [Locale.compose(order.name), nameOf(shop.city), Math.round(order.cost), t.count] });
     }
     // An exposed settlement's holder (research/37 §4C): one with none there or coming within EXPOSED_HOLD_TURNS (a reserve on
     // its way, a member leaving an army: commandUnits ran first) gets one bought from the free gold. Mere proximity to a
@@ -4170,20 +5076,248 @@ export function buyDefenders(threats, { reserveTurns = 2, budget = null } = {}) 
         if (done?.turn === Game.turn && done.melee > 0) continue;
         const h = holderDetail(e);
         if (h.present.length > 0 || h.incoming.some((x) => x.turns <= EXPOSED_HOLD_TURNS)) continue;
+        if (shopPending(`${e.settlement.x},${e.settlement.y}`, "HOLDER", () => 0) > 0) continue;
         if (!soldierRoom(WAR_SOLDIERS_PER_SETTLEMENT)) break;
-        const free = b.free();
-        const order = (!meleeThisAge() ? bestDefenderOrder(c, { buy: true, budget: free }) : null) ?? cheapestMeleeOrder(c, free);
-        if (!order) {
-            noteNoDefender(c, `exposed (village at ${e.d} tiles), no holder: ${Math.round(free)} free gold${cheapestDefender(c, false) ? `, the cheapest ${cheapestDefender(c, false).type} at ${Math.round(cheapestDefender(c, false).cost)}` : ", none on sale"}`);
+        const shop = unitShop(c, EXPOSED_HOLD_TURNS);
+        const postless = !!shop && shop.city !== c && !cleanPostNear(e.settlement, { holder: true });
+        if (!shop || postless) {
+            noteNoDefender(c, `exposed (village at ${e.d} tiles), no holder: infected (plague), ${postless ? "every post by it is infected" : `no clean settlement of ours within ${EXPOSED_HOLD_TURNS} turn(s)`}`);
             continue;
         }
-        buy(c, order, "GARRISON");
+        const free = b.free();
+        const order = (!meleeThisAge() ? bestDefenderOrder(shop.city, { buy: true, budget: free }) : null) ?? cheapestMeleeOrder(shop.city, free);
+        if (!order) {
+            noteNoDefender(c, `exposed (village at ${e.d} tiles), no holder: ${Math.round(free)} free gold${cheapestDefender(shop.city, false) ? `, the cheapest ${cheapestDefender(shop.city, false).type} at ${Math.round(cheapestDefender(shop.city, false).cost)}` : ", none on sale"}${shopNote(c, shop)}`);
+            continue;
+        }
+        buy(shop.city, order, "GARRISON", c);
         const k = `${e.settlement.x},${e.settlement.y}`;
         const was = defenderBought.get(k)?.turn === Game.turn ? defenderBought.get(k) : { turn: Game.turn, melee: 0, ranged: 0 };
         defenderBought.set(k, { ...was, melee: was.melee + 1 });
-        out.push({ key: "GARRISON_BOUGHT", args: [Locale.compose(order.name), nameOf(c), Math.round(order.cost)] });
+        if (shop.city !== c) noteShopBought(k, shop, "HOLDER", 0);
+        out.push({ key: "GARRISON_BOUGHT", args: [Locale.compose(order.name), nameOf(shop.city), Math.round(order.cost)] });
+    }
+    // A war front facing an army (FRONT_BUY_ARMY of that leader's soldiers near it) short of its guards buys one while it still
+    // can, from the free gold, one a turn (game 48: Киото, a town, could buy nothing once besieged at A54, after 9 turns of
+    // Amina's war risk with one guard). Not one already threatened (above) or that bought this turn.
+    for (const f of [...fronts.values()]) {
+        if (!(Number(f.army) >= FRONT_BUY_ARMY) || (threats ?? []).some((t) => t.settlement.x === f.settlement.x && t.settlement.y === f.settlement.y)) continue;
+        const c = all.find((x) => x.location.x === f.settlement.x && x.location.y === f.settlement.y);
+        if (!c || bought.has(sidOf(c))) continue;
+        const done = defenderBought.get(`${f.settlement.x},${f.settlement.y}`);
+        if (done?.turn === Game.turn && done.melee > 0) continue;
+        const guards = frontGuards(f);
+        if (guards + shopPending(`${f.settlement.x},${f.settlement.y}`, "FRONT", () => guards) >= frontGuardsWanted(f)) continue;
+        if (!soldierRoom(WAR_SOLDIERS_PER_SETTLEMENT)) break;
+        const shop = unitShop(c, FRONT_SHOP_TURNS);
+        const postless = !!shop && shop.city !== c && !cleanPostNear(f.settlement, { front: true });
+        if (!shop || postless) {
+            noteNoDefender(c, `war front (${f.leader ?? "?"}, ${f.army} of their soldiers near): infected (plague), ${postless ? "every post by it is infected" : `no clean settlement of ours within ${FRONT_SHOP_TURNS} turn(s)`}`);
+            continue;
+        }
+        const free = b.free();
+        const order = bestDefenderOrder(shop.city, { buy: true, budget: free }) ?? cheapestMeleeOrder(shop.city, free);
+        if (!order) {
+            noteNoDefender(c, `war front (${f.leader ?? "?"}, ${f.army} of their soldiers near): guards ${guards}/${frontGuardsWanted(f)}; ${Math.round(free)} free gold${shopNote(c, shop)}`);
+            continue;
+        }
+        buy(shop.city, order, "DEFENDER", c);
+        const k = `${f.settlement.x},${f.settlement.y}`;
+        const was = defenderBought.get(k)?.turn === Game.turn ? defenderBought.get(k) : { turn: Game.turn, melee: 0, ranged: 0 };
+        defenderBought.set(k, { ...was, melee: was.melee + 1 });
+        if (shop.city !== c) noteShopBought(k, shop, "FRONT", guards);
+        out.push({ key: "DEFENDER_BOUGHT", args: [Locale.compose(order.name), nameOf(shop.city), Math.round(order.cost), f.army] });
+        break;
     }
     return out;
+}
+
+/**
+ * Is this threat a real attack, whose defender may take all the gold (root gotchas 30, 61)? Not walls that hold (wallsHold:
+ * walls on an unhit centre, independents only: one guard there), nor ships only that have not hit the centre or stayed
+ * LASTING_FRONT_TURNS (warshipPurchase's rule: a passing galley buys nothing); a war at our door always is. Game 60: Archers
+ * bought for 200 against ships at Астрахань (A116), the capital (A129) and Казань (A139), every centre unhit, while the
+ * conversion goal's gold went with them (T117: 965 less 248 against an 800 price; T140: the 950 conversion missed).
+ */
+function realAttack(t, threats) {
+    if (war.near || t?.damaged) return true;
+    if (wallsHold(t)) return false;
+    const shipsOnly = !((Number(t?.land ?? t?.count) || 0) > 0) && Number(t?.ships) > 0;
+    return !shipsOnly || lastingFronts(threats ?? []).some((x) => x.settlement.x === t.settlement.x && x.settlement.y === t.settlement.y);
+}
+
+const FRONT_BUY_ARMY = 3; // a war front buys a guard while that leader has this many land soldiers near it
+const FRONT_SHOP_TURNS = 2; // ...in our nearest clean settlement this close while it is infected (unitShop)
+const WARSHIP_BUY_SAIL = 5; // a warship bought for a shelled settlement sails there within this many turns
+
+/**
+ * A warship to buy for a settlement ships shell that no land unit on sale there can fight (after game 55: one independent
+ * Cog shelled Катана from 100 to 0 E18-E24; we had no warship, two Cogs were queued at E19 and the first sailed at E22, 5
+ * turns away, while about 1,000 gold waited for a town conversion). Only once the ships hit its centre or stayed
+ * LASTING_FRONT_TURNS (a passing galley buys nothing), and while no warship of ours stands within WARSHIP_NEAR or was bought
+ * for it this turn; in a settlement of ours on the same water (waterAreas; GameplayMap.getAreaId), the one whose ship sails
+ * there soonest within WARSHIP_BUY_SAIL, a ranged ship first (RangedCombat), then the strongest, then the cheapest, within
+ * `pool` (CityCommands PURCHASE, as the city's production panel buys a unit). @returns { city, args, name, type, cost, sail } or null
+ */
+function warshipPurchase(t, threats, pool) {
+    if (!(pool > 0)) return null;
+    if (!t.damaged && !lastingFronts(threats ?? []).some((x) => x.settlement.x === t.settlement.x && x.settlement.y === t.settlement.y)) return null;
+    if (defenderBought.get(`${t.settlement.x},${t.settlement.y}`)?.turn === Game.turn && defenderBought.get(`${t.settlement.x},${t.settlement.y}`).ships > 0) return null;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const ours = (safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])
+        .filter((u) => isWarshipDef(safe(() => GameInfo.Units.lookup(u.type), null)) && u.location && dist(u.location, t.settlement) <= WARSHIP_NEAR);
+    if (ours.length > 0) return null;
+    const water = waterAreas(t.settlement);
+    const stat = (def, k) => Number(safe(() => GameInfo.Unit_Stats.lookup(def.UnitType)?.[k], 0)) || 0;
+    let best = null;
+    for (const city of ownSettlements().filter((c) => !infected(c))) {
+        const mine = waterAreas(city.location);
+        if (mine !== null && (mine.size === 0 || (water !== null && ![...mine].some((a) => water.has(a))))) continue;
+        for (const def of GameInfo.Units ?? []) {
+            if (!isWarshipDef(def)) continue;
+            const args = { UnitType: def.$hash };
+            const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
+            if (!r?.Success) continue;
+            const cost = Number(r.Cost ?? safe(() => city.Gold.getUnitPurchaseCost(YieldTypes.YIELD_GOLD, def.UnitType), Infinity));
+            if (!Number.isFinite(cost) || cost > pool) continue;
+            const sail = travelTurns(def, dist(city.location, t.settlement));
+            if (sail > WARSHIP_BUY_SAIL) continue;
+            const strength = (shipRole(def) === "RANGED" ? 1000 + stat(def, "RangedCombat") : stat(def, "Combat"));
+            const better = !best || sail < best.sail || (sail === best.sail && (strength > best.strength || (strength === best.strength && cost < best.cost)));
+            if (better) best = { city, args, name: def.Name, type: def.UnitType, cost, sail, strength };
+        }
+    }
+    return best;
+}
+
+/** An age's last AGE_END_TURNS turns (the final age too): no new commander then... */
+function commanderLate() {
+    const left = ageEndTurns();
+    if (left !== null && left <= AGE_END_TURNS) return true;
+    // ...nor once the age leaves no time to reach its first level (W1: XP short of it is lost at the age change, gotcha 80;
+    // at Standard 15 XP took game 60's general A35-A45).
+    return !timeForFirstLevel(0, Number(safe(() => ageOutlook().turnsLeft, Infinity)), gameSpeedFactor());
+}
+
+/** Our land commanders, off the map too (one waiting to respawn). */
+function landCommandersOwned() {
+    return (safe(() => Players.get(pid()).Units.getUnits(), []) ?? []).filter((u) => u.isCommanderUnit && isLandCommander(safe(() => GameInfo.Units.lookup(u.type), null))).length;
+}
+
+/**
+ * The cheapest land commander a settlement of ours sells within `budget` (CityCommands PURCHASE, the game's price: it rises
+ * with every commander we own). @returns { city, args, name, cost } or null
+ */
+function commanderPurchase(budget) {
+    if (!(budget > 0)) return null;
+    let best = null;
+    // Not in an infected settlement: the commander would appear on the plague.
+    for (const city of ownSettlements().filter((c) => !infected(c))) {
+        for (const def of GameInfo.Units ?? []) {
+            if (!isLandCommander(def)) continue;
+            const args = { UnitType: def.$hash };
+            const r = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.PURCHASE, args, false), null);
+            if (!r?.Success) continue;
+            const cost = Number(r.Cost ?? safe(() => city.Gold.getUnitPurchaseCost(YieldTypes.YIELD_GOLD, def.UnitType), Infinity));
+            if (Number.isFinite(cost) && cost <= budget && (!best || cost < best.cost)) best = { city, args, name: def.Name, cost };
+        }
+    }
+    return best;
+}
+
+/**
+ * A second general bought from the free gold (research/41 Phase 2): while we have fewer than GENERAL.WANTED land commanders,
+ * none queued, not in an age's last turns; from the gold held for it when it is the savings goal (W1: commanderGoal).
+ * @returns log entries
+ */
+export function buyCommander(budget) {
+    if (!budget || commanderLate()) return [];
+    const queued = ownSettlements().some((c) => (safe(() => c.BuildQueue.getQueue(), []) ?? []).some((q) => isLandCommander(queueUnitDef(q))));
+    if (queued || landCommandersOwned() >= GENERAL.WANTED || commanderBoughtTurn === Game.turn) return [];
+    const goal = budget.isGoal(COMMANDER_GOAL);
+    const order = commanderPurchase(goal ? budget.forGoal() : budget.free());
+    if (!order) return [];
+    Game.CityCommands.sendRequest(order.city.id, CityCommandTypes.PURCHASE, order.args);
+    commanderBoughtTurn = Game.turn;
+    budget.spend(order.cost, { kind: "COMMANDER", label: `${safe(() => Locale.compose(order.name), "?")} (${nameOf(order.city)})` }, { goal });
+    // A goal the game keeps refusing is dropped for a while (noteGoalBought), as every other goal's purchase notes it.
+    if (goal) noteGoal(COMMANDER_GOAL);
+    return [{ key: "COMMANDER_BOUGHT", args: [Locale.compose(order.name), nameOf(order.city), Math.round(order.cost)] }];
+}
+
+// ---- the second general's training and gold (W1, game 60) --------------------------------------------------------------
+
+const COMMANDER_GOAL = "commander";   // the savings goal's key
+const COMMANDER_NOTE_EVERY = 10;      // UI.log says why no second commander is trained every this many turns
+let commanderBoughtTurn = -1;         // the turn buyCommander sent a purchase (the game counts it a moment later)
+let commanderNoted = -1;              // the turn of the last `generals: no second commander` line
+let passBudget = null;                // { turn, budget }: this pass's gold plan (unitsWanted asks buyCommander's free gold)
+
+/** The game speed against Online (core speedFactor), its GameSpeeds read as carriedGoldCap reads them; 1 unknown. */
+export function gameSpeedFactor() {
+    const game = safe(() => Configuration.getGame(), null);
+    return speedFactor(safe(() => GameInfo.GameSpeeds.lookup(game.gameSpeedType)?.CostMultiplier, null));
+}
+
+/** Our land commanders owned, queued, or bought this turn (the game counts a purchase a moment later). */
+function commandersHad() {
+    const queued = ownSettlements().reduce((n, c) => n + (safe(() => c.BuildQueue.getQueue(), []) ?? []).filter((q) => isLandCommander(queueUnitDef(q))).length, 0);
+    return landCommandersOwned() + queued + (commanderBoughtTurn === Game.turn ? 1 : 0);
+}
+
+/**
+ * A city that trains a second commander in time (W1): its training within commanderTrainTurns at this game speed (game 60,
+ * Standard: 300 production, 10-17 turns of the capital, against the Online-tuned 8, so none was ever queued), and the age
+ * left long enough after it for the first level (timeForFirstLevel). @param city @returns { ok, turns, limit, order }
+ */
+function commanderTrainingIn(city) {
+    const order = unitOrder(city, isLandCommander);
+    if (!order) return { ok: false, turns: Infinity, limit: 0, order: null };
+    const factor = gameSpeedFactor();
+    const limit = commanderTrainTurns(factor);
+    const turns = unitTurns(city, order.args.UnitType);
+    const left = Number(safe(() => ageOutlook().turnsLeft, Infinity));
+    return { ok: turns <= limit && timeForFirstLevel(turns, left, factor), turns, limit, order, left };
+}
+
+/**
+ * May this city train the second commander (W1)? What trainWantedUnits asks of it first: a city (not a town), not infected,
+ * not a space city nor one kept for a Launch Pad (QUEUED_COMMANDER is one of its `spaceUnits`), and its training in time
+ * (commanderTrainingIn). The savings goal asks the same, so that one of the two acts (the review: in a science game's final
+ * push the only cities fast enough were space cities; none trained one, and none was saved for either).
+ * @param unitOptions { victory, strategy } as trainWantedUnits has them
+ */
+function commanderCityOk(city, unitOptions) {
+    if (city.isTown || infected(city) || safe(() => spaceCity(city, unitOptions), false)) return false;
+    if (safe(() => padExclusion(unitOptions?.strategy), null)?.has(sidOf(city))) return false;
+    return commanderTrainingIn(city).ok;
+}
+
+/**
+ * UI.log every COMMANDER_NOTE_EVERY turns while a second commander is wanted and none is queued (W1): the soonest city's
+ * training against the limit, the purchase price and the free gold.
+ */
+function noteNoCommander(best) {
+    if (commanderNoted >= 0 && Game.turn >= commanderNoted && Game.turn - commanderNoted < COMMANDER_NOTE_EVERY) return;
+    commanderNoted = Game.turn;
+    const price = commanderPurchase(Infinity)?.cost;
+    const free = passBudget?.turn === Game.turn ? passBudget.budget.free() : goldBalance() - goldReserve(2);
+    const where = best ? `${Number.isFinite(best.turns) ? best.turns : "∞"} turns in ${nameOf(best.city)} (limit ${best.limit}${Number.isFinite(best.left) ? `, ${best.left} left in the age` : ""})` : "no city may train one";
+    log.info(`generals: no second commander: ${where}, price ${Number.isFinite(price) ? Math.round(price) : "-"}, free ${Math.round(free)}`);
+}
+
+/**
+ * The savings goal for a second commander (W1), after every other kind (a town conversion first: about 1,200 gold at Standard
+ * is 13-20 turns of income): wanted, none queued or bought, no city training one in time, the game selling one. @returns a
+ * goal candidate or null
+ */
+function commanderGoal(settings, focus = null) {
+    const o = settings?.autopilot ?? {};
+    if (!(o.defend || o.roam) || o.purchases === false || commanderLate() || commandersHad() >= GENERAL.WANTED) return null;
+    if (ownSettlements().some((c) => commanderCityOk(c, { victory: focus, strategy: settings?.strategy ?? null }))) return null;
+    const order = commanderPurchase(Infinity);
+    if (!order) return null;
+    return { key: COMMANDER_GOAL, label: composeOr("LOC_XPL_AP_GOAL_COMMANDER", nameOf(order.city)), cost: order.cost };
 }
 
 const EXPOSED_HOLD_TURNS = 3; // an exposed settlement's holder coming within this many turns: none is bought for it
@@ -4211,10 +5345,10 @@ const FIRST_MELEE_SOON = 2;    // a centres' melee unit in production done withi
  * The age's first melee unit, upgraded or bought when the gold allows (research/37 §2): every centre defends at 20 until
  * one is obtained this age, and training one takes turns. First an upgrade of one of ours to a melee type as strong as the
  * best we can train (upgradeFirstMelee: the cheapest; probe P-DEF-3), else bought, the strongest the game offers (as strong as the best we can
- * train: it sets every centre's defence), with all the gold less DEFICIT_KEEP_TURNS of a deficit while a settlement is
- * threatened or exposed, else only with the free gold; in a threatened settlement first, then an exposed one (nearest a
- * hostile village), then one with no soldier on or next to its centre, then any. Not when one is done within
- * FIRST_MELEE_SOON turns in production. Then an unstarted one QUEUED_MELEE queued leaves the queue. @returns log entries
+ * train: it sets every centre's defence), with all the gold less DEFICIT_KEEP_TURNS of a deficit under a real attack
+ * (realAttack) or while a settlement is exposed, else only with the free gold; in a threatened settlement first, then an
+ * exposed one (nearest a hostile village), then one with no soldier on or next to its centre, then any. Not when one is done
+ * within FIRST_MELEE_SOON turns in production. Then an unstarted one QUEUED_MELEE queued leaves the queue. @returns log entries
  */
 export function buyFirstMelee(threats = [], { reserveTurns = 2, budget = null } = {}) {
     const out = [];
@@ -4238,7 +5372,9 @@ export function buyFirstMelee(threats = [], { reserveTurns = 2, budget = null } 
     const threatened = all.filter((c) => (threats ?? []).some((t) => t.settlement.x === c.location.x && t.settlement.y === c.location.y));
     const exposed = all.filter((c) => !threatened.includes(c) && near(c) <= EXPOSED_RADIUS).sort((a, b2) => near(a) - near(b2));
     const income = goldIncome();
-    const urgent = threatened.length + exposed.length > 0;
+    // A threat counts only as a real attack (realAttack: not walls that hold, nor ships that have not hit the centre; game 60),
+    // as for the defenders; the threatened settlements still come first.
+    const urgent = (threats ?? []).some((t) => realAttack(t, threats)) || exposed.length > 0;
     const pool = urgent ? Math.max(0, b.all() - (income < 0 ? DEFICIT_KEEP_TURNS * -income : 0)) : b.free();
     if (!(pool > 0)) return out;
     // An upgrade of one of ours first: it costs less than a new unit.
@@ -4251,7 +5387,7 @@ export function buyFirstMelee(threats = [], { reserveTurns = 2, budget = null } 
     }
     const bare = all.filter((c) => !threatened.includes(c) && !exposed.includes(c) && !soldierAt(c.location));
     const rest = all.filter((c) => !threatened.includes(c) && !exposed.includes(c) && !bare.includes(c));
-    for (const city of [...threatened, ...exposed, ...bare, ...rest]) {
+    for (const city of [...threatened, ...exposed, ...bare, ...rest].filter((c) => !infected(c))) {
         const order = bestDefenderOrder(city, { buy: true, budget: pool });
         if (!order || order.strength < best) continue;
         Game.CityCommands.sendRequest(city.id, CityCommandTypes.PURCHASE, order.args);
@@ -4290,6 +5426,38 @@ function dropSpareMelee() {
     }
 }
 
+/**
+ * A queued settler with nothing in it leaves its queue while the settlers we have and those queued (settlerCopies each) exceed
+ * the cap's room (game 60, E1: the pass before the dedications queued a Sokmen at 7 of 8 settlements, the card's two
+ * settlers came after it, and one of the three stood at the cap for 50 turns). A card's or a story's settlers and Carthage's
+ * pairs arrive the same way. The military lever's settlements past the cap count as room. The last queued goes first, one a
+ * city a pass (removeFromQueue). @returns log entries
+ */
+function dropSpareSettler(strategy) {
+    const stats = safe(() => Players.get(pid()).Stats, null);
+    const cap = Number(stats?.settlementCap);
+    const n = Number(stats?.numSettlements);
+    if (!(cap > 0) || !Number.isFinite(n)) return [];
+    const room = Math.max(0, cap + pastCapOf(strategy) - n);
+    const copies = settlerCopies();
+    let supply = settlerSupply(copies);
+    const out = [];
+    for (const city of ownSettlements()) {
+        if (supply - copies < room) break;
+        const queue = safe(() => city.BuildQueue.getQueue(), []) ?? [];
+        let i = queue.length - 1;
+        while (i >= 0 && !isSettler(queueUnitDef(queue[i]))) i--;
+        if (i < 0) continue;
+        const def = queueUnitDef(queue[i]);
+        if ((Number(safe(() => city.BuildQueue.getPercentComplete(def.$hash), 0)) || 0) > 0) continue;
+        if (!removeFromQueue(city, i)) continue;
+        supply -= copies;
+        log.info(`queue: ${nameOf(city)}: ${def.UnitType} dropped: ${supply + copies} settler(s) had and queued for ${room} settlement(s) of room (${n} of ${cap})`);
+        out.push({ key: "SETTLER_DROPPED", args: [nameOf(city), safe(() => Locale.compose(def.Name), def.UnitType), n, cap] });
+    }
+    return out;
+}
+
 // ---- walls (research/23 D7) ----------------------------------------------------------------------
 
 const WALLS_THREAT_TURNS = 3;  // turns with a serious threat...
@@ -4305,6 +5473,22 @@ export function noteThreats(threats) {
     const serious = (threats ?? []).some((t) => (t.owners ?? []).some((o) => o && !o.independent) || (Number(t.land ?? t.count) || 0) >= 2);
     threatTurns = threatTurns.filter((t) => t !== Game.turn && Game.turn - t >= 0 && Game.turn - t < WALLS_THREAT_WINDOW);
     if (serious) threatTurns.push(Game.turn);
+    for (const t of threats ?? []) if (t.damaged) centreHits.set(`${t.settlement.x},${t.settlement.y}`, Game.turn);
+}
+
+// A centre hit this many turns ago or less still counts as hit (the units' HIT_TURNS).
+const CENTRE_HIT_TURNS = 5;
+const centreHits = new Map(); // settlement "x,y" -> the last turn its centre stood damaged under a threat (noteThreats)
+
+/**
+ * Ships alone threaten this walled centre, not hit within CENTRE_HIT_TURNS: its ranged guard is trained or sent, not bought
+ * (game 60: Archers bought for 200 each at Астрахань A116 and the capital A129 against ships whose walled centres stood at
+ * 200/200 all along; the gold held the second conversion back 5 turns). The warship purchase keeps its own rule.
+ */
+function shipsHeldOff(t) {
+    if (!t?.walled || t.damaged || (Number(t.land ?? t.count) || 0) > 0 || !(Number(t.ships) > 0)) return false;
+    const hit = centreHits.get(`${t.settlement.x},${t.settlement.y}`);
+    return hit === undefined || Game.turn - hit >= CENTRE_HIT_TURNS || Game.turn < hit;
 }
 
 const wallsWanted = () => war.near || threatTurns.length >= WALLS_THREAT_TURNS;
@@ -4425,6 +5609,12 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
         if (earlyWarning(t)) continue;
         const city = ownSettlements().find((c) => c.location.x === t.settlement.x && c.location.y === t.settlement.y);
         if (!city) continue;
+        // Walls on the centre that hold, or ships alone: no walls for another district (wallsEnough).
+        const enough = wallsEnough(t);
+        if (enough) {
+            noteWallsEnough(city, enough);
+            continue;
+        }
         const centre = safe(() => GameplayMap.getIndexFromXY(city.location.x, city.location.y), -1);
         // Seen in game: raiders around the capital for 25 turns and no walls, reason unknown; the
         // game's answers go to UI.log once a turn when nothing was done.
@@ -4432,7 +5622,7 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
         let done = false;
         for (const def of walls) {
             if (queueTypes(city).includes(def.$hash)) {
-                if (queue && !city.isTown) wallsFirst(city, t, def);
+                if (queue && !city.isTown) wallsFirst(city, t, def, queuedAt(city, def.$hash));
                 done = true;
                 break;
             }
@@ -4478,7 +5668,7 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
             if (!safe(() => Game.CityOperations.canStart(city.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
             Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
             notePlotOrder(loc, def.$hash);
-            wallsFirst(city, t, def);
+            wallsFirst(city, t, def, loc);
             out.push({ key: "WALLS_QUEUED", args: [name, nameOf(city)] });
             done = true;
             break;
@@ -4488,9 +5678,37 @@ export function fortifyThreatened(threats, { buy = true, queue = true, reserve =
     return out;
 }
 
-/** A threatened settlement's walls to the front (wallsSlot); UI.log when they pass an item with progress (a probe). */
-function wallsFirst(city, threat, def) {
-    const slot = wallsSlot(city, threat, def);
+/**
+ * No more walls for a threatened settlement (game 60: walls for 4 more districts of the capital, 80 to 140 production each,
+ * and Астрахань's second, while their walled centres stood at 200/200 against independents and ships; one passed Byrsa at 81%):
+ * walls stand on its centre, no war is at our door, and either they hold (independents only, the centre unhit: wallsHold) or
+ * only ships threaten it (walls on another district do nothing against ships). @returns "INDEPENDENTS" | "SHIPS" | null
+ */
+function wallsEnough(t) {
+    if (!t?.walled || war.near) return null;
+    if ((Number(t.land ?? t.count) || 0) === 0) return "SHIPS";
+    return wallsHold(t) ? "INDEPENDENTS" : null;
+}
+
+const wallsEnoughNoted = new Map(); // settlement "x,y" -> the turn UI.log said it gets no more walls
+
+/** UI.log once a turn per settlement: no more walls there (wallsEnough). */
+function noteWallsEnough(city, why) {
+    const k = `${city.location.x},${city.location.y}`;
+    if (wallsEnoughNoted.get(k) === Game.turn) return;
+    wallsEnoughNoted.set(k, Game.turn);
+    log.info(`walls: ${nameOf(city)} walled, ${why === "SHIPS" ? "ships only" : "independents only"}: no more walls`);
+}
+
+/** Where this type stands in the city's queue (its entry's `location`, the tile it was ordered on), or null. */
+function queuedAt(city, hash) {
+    const q = (safe(() => city.BuildQueue.getQueue(), []) ?? []).find((e) => queueItemType(e) === hash);
+    return q?.location ? { x: q.location.x, y: q.location.y } : null;
+}
+
+/** A threatened settlement's walls (on `loc`) to the front (wallsSlot); UI.log when they pass an item with progress (a probe). */
+function wallsFirst(city, threat, def, loc = null) {
+    const slot = wallsSlot(city, threat, def, loc);
     const passes = slot === 0 && frontSlot(city) === 1;
     const head = safe(() => city.BuildQueue.currentProductionTypeHash, null);
     const progress = Math.round(currentProgress(city) ?? 0);
@@ -4522,6 +5740,9 @@ export function resetWonderOrders() {
     wonderOrders.clear();
     noticesLogged.clear();
     plotOrders.clear();
+    wonderFed.clear();
+    ageOverSince.clear();
+    queuedTurnsProbed = false;
 }
 
 function noteWonderOrder(city, type, tile) {
@@ -4879,7 +6100,7 @@ export function probeQueues() {
 function orderWonder(city, wonder) {
     const def = safe(() => GameInfo.Constructibles.lookup(wonder.type), null);
     if (!def) return null;
-    const tiles = [{ x: wonder.x, y: wonder.y }, ...(wonder.plots ?? [])]
+    const tiles = [{ x: wonder.x, y: wonder.y, replaces: wonder.replaces ?? null }, ...(wonder.plots ?? [])]
         .filter((p, i, all) => all.findIndex((q) => q.x === p.x && q.y === p.y) === i).slice(0, WONDER_TILE_TRIES);
     const refused = [];
     for (const t of tiles) {
@@ -4897,7 +6118,9 @@ function orderWonder(city, wonder) {
         }
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, args);
         noteBuilt(city, wonder.type);
-        noteWonderOrder(city, wonder.type, t);
+        noteWonderOrder(city, wonder.type, { x: t.x, y: t.y });
+        // A worked improvement it takes (adjacency M1, game 60: Byrsa on Астрахань's mine at 65,7, repaired six times before).
+        if (t.replaces) log.info(`wonders: ${wonder.type} on ${t.x},${t.y} replaces ${t.replaces.type} (yields ${t.replaces.text})`);
         return { key: "QUEUED_WONDER", args: [nameOf(city), wonder.name, wonder.race === "HIGH" ? Locale.compose("LOC_XPL_RACE_HIGH") : Locale.compose("LOC_XPL_RACE_MEDIUM")] };
     }
     log.warn(`wonders: ${nameOf(city)} could not order ${wonder.type} on ${tiles.map((t) => `${t.x},${t.y}`).join(" ")}: ${[...new Set(refused)].join("; ") || "no reason given"}`);
@@ -4908,6 +6131,17 @@ const isWonderType = (h) => safe(() => GameInfo.Constructibles.lookup(h)?.Constr
 
 const wonderBuysNoted = new Map(); // city key -> the turn UI.log said its building purchases wait for a wonder
 
+/** The wonder this city's queue holds, or one ordered there this turn (its type name), else null (holdsWonder's test). */
+function wonderHeldIn(city) {
+    if (!city || city.isTown) return null;
+    const k = sidOf(city);
+    const queued = queueTypes(city).find(isWonderType);
+    const name = queued !== undefined ? typeNameOf(queued) : null;
+    if (name) return name;
+    for (const o of wonderOrders.values()) if (o.cityKey === k && o.turn === Game.turn) return o.type;
+    return null;
+}
+
 /**
  * No building is bought in a city whose queue holds a wonder, or where one was ordered this turn (research/32 §6; units
  * still are). Four times a wonder left a queue unbuilt the turn after a building was bought in its city: a Saw Pit and a
@@ -4915,18 +6149,9 @@ const wonderBuysNoted = new Map(); // city key -> the turn UI.log said its build
  * (game 27). The cause is not known; this tests the lead. UI.log once a turn per city.
  */
 function holdsWonder(city) {
-    if (!city || city.isTown) return false;
-    const k = sidOf(city);
-    const queued = queueTypes(city).find(isWonderType);
-    let name = queued !== undefined ? typeNameOf(queued) : null;
-    if (!name) {
-        for (const o of wonderOrders.values()) {
-            if (o.cityKey !== k || o.turn !== Game.turn) continue;
-            name = o.type;
-            break;
-        }
-    }
+    const name = wonderHeldIn(city);
     if (!name) return false;
+    const k = sidOf(city);
     if (wonderBuysNoted.get(k) !== Game.turn) {
         wonderBuysNoted.set(k, Game.turn);
         log.info(`purchases: no building bought in ${nameOf(city)} while ${name} is in its queue (research/32 §6: wonders left the queue the turn after a building was bought in their city)`);
@@ -4980,6 +6205,59 @@ function noteWonderHeld(city, type, held) {
     wonderHeldNoted.set(sidOf(city), Game.turn);
     log.info(`wonders: ${type} not ordered in ${nameOf(city)}: ${typeNameOf(held.h)} holds its queue ${held.left} turns, and a rival finishing the wonder would take that item's progress`);
 }
+
+// A wonder is not ordered where the items staying ahead of it hold its queue more than WONDER_WAIT_TURNS + this many turns.
+export const WONDER_WAIT_MARGIN = 2;
+
+/**
+ * Turns a wonder at queue position `at` (a new order: the queue's end) waits before it starts (game 60: the Hanging Gardens,
+ * ordered at A66, waited 14 turns behind walls, Slingers and a settler and were lost to Mexico, who started them at T75). The
+ * items fillProduction's moves do not pass stay ahead of it: an item done this turn or a wonder in production (wonderSlot), then
+ * projects, repairs, units and walls; each counts its own turns (the item in production: the game's turns left). The units queued
+ * behind those and before it pass it later (frontLoadUnits), unless its race keeps the front from them (`race`: { turns,
+ * rivalTurns, rivalsSeen }, holdsFront's test with the unit's turns); a defender in a city that trains them passes any wonder.
+ */
+function wonderWait(city, at = null, race = null) {
+    return waitWith(wonderWaitParts(city, at), race);
+}
+
+/** The wait of wonderWaitParts' run at the front and of the units that pass a wonder in this race. */
+const waitWith = (parts, race) => parts.front + parts.units.filter((u) => u.urgent || !raceHolds(race, u.turns)).reduce((s, u) => s + u.turns, 0);
+
+/** wonderWait's parts: the turns of the run at the front, and the units behind it before `at` ([{ turns, urgent }]). */
+function wonderWaitParts(city, at = null) {
+    const types = queueTypes(city);
+    const end = Math.min(at ?? types.length, types.length);
+    if (end <= 0) return { front: 0, units: [] };
+    let repairs = null;
+    const unitOf = (h) => safe(() => GameInfo.Units.lookup(h), null);
+    const stays = (h) => !!safe(() => GameInfo.Projects.lookup(h), null) || !!unitOf(h) || isWallsType(h)
+        || (repairs ??= new Set(damagedOf(city).map((d) => d.def.$hash))).has(h);
+    const turnsOf = (i) => {
+        const t = i === 0 ? Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || itemTurns(city, types[0]) : itemTurns(city, types[i]);
+        return Number.isFinite(t) ? t : 0;
+    };
+    let to = Math.min(wonderSlot(city), end);
+    while (to < end && stays(types[to])) to++;
+    let front = 0;
+    for (let i = 0; i < to; i++) front += turnsOf(i);
+    const trains = defenderTrainers.has(sidOf(city));
+    const units = [];
+    for (let i = to; i < end; i++) {
+        const u = unitOf(types[i]);
+        if (u) units.push({ turns: turnsOf(i), urgent: trains && isMilitary(u) });
+    }
+    return { front, units };
+}
+
+/** Would a wonder in production in this race keep the front from a unit of `turns` (holdsFront's test)? No race known: no. */
+function raceHolds(race, turns) {
+    if (!race) return false;
+    if (race.rivalTurns?.length) return Math.min(...race.rivalTurns) <= (Number(race.turns) || 0) + turns + WONDER_RACE_SLACK;
+    return (Number(race.rivalsSeen) || 0) > 0;
+}
+
+const wonderWaitNoted = new Map(); // sid -> the turn UI.log said a chosen wonder was not ordered there for the wait
 
 // A wonder granting Innovation (research/21 D7): worth this much more with the science focus (3 points × 4,
 // like WONDER_LEGACY_VALUE for the culture path).
@@ -5040,24 +6318,43 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
     const building = w.rows.filter((r) => r.status === "IN_PROGRESS").length + pending.types.size;
     let room = Math.max(0, maxWonders - building);
     const busyCities = new Set([...w.rows.filter((r) => r.inQueue).map((r) => r.inQueue.cityKey), ...pending.cities]);
+    // The turns a wonder ordered now waits in each city behind the items staying ahead of it (wonderWait): its ETA is that and
+    // its own turns, and the race is judged at that ETA (game 60: the Hanging Gardens never reached production).
+    const cityOf = new Map(ownSettlements().map((c) => [sidOf(c), c]));
+    // The units queued behind them pass it unless its race keeps the front (wonderWait's `race`), so a pair's wait is its own.
+    const waits = new Map();
+    const waitIn = (k, race) => {
+        if (!waits.has(k)) waits.set(k, cityOf.get(k) ? safe(() => wonderWaitParts(cityOf.get(k)), null) ?? { front: 0, units: [] } : { front: 0, units: [] });
+        return waitWith(waits.get(k), race);
+    };
     // Every (wonder, city) pair: the second wonder can go to the second-fastest city.
     let pairs = [];
+    const held = new Map(); // cityKey -> { type, wait }: walls and units hold its queue too long for a wonder
     for (const r of w.rows) {
-        const factor = RACE_FACTOR[r.race?.label] ?? (playOn && slowOnly(r.race) ? SLOW_RACE_FACTOR : undefined);
-        if (r.status !== "AVAILABLE" || !factor) continue;
+        if (r.status !== "AVAILABLE") continue;
         for (const o of r.options) {
             if (excludeCities?.has(o.cityKey)) continue;
             const plot = o.plots[0];
             if (!plot || !(o.turns > 0)) continue;
-            if (w.ageTurnsLeft !== null && o.turns > w.ageTurnsLeft - WONDER_AGE_MARGIN) continue;
+            const wait = waitIn(o.cityKey, { turns: o.turns, rivalTurns: r.rivalTurns ?? null, rivalsSeen: r.rivalsSeen });
+            if (wait > WONDER_WAIT_TURNS + WONDER_WAIT_MARGIN) {
+                if (!held.has(o.cityKey)) held.set(o.cityKey, { type: r.type, wait });
+                continue;
+            }
+            const eta = o.turns + wait;
+            if (w.ageTurnsLeft !== null && eta > w.ageTurnsLeft - WONDER_AGE_MARGIN) continue;
             // A wonder that takes too long there is lost to someone unseen (research/24 P5: 29-30 turns, both lost).
-            if (o.turns > (playOn ? AFTER_WIN_WONDER_TURNS : WONDER_MAX_TURNS)) continue;
+            if (eta > (playOn ? AFTER_WIN_WONDER_TURNS : WONDER_MAX_TURNS)) continue;
+            // The race in this city, at this ETA (the planner's row judged the fastest city's own turns).
+            const race = raceLabel({ ourTurns: eta, completedElsewhere: false, rivalsSeen: Number(r.rivalsSeen) || 0, rivalTurns: r.rivalTurns ?? null, ageTurnsLeft: w.ageTurnsLeft });
+            const factor = RACE_FACTOR[race?.label] ?? (playOn && slowOnly(race) ? SLOW_RACE_FACTOR : undefined);
+            if (!factor) continue;
             // A rival near a culture win: each wonder we build is one it cannot (the strategy's denyWonders).
             const legacy = WONDER_LEGACY_VALUE * (settings?.strategy?.denyWonders ? 2 : 1);
             const bonus = science && innovation.has(r.type) ? INNOVATION_WONDER_VALUE : 0;
             // Its effect (free technologies, attribute points, a settlement limit...) by its tier (research/27 §4).
             const value = (r.baseValue + (plot.value ?? 0) + legacy + bonus + tierValue(r.type)) * factor;
-            pairs.push({ score: value / o.turns, type: r.type, name: r.name, cityKey: o.cityKey, plots: o.plots, race: r.race.label, innov: innovation.has(r.type) });
+            pairs.push({ score: value / eta, type: r.type, name: r.name, cityKey: o.cityKey, plots: o.plots, race: race.label, innov: innovation.has(r.type), wait, eta });
         }
     }
     // The strategy's INNOVATION kind: Innovation wonders first; when none can be started, any wonder we can win
@@ -5072,6 +6369,14 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
     }
     const startedTypes = new Set(pending.types);
     const claimed = new Set();
+    // Walls and units hold those queues too long: no wonder ordered there (a rival may finish it while it waits). UI.log once a turn.
+    if (room > 0) {
+        for (const [k, h] of held) {
+            if (busyCities.has(k) || wonderWaitNoted.get(k) === Game.turn) continue;
+            wonderWaitNoted.set(k, Game.turn);
+            log.info(`wonders: ${h.type} not ordered in ${cityOf.get(k) ? nameOf(cityOf.get(k)) : k}: walls/units hold its queue ${h.wait} turns [${queueNames(cityOf.get(k))}]`);
+        }
+    }
     for (const p of pairs) {
         if (room <= 0) break;
         if (busyCities.has(p.cityKey) || picks.has(p.cityKey) || startedTypes.has(p.type)) continue;
@@ -5079,9 +6384,10 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
         if (!plot) continue;
         claimed.add(plot.idx);
         startedTypes.add(p.type);
-        // The other tiles, in the planner's order, in case the game refuses this one (orderWonder).
-        const plots = p.plots.filter((q) => q.idx !== plot.idx).map((q) => ({ x: q.x, y: q.y }));
-        picks.set(p.cityKey, { type: p.type, name: p.name, x: plot.x, y: plot.y, plots, cityKey: p.cityKey, race: p.race, score: p.score });
+        // The other tiles, in the planner's order, in case the game refuses this one (orderWonder); with the improvement each
+        // tile's wonder would take (the planner's `replaces`, which UI.log names when the wonder is ordered there).
+        const plots = p.plots.filter((q) => q.idx !== plot.idx).map((q) => ({ x: q.x, y: q.y, replaces: q.replaces ?? null }));
+        picks.set(p.cityKey, { type: p.type, name: p.name, x: plot.x, y: plot.y, replaces: plot.replaces ?? null, plots, cityKey: p.cityKey, race: p.race, score: p.score, eta: p.eta });
         room--;
     }
     return picks;
@@ -5096,7 +6402,7 @@ export function chooseWonders(settings, maxWonders, { settlers = false, excludeC
 export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
     const plans = state.get().results.plans;
     const left = ageEndTurns(); // an age's last turns (the final age: all of it): only what is done before it ends
-    const levers = new Set(unitOptions.victory ? leverBuildings(unitOptions.victory, currentAge()) : []);
+    const levers = new Set(unitOptions.victory ? leversOf(unitOptions.victory) : []);
     safe(() => dropLeftoverDefenders(unitOptions.threats ?? []), null);
     const trained = trainWantedUnits(unitOptions);
     const out = [...trained.entries];
@@ -5142,10 +6448,15 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         toFront(city, types[i], to);
     }
     for (const city of ownSettlements()) {
-        if (city.isTown || trained.used.has(sidOf(city)) || !safe(() => city.BuildQueue.isEmpty, false)) continue;
+        if (city.isTown) continue;
         // The victory step queued something here this pass: the game's isEmpty does not know yet (H2).
         if (unitOptions.queued?.get(sidOf(city))?.size > 0) continue;
-        const wonder = wonderPicks.get(sidOf(city)); // the wonder job keys cities "c:x-y" too
+        const empty = !trained.used.has(sidOf(city)) && !!safe(() => city.BuildQueue.isEmpty, false);
+        // A queue of units and walls only is empty for the plan: its next building goes behind them (game 60: the capital
+        // trained Slingers for towns, settlers and walls A40-A79, its queue never empty, and the plan's buildings got none of it).
+        const share = !empty && !!plans && buildsNoBuilding(city, trained.used.has(sidOf(city)));
+        if (!empty && !share) continue;
+        const wonder = share ? null : wonderPicks.get(sidOf(city)); // the wonder job keys cities "c:x-y" too
         if (wonder) {
             const entry = orderWonder(city, wonder);
             if (entry) {
@@ -5158,7 +6469,9 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         const space = spaceCity(city, unitOptions);
         const military = skipsMilitaryBuildings(unitOptions) ? isMilitaryBuilding : null;
         const sites = space ? new Set(scienceSites(currentAge(), { pads: unitOptions.strategy?.pads ?? null }).map((x) => x.type).filter((t) => siteIn(city, t))) : null;
-        const inAge = (t) => doneInAge(city, t, left);
+        // The plan's share is appended: it waits for the whole queue (units and walls) before it starts.
+        const wait = share && left !== null ? queueTypes(city).reduce((s, h) => s + (Number(safe(() => itemTurns(city, h), 0)) || 0), 0) : 0;
+        const inAge = (t) => doneInAge(city, t, left, wait);
         // After the win: no project that serves only a victory (dropVictoryWork would take it out again).
         const over = (t) => !!unitOptions.afterWin && victoryOnly(t);
         // The path's buildings only where they are built soon, as the victory step queues them (leverSoon; game 16's
@@ -5171,7 +6484,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         const padWait = padNear?.has(sidOf(city)) && gateEta > 0 ? (t) => holdsPadRoom(city, t, gateEta) : null;
         const skip = (t, p) => (space ? !sites.has(t) : !!military?.(t)) || !inAge(t) || slowLever(t) || !!padWait?.(t) || (!!p && stuckOffAt(t, p.x, p.y));
         if (plans) {
-            const r = queueNextBuildings(plans, sidOf(city), 2, { skip });
+            const r = queueNextBuildings(plans, sidOf(city), share ? 1 : 2, { skip });
             // This turn's orders on their tiles: the queues show them only next pass (one order per tile).
             for (const q of r.at ?? []) notePlotOrder(q, q.type);
             if (r.queued.length > 0) {
@@ -5179,6 +6492,7 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
                 continue;
             }
         }
+        if (share) continue; // the plan's building or nothing: units and walls already fill it
         // After the win every building is built (the user, game 40): the plan places them all, each on its best tile
         // (placeEvenIfNegative); what it leaves out (no tile in its model) comes next, cheapest first, on the plan's tile or the
         // game's best of the tiles the plan leaves free (bestPlotFor), before the advisor's units and projects.
@@ -5201,6 +6515,21 @@ export function fillProduction(wonderPicks = new Map(), unitOptions = {}) {
         }
     }
     return out;
+}
+
+/**
+ * Does this city's queue hold no building, only units, walls and improvements (repairs)? `trained`: a unit was queued here this
+ * pass (the game's queue does not show it yet). A building queued this pass counts (builtThisPass).
+ */
+function buildsNoBuilding(city, trained = false) {
+    const types = queueTypes(city);
+    if (types.length === 0 && !trained) return false;
+    const building = (h) => {
+        const c = safe(() => GameInfo.Constructibles.lookup(h), null);
+        return !!c && c.ConstructibleClass !== "IMPROVEMENT" && !isWallsType(h);
+    };
+    if ([...builtThisPass(city)].some(building)) return false;
+    return types.every((h) => !building(h) && !safe(() => GameInfo.Projects.lookup(h), null));
 }
 
 const padRoomNoted = new Map(); // sid -> the turn UI.log said a pad city kept room for its pad
@@ -5410,17 +6739,60 @@ export function queueUniqueImprovements(settings) {
     return out;
 }
 
-/** Turns this city needs for an item, its own progress counted (an item moved back keeps it: root gotcha 20). */
+/**
+ * Turns this city needs for an item, its own progress counted (an item moved back keeps it: root gotcha 20): the game's own
+ * count where it answers (gameTurnsFor), else its cost over the city's production.
+ */
 function itemTurns(city, h) {
+    const { hash, cost } = itemCost(city, h);
+    const game = gameTurnsFor(city, hash);
+    if (game > 0) return game;
     const prod = Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
     if (!(prod > 0)) return Infinity;
-    const { hash, cost } = itemCost(city, h);
     const pct = Math.min(100, Math.max(0, Number(safe(() => city.BuildQueue.getPercentComplete(hash), 0)) || 0));
     return Math.ceil((cost * (1 - pct / 100)) / prod);
 }
 
+/**
+ * The game's turns for an item in this city (BuildQueue.getTurnsLeft, as its production list and city banner read them), where
+ * their meaning is known: the item in production, or one not queued; else 0. It counts the game's production multipliers (game
+ * 60: ×1.10-1.35 on buildings in the capital's last rows; its Altar, 3 turns by the game's count at 38 production a turn, was 4
+ * by ours and lost at the age's end at 107 of 121).
+ */
+function gameTurnsFor(city, hash) {
+    if (safe(() => city.BuildQueue.currentProductionTypeHash, null) !== hash && queueTypes(city).includes(hash)) return 0;
+    const n = Number(safe(() => city.BuildQueue.getTurnsLeft(typeNameOf(hash)), -1));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** Is the item done before the age ends (`left`: ageEndTurns(); null: no end near), when started after `wait` turns? */
-const doneInAge = (city, h, left, wait = 0) => left === null || wait + itemTurns(city, h) <= left - AGE_END_MARGIN;
+const doneInAge = (city, h, left, wait = 0) => left === null || wait + itemTurns(city, h) <= left - ageEndMargin();
+
+let marginMemo = { key: null, margin: AGE_END_MARGIN };
+
+/**
+ * The turns kept before the age's end: AGE_END_MARGIN, none while the age's clock is exact (ageOutlook's `exact`: its points rose
+ * one a turn over the last turns; game 60's capital lost its Altar to a 1-turn margin on such a clock). Once per turn and points.
+ */
+function ageEndMargin() {
+    const points = Number(safe(() => Game.AgeProgressManager.getCurrentAgeProgressionPoints(), 0)) || 0;
+    const key = `${Game.turn}|${points}`;
+    if (marginMemo.key !== key) marginMemo = { key, margin: safe(() => ageOutlook().exact, false) ? 0 : AGE_END_MARGIN };
+    return marginMemo.margin;
+}
+
+/** A HAPPINESS-tagged building (an Altar, a Garden, an Arena...). */
+function isHappinessBuilding(h) {
+    const c = safe(() => GameInfo.Constructibles.lookup(h), null);
+    return c?.ConstructibleClass === "BUILDING" && !!GameInfo.TypeTags?.find((t) => t.Type === c.ConstructibleType && t.Tag === "HAPPINESS");
+}
+
+/** Does this city's item in production keep the front from a move: a repair, an item stuck at 100%, or one done this turn? */
+function headHeld(city, head) {
+    if (damagedOf(city).some((d) => d.def.$hash === head) || stuckHeadSince(city) !== null) return true;
+    const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+    return left > 0 && left <= 1 && (Number(safe(() => city.BuildQueue.getPercentComplete(head), 0)) || 0) > 0;
+}
 
 /** A building's, unit's or project's name, for the log. */
 function itemName(h) {
@@ -5444,7 +6816,24 @@ export function ageEndOrder() {
         if (city.isTown || editedThisPass(city)) continue;
         const types = queueTypes(city);
         const head = types[0];
-        if (head === undefined || isWonderType(head) || safe(() => GameInfo.Projects.lookup(head), null) || doneInAge(city, head, left)) continue;
+        if (head === undefined || isWonderType(head) || safe(() => GameInfo.Projects.lookup(head), null)) continue;
+        // Never ahead of a head the game's own count finishes in time (game 60: a Monument repair went ahead of the capital's Altar,
+        // 3 turns by the game's count with 3 left, and the Altar was lost at 107 of 121).
+        const fits = doneInAge(city, head, left) || (gameTurnsFor(city, head) > 0 && gameTurnsFor(city, head) <= left);
+        // A settlement in unrest: a Happiness building done in time goes first (it could not be bought there), unless the head is
+        // one or would then miss the age. As every move to the front: behind repairs, units and walls there (toFront: a defender or
+        // a threatened settlement's walls moved back would take the front again next pass, and the two would take turns), and
+        // never ahead of a repair, a stuck item or an item done this turn.
+        // Not unrest from the plague: no Happiness building ends it («Infected Settlements suffer from Unrest»; revoltRisks'
+        // `plague`, the integration review of game 60's packages).
+        if (left <= AGE_END_TURNS && !isHappinessBuilding(head) && safe(() => city.Happiness.hasUnrest, false) && !infected(city) && !headHeld(city, head)) {
+            const at = types.findIndex((h, i) => i > 0 && isHappinessBuilding(h) && doneInAge(city, h, left));
+            if (at > 0 && (!fits || doneInAge(city, head, left, itemTurns(city, types[at]))) && toFront(city, types[at], 0)) {
+                out.push({ key: "AGE_END_HAPPINESS", args: [nameOf(city), itemName(types[at]), left] });
+                continue;
+            }
+        }
+        if (fits) continue;
         // A repair stays: repairBuildings moves it to the front every pass.
         if (damagedOf(city).some((d) => d.def.$hash === head)) continue;
         let best = null;
@@ -5457,9 +6846,9 @@ export function ageEndOrder() {
             if (moveInQueue(city, best.i, 0)) out.push({ key: `${end}_FIRST`, args: [nameOf(city), itemName(best.h), itemName(head), left] });
             continue;
         }
-        const fits = (type) => doneInAge(city, type, left);
-        const planned = plannedAbsorbers(city).filter((p) => fits(p.type));
-        const add = planned.length > 0 ? planned.reduce((a, b) => (b.cost > a.cost ? b : a)) : costliestBuilding(city, fits);
+        const fitsAge = (type) => doneInAge(city, type, left);
+        const planned = plannedAbsorbers(city).filter((p) => fitsAge(p.type));
+        const add = planned.length > 0 ? planned.reduce((a, b) => (b.cost > a.cost ? b : a)) : costliestBuilding(city, fitsAge);
         if (!add) continue;
         Game.CityOperations.sendRequest(city.id, CityOperationTypes.BUILD, add.args);
         noteBuilt(city, add.type);
@@ -5557,7 +6946,11 @@ export function placeGrowth(settings, { victory = null } = {}) {
                 const ok = safe(() => Game.CityCommands.canStart(city.id, CityCommandTypes.EXPAND, args, false), null);
                 if (ok && ok.Success === false) continue;
                 Game.CityCommands.sendRequest(city.id, CityCommandTypes.EXPAND, args);
-                return { key: "GROWTH_TILE", args: [nameOf(city), t.score] };
+                // The best specialist next to the tile taken (game 60: 55 new citizens on tiles, 0 specialists, and no line
+                // showed what a specialist would have been worth): [city, score, specialist's gain or "—", tile, its tile].
+                const sp = a?.bestSpecialist ?? null;
+                const gain = sp ? `${sp.gain >= 0 ? "+" : ""}${Math.round(sp.gain * 10) / 10}` : "—";
+                return { key: "GROWTH_TILE", args: [nameOf(city), t.score, gain, `${t.x},${t.y}`, sp ? `${sp.x},${sp.y}` : "—"] };
             }
             return null;
         };
@@ -5611,6 +7004,36 @@ export function logEconomy(settings) {
         .filter(Boolean);
     const cities = towns.map((c) => `${nameOf(c)}${c.isTown ? "(t)" : ""} ${Math.round(y(c, Y.YIELD_FOOD))}/${Math.round(y(c, Y.YIELD_PRODUCTION))}/${Math.round(y(c, Y.YIELD_SCIENCE))}/${Math.round(y(c, Y.YIELD_CULTURE))} u${urban(c)} r${rural(c)} s${specs(c)}`);
     const line = `economy: T${turn} ${age}: food ${sum((c) => y(c, Y.YIELD_FOOD))}, production ${sum((c) => y(c, Y.YIELD_PRODUCTION))}, science ${sum((c) => y(c, Y.YIELD_SCIENCE))}, culture ${sum((c) => y(c, Y.YIELD_CULTURE))}, gold ${sum((c) => y(c, Y.YIELD_GOLD))}, happiness ${sum((c) => y(c, Y.YIELD_HAPPINESS))}; urban ${sum(urban)}, rural ${sum(rural)}, specialists ${sum(specs)}; new citizens this age ${counts.tiles} on tiles, ${counts.specialists} specialists; balance ${bias}; rivals ${rivals.join(", ") || "unknown"}; F/P/S/C: ${cities.join("; ")}`;
+    log.warn(line);
+    safe(() => logGoldSources(towns), null);
+    return line;
+}
+
+/**
+ * UI.log with the economy line (game 62, Deity: our gold 50-80 a turn against the AIs' 109-1,036, the income below zero from
+ * E65 to M15): where the gold comes from and goes, as the game's yields report reads it (model-yields-report.js): each
+ * settlement's net gold (a town with its Focus), the units' upkeep by type (Treasury.getMaintenanceForAllUnitsOfType, called
+ * once per type as the report does) and the rest (the player's net less those). @returns the line, or null
+ */
+export function logGoldSources(towns = ownSettlements()) {
+    const player = safe(() => Players.get(pid()), null);
+    if (!player) return null;
+    const net = Number(safe(() => player.Stats.getNetYield(YieldTypes.YIELD_GOLD), 0)) || 0;
+    const gold = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_GOLD), 0)) || 0;
+    const focus = (c) => (safe(() => GameInfo.Projects.lookup(c.Growth.projectType)?.ProjectType, null) ?? "GROWING").replace(/^PROJECT_TOWN_/, "");
+    const upkeep = new Map();
+    for (const u of safe(() => player.Units.getUnits(), []) ?? []) {
+        if (upkeep.has(u.type)) continue;
+        upkeep.set(u.type, Number(safe(() => player.Treasury.getMaintenanceForAllUnitsOfType(u.type), 0)) || 0);
+    }
+    const units = [...upkeep.values()].reduce((a, v) => a + v, 0);
+    const rows = towns.map((c) => ({ c, g: gold(c) }));
+    const cities = rows.filter((r) => !r.c.isTown).reduce((a, r) => a + r.g, 0);
+    const townGold = rows.filter((r) => r.c.isTown).reduce((a, r) => a + r.g, 0);
+    const byType = [...upkeep].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 6)
+        .map(([t, v]) => `${safe(() => GameInfo.Units.lookup(t)?.UnitType, "?").replace(/^UNIT_/, "")} ${Math.round(v)}`);
+    const each = rows.sort((a, b) => b.g - a.g).map(({ c, g }) => `${nameOf(c)}${c.isTown ? `(t ${focus(c)})` : ""} ${Math.round(g)}`);
+    const line = `gold sources: T${Number(Game.turn) || 0}: net ${Math.round(net)} = cities ${Math.round(cities)} + towns ${Math.round(townGold)} - units ${Math.round(units)} + other ${Math.round(net - cities - townGold + units)}; units [${byType.join(", ")}]; settlements [${each.join("; ")}]`;
     log.warn(line);
     return line;
 }
@@ -5725,22 +7148,37 @@ export const LATE_CONVERSION_TURNS = 10;
 // our military countdown).
 export const FINAL_CONVERSION_TURNS = 25;
 
+const unlisted = new Map(); // conversion key -> why the last conversionsFrom left that town out (goldPlan's "left the list")
+
 /** Towns that may become cities now (conversionRule, canConvert, calmEnough), best first (rankConversions). */
 function conversionsFrom(rows, focus, { minCities = 0, cityTarget = 0, ctx = null, afterWin = false } = {}) {
-    if (ctx && !ctx.isFinalAge && !ctx.expectKeepCities && Number(ctx.ageTurnsLeft) <= LATE_CONVERSION_TURNS) return [];
-    if (ctx?.isFinalAge && Number(ctx.ageTurnsLeft) <= FINAL_CONVERSION_TURNS) return [];
+    unlisted.clear();
+    const late = (ctx && !ctx.isFinalAge && !ctx.expectKeepCities && Number(ctx.ageTurnsLeft) <= LATE_CONVERSION_TURNS) || (ctx?.isFinalAge && Number(ctx.ageTurnsLeft) <= FINAL_CONVERSION_TURNS);
+    if (late) {
+        for (const r of rows) unlisted.set(convertKey(r.town), `the age's last ${ctx.isFinalAge ? FINAL_CONVERSION_TURNS : LATE_CONVERSION_TURNS} turns`);
+        return [];
+    }
     const stats = safe(() => Players.get(pid()).Stats, null);
     const healthy = citiesHealthy();
     const rule = conversionRule({ cities: Number(stats?.numCities) || 0, towns: Number(stats?.numTowns) || 0, minCities, cityTarget, healthy, finalAge: !!ctx?.isFinalAge && focus === "SCIENCE", afterWin });
     // A new age's first turn: last age's cities come back with the card the player takes (turn 2); paying for one now
     // also makes every other town dearer (game 33: Брэдфорд for 150 at M1, Манчестер the goal at E1; research/39 §2A).
     const returning = ctx?.expectKeepCities ? lastAgeCities() : null;
-    const ok = rows
-        .map((r) => ({ ...r, plannedCity: plannedRoleAt(r.town.x, r.town.y) === "CITY", floor: rule.floor }))
-        .filter((r) => !returning?.has(`${r.town.x},${r.town.y}`))
-        .filter((r) => r.town.canConvert && r.town.cost > 0 && r.advice?.verdict !== "BLOCKED"
-            && (rule.verdicts === null || r.plannedCity || rule.verdicts.includes(r.advice?.verdict))
-            && calmEnough(r.town.id));
+    const verdict = (r) => r.advice?.verdict ?? "?";
+    const leftOut = (r) => (returning?.has(`${r.town.x},${r.town.y}`) ? "a city last age (the card brings it back)"
+        // Not a town at a war front (game 48: 565 gold held A50-A54 to make Киото a city, Amina's front; it fell at A59).
+        : isFront(r.town.x, r.town.y) ? "a war front"
+            : !r.town.canConvert ? "the game offers no conversion"
+                : !(r.town.cost > 0) ? "no price"
+                    : verdict(r) === "BLOCKED" ? "verdict BLOCKED"
+                        : !(rule.verdicts === null || r.plannedCity || rule.verdicts.includes(r.advice?.verdict)) ? `verdict ${verdict(r)} past the 1:1 floor`
+                            : !calmEnough(r.town.id) ? "unrest or unhappy" : null);
+    const ok = [];
+    for (const r of rows.map((x) => ({ ...x, plannedCity: plannedRoleAt(x.town.x, x.town.y) === "CITY", floor: rule.floor }))) {
+        const why = leftOut(r);
+        if (why) unlisted.set(convertKey(r.town), why);
+        else ok.push(r);
+    }
     if (ok.length === 0 && rows.length > 0) noteNoConversion(rows, rule, healthy);
     return rankConversions(ok, focus);
 }
@@ -5857,20 +7295,28 @@ async function becameCity(id) {
 }
 
 /**
- * The conversions of a new age's first turn (above): science and economy, no war at our door. @returns log entries
+ * The conversions of a new age's first turn (above), no war at our door: science and economy up to AGE_START_CITY_TARGET;
+ * any other focus (or none) while towns outnumber cities, the 1:1 floor every focus keeps (conversionRule; game 60: the
+ * culture focus never tried Exploration's first turn, and Самара's 950 there cost 2,350 from E2). @returns log entries
  */
 export async function convertAtAgeStart(budget, focus) {
     const out = [];
-    if ((focus !== "SCIENCE" && focus !== "ECONOMIC") || war.near || !budget) return out;
+    if (war.near || !budget) return out;
     const last = lastAgeCities();
     if (!last) return out;
+    const byTarget = focus === "SCIENCE" || focus === "ECONOMIC";
     const target = AGE_START_CITY_TARGET[currentAge()] ?? 0;
+    const settlements = ownSettlements().length;
     const tried = new Set();
     let cities = last.size;
-    while (cities < target) {
+    // All the gold, the reserve too (game 61: 71 above the reserve against 550): no cheaper moment comes; at a deficit,
+    // DEFICIT_KEEP_TURNS of it stay.
+    const income = goldIncome();
+    const pool = () => Math.max(0, budget.all() - (income < 0 ? DEFICIT_KEEP_TURNS * -income : 0));
+    while (byTarget ? cities < target : settlements - cities > cities) {
         const all = ownSettlements().filter((c) => c.isTown && !tried.has(sidOf(c)) && !last.has(`${c.location.x},${c.location.y}`))
             .map((c) => ({ c, town: { prodNow: Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0, cost: Number(safe(() => c.Gold.getTownUpgradeCost(), -1)) } }));
-        const towns = all.filter((x) => x.town.cost > 0 && x.town.cost <= budget.forGoal() && calmEnough(x.c.id))
+        const towns = all.filter((x) => x.town.cost > 0 && x.town.cost <= pool() && calmEnough(x.c.id))
             .sort((a, b) => conversionValue(b.town) - conversionValue(a.town) || a.town.cost - b.town.cost);
         const pick = towns[0];
         if (!pick) {
@@ -5878,7 +7324,7 @@ export async function convertAtAgeStart(budget, focus) {
             if (out.length === 0 && all.length > 0) {
                 const prices = all.filter((x) => x.town.cost > 0).sort((a, b) => a.town.cost - b.town.cost).slice(0, 4)
                     .map((x) => `${nameOf(x.c)} ${Math.round(x.town.cost)}${calmEnough(x.c.id) ? "" : " unrest"}`);
-                log.info(`conversion window: none within ${Math.round(budget.forGoal())} gold above the reserve (${prices.join(", ") || "no price"}; research/39 probe)`);
+                log.info(`conversion window: none within ${Math.round(pool())} gold (${prices.join(", ") || "no price"}; research/39 probe)`);
             }
             break;
         }
@@ -5902,9 +7348,16 @@ export async function convertAtAgeStart(budget, focus) {
 // infrastructure here immediately» (ADVISOR_WARNING_CITY_REVOLT). A settlement below zero Happiness while a crisis is on (or
 // in unrest) buys the cheapest Happiness building the game sells there, from all the gold (as walls against a real attack),
 // once a turn per settlement; UI.log lists every such settlement once a turn.
+// Game 60 (the plague crisis): «Settlements suffering from Unrest cannot purchase Units, Buildings, Improvements, or Repairs»
+// and «Infected Settlements suffer from Unrest» (Civilopedia). Самара (+2 Happiness, infected), Казань, Астрахань and the
+// capital stood in unrest A109-A139: 24 «a revolt may take it» lines, nothing bought and nothing said why, with 700-1,140
+// gold in the treasury. So unrest from the plague is no revolt risk (no Happiness building ends it), a settlement in unrest
+// queues its Happiness building at the front (the game's own canPurchaseWhileInUnrest aside), and a risk that buys nothing
+// says why (the game's FailureReasons).
 const revoltNoted = new Map(); // sid -> the turn UI.log listed it
+const revoltUnbought = new Map(); // sid -> the turn UI.log said why nothing was bought there
 
-/** Settlements a revolt may take: below zero Happiness while a crisis is on, or in unrest. */
+/** Settlements a revolt may take: below zero Happiness while a crisis is on, or in unrest (`plague`: the unrest is the plague's). */
 export function revoltRisks() {
     const crisis = (Number(safe(() => Players.get(pid()).Culture.getNumCultureSlots(CultureSlotTypes.CRISIS_CULTURE_SLOT), 0)) || 0) > 0;
     const out = [];
@@ -5912,13 +7365,13 @@ export function revoltRisks() {
         const happy = Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0;
         const unrest = !!safe(() => c.Happiness.hasUnrest, false);
         if (!unrest && !(crisis && happy < 0)) continue;
-        out.push({ c, happy, unrest, turns: Number(safe(() => c.Happiness.turnsOfUnrest, -1)), crisis });
+        out.push({ c, happy, unrest, turns: Number(safe(() => c.Happiness.turnsOfUnrest, -1)), crisis, plague: unrest && infected(c) });
     }
     return out;
 }
 
 /** Buys a Happiness building in each settlement at risk of a revolt (above). @returns log entries */
-export function guardRevolts(budget = null) {
+export function guardRevolts(budget = null, { queue = true } = {}) {
     const out = [];
     const risks = revoltRisks();
     const crippled = crippledSettlements(risks);
@@ -5927,13 +7380,31 @@ export function guardRevolts(budget = null) {
     const happy = GameInfo.TypeTags?.filter((t) => t.Tag === "HAPPINESS").map((t) => safe(() => GameInfo.Constructibles.lookup(t.Type), null)).filter((d) => d && d.ConstructibleClass === "BUILDING") ?? [];
     for (const r of risks) {
         const sid = sidOf(r.c);
-        if (revoltNoted.get(sid) !== Game.turn) {
-            revoltNoted.set(sid, Game.turn);
-            log.warn(`happiness: ${nameOf(r.c)} ${r.happy}${r.unrest ? `, unrest ${r.turns} turn(s)` : ""}${r.crisis ? ", a crisis is on" : ""}: a revolt may take it`);
+        const first = revoltNoted.get(sid) !== Game.turn;
+        if (first) revoltNoted.set(sid, Game.turn);
+        if (r.plague) {
+            if (first) log.info(`happiness: ${nameOf(r.c)} in unrest from the plague: purchases closed until it ends`);
+            continue;
+        }
+        if (first) log.warn(`happiness: ${nameOf(r.c)} ${r.happy}${r.unrest ? `, unrest ${r.turns} turn(s)` : ""}${r.crisis ? ", a crisis is on" : ""}: a revolt may take it`);
+        // In unrest the game sells nothing there (production-chooser: unless city.Gold.canPurchaseWhileInUnrest): queued first.
+        // Only with «Производство» (`queue`): the player who keeps the queues gets the log line alone (the integration review of
+        // game 60's packages: the purchases step queued and moved buildings with production off).
+        if (r.unrest && !safe(() => r.c.Gold.canPurchaseWhileInUnrest, true)) {
+            if (!queue) {
+                noteRevoltUnbought(r.c, { refused: ["purchases closed in unrest, and «Production» is off: nothing queued"] }, 0);
+                continue;
+            }
+            const q = queueHappinessFirst(r.c, happy);
+            if (q) out.push(q);
+            continue;
         }
         const best = cheapestHappiness(r.c, happy, b.all());
-        if (!best.pick || !buyHappiness(r.c, best.pick, b, "REVOLT")) continue;
-        out.push({ key: "REVOLT_GUARD", args: [nameOf(r.c), composeOr(best.pick.def.Name), Math.round(best.pick.cost)] });
+        if (best.pick && buyHappiness(r.c, best.pick, b, "REVOLT")) {
+            out.push({ key: "REVOLT_GUARD", args: [nameOf(r.c), composeOr(best.pick.def.Name), Math.round(best.pick.cost)] });
+            continue;
+        }
+        noteRevoltUnbought(r.c, best, b.all());
     }
     // Crippled by unhappiness: ahead of the savings goal, from the gold above the reserve.
     for (const r of crippled) {
@@ -5971,21 +7442,102 @@ function crippledSettlements(risks) {
     return out.sort((a, b) => a.happy - b.happy);
 }
 
-/** The cheapest Happiness building the game sells in this settlement: `pick` within `limit` gold, `cheapest` at any price. */
+/**
+ * The cheapest Happiness building the game sells in this settlement: `pick` within `limit` gold, `cheapest` at any price;
+ * `refused` the game's answers for those it does not sell ("TYPE: FailureReasons").
+ */
 function cheapestHappiness(c, defs, limit) {
     let pick = null;
     let cheapest = null;
+    const refused = [];
     for (const def of defs) {
         if (cityHas(c, def.ConstructibleType)) continue;
         const probe = safe(() => Game.CityCommands.canStart(c.id, CityCommandTypes.PURCHASE, { ConstructibleType: def.$hash }, false), null);
         const plots = [...(probe?.Plots ?? []), ...(probe?.ExpandUrbanPlots ?? [])];
-        if (!(probe?.Success || probe?.InsufficientFunds) || plots.length === 0) continue;
+        if (!(probe?.Success || probe?.InsufficientFunds) || plots.length === 0) {
+            const reasons = (probe?.FailureReasons ?? []).map((f) => safe(() => Locale.compose(f), f));
+            refused.push(`${def.ConstructibleType}: ${reasons.join("; ") || (plots.length === 0 ? "no tile" : "no reason given")}`);
+            continue;
+        }
         const cost = Number(probe.Cost ?? safe(() => c.Gold.getBuildingPurchaseCost(YieldTypes.YIELD_GOLD, def.ConstructibleType), Infinity));
         if (!Number.isFinite(cost) || cost <= 0) continue;
         if (!cheapest || cost < cheapest.cost) cheapest = { def, plots, cost };
         if (probe.Success && cost <= limit && (!pick || cost < pick.cost)) pick = { def, plots, cost };
     }
-    return { pick, cheapest };
+    return { pick, cheapest, refused };
+}
+
+/** UI.log once a turn: why a settlement a revolt may take got no Happiness building (the price, else the game's answers). */
+function noteRevoltUnbought(c, best, gold) {
+    const sid = sidOf(c);
+    if (revoltUnbought.get(sid) === Game.turn) return;
+    revoltUnbought.set(sid, Game.turn);
+    const refused = best.refused ?? [];
+    const price = best.cheapest ? `${best.cheapest.def.ConstructibleType} costs ${Math.round(best.cheapest.cost)}, ${Math.round(gold)} gold usable` : "none on sale";
+    log.warn(`happiness: ${nameOf(c)}: no Happiness building bought (${price})${refused.length ? `; the game: ${refused.slice(0, 4).join(", ")}${refused.length > 4 ? ` and ${refused.length - 4} more` : ""}` : ""}`);
+}
+
+/**
+ * Where a Happiness building against a revolt goes: the very front, ahead of a plain building with progress (root gotcha 20:
+ * each keeps its own), not ahead of an item done this turn. Behind a wonder, a project, walls or a science site in production,
+ * whatever its progress: the wonder step (wonderSlot) and the victory work (projectSlot, padSlot) put those back ahead of a
+ * plain building, so the two took turns at the front every pass, and a wonder waiting behind it loses our item's progress
+ * when a rival finishes it (root gotcha 55). Behind repairs, units and walls (toFront).
+ */
+function revoltSlot(city) {
+    // An item the game does not complete loses nothing behind another (frontSlot).
+    if (stuckHeadSince(city) !== null) return 0;
+    const h = safe(() => city.BuildQueue.currentProductionTypeHash, null);
+    const front = safe(() => GameInfo.Constructibles.lookup(h), null);
+    if (wonderOrProject(h) || isWallsType(h) || (front && siteIn(city, front.ConstructibleType))) return 1;
+    const slot = frontSlot(city);
+    if (slot === 0) return 0;
+    const left = Number(safe(() => city.BuildQueue.currentTurnsLeft, 0)) || 0;
+    return left > 0 && left <= 1 ? slot : 0;
+}
+
+/**
+ * A city in unrest (no purchase there): its Happiness building queued goes to the front (revoltSlot), else the cheapest one
+ * it can place now is queued, on the plan's tile or the game's best one no other order of ours takes (it goes to the front
+ * next pass, once the queue shows it). A town has no queue: UI.log says so. @returns a log entry or null
+ */
+function queueHappinessFirst(c, defs) {
+    if (c.isTown) {
+        const sid = sidOf(c);
+        if (revoltUnbought.get(sid) !== Game.turn) {
+            revoltUnbought.set(sid, Game.turn);
+            log.warn(`happiness: ${nameOf(c)} in unrest: purchases closed, and a town builds nothing`);
+        }
+        return null;
+    }
+    const hashes = new Set(defs.map((d) => d.$hash));
+    const queued = queueTypes(c).find((h) => hashes.has(h));
+    if (queued !== undefined) {
+        const def = safe(() => GameInfo.Constructibles.lookup(queued), null);
+        return def && toFront(c, queued, revoltSlot(c)) ? { key: "REVOLT_FIRST", args: [nameOf(c), composeOr(def.Name)] } : null;
+    }
+    let best = null;
+    for (const def of defs) {
+        if (cityHas(c, def.ConstructibleType) || builtThisPass(c).has(def.ConstructibleType)) continue;
+        const probe = safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, { ConstructibleType: def.$hash }, false), null);
+        if (!probe?.Success || probe.InQueue) continue;
+        const plots = [...(probe.Plots ?? []), ...(probe.ExpandUrbanPlots ?? [])].filter((i) => tileTaken(safe(() => GameplayMap.getLocationFromIndex(i), null)) === null);
+        const cost = Number(safe(() => c.Production.getConstructibleProductionCost(def.ConstructibleType), def.Cost ?? Infinity)) || Infinity;
+        if (plots.length === 0 || (best && best.cost <= cost)) continue;
+        const loc = bestLocFor(c, def.$hash, plots);
+        if (!loc) continue;
+        const args = { ConstructibleType: def.$hash, X: loc.x, Y: loc.y };
+        if (!safe(() => Game.CityOperations.canStart(c.id, CityOperationTypes.BUILD, args, false), null)?.Success) continue;
+        best = { def, args, loc, cost };
+    }
+    if (!best) {
+        noteRevoltUnbought(c, { refused: ["no Happiness building to place: purchases closed in unrest"] }, 0);
+        return null;
+    }
+    Game.CityOperations.sendRequest(c.id, CityOperationTypes.BUILD, best.args);
+    noteBuilt(c, best.def.ConstructibleType);
+    notePlotOrder(best.loc, best.def.$hash);
+    return { key: "REVOLT_QUEUED", args: [nameOf(c), composeOr(best.def.Name)] };
 }
 
 /** Buys this Happiness building in this settlement on the plan's tile (bestPlotFor) and spends it. @returns true when sent */
@@ -6026,6 +7578,15 @@ export function logUrbanCenters() {
 
 // ---- the gold plan ----------------------------------------------------------------------
 
+// A non-final age's turns left (ageOutlook) from which a conversion goal takes the reserve too (goldPlan's `noReserve`).
+const CONVERT_LAST_LEFT = 1;
+
+/** UI.log when the town a conversion goal saved for leaves the list (game 60, A98: Самара at 700 gave way to Нижний Новгород at 850, and no line said why). */
+function noteConversionLeft(key, rows) {
+    const r = rows.find((x) => convertKey(x.town) === key);
+    log.info(`conversions: ${r?.town.name ?? key} left the list: ${r ? unlisted.get(key) ?? `verdict ${r.advice?.verdict ?? "?"}` : "no longer a town of ours"}`);
+}
+
 let goalMemory = {};    // goal key -> { attempts, lastTurn, until } (core noteGoalBought)
 let lastGoalKey = null; // SAVING is logged when the goal changes
 let convertGoalKey = null; // the town a conversion goal is saving for (research/39 §4.2)
@@ -6040,6 +7601,9 @@ export function resetGoldPlan() {
     lastGoalKey = null;
     convertGoalKey = null;
     goldTrack = { turn: null, turns: [], level: 0 };
+    passBudget = null;
+    commanderBoughtTurn = -1;
+    commanderNoted = -1;
 }
 
 const GOLD_TRACK_TURNS = 8; // the gold income of this many last turns is kept (goldPressure's longest window)
@@ -6081,16 +7645,27 @@ const composeOr = (key, ...args) => safe(() => Locale.compose(key, ...args), key
  */
 export function goldPlan(settings, { focus = null, reserveTurns = 2, order = null, threats = [] } = {}) {
     const budget = createBudget({ gold: goldBalance(), reserve: goldReserve(reserveTurns) });
+    passBudget = { turn: Game.turn, budget };
     // A war at our door: a defender's price stays for every threatened settlement short of melee guards, so the
     // plan and the victory path buy only what is left (research/24 W3: game 9's first war turn bought an
     // Observatory, a Sawpit and a Brickyard for 736 gold). Defenders and walls use all() anyway.
     if (war.near) {
         const short = (threats ?? []).filter((t) => guardsFor(t, undefined, threats, { within: guardDeadline(t) }) < guardsWanted(t)).length;
         if (short > 0) budget.reserve += short * defenderPrice();
+    } else if (war.risk.length > 0) {
+        // A war risk: the free gold keeps a defender's price for each war front (at most RISK_FRONTS_KEPT), so small
+        // purchases wait and a defender can be bought the turn the war comes (after game 56: Trung Trac and Franklin weighed
+        // attacks on our cities five turns before declaring at M18; 108-gold town purchases took about 1,700 meanwhile, and
+        // the declaration found 246 gold against a 540 defender while Керетаро's centre fell to 33%). Defenders use all().
+        // Kept from the free purchases only (budget.keep), not from the savings goal (game 57: two defenders' prices held
+        // ~1,100 gold M28-M62 for Friedrich's risk, no war came, and each GDP Port waited 4-5 turns more).
+        const n = Math.min(RISK_FRONTS_KEPT, fronts.size);
+        if (n > 0) budget.keep += n * defenderPrice();
     }
     const income = goldIncome();
-    // Turns until the free gold covers `cost` at this income (Infinity: never).
-    const goldTurns = (cost) => (cost <= budget.free() ? 0 : income > 0 ? (cost - budget.free()) / income : Infinity);
+    // Turns until the gold above the reserve covers `cost` at this income (Infinity: never): a goal's own purchase.
+    const above = () => Math.max(0, budget.forGoal());
+    const goldTurns = (cost) => (cost <= above() ? 0 : income > 0 ? (cost - above()) / income : Infinity);
     const towns = safe(() => runTownAdvisor(settings), null);
     const rows = towns?.rows ?? [];
     const conversions = conversionsFrom(rows, focus, { minCities: Number(settings?.strategy?.minCities) || 0, cityTarget: Number(settings?.strategy?.cityTarget) || 0, ctx: towns?.ctx ?? null, afterWin: !!settings?.afterWin });
@@ -6113,14 +7688,36 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     // A war at our door: no savings goal, the gold stays free for defenders and upgrades (research/23 D5: game 8,
     // a conversion goal and then a University goal kept the free gold at 0 for the whole war).
     if (war.near) kinds.length = 0;
+    // A second general no city trains in time, after every other goal (W1: below a town conversion; game 60's CONVERT goal held
+    // the free gold T61-T131, and a commander costs about 1,200 at Standard).
+    const commander = war.near ? null : safe(() => commanderGoal(settings, focus), null);
+    if (commander && !kinds.includes("COMMANDER")) kinds.push("COMMANDER");
     const offer = kinds.includes("SETTLER") ? safe(() => settlerOffer(threats, { fill: !!settings?.strategy?.fillCap, past: pastCapOf(settings?.strategy), anywhere: !!settings?.strategy?.settleAnywhere }), null) : null;
     const keep = kinds.includes("CONVERT") ? conversionKeep() : 0;
     // The town chosen stays the goal while it may still become a city (research/39 §4.2: game 32's goal went back and forth
     // between Liverpool and Leeds); below the floor a conversion is a goal at any horizon (no goal at all E1-E16).
     const stuck = convertGoalKey ? conversions.findIndex((r) => convertKey(r.town) === convertGoalKey) : -1;
+    if (convertGoalKey && stuck < 0) noteConversionLeft(convertGoalKey, rows);
     const ordered = stuck > 0 ? [conversions[stuck], ...conversions.filter((_, i) => i !== stuck)] : conversions;
+    const outlook = safe(() => ageOutlook(), null);
+    // A non-final age's last turns, the player expecting to keep cities: a conversion's gold carries over in full anyway (root
+    // gotcha 31), so its goal takes the reserve too and stays while the whole treasury covers it (game 60: T139's 1,142 less a
+    // 24 repair and the 181 reserve left Самара's 950 13 short, T140 dropped the goal, and it cost 2,350 in Exploration).
+    // Not at a deficit: the reserve then keeps the treasury above zero (DEFICIT_RESERVE_TURNS of it), and negative gold
+    // carries over too («run out of Gold … Cities will become Unhappy and Units may be forced to disband»).
+    const keepCities = !!(towns?.ctx?.expectKeepCities ?? settings?.towns?.expectKeepCities);
+    const lastTurns = !!outlook && !outlook.isFinalAge && !outlook.endless && Number(outlook.turnsLeft) <= CONVERT_LAST_LEFT
+        && income >= 0 && keepCities;
+    // No conversion to make now (a town to wait for, or in unrest: game 61's Спахан; or none the treasury buys now): gold
+    // for the next age's first-turn window instead (windowBank), held whole like the bank for Modern; not while a war is at
+    // our door.
+    // Game 62: on A69 a conversion was listed but out of reach (115 gold against 487), which dropped the bank and left no goal.
+    const affordable = lastTurns && conversions.some((r) => Number(r.town?.cost) > 0 && Number(r.town.cost) <= budget.all());
+    const nextWindow = modernBank || war.near || affordable ? null : safe(() => windowBank(rows, focus, keepCities), null);
+    if (nextWindow) kinds.unshift("BANK");
     const candidates = {
-        BANK: modernBank ? [modernBank] : [],
+        BANK: modernBank ? [modernBank] : nextWindow ? [nextWindow] : [],
+        COMMANDER: commander ? [commander] : [],
         SETTLER: offer ? [{ key: "settler", label: composeOr("LOC_XPL_AP_GOAL_SETTLER", nameOf(offer.city)), cost: offer.cost, purchase: { city: offer.city, args: offer.args, name: composeOr(offer.name), drop: offer.drop } }] : [],
         CODEX: focus === "SCIENCE" && kinds.includes("CODEX") ? safe(() => codexGoals(), []) ?? [] : [],
         GDP: kinds.includes("GDP") ? safe(() => gdpGoals(), []) ?? [] : [],
@@ -6128,19 +7725,24 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
         PADS: focus === "SCIENCE" && pads > 0 && kinds.includes("PADS") ? safe(() => padGoals(focus, pads, settings?.strategy?.gate ?? null), []) ?? [] : [],
         // The war risk's keep is part of the need (research/24 G1: «held 225/1500» while the gold over the cost went
         // elsewhere, so the conversion, which needs cost + keep, never came).
-        CONVERT: ordered.map((r) => (keep > 0
-            ? { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT_KEEP", r.town.name, Math.round(keep)), cost: r.town.cost + keep, anyHorizon: !!r.floor }
-            : { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT", r.town.name), cost: r.town.cost, anyHorizon: !!r.floor })),
+        CONVERT: ordered.map((r) => ({
+            ...(keep > 0
+                ? { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT_KEEP", r.town.name, Math.round(keep)), cost: r.town.cost + keep, anyHorizon: !!r.floor }
+                : { key: convertKey(r.town), label: composeOr("LOC_XPL_AP_GOAL_CONVERT", r.town.name), cost: r.town.cost, anyHorizon: !!r.floor }),
+            town: r.town.name,
+            ...(lastTurns ? { noReserve: true } : {}),
+        })),
         LEVER: focus && kinds.includes("LEVER")
-            ? (safe(() => victoryPurchases(focus), []) ?? [])
+            // The culture path's Temples within the relics waiting (withinTempleRoom).
+            ? withinTempleRoom(safe(() => victoryPurchases(focus), []) ?? [])
                 // Its own city builds it sooner than the gold would come (S6: game 8, an Academy held 504 gold
                 // 17 turns, then the city built it in 3).
                 .filter((i) => !(queueTypes(i.city).includes(i.def.$hash) && buildTurns(i.city, i.def) <= goldTurns(i.cost)))
                 .map((i) => ({ key: i.key, label: composeOr("LOC_XPL_AP_GOAL_LEVER", composeOr(i.def.Name), nameOf(i.city)), cost: i.cost }))
             : [],
     };
-    const turnsLeft = Number(safe(() => ageOutlook().turnsLeft, Infinity));
-    const goal = budget.setGoal(chooseGoal(candidates, kinds, { memory: goalMemory, turn: Game.turn, have: budget.free(), income, turnsLeft }));
+    const turnsLeft = Number(outlook?.turnsLeft ?? Infinity);
+    const goal = budget.setGoal(chooseGoal(candidates, kinds, { memory: goalMemory, turn: Game.turn, have: budget.free(), haveAll: budget.all(), income, turnsLeft }));
     if (goal?.kind === "CONVERT") convertGoalKey = goal.key;
     else if (stuck < 0) convertGoalKey = null;
     const entries = [];
@@ -6169,6 +7771,31 @@ export function carriedGoldCap(nextAge) {
     const base = continuity ? CARRY_GOLD[nextAge] ?? CARRY_GOLD_REGROUP : CARRY_GOLD_REGROUP;
     const multiplier = Number(safe(() => GameInfo.GameSpeeds.lookup(game.gameSpeedType)?.CostMultiplier, 100)) || 100;
     return Math.round((base * multiplier) / 100);
+}
+
+// The next age's first turn converts towns for a fraction of the price until the dedications are chosen (gotcha 66). Game 61:
+// Antiquity's last turn bought two Granaries for 156, and on Exploration's first turn the window had 71 gold above the reserve
+// against Спахан's 550 (1,500 once the card brought the cities back). So a non-final age's last WINDOW_BANK_TURNS keep the
+// cheapest town's price today (Antiquity's last 500 against the window's 550: WINDOW_PRICE_MARGIN), while the window will want
+// a town: science and economy below the next age's AGE_START_CITY_TARGET, any focus while towns outnumber cities.
+const WINDOW_BANK_TURNS = 2;
+const WINDOW_PRICE_MARGIN = 1.15;
+const NEXT_AGE = Object.freeze({ AGE_ANTIQUITY: "AGE_EXPLORATION", AGE_EXPLORATION: "AGE_MODERN" });
+
+/** The gold kept for the next age's conversion window (above), as a BANK goal held whole. @returns a goal candidate or null */
+function windowBank(rows, focus, keepCities) {
+    const next = NEXT_AGE[currentAge()];
+    const outlook = safe(() => ageOutlook(), null);
+    if (!next || !keepCities || !outlook || outlook.isFinalAge || outlook.endless || !(Number(outlook.turnsLeft) <= WINDOW_BANK_TURNS)) return null;
+    const all = ownSettlements();
+    const cities = all.filter((c) => !c.isTown).length;
+    const towns = all.length - cities;
+    const wanted = focus === "SCIENCE" || focus === "ECONOMIC" ? cities < (AGE_START_CITY_TARGET[next] ?? 0) && towns > 0 : towns > cities;
+    if (!wanted) return null;
+    const price = Math.min(Infinity, ...rows.map((r) => Number(r.town?.cost)).filter((c) => c > 0));
+    if (!Number.isFinite(price)) return null;
+    const cost = Math.ceil(price * WINDOW_PRICE_MARGIN);
+    return { key: "WINDOW_BANK", label: composeOr("LOC_XPL_AP_GOAL_WINDOW", cost), cost, hold: cost, holdShare: 1, anyHorizon: true, sized: true };
 }
 
 /**
@@ -6374,7 +8001,7 @@ export function logGold(pass) {
     const income = goldIncome();
     const gold = {
         turn: pass.turn ?? Game.turn,
-        balance: Math.round(b.gold), income: Math.round(income), reserve: Math.round(b.reserve), reserveTurns: pass.reserveTurns,
+        balance: Math.round(b.gold), income: Math.round(income), reserve: Math.round(b.reserve), keep: Math.round(Number(b.keep) || 0), reserveTurns: pass.reserveTurns,
         goal: g ? { kind: g.kind, label: g.label, cost: Math.round(g.cost), held: g.done ? 0 : Math.round(g.hold), done: !!g.done } : null,
         spent: Math.round(b.spent),
         bought: b.entries.map((e) => ({ kind: e.kind, label: e.label ?? "", cost: e.cost })),
@@ -6383,10 +8010,10 @@ export function logGold(pass) {
         pressure: GOLD_PRESSURE.STEPS[goldTrack.level],
     };
     state.set({ autopilot: { ...(state.get().autopilot ?? {}), gold } });
-    const goalText = g ? `${g.kind} ${g.label} ${gold.goal.cost} held ${gold.goal.held}${g.done ? " (bought)" : ""}` : "none";
+    const goalText = g ? `${g.kind} ${g.label} ${gold.goal.cost} held ${gold.goal.held}${g.noReserve ? " (the reserve too: the age's last turns)" : ""}${g.done ? " (bought)" : ""}` : "none";
     const spentText = gold.bought.map((e) => `${e.kind} ${e.label} ${e.cost}`).join(", ");
     const pressure = goldTrack.level > 0 ? `; gold weighs ×${GOLD_PRESSURE.STEPS[goldTrack.level]} (income below zero)` : "";
-    log.warn(`gold: T${gold.turn} balance ${gold.balance} income ${gold.income} reserve ${gold.reserve} (${gold.reserveTurns}t) goal ${goalText}; spent ${gold.spent} [${spentText}]; cheapest conversion ${gold.cheapestConversion ? `${gold.cheapestConversion.name} ${gold.cheapestConversion.cost}` : "-"}${pressure}`);
+    log.warn(`gold: T${gold.turn} balance ${gold.balance} income ${gold.income} reserve ${gold.reserve} (${gold.reserveTurns}t)${gold.keep > 0 ? ` kept ${gold.keep} for a defender (war risk)` : ""} goal ${goalText}; spent ${gold.spent} [${spentText}]; cheapest conversion ${gold.cheapestConversion ? `${gold.cheapestConversion.name} ${gold.cheapestConversion.cost}` : "-"}${pressure}`);
 }
 
 // ---- purchases -------------------------------------------------------------------------

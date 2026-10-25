@@ -83,7 +83,7 @@ function buildSiteContext(settings) {
         map: engineMap.map,
         facts: (idx) => facts.facts(idx),
         profile: profileFor(settings),
-        tuning: siteTuning(relaxed),
+        tuning: siteTuning(relaxed, { anyRoom: !!settings.anyRoomSites }),
         overlapTol: relaxed ? "HIGH" : settings.overlapTol,
         centres: settlements.centres,
         independents: settlements.independents,

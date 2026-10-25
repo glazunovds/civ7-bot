@@ -85,3 +85,25 @@ test("the economy line: every 10 turns, yields and population, new citizens by k
         Game.turn = turn0;
     }
 });
+
+// Game 62 (Deity): our gold 50-80 a turn against the AIs' 109-1,036, and no line said where it went.
+test("the gold sources line: each settlement's net gold (a town with its Focus), the units' upkeep by type, and the rest", () => {
+    const keep = { units: world.units, unitUpkeep: world.unitUpkeep, goldIncome: world.goldIncome, cities: world.cities.map((c) => ({ ...c })) };
+    try {
+        world.units = [{ id: 1, type: "UNIT_WARRIOR", x: 0, y: 0 }, { id: 2, type: "UNIT_WARRIOR", x: 1, y: 0 }, { id: 3, type: "UNIT_SCOUT", x: 2, y: 0 }];
+        world.unitUpkeep = (t) => (t === "UNIT_WARRIOR" ? 2 : 0);
+        world.goldIncome = 10;
+        world.cities[0].nets = { ...(world.cities[0].nets ?? {}), YIELD_GOLD: 12 };
+        const town = world.cities.find((c) => c.isTown);
+        town.nets = { ...(town.nets ?? {}), YIELD_GOLD: 3 };
+        town.focus = "PROJECT_TOWN_TRADE";
+        const line = steps.logGoldSources();
+        // 10 = 12 + 3 - 4 + other: other is -1.
+        assert.match(line, /^gold sources: T\d+: net 10 = cities 12 \+ towns 3 - units 4 \+ other -1; units \[WARRIOR 4\];/, line);
+        assert.match(line, /\(t TRADE\) 3/, "the town's Focus");
+    } finally {
+        Object.assign(world, { units: keep.units, unitUpkeep: keep.unitUpkeep, goldIncome: keep.goldIncome });
+        world.cities.forEach((c, i) => Object.assign(c, keep.cities[i]));
+        world.cities.forEach((c, i) => { if (!("nets" in keep.cities[i])) delete c.nets; if (!("focus" in keep.cities[i])) delete c.focus; });
+    }
+});

@@ -105,9 +105,13 @@ export function installFakeEngine(world, age = "antiquity") {
         { PlotEffectType: "PLOTEFFECT_STONE_TRAP", Damage: "25", TriggerOnEnter: "true" },
         { PlotEffectType: "PLOTEFFECT_UNIT_FORTIFICATIONS", Damage: "0" },
     ]);
-    // world.plotEffects(x, y) -> ["PLOTEFFECT_PLAGUE", ...] (MapPlotEffects.getPlotEffects, as the plot tooltip reads it)
+    // world.plotEffects(x, y) -> ["PLOTEFFECT_PLAGUE", ...] (MapPlotEffects.getPlotEffects, as the plot tooltip reads it); an
+    // entry may be { type, duration } (the turns left the tooltip shows; 6 when a string)
     globalThis.MapPlotEffects = {
-        getPlotEffects: (idx) => (world.plotEffects?.(grid.x(idx), grid.y(idx)) ?? []).map((t) => ({ effectType: info.PlotEffects.lookup(t)?.$hash ?? t, duration: 6 })),
+        getPlotEffects: (idx) => (world.plotEffects?.(grid.x(idx), grid.y(idx)) ?? []).map((t) => {
+            const e = typeof t === "string" ? { type: t } : t;
+            return { effectType: info.PlotEffects.lookup(e.type)?.$hash ?? e.type, duration: e.duration ?? 6 };
+        }),
     };
     const g = globalThis;
     g.GameInfo = info;
@@ -153,7 +157,9 @@ export function installFakeEngine(world, age = "antiquity") {
         getPlotIndicesInRadius: (x, y, r) => grid.radius(grid.index(x, y), r).map((p) => p.idx),
         getPlotDistance: (x1, y1, x2, y2) => grid.distanceXY(x1, y1, x2, y2),
         getDirectionToPlot: () => 1,
-        getRevealedState: (_p, x, y) => (tile(x, y).revealed === false ? 0 : 2),
+        // Hidden (0) on a tile with revealed: false; revealed but not in sight (1) with visible: false, or beyond world.sight tiles of
+        // every unit and city of ours when a test gives one (the fog of war); else visible (2).
+        getRevealedState: (_p, x, y) => (tile(x, y).revealed === false ? 0 : inSight(x, y) ? 2 : 1),
         getTerrainType: (x, y) => terrainIndex(tile(x, y).terrain),
         getBiomeType: (x, y) => info.Biomes.findIndex((b) => b.BiomeType === (tile(x, y).biome ?? "BIOME_GRASSLAND")),
         getFeatureType: (x, y) => (tile(x, y).feature ? info.Features.findIndex((f) => f.FeatureType === tile(x, y).feature) : -1),
@@ -165,7 +171,11 @@ export function installFakeEngine(world, age = "antiquity") {
         getContinentType: (x, y) => tile(x, y).continent ?? 0,
         isNavigableRiver: (x, y) => tile(x, y).terrain === "TERRAIN_NAVIGABLE_RIVER",
         // Water bodies: world.areaId(x, y) (default: every water tile in area 1, land in area 0).
-        getAreaId: (x, y) => world.areaId?.(x, y) ?? (["TERRAIN_COAST", "TERRAIN_OCEAN"].includes(tile(x, y).terrain) ? 1 : 0),
+        // The game takes x and y and refuses anything else ("Argument conversion failed", game 49: an index was passed).
+        getAreaId: (x, y) => {
+            if (typeof x !== "number" || typeof y !== "number") throw new TypeError("getAreaId: Argument conversion failed: x and y expected");
+            return world.areaId?.(x, y) ?? (["TERRAIN_COAST", "TERRAIN_OCEAN"].includes(tile(x, y).terrain) ? 1 : 0);
+        },
         getAreaIsWater: (x, y) => ["TERRAIN_COAST", "TERRAIN_OCEAN"].includes(tile(x, y).terrain),
         isRiver: (x, y) => !!tile(x, y).river,
         isFreshWater: (x, y) => !!tile(x, y).river,
@@ -211,7 +221,7 @@ export function installFakeEngine(world, age = "antiquity") {
                 calculateAllBuildingsPlacements: () => world.placements?.(c) ?? null,
             },
             // world.cities[i].unrest = true: the settlement is in unrest
-            Happiness: { get hasUnrest() { return !!c.unrest; }, get turnsOfUnrest() { return c.unrest ? 1 : -1; } },
+            Happiness: { get hasUnrest() { return !!c.unrest; }, get turnsOfUnrest() { return c.unrest ? 1 : -1; }, get hasWarWeariness() { return !!c.weary; } },
             // world.cities[i].religion = a GameInfo.Religions hash (city.Religion.majorityReligion, as the banner reads it; -1 none);
             // urban and rural follow it unless world.cities[i].urbanReligion / ruralReligion say otherwise
             Religion: {
@@ -219,7 +229,8 @@ export function installFakeEngine(world, age = "antiquity") {
                 get urbanReligion() { return c.urbanReligion ?? c.religion ?? -1; },
                 get ruralReligion() { return c.ruralReligion ?? c.religion ?? -1; },
             },
-            Gold: { getTownUpgradeCost: () => c.cost ?? 300, getBuildingPurchaseCost: (_y, type) => world.buyCost?.(type, c) ?? 250, getUnitPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250 },
+            // world.cities[i].buyInUnrest: purchases allowed in unrest (city.Gold.canPurchaseWhileInUnrest; the game: none, unless an effect allows them)
+            Gold: { getTownUpgradeCost: () => c.cost ?? 300, getBuildingPurchaseCost: (_y, type) => world.buyCost?.(type, c) ?? 250, getUnitPurchaseCost: (_y, type) => world.buyCost?.(type) ?? 250, get canPurchaseWhileInUnrest() { return !!c.buyInUnrest; } },
             Production: {
                 getConstructibleProductionCost: (type) => world.costOf?.(type) ?? 100,
                 // Like the game: a project's own Cost (Preparation 2000, Launch Satellite 1000), unless the test prices it.
@@ -345,6 +356,10 @@ export function installFakeEngine(world, age = "antiquity") {
             hasAllied: (o) => (world.allies ?? []).includes(o),
             // world.formalWarOk = [player id] (the game allows a formal war on them now)
             canDeclareWarOn: (o, type) => ({ Success: type === g.WarTypes?.FORMAL_WAR ? (world.formalWarOk ?? []).includes(o) : true }),
+            // world.warSupport = { [id]: { ours, theirs, influence } } (what the declare-war popup shows for a war on them)
+            getTotalWarSupportBonusForPlayer: (o) => world.warSupport?.[o]?.ours ?? 0,
+            getTotalWarSupportBonusForTarget: (o) => world.warSupport?.[o]?.theirs ?? 0,
+            getWarInfluenceBonusTarget: (o) => world.warSupport?.[o]?.influence ?? 0,
             // world.peaceOk = [player id] (the game allows peace now)
             canMakePeaceWith: (o) => ({ Success: (world.peaceOk ?? []).includes(o) }),
             getRelationshipEnum: (o) => g.DiplomacyPlayerRelationships[`PLAYER_RELATIONSHIP_${world.relations?.[o] ?? "NEUTRAL"}`],
@@ -385,10 +400,14 @@ export function installFakeEngine(world, age = "antiquity") {
         },
     };
     g.MapConstructibles = {
+        // world.structures(x, y).constructibles: types, or { type, damaged } (a pillaged improvement or building).
         getHiddenFilteredConstructibles: (x, y) => [
-            ...structs(x, y).constructibles.map((type, i) => {
+            ...structs(x, y).constructibles.map((t, i) => {
                 const id = `${x}-${y}-${i}`;
-                componentIds.set(id, { type: info.Constructibles.lookup(type).$hash, complete: true });
+                const type = typeof t === "object" && t !== null ? t.type : t;
+                // world.structures(x, y).damaged = [type] also marks one pillaged (Constructibles.getByComponentID(id).damaged)
+                const damaged = t?.damaged || (structs(x, y).damaged ?? []).includes(type);
+                componentIds.set(id, { type: info.Constructibles.lookup(type).$hash, complete: true, ...(damaged ? { damaged: true } : {}) });
                 return id;
             }),
             ...(world.wonders ?? []).map((w, i) => (w.x === x && w.y === y && tile(x, y).revealed !== false ? `w-${i}` : null)).filter(Boolean),
@@ -448,6 +467,23 @@ export function installFakeEngine(world, age = "antiquity") {
     // Armies (research/37): world.units[i].army / world.enemies[i].army = a number (its armyId), world.armies =
     // { "<owner>:<army>": { x, y, capacity, unitCount } } (Armies.get: location, combatUnitCapacity, unitCount).
     const armyIdOf = (owner, army) => (army === undefined || army === null ? undefined : { owner, id: army, type: 2 });
+    // What we see (game 60, SCM-2): a tile in sight (getRevealedState above), and another player's unit there unless the test
+    // hides it (world.enemies[i].seen === false, or .hidden = true: a unit in fog on a tile we see), as the game's
+    // Visibility.isVisible(player, unitId) answers the plot tooltip.
+    function inSight(x, y) {
+        if (tile(x, y).visible === false) return false;
+        const r = Number(world.sight);
+        if (!(r >= 0)) return true;
+        const near = (l) => grid.distanceXY(l.x, l.y, x, y) <= r;
+        return (world.units ?? []).some((u) => u.onMap !== false && u.x >= 0 && near(u)) || (world.cities ?? []).some((c) => (c.owner ?? 0) === 0 && near(c));
+    }
+    g.Visibility = {
+        isVisible: (_p, id) => {
+            if ((id?.owner ?? 0) === 0) return true;
+            const e = enemyIds().find((x) => x.id.id === id?.id && x.id.owner === id?.owner)?.e;
+            return !!e && e.seen !== false && !e.hidden && e.onMap !== false && inSight(e.x, e.y) && tile(e.x, e.y).revealed !== false;
+        },
+    };
     const unitObjects = () => (world.units ?? []).map((u) => ({
         id: { owner: 0, id: u.id, type: 1 },
         owner: 0,
@@ -479,15 +515,23 @@ export function installFakeEngine(world, age = "antiquity") {
             return world.activationPlots?.(u.id, cmd) ?? [];
         },
         shouldShowActivationPlots: (cmd) => String(cmd).startsWith("UNITCOMMAND_") && (world.showsActivationPlots?.(u.id, cmd) ?? true),
-        // u.promotions = { can: true, has: ["PROMO_A"], earnable: ["PROMO_B"] }
-        Experience: u.promotions ? {
+        // u.promotions = { can: true, has: ["PROMO_A"], earnable: ["PROMO_B"] }; u.xp = { level, points, next } (the promotion
+        // panel's reads: getLevel, experiencePoints, experienceToNextLevel are properties in the game)
+        Experience: u.promotions || u.xp ? {
             // world.units[i].promotions.has may change between passes (a promotion bought)
-            canPromote: !!u.promotions.can,
-            hasPromotion: (_d, p) => (u.promotions.has ?? []).includes(p),
-            canEarnPromotion: (_d, p) => (u.promotions.earnable ?? []).includes(p),
+            canPromote: !!u.promotions?.can,
+            hasPromotion: (_d, p) => (u.promotions?.has ?? []).includes(p),
+            canEarnPromotion: (_d, p) => (u.promotions?.earnable ?? []).includes(p),
+            getLevel: u.xp?.level ?? 1,
+            experiencePoints: u.xp?.points ?? 0,
+            experienceToNextLevel: u.xp?.next ?? 0,
+            getTotalPromotionsEarned: (u.promotions?.has ?? []).length,
+            getStoredPromotionPoints: u.promotions?.can ? 1 : 0,
+            getStoredCommendations: 0,
         } : undefined,
     }));
-    const enemyIds = () => (world.enemies ?? []).map((e, i) => ({ id: { owner: e.owner ?? 1, id: 1000 + i, type: 1 }, e }));
+    // world.enemies[i].id: a stable id (the fight simulator removes the dead); else 1000 + its index.
+    const enemyIds = () => (world.enemies ?? []).map((e, i) => ({ id: { owner: e.owner ?? 1, id: e.id ?? 1000 + i, type: 1 }, e }));
     g.Units = {
         // world.commandRadius(unitId) -> plot indices of a commander's radius (Units.getCommandRadiusPlots; default none)
         getCommandRadiusPlots: (id) => world.commandRadius?.(id) ?? [],
@@ -517,7 +561,10 @@ export function installFakeEngine(world, age = "antiquity") {
                 if (grid.distanceXY(loc(at).x, loc(at).y, l.x, l.y) >= grid.distanceXY(p.x, p.y, l.x, l.y)) break;
                 plots.push(at);
             }
-            return { plots, turns: plots.map((_, i) => Math.ceil((i + 1) / 2)) };
+            // world.speed(unitId) -> tiles a turn (default 2): a slow walker (research/42 B2: packing pays when the soldiers
+            // walk slower than their general).
+            const per = Math.max(1, Number(world.speed?.(id)) || 2);
+            return { plots, turns: plots.map((_, i) => Math.ceil((i + 1) / per)) };
         },
     };
     g.Armies = {
@@ -554,13 +601,18 @@ export function installFakeEngine(world, age = "antiquity") {
             return { Success: true };
         },
         sendRequest: (id, op, args) => {
+            // Like the game: an attack by a unit with no move or attack left is no fight (game 60 T109: three attack-moves
+            // accepted, no Combat); the event names the attacker and the defender (component ids), as the game's does.
+            const me = (world.units ?? []).find((u) => u.id === id?.id && (id?.owner ?? 0) === 0);
+            const fights = !me || ((me.attacks ?? 1) > 0 && (me.moves ?? 2) > 0);
+            const combat = { attacker: id, defender: args?.X !== undefined ? enemyIds().find(({ e }) => e.x === args.X && e.y === args.Y)?.id ?? null : null };
             sent.push({ kind: "unit", id, op, args: args ? { ...args } : undefined });
             // world.readyLag (ms): like the game, the ready list moves on a moment after a request
             if (world.readyLag) setTimeout(() => world.readyUnits?.shift(), world.readyLag);
             else world.readyUnits?.shift();
-            if (op === g.UnitOperationTypes.MOVE_TO && args?.Modifiers & g.UnitOperationMoveModifiers.ATTACK) setImmediate(() => g.engine.trigger("Combat", {}));
+            if (fights && op === g.UnitOperationTypes.MOVE_TO && args?.Modifiers & g.UnitOperationMoveModifiers.ATTACK) setImmediate(() => g.engine.trigger("Combat", combat));
             // A ranged attack fights too.
-            if (op === g.UnitOperationTypes.RANGE_ATTACK && args?.X !== undefined) setImmediate(() => g.engine.trigger("Combat", {}));
+            if (fights && op === g.UnitOperationTypes.RANGE_ATTACK && args?.X !== undefined) setImmediate(() => g.engine.trigger("Combat", combat));
             if ((op === "UNITOPERATION_AIR_ATTACK" || op === "UNITOPERATION_NAVAL_ATTACK") && args?.X !== undefined) setImmediate(() => g.engine.trigger("Combat", {}));
         },
     };
@@ -596,8 +648,8 @@ export function installFakeEngine(world, age = "antiquity") {
         canStart: (id, op, args) => world.unitCommandResult?.(id, op, args) ?? { Success: !!world.unitCommandOk?.(id, op, args) },
         sendRequest: (id, op, args) => {
             sent.push({ kind: "unitCommand", id, op, args: { ...args } });
-            // A commander's Focus Fire / Coordinated Attack fights like an attack.
-            if (/^UNITCOMMAND_FOCUSED_ATTACK/.test(op)) setImmediate(() => g.engine.trigger("Combat", {}));
+            // A commander's Focus Fire / Coordinated Attack, and an army's Overrun, fight like an attack.
+            if (/^UNITCOMMAND_FOCUSED_ATTACK/.test(op) || op === "UNITCOMMAND_ARMY_OVERRUN") setImmediate(() => g.engine.trigger("Combat", {}));
         },
     };
     // world.blocker = { type, name } (what holds the turn; type from EndTurnBlockingTypes);
@@ -616,7 +668,7 @@ export function installFakeEngine(world, age = "antiquity") {
         // Lafayette's Reform, an endeavor a leader unlocks, the steals, city-state actions, a space sabotage (research/40)
         DIPLOMACY_ACTION_GRANT_POLICY_SLOT: 49, DIPLOMACY_ACTION_MILITARY_AID: 50, DIPLOMACY_ACTION_SEND_GOLD: 51,
         DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH: 52, DIPLOMACY_ACTION_ESPIONAGE_STEAL_CIVIC: 53, DIPLOMACY_ACTION_CS_INCORPORATE: 54,
-        DIPLOMACY_ACTION_CS_LEVY_UNIT: 55, DIPLOMACY_ACTION_ESPIONAGE_SABOTAGE_SPACE_PROGRAM: 56,
+        DIPLOMACY_ACTION_CS_LEVY_UNIT: 55, DIPLOMACY_ACTION_ESPIONAGE_SABOTAGE_SPACE_PROGRAM: 56, DIPLOMACY_ACTION_DENOUNCE: 57,
     };
     g.WarTypes = { SURPRISE_WAR: 0, FORMAL_WAR: 1 };
     g.DiplomacyPlayerRelationships = { PLAYER_RELATIONSHIP_HOSTILE: 10, PLAYER_RELATIONSHIP_UNFRIENDLY: 11, PLAYER_RELATIONSHIP_NEUTRAL: 12, PLAYER_RELATIONSHIP_FRIENDLY: 13, PLAYER_RELATIONSHIP_HELPFUL: 14 };
@@ -631,21 +683,42 @@ export function installFakeEngine(world, age = "antiquity") {
     };
     g.DiplomacyActionTargetTypes = { NO_DIPLOMACY_TARGET: -1 };
     g.DiplomacyActionGroups = { NO_DIPLOMACY_ACTION_GROUP: -1, DIPLOMACY_ACTION_GROUP_ENDEAVOR: 2 };
-    g.DiplomacyProjectStatus = { PROJECT_AVAILABLE: 0, PROJECT_NOT_ENOUGH_INFLUENCE: 1, PROJECT_NO_VIABLE_TARGETS: 2, PROJECT_NOT_UNLOCKED: 3, PROJECT_BLOCKED: 4, PROJECT_ACTIVE: 5 };
+    // The game's statuses (research/41 §1: the executable's enum order and game 44's lines): there is no "not enough
+    // Influence" status; a project we cannot afford is NO_VIABLE_TARGETS with its target listed at its price.
+    g.DiplomacyProjectStatus = { PROJECT_SINGLE_INSTANCE_RUNNING: -4, PROJECT_NO_VIABLE_TARGETS: -3, PROJECT_NOT_UNLOCKED: -2, PROJECT_BLOCKED: -1, PROJECT_AVAILABLE: 0, PROJECT_ACTIVE: 1 };
+    const warById = (id) => Object.values(world.warEvents ?? {}).find((w) => w.id === id) ?? null;
+    const warEvent = (id) => {
+        const e = Object.entries(world.warEvents ?? {}).find(([, w]) => w.id === id);
+        return e ? { uniqueID: id, initialPlayer: e[1].initial ? 0 : Number(e[0]) } : null;
+    };
     g.Game.Diplomacy = {
         getResponseDataForUI: (id) => (world.diplomacy?.[id] ? { actionID: id, responseList: world.diplomacy[id].responses } : null),
-        getDiplomaticEventData: (id) => world.diplomacy?.[id] ?? null,
+        getDiplomaticEventData: (id) => world.diplomacy?.[id] ?? warEvent(id),
+        // world.warEvents = { [enemy]: { id, initial (we declared it), supporting, opposing, price } } (a war's diplomatic event:
+        // the ribbon's War Support reading and the support screen's price)
+        getJointEvents: (_a, b) => (world.warEvents?.[b] ? [{ uniqueID: world.warEvents[b].id, actionTypeName: "DIPLOMACY_ACTION_DECLARE_WAR" }] : []),
+        getSupportingPlayersWithBonusEnvoys: (id) => Array.from({ length: warById(id)?.supporting ?? 0 }, (_, i) => i),
+        getOpposingPlayersWithBonusEnvoys: (id) => Array.from({ length: warById(id)?.opposing ?? 0 }, (_, i) => i),
+        getInfluenceForNextSupport: (id) => warById(id)?.price ?? 0,
         // world.nextCallToArms = an action id (an ally's war calling us)
         getNextCallToArms: () => world.nextCallToArms ?? -1,
+        // world.completion = { [event uniqueID]: turns | { turnsToCompletion, progressPerTurn } } (the befriend screen's
+        // turnsToCompletion of a befriending under way)
+        getCompletionData: (id) => (world.completion?.[id] === undefined ? null : typeof world.completion[id] === "object" ? world.completion[id] : { turnsToCompletion: world.completion[id] }),
         getPlayerEvents: (id) => [
             ...(world.befriend?.[id]?.ongoing ? [{ initialPlayer: 0, actionType: 31, uniqueID: 900 + id }] : []),
             ...(world.openBorders?.[id]?.ongoing ? [{ initialPlayer: 0, targetPlayer: id, actionType: 32, uniqueID: 800 + id }] : []),
             // world.events[playerId] = [{ initialPlayer, targetPlayer, actionType }] (actions under way)
             ...(world.events?.[id] ?? []),
         ],
-        // world.befriend[indep] / world.openBorders[leader] = { status, ongoing }: the project offered
+        // world.befriend[indep] / world.openBorders[leader] = { status, ongoing, cost }: the project offered; with a
+        // cost, its target listed at that price (short of Influence: the game's "not enough Influence" failure)
         getProjectDataForUI: (_p, target) => [
-            ...(world.befriend?.[target] ? [{ actionType: 31, operationType: "DIPLOMACY_ACTION_BEFRIEND", projectStatus: world.befriend[target].status ?? 0 }] : []),
+            ...(world.befriend?.[target] ? [{
+                actionType: 31, operationType: "DIPLOMACY_ACTION_BEFRIEND", projectStatus: world.befriend[target].status ?? 0,
+                ...(world.befriend[target].cost !== undefined ? { targetList1: [{ targetID: target, costYieldD: world.befriend[target].cost,
+                    resultData: { FailureReasons: world.befriend[target].cost > (world.influence ?? 0) ? [`not enough Influence ${world.influence ?? 0}/${world.befriend[target].cost}`] : [] } }] } : {}),
+            }] : []),
             ...(world.openBorders?.[target] ? [{ actionType: 32, operationType: "DIPLOMACY_ACTION_OPEN_BORDERS", projectStatus: world.openBorders[target].status ?? 0 }] : []),
             // world.projects[target] = [{ actionType, operationType, projectStatus, targetList1: [{ targetID, costYieldD }] }]
             ...(world.projects?.[target] ?? []),
@@ -659,14 +732,26 @@ export function installFakeEngine(world, age = "antiquity") {
     g.DiplomacyDealItemTypes = { AGREEMENTS: 1, CITIES: 2, GOLD: 3, INFLUENCE: 4 };
     g.DiplomacyDealItemAgreementTypes = { MAKE_PEACE: 1 };
     g.DiplomacyDealProposalActions = { ACCEPTED: 1, REJECTED: 2, ADJUSTED: 3, PROPOSED: 4, INSPECT: 7 };
+    g.DiplomacyDealItemCityTransferTypes = { NONE: 0, OFFER: 1, CEDE_OCCUPIED: 2 };
     const incoming = (b) => world.incomingDeals?.[b] ?? null;
+    const working = new Map(); // player2 -> the items of our working deal with them
     g.Game.DiplomacyDeals = {
         hasPendingDeal: (_a, b) => (world.pendingDeals ?? []).includes(b) || !!incoming(b),
-        clearWorkingDeal: (id) => sent.push({ kind: "deal", op: "clear", id }),
-        addItemToWorkingDeal: (id, item) => sent.push({ kind: "deal", op: "add", id, item }),
+        clearWorkingDeal: (id) => {
+            working.set(id?.player2, []);
+            sent.push({ kind: "deal", op: "clear", id });
+        },
+        addItemToWorkingDeal: (id, item) => {
+            if (!working.has(id?.player2)) working.set(id?.player2, []);
+            working.get(id?.player2).push(item);
+            sent.push({ kind: "deal", op: "add", id, item });
+        },
+        // world.possibleDealItems = { [player]: [{ type, subType, cityId }] } (what the peace screen offers from that player)
+        getPossibleWorkingDealItems: (_id, player, type) => (world.possibleDealItems?.[player] ?? []).filter((i) => i.type === type),
         sendWorkingDeal: (id, action) => {
             sent.push({ kind: "deal", op: "send", id, action });
-            const answer = action === g.DiplomacyDealProposalActions.INSPECT ? world.dealAnswer?.(id.player2) : undefined;
+            // world.dealAnswer(playerId, items) -> the DealAction; items: our working deal's items at the INSPECT
+            const answer = action === g.DiplomacyDealProposalActions.INSPECT ? world.dealAnswer?.(id.player2, working.get(id.player2) ?? []) : undefined;
             if (answer !== undefined) {
                 setImmediate(() => g.engine.trigger("DiplomacyStatement", { sessionId: 600 + id.player2, values: { FromPlayer: id.player2, ToPlayer: 0, DealAction: answer, RespondingToDealAction: action } }));
             }
@@ -755,7 +840,10 @@ export function installFakeEngine(world, age = "antiquity") {
         };
         p.Cities.getCityLimit = () => world.cityLimit ?? 0;
         // world.happiness: the empire's Happiness a turn (the top bar's player.Stats.getNetYield(YIELD_HAPPINESS))
-        p.Stats.getNetYield = (y) => (y === g.YieldTypes.YIELD_GOLD ? world.goldIncome ?? 0 : y === g.YieldTypes.YIELD_HAPPINESS ? world.happiness ?? 0 : 0);
+        // world.playerYields = { [player id]: { YIELD_PRODUCTION: n, YIELD_DIPLOMACY: n, … } } (another leader's, or ours)
+        const yieldName = (y) => Object.keys(g.YieldTypes).find((k) => g.YieldTypes[k] === y);
+        p.Stats.getNetYield = (y) => world.playerYields?.[p.id]?.[yieldName(y)]
+            ?? (y === g.YieldTypes.YIELD_GOLD ? world.goldIncome ?? 0 : y === g.YieldTypes.YIELD_HAPPINESS ? world.happiness ?? 0 : 0);
         // world.techs = ["NODE_TECH_EX_SHIPBUILDING"] (researched nodes)
         // world.research.turns = { nodeType: turns } (default 5)
         const turnsFor = (n) => world.research?.turns?.[g.GameInfo.ProgressionTreeNodes?.lookup(n)?.ProgressionTreeNodeType ?? n] ?? 5;
@@ -768,12 +856,14 @@ export function installFakeEngine(world, age = "antiquity") {
         };
         // world.wonderArtifacts = [feature index] (natural wonders that still hold an artifact)
         p.Stats.hasNaturalWonderArtifact = (feature) => (world.wonderArtifacts ?? []).includes(feature);
-        // world.religion = our religion's hash (player.Religion.getReligionType(); none: -1), world.beliefs = [belief hashes]
+        // world.religion = our religion's hash (player.Religion.getReligionType(); none: -1), world.beliefs = [belief hashes],
+        // world.pantheons = [belief hashes] (getPantheons: ours founded)
         if (p.id === 0) {
             p.Religion = {
                 hasCreatedReligion: () => world.religion != null && world.religion !== -1,
                 getReligionType: () => world.religion ?? -1,
                 getBeliefs: () => world.beliefs ?? [],
+                getPantheons: () => world.pantheons ?? [],
                 canCreateReligion: () => !!world.canCreateReligion,
             };
         }

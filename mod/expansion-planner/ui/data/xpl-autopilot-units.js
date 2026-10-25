@@ -29,10 +29,17 @@ import { createBudget } from '../core/xpl-savings.js';
 import { estimateStrike } from '../core/xpl-combat.js';
 import { FORM, commanderTile, planFormation, sectorsOf } from '../core/xpl-formation.js';
 import { AIR, airTargetScore, planRebases } from '../core/xpl-air.js';
-import { NAVAL, isWarship, navalRole } from '../core/xpl-naval.js';
-import { CAMPAIGN, MOBILE_PROMOTIONS, campaignEnd, commanderProfile, districtStrikeWorthIt, forceEnough, peaceIntent, progressed, readyToAssault } from '../core/xpl-campaign.js';
+import { NAVAL, fightsShips, inShipReach, isWarship, navalRole, outGuns } from '../core/xpl-naval.js';
+import { CAMPAIGN, campaignEnd, districtStrikeWorthIt, forceEnough, peaceIntent, progressed, readyToAssault } from '../core/xpl-campaign.js';
+import { GENERAL, XP_DEFAULTS, assignRoles, belowIndependentCap, commendationOrder, fightXpShare, keyPromotionsLeft, promotionOrder, roleFromPromotions, threatPost } from '../core/xpl-generals.js';
+import { HUNT, RAIDER, SKIRMISH, TRAINING, fieldForce, fieldReady, huntEnd, huntReason, raiderEnd, trainingEnd } from '../core/xpl-field-ops.js';
 import { idString, sameId, validId } from '../core/xpl-component-id.js';
 import { meleeStrength, noteMeleeObtained } from './xpl-centre-defence.js';
+import { resetSeenUnits, seenNow, unitsSeenAt } from './xpl-seen-units.js';
+import { SCOUT, createSightMemory, frontierScore, keepsHeading, wrapDx } from '../core/xpl-scouting.js';
+import { NUKE, bestBlast, bestCityBlast, blastVerdict, cityBlastVerdict } from '../core/xpl-nuclear.js';
+import { PLAGUE, VILLAGE_REST_KEEP, awayOrder, escapeWays, hazardTurns, stopUnsafe, turnStops, wayCost } from '../core/xpl-unit-safety.js';
+import { gameKey, settings } from '../services/xpl-settings.js';
 import { state } from '../services/xpl-state.js';
 import { log } from '../services/xpl-log.js';
 
@@ -40,8 +47,11 @@ import { log } from '../services/xpl-log.js';
 export const NO_TARGET = Object.freeze({ X: -9999, Y: -9999, UnitAbilityType: -1 });
 const SETTLE_MAX_TURNS = 10;     // a site further away than this is not walked to...
 const BOLD_MAX_TURNS = 15;       // ...this with a military countdown to block or to start (asSettler: ctx.bold)
-const SETTLE_NEAR_TURNS = 5;     // ...this while we have fewer than NEAR_SETTLEMENTS (research/22 A1: game 7 walks of 6-10 turns)
+// ...this while we have fewer than NEAR_SETTLEMENTS (research/22 A1: game 7 walks of 6-10 turns; game 48: 5 let the first
+// settler go for 17,46, 15 tiles south, after two nearer sites failed, and it founded only at A21: one settlement for 21 turns).
+const SETTLE_NEAR_TURNS = 4;
 const NEAR_SETTLEMENTS = 3;
+const STUCK_FOUND_RADIUS = 2;    // a stuck settler founds on a free tile this close when its own cannot be reached
 const SETTLE_TURN_WEIGHT = 4;    // a site's value per turn of walking: value / (1 + turns / this)
 const SETTLER_MAX_WAITS = 3;     // turns a settler waits in a threatened settlement before it goes for a near site...
 const SETTLER_BRAVE_TURNS = 4;   // ...this close, by a way never next to the raiders (game 7: one waited 19 turns)
@@ -81,7 +91,27 @@ const REINFORCE_MAX_TURNS = 8;   // ...walking at most this many turns to get th
 const REINFORCE_TRIES = 6;       // free tiles tried there, nearest first
 const REINFORCE_REACH = 16;      // a free soldier this far from a settlement short of guards may be sent there...
 const REINFORCE_PICKS = 3;       // ...the nearest ones weighed by their way there, for each guard it lacks
-const FRONT_GUARDS = 1;          // a war front (a settlement near a leader at war with us or a war risk) wants this many melee guards
+const FRONT_GUARDS = 1;          // a war front (a settlement near a leader at war with us or a war risk) wants this many melee guards...
+const FRONT_GUARDS_MAX = 3;      // ...one more for every FRONT_ARMY_SHARE of that leader's land soldiers near it, up to this many
+const FRONT_ARMY_SHARE = 2;      // (game 48: Киото stood at 1 of 1 guards for 9 turns of Amina's war risk; at A54 her 5-7
+                                 // Spearmen took its centre from 62 to 0 in three turns)
+
+/** The melee guards a war front wants: FRONT_GUARDS, one more for every FRONT_ARMY_SHARE of the leader's soldiers near it. */
+export const frontGuardsWanted = (f) => Math.min(FRONT_GUARDS_MAX, Math.max(FRONT_GUARDS, Math.ceil((Number(f?.army) || 0) / FRONT_ARMY_SHARE)));
+const FRONT_POST_MAX = 4;        // in a war (not a risk alone) the free soldiers go to its fronts, up to this many a front
+                                 // (research/42 B1; game 53: each front kept 1 guard while 15-26 soldiers stood free)
+
+/**
+ * The melee guards posted at a war front (planDefence; training and purchases keep frontGuardsWanted): in a war with that
+ * leader also one for each of its soldiers we see near (up to FRONT_POST_MAX) and an equal share of the free melee soldiers
+ * across the fronts of wars (`share`).
+ */
+export function frontGuardsPosted(f, share = 0) {
+    const base = frontGuardsWanted(f);
+    if (!f?.atWar) return base;
+    return Math.max(base, Math.min(FRONT_POST_MAX, Math.max(Number(f.army) || 0, Number(share) || 0)));
+}
+
 const STAGE_RADIUS = 2;          // ...standing this close to it, on our own land
 const HOLDER_RADIUS = 1;         // an exposed settlement's holder stands on or next to its centre (research/37 §4)...
 const EXPOSED_HOLD_TURNS = 3;    // ...or arrives within this many turns (no holder is bought for it then)
@@ -108,8 +138,23 @@ export const unitKey = (id) => `${id?.owner}:${id?.id}`;
 const same = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y;
 const nameOf = (def) => safe(() => Locale.compose(def.Name), def?.UnitType ?? "?");
 
+// The unit an entry of the unit loop ordered, and where it stood: UI.log's `autopilot:` line names it (game 60's review joined
+// the entries to net_message_debug.log by the second and the destination; HEAL, FORTIFY and REINFORCE have no tile). Kept
+// beside the entries, which keep their shape. @returns { id, at: {x, y} } or null
+const entryUnits = new WeakMap();
+export const entryUnit = (e) => (e && typeof e === "object" ? entryUnits.get(e) ?? null : null);
+const noteEntryUnit = (e, u, at = u?.location) => {
+    if (e && typeof e === "object" && u && !entryUnits.has(e)) entryUnits.set(e, { id: u.id?.id ?? null, at: at ? { x: at.x, y: at.y } : null });
+};
+
 // Where each settler or merchant was sent (unit key -> goal), so it keeps its goal next turn.
 const goals = new Map();
+// A unit's errand: its goal, or while it walks out of the plague (goal { hazard }) the one it had, which comes back once the
+// walk ends (endHazardWalk). What other units' steps read: a settler's site stays taken meanwhile (the review of game 60's
+// package: another settler could take it, and its map tack went).
+const errandOf = (g) => (g?.hazard !== undefined ? g.was ?? null : g ?? null);
+const errands = () => [...goals.entries()].map(([k, g]) => [k, errandOf(g)]).filter(([, g]) => g);
+const errandGoals = () => errands().map(([, g]) => g);
 // Settlers: when each got its first goal and how often it changed (research/21 C3a: seen in game 6, settlers
 // walked for 20+ turns between sites far away).
 const SETTLER_PATIENCE = 12;   // turns walking...
@@ -119,7 +164,10 @@ const settlerWaits = new Map(); // unit key -> { count, lastTurn }: turns waitin
 const settlerNoOrder = new Map(); // unit key -> the turn its "no order" reason was last logged
 const settlerIdle = new Map();    // unit key -> { count, lastTurn }: turns in a row with no site (X2, X3)
 const lastDamage = new Map();     // unit key -> its damage at the last pass (a rise = it was hit)
+const lastHazard = new Map();     // unit key -> what its tile dealt at the last pass (the plague's own damage is no hit)
 const hitSpots = [];              // [{ x, y, turn }]: where our units were hit lately (dangerNear)
+const movesSent = new Map();      // unit key -> { turn, x, y }: where moveTo last sent it (the plague line skips units sent off)
+const plagueRooms = new Map();    // unit key -> { x, y, turn }: a tile a soldier of ours freed for it this turn (plagueArrivals)
 const settlerProgress = new Map(); // unit key -> { turn, turns, goal, stuck }: the way left to its site, a turn ago (X6)
 const SETTLER_IDLE_TURNS = 2;     // turns with no site before the settler takes one up to SETTLE_MAX_TURNS away
 const SETTLER_STUCK_TURNS = 2;    // turns with no progress toward its site before it founds where it stands or picks again
@@ -158,13 +206,19 @@ let airLogged = -1; // the turn UI.log described the air wing
 
 export function resetUnitGoals() {
     goals.clear();
+    squadronMoved.clear();
+    rapid = null;
+    raiderNoted = -1;
     settlerWalks.clear();
     settlerWaits.clear();
     settlerNoOrder.clear();
     settlerIdle.clear();
     settlerProgress.clear();
     lastDamage.clear();
+    lastHazard.clear();
     hitSpots.length = 0;
+    movesSent.clear();
+    plagueRooms.clear();
     seasBlockedTurn = -1;
     foundedRoles.clear();
     dashes.clear();
@@ -184,6 +238,15 @@ export function resetUnitGoals() {
     unpackNoted.clear();
     formationNoted.clear();
     commanderMoved.clear();
+    escapeNoted.clear();
+    marches.clear();
+    marchNoted = -1;
+    raidHistory.clear();
+    postArrived.clear();
+    resetFieldOps();
+    lastRoles = new Map();
+    plagueNoted = -1;
+    generalsNoted = -1;
     navalNoted.clear();
     airRaids.length = 0;
     rebased.clear();
@@ -192,6 +255,17 @@ export function resetUnitGoals() {
     missionRefused.clear();
     missionCities.clear();
     resetCampaign();
+    resetSeenUnits();
+    fleeNoted.clear();
+    sightMemory.clear();
+    settlerEscorts.clear();
+    frontierHeading.clear();
+    scoutNoted.clear();
+    scoutsAsleep.clear();
+    fightMemory.clear();
+    xpSeen.clear();
+    holdNoted = -1;
+    skirmishNoneNoted = -1;
 }
 
 /** restedByUs as the save keeps it (the first time in a session). */
@@ -246,6 +320,12 @@ export function releaseStuckOrders(orderedAt) {
         const at = orderedAt.get(k);
         if (!at || !isIdle(u) || !same(u.location, at)) continue;
         const g = goals.get(k);
+        // A way out of the plague: its errand comes back (that site did not fail).
+        if (g?.hazard !== undefined) {
+            endHazardWalk(k, g);
+            released.push(k);
+            continue;
+        }
         if (g?.x !== undefined) {
             if (!failedSites.has(k)) failedSites.set(k, new Set());
             failedSites.get(k).add(`${g.x},${g.y}`);
@@ -337,18 +417,87 @@ function startsWar(u, loc) {
     return !!(r?.Success && r.Player2 !== undefined && r.Player2 !== none);
 }
 
+// Orders that keep a unit where it stands: none on a tile that hurts at the turn's start (game 60: Астрахань's Spearman and
+// Slinger rested on infected tiles until they died; infected units do not heal there anyway).
+const STAY_OPERATIONS = new Set(["UNITOPERATION_REST_UNTIL_HEALED", "UNITOPERATION_FORTIFY", "UNITOPERATION_SLEEP"]);
+
 function operate(u, op, args = NO_TARGET) {
+    if (STAY_OPERATIONS.has(op) && u?.location && hazardAt(u.location) > 0) return false;
     if (!safe(() => Game.UnitOperations.canStart(u.id, op, args, false), null)?.Success) return false;
     Game.UnitOperations.sendRequest(u.id, op, { ...args });
     return true;
 }
 
-function moveTo(u, loc) {
+/**
+ * Moves a unit (MOVE_TO, as the map sends it). Never onto a tile that hurts at the turn's start (the plague, fallout, fire;
+ * game 18), unless already there; nor a walk of several turns that ends a turn on one while it lasts (game 60: every
+ * multi-turn walk was blind to the plague), unless `throughHazard` (a way out of the plague that weighed those stops itself):
+ * such a walk goes around it a turn at a time (cleanStep), or not at all.
+ */
+function moveTo(u, loc, { throughHazard = false } = {}) {
     if (startsWar(u, loc)) return false;
-    // Never onto a tile that hurts at the turn's start (the plague, fallout, fire; game 18), unless already there.
     if (!same(u.location, loc) && hazardAt(loc) > 0) return false;
+    let to = loc;
+    if (!throughHazard && u.location && safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), 0) > 1) {
+        const p = pathTo(u, loc);
+        if (p && p.turns > 1 && wayHazard(u, p) > 0) {
+            to = cleanStep(u, loc);
+            if (!to) return false;
+        }
+    }
     const op = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
-    return operate(u, op, { X: loc.x, Y: loc.y, Modifiers: globalThis.UnitOperationMoveModifiers?.MOVE_IGNORE_UNEXPLORED_DESTINATION ?? 0 });
+    if (!operate(u, op, { X: to.x, Y: to.y, Modifiers: globalThis.UnitOperationMoveModifiers?.MOVE_IGNORE_UNEXPLORED_DESTINATION ?? 0 })) return false;
+    movesSent.set(unitKey(u.id), { turn: Game.turn, x: to.x, y: to.y });
+    passMemo?.sent.set(`${to.x},${to.y}`, unitKey(u.id));
+    return true;
+}
+
+const CLEAN_STEP_TRIES = 6; // ways asked of the game for a turn's step around the plague
+
+/**
+ * A walk whose way would end a turn on the plague goes around it a turn at a time (game 60, PLG-M2): this turn to the clean
+ * tile it reaches nearest the target, nearer than it stands (one next to the plague counts a tile farther: it spreads there),
+ * and the next pass walks on from there (the plague hurts only where a turn ends, not where a unit passes). That stop is one
+ * no other rule judged (the caller judged the way it replaces): never next to a hostile land unit, and for any but a healthy
+ * melee soldier not where a hostile soldier's next turn reaches (reachOf) nor in reach of a ship it does not out-gun (the
+ * review of game 60's package: a guard's step around the plague ended next to a raider). @returns the tile or null (no such
+ * tile: the walk waits)
+ */
+function cleanStep(u, target) {
+    const here = u.location;
+    const def = safe(() => GameInfo.Units.lookup(u.type), null);
+    const left = (l) => safe(() => GameplayMap.getPlotDistance(l.x, l.y, target.x, target.y), Infinity);
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const now = left(here);
+    const radius = reachRadius(u);
+    // The hostile land units around, read once (a ship minds only those that reach the water); a healthy melee soldier minds
+    // only those next to its stop.
+    const hostiles = hostilesAround(here, radius + REACH_LOOK)
+        .filter((h) => h.def && h.def.Domain === "DOMAIN_LAND" && (def?.Domain !== "DOMAIN_SEA" || reachesWater(h.def)));
+    const st = safe(() => GameInfo.Unit_Stats.lookup(def?.UnitType), null);
+    const sturdy = isSoldier(def) && !u.isCommanderUnit && !(Number(st?.RangedCombat) > 0) && !(Number(st?.Bombard) > 0)
+        && (Number(u.Health?.damage) || 0) < ESCAPE_DAMAGE;
+    const safeStop = (loc) => !hostiles.some((h) => dist(loc, h.at) <= (sturdy ? 1 : reachOf(h)))
+        && (sturdy || def?.Domain !== "DOMAIN_LAND" || shipThreat(loc, def).length === 0);
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, radius), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || same(loc, here) || !(left(loc) < now) || hazardAt(loc) > 0) continue;
+        // Not a tile another unit was sent to in this pass (the game shows it there only later): the step replaces the
+        // caller's tile, which the caller's own bookkeeping (ctx.stepTo, its `taken`) judged, not this one (the review of game
+        // 60's packages: the vanguard's rally sent a Warrior to 9,8 and a Spearman's step around the plague went there too).
+        const other = passMemo?.sent.get(`${loc.x},${loc.y}`);
+        if (other !== undefined && other !== unitKey(u.id)) continue;
+        if (!standsOn(def, loc) || !roomFor(def, loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || !safeStop(loc)) continue;
+        tiles.push({ loc, d: left(loc), score: left(loc) + (hazardWithin(loc, 1) ? 1 : 0) });
+    }
+    tiles.sort((a, b) => a.score - b.score || a.d - b.d);
+    for (const t of tiles.slice(0, CLEAN_STEP_TRIES)) {
+        const turns = pathTurns(u, t.loc);
+        if (turns === null || turns > 1 || startsWar(u, t.loc)) continue;
+        return t.loc;
+    }
+    return null;
 }
 
 /**
@@ -479,15 +628,20 @@ function givenUp(target) {
 /**
  * Notes where our units were hit since the last pass (their damage rose): a hostile unit is about there, maybe out
  * of sight now (game 10: a scout hit at 51,13, stepped away, and the game's auto-explore took it back to be hit there
- * again). Each spot is danger for HIT_TURNS (dangerNear).
+ * again). Each spot is danger for HIT_TURNS (dangerNear). The plague's own damage is no hit (game 60: its +25s marked the
+ * tiles around Астрахань's infected units, and their ways out were refused): only a rise above what the tile dealt, where the
+ * unit stood at the last pass (the effect may end on the turn its last damage is dealt) or stands now.
  */
 function noteHits(units) {
     for (const u of units) {
         const k = unitKey(u.id);
         const d = Number(u.Health?.damage) || 0;
         const before = lastDamage.get(k);
-        if (before !== undefined && d > before && u.location) hitSpots.push({ x: u.location.x, y: u.location.y, turn: Game.turn });
+        const hazard = u.location ? hazardAt(u.location) : 0;
+        const plague = Math.max(lastHazard.get(k) ?? 0, hazard);
+        if (before !== undefined && d - before > plague && u.location) hitSpots.push({ x: u.location.x, y: u.location.y, turn: Game.turn });
         lastDamage.set(k, d);
+        lastHazard.set(k, hazard);
     }
     for (let i = hitSpots.length - 1; i >= 0; i--) if (Game.turn - hitSpots[i].turn >= HIT_TURNS) hitSpots.splice(i, 1);
 }
@@ -508,9 +662,9 @@ function dangerWhy(loc, radius, ctx) {
     const owners = new Set();
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, radius), []) ?? []) {
         const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-        for (const id of (at ? safe(() => MapUnits.getUnits(at.x, at.y), []) : null) ?? []) {
-            const unit = safe(() => Units.get(id), null);
-            if (!unit || !(hostileOwner(unit) || riskArmy(unit, ctx))) continue;
+        for (const { unit } of at ? unitsSeenAt(at.x, at.y) : []) {
+            if (!unit || !(hostileOwner(unit) || riskArmy(unit, ctx) || ((ctx?.riskCalm || ctx?.civilian) && hostileCommander(unit)))) continue;
+            if (ctx?.riskCalm && !countsForSettler(unit, at, loc, ctx)) continue;
             const p = safe(() => Players.get(unit.owner), null);
             owners.add(p?.isIndependent ? `independent ${unit.owner}` : `p${unit.owner}`);
         }
@@ -573,44 +727,148 @@ function findDetour(u, target, keep, ctx) {
     return null;
 }
 
+const STEP_AWAY_MAX = 4; // a step away looks at most this far (the unit's moves left: the tiles it reaches this turn)
+
+/** Hostile villages (at war with us, seen) within `radius` of this tile: [{ x, y, id }] (ctx.hostileVillages, once a pass). */
+function hostileVillagesNear(loc, radius, ctx) {
+    ctx.hostileVillages ??= (safe(() => villagesOf(pid()), []) ?? []).filter((v) => !v.friendly && atWarWithIndependent(v.id));
+    return ctx.hostileVillages.filter((v) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, v.x, v.y), Infinity) <= radius);
+}
+
+// ---- what a unit flees from (game 60, SC-5) ---------------------------------------------------
+
+const FLEE_LOOK = 4;            // hostile units this close are named in a flight's UI.log line
+const fleeNoted = new Map();    // unit key -> the turn its flight was written to UI.log
+
 /**
- * A unit with hostile units near it steps to the tile within reach this turn that is furthest
- * from them (scouts, and settlers with no safe way home). @returns a log entry or null
+ * UI.log, once a turn per unit: what a unit stepping away, withdrawing, waiting or going around flees from (game 60: 156
+ * flights in Antiquity and no line named the trigger; the player saw units step away with only an enemy scout or a merchant
+ * in sight, while the trigger was a soldier 2-3 tiles off, a ship, or a soldier in the fog). Each hostile unit within FLEE_LOOK
+ * with its type, owner, distance, land or ship, seen now or remembered (unitsSeenAt); the ships whose next turn reaches the
+ * tile; our hit and loss marks. @returns the entry
+ */
+function fled(u, def, entry, ctx) {
+    if (!entry || !u?.location) return entry;
+    const k = unitKey(u.id);
+    if (fleeNoted.get(k) === Game.turn) return entry;
+    fleeNoted.set(k, Game.turn);
+    safe(() => {
+        const here = u.location;
+        const dist = (a) => safe(() => GameplayMap.getPlotDistance(here.x, here.y, a.x, a.y), "?");
+        const owner = (id) => (safe(() => Players.get(id)?.isIndependent, false) ? `independent ${id}` : `p${id}`);
+        const parts = [];
+        for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, FLEE_LOOK), []) ?? []) {
+            const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            for (const e of at ? unitsSeenAt(at.x, at.y) : []) {
+                if (!(hostileOwner(e.unit) || riskArmy(e.unit, ctx))) continue;
+                const d = safe(() => GameInfo.Units.lookup(e.unit.type), null);
+                const kind = d?.Domain === "DOMAIN_SEA" ? "ship" : d?.Domain === "DOMAIN_AIR" ? "air" : "land";
+                parts.push({ d: dist(at), text: `${d?.UnitType ?? "?"} of ${owner(e.unit.owner)}${hostileOwner(e.unit) ? "" : " (a war risk)"} at ${dist(at)} (${kind}, ${e.seen ? "seen" : `seen T${e.turn}`})` });
+            }
+        }
+        parts.sort((a, b) => a.d - b.d);
+        const ships = def?.Domain === "DOMAIN_LAND" ? shipsReaching(here).length : 0;
+        const marks = !ctx?.bold && marksNear(here, DANGER_RADIUS) ? "; our hit or loss marks near" : "";
+        log.info(`flee: ${def?.UnitType ?? "?"} at ${here.x},${here.y} ${entry.key} ${JSON.stringify((entry.args ?? []).slice(1))} from [${parts.map((p) => p.text).join("; ") || "no hostile unit in sight"}]${ships > 0 ? `; ${ships} ship(s) reach it` : ""}${marks}`);
+    }, null);
+    return entry;
+}
+
+/**
+ * A unit with hostile units near it steps to a tile it reaches this turn (its moves left, the game's path), the best by
+ * awayOrder: not next to a hostile land unit, the fewest hostile units reaching it next turn (ships too: research/41 §3), the
+ * widest gap to them, next to a healthy soldier of ours; only one better than where it stands. A hurt unit counts a hostile
+ * village within VILLAGE_REST_KEEP like a hostile unit in its gap (game 60: a hurt scout stepped to 2 tiles from tribe 14's
+ * village and was killed there). Game 60 T96: a scout with 3 moves looked only 2 tiles out and took a tile two Warriors
+ * reached, while one out of every reach lay a step further. Scouts, settlers with no safe way home, hurt soldiers.
+ * @returns a log entry or null
  */
 function stepAway(u, def, ctx, key = "UNIT_AWAY", { ownLand = false } = {}) {
     const here = u.location;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
     const mine = (loc) => safe(() => GameplayMap.getOwner(loc.x, loc.y), -1) === pid();
+    const moves = Math.floor(Number(u.Movement?.movementMovesRemaining ?? 2));
+    const radius = Math.max(1, Math.min(STEP_AWAY_MAX, Number.isFinite(moves) ? moves : 2));
+    const land = def?.Domain === "DOMAIN_LAND";
+    // The hostile units around, read once; each one's reach next turn as hostilesInReach counts it.
+    const near = hostilesAround(here, REACH_LOOK + radius).filter((h) => h.def && h.def.Domain !== "DOMAIN_AIR");
+    const villages = Number(u.Health?.damage) > 0 ? hostileVillagesNear(here, VILLAGE_REST_KEEP + radius, ctx) : [];
     const gap = (loc) => {
-        for (let r = 0; r <= DANGER_RADIUS + 1; r++) if (hostileNear(loc, r, ctx)) return r;
+        for (let r = 0; r <= DANGER_RADIUS + 1; r++) {
+            if (hostileNear(loc, r, ctx) || (r <= VILLAGE_REST_KEEP && villages.some((v) => dist(loc, v) <= r))) return r;
+        }
         return DANGER_RADIUS + 2;
     };
-    let best = { loc: null, gap: gap(here) };
-    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, 2), []) ?? []) {
+    const ours = ctx.ourUnits ?? safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
+    const guards = ours.filter((s) => !sameId(s.id, u.id) && !s.isCommanderUnit && s.isOnMap !== false && !!s.location && (Number(s.Health?.damage) || 0) < ESCAPE_DAMAGE)
+        .filter((s) => {
+            const sd = safe(() => GameInfo.Units.lookup(s.type), null);
+            return isSoldier(sd) && sd.Domain === "DOMAIN_LAND";
+        });
+    const beside = (loc) => guards.some((s) => dist(s.location, loc) <= 1);
+    const rank = (loc) => ({
+        adjacent: near.some((h) => h.def.Domain === "DOMAIN_LAND" && dist(loc, h.at) <= 1),
+        reach: near.filter((h) => h.def.Domain === "DOMAIN_LAND" && dist(loc, h.at) <= reachOf(h)).length + (land ? shipsReaching(loc).length : 0),
+        gap: gap(loc),
+        beside: beside(loc),
+    });
+    const now = rank(here);
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, radius), []) ?? []) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-        if (!loc || same(loc, here) || ctx.stepTo.has(`${loc.x},${loc.y}`)) continue;
-        if (!standsOn(def, loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
+        if (!loc || same(loc, here) || ctx.stepTo.has(`${loc.x},${loc.y}`) || hazardAt(loc) > 0) continue;
+        if (!standsOn(def, loc) || !roomFor(def, loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
         // A settler on our land never steps off it (research/22 B8: seen in game 7, one stepped out of our
         // borders and was killed); one already outside may step anywhere away from them.
         if (ownLand && mine(here) && !mine(loc)) continue;
-        const g = gap(loc);
-        if (g <= best.gap) continue;
-        const t = pathTurns(u, loc);
-        if (t === null || t > 1 || startsWar(u, loc)) continue;
-        best = { loc, gap: g };
+        const r = rank(loc);
+        if (awayOrder(r, now) < 0) tiles.push({ loc, r, d: dist(here, loc) });
     }
-    if (!best.loc || !moveTo(u, best.loc)) return null;
-    ctx.stepTo.add(`${best.loc.x},${best.loc.y}`);
-    return { key, args: [nameOf(def), best.loc.x, best.loc.y] };
+    tiles.sort((a, b) => awayOrder(a.r, b.r) || a.d - b.d);
+    for (const t of tiles) {
+        const turns = pathTurns(u, t.loc);
+        if (turns === null || turns > 1 || startsWar(u, t.loc) || !moveTo(u, t.loc)) continue;
+        ctx.stepTo.add(`${t.loc.x},${t.loc.y}`);
+        return fled(u, def, { key, args: [nameOf(def), t.loc.x, t.loc.y] }, ctx);
+    }
+    return null;
+}
+
+/**
+ * A scout in danger steps away (stepAway: game 50, a scout hit for 70 by a Frigate and two Line Infantry found no tile farther
+ * from them and stood there the next turn; it died. The fewest raiders' reach now comes before the gap). @returns a log entry or null
+ */
+function scoutAway(u, def, ctx) {
+    return stepAway(u, def, ctx);
+}
+
+/**
+ * A hurt unit about to rest away from our centres within VILLAGE_REST_KEEP of a hostile village steps away from it first
+ * (game 60: a hurt scout rested and cycled on the coast 3 tiles from tribe 14's village T73-T95 and died there).
+ * @returns a log entry, or null (it may rest where it stands)
+ */
+function restAwayFromVillages(u, def, ctx, key) {
+    if (!(Number(u.Health?.damage) > 0) || !u.location || nearOwnCentre(u.location, ctx)) return null;
+    if (hostileVillagesNear(u.location, VILLAGE_REST_KEEP, ctx).length === 0) return null;
+    return stepAway(u, def, ctx, key);
 }
 
 /** The way there: { turns (0 = here), plots }, or null when unreachable (or only across rough seas). */
 function pathTo(u, loc) {
     if (same(u.location, loc)) return { turns: 0, plots: [] };
+    const key = passMemo ? `${unitKey(u.id)}|${u.location?.x},${u.location?.y}|${loc.x},${loc.y}` : null;
+    if (key && passMemo.paths.has(key)) return passMemo.paths.get(key);
+    const p = pathNow(u, loc);
+    if (key) passMemo.paths.set(key, p);
+    return p;
+}
+
+function pathNow(u, loc) {
     const r = safe(() => Units.getPathTo(u.id, { x: loc.x, y: loc.y }), null);
     if (!r?.plots?.length) return null;
     if (crossesRoughSeas(u, r.plots)) return null;
     const t = Number(r.turns?.[r.turns.length - 1]);
-    return { turns: Number.isFinite(t) ? t : r.plots.length, plots: r.plots };
+    return { turns: Number.isFinite(t) ? t : r.plots.length, plots: r.plots, steps: r.turns ?? [] };
 }
 
 /** Turns to walk there (0 = here), or null when unreachable (or only across rough seas). */
@@ -656,7 +914,7 @@ function toDiscovery(u, def, ctx, radius, maxTurns) {
             const via = detourToward(u, loc, keep, ctx);
             if (!via) continue;
             ctx.discoveries.add(`${loc.x},${loc.y}`);
-            goals.set(unitKey(u.id), { discovery: `${loc.x},${loc.y}` });
+            goals.set(unitKey(u.id), { discovery: `${loc.x},${loc.y}`, via: { x: via.x, y: via.y } });
             return { key: "DETOUR", args: [nameOf(def), loc.x, loc.y, via.x, via.y] };
         }
         if (!moveTo(u, loc)) continue;
@@ -691,7 +949,7 @@ function scoutHeals(u, def, ctx) {
     if (!(Number(u.Health?.damage) >= SCOUT_HEAL_DAMAGE)) return null;
     const mine = safe(() => GameplayMap.getOwner(u.location.x, u.location.y), -1) === pid();
     if (mine && !dangerNear(u.location, SCOUT_DANGER + 1, ctx)) {
-        return operate(u, "UNITOPERATION_REST_UNTIL_HEALED") ? { key: "HEAL", args: [nameOf(def)] } : null;
+        return restAwayFromVillages(u, def, ctx, "UNIT_AWAY") ?? (operate(u, "UNITOPERATION_REST_UNTIL_HEALED") ? { key: "HEAL", args: [nameOf(def)] } : null);
     }
     const homes = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? [])
         .map((c) => ({ c, d: safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, c.location.x, c.location.y), Infinity) }))
@@ -708,7 +966,57 @@ function scoutHeals(u, def, ctx) {
 
 const VILLAGE_SCOUT_RADIUS = 12; // unseen villages this close to one of our settlements are scouted first...
 const VILLAGE_SCOUT_TURNS = 8;   // ...when a scout reaches a tile in sight of one within this many turns
-const VILLAGE_SIGHT = 2;         // a tile this far from a village reveals it
+const VILLAGE_SIGHT = 2;         // a tile this far from a village reveals it (unless the land between blocks sight)
+
+const sightMemory = createSightMemory(); // villages' sight tiles found blind or fled from, villages given up (game 60, SC-1)
+const frontierHeading = new Map();       // unit key -> { dx, dy }: the way to its last frontier target (SC-3)
+const scoutNoted = new Map();            // what a `scout:` line said -> the turn it said it
+const scoutsAsleep = new Map();          // unit key -> the turn we put that scout to sleep (rough seas, nothing to explore: SC-4)
+
+/** A `scout:` line in UI.log, once a turn for each `what`. */
+function scoutLine(what, text) {
+    if (scoutNoted.get(what) === Game.turn) return;
+    scoutNoted.set(what, Game.turn);
+    log.info(`scout: ${text}`);
+}
+
+/** The villages we have not seen (villagesOf, hidden ones too), once a pass. */
+const unseenVillages = (ctx) => (ctx.unseenVillages ??= (safe(() => villagesOf(pid(), true), []) ?? []).filter((v) => !v.revealed));
+
+/**
+ * A unit standing on the sight tile its village goal (or its approach: `sight`) chose while that village stays unseen: the
+ * tile is blind and its goal ends, so the next pick takes another tile (game 60: the scout stood on 70,11 nine times and
+ * Шэнле stayed unseen until our Warrior came from the south-east at T82; the Civilopedia: vegetation and mountains block
+ * sight).
+ */
+function noteBlindSight(units, ctx) {
+    for (const u of units) {
+        const k = unitKey(u.id);
+        const g = goals.get(k);
+        const village = g?.village ?? g?.sight;
+        if (!village || !g.at || !u.location || `${u.location.x},${u.location.y}` !== g.at) continue;
+        const v = unseenVillages(ctx).find((x) => `${x.x},${x.y}` === village);
+        if (!v) continue;
+        sightMemory.fail(village, g.at, Game.turn, true);
+        goals.delete(k);
+        scoutLine(`${village}|${g.at}`, `${independentNameOf(v.id) ?? village} unseen from ${g.at} (blind tiles ${sightMemory.blindCount(village)})`);
+    }
+}
+
+/**
+ * A scout in danger steps away (scoutAway); one walking to a village's sight tile gives that tile up for
+ * SCOUT.VILLAGE_RETRY_TURNS (game 60: it walked back to 70,11 the next turn, 17 times). @returns a log entry or null
+ */
+function scoutFlees(u, def, ctx) {
+    const away = scoutAway(u, def, ctx);
+    const k = unitKey(u.id);
+    const g = goals.get(k);
+    if (away && g?.village && g.at) {
+        sightMemory.fail(g.village, g.at, Game.turn, false);
+        goals.delete(k);
+    }
+    return away;
+}
 
 /**
  * An unseen village near our settlements: a scout goes to a tile in sight of it (VILLAGE_SIGHT), the nearest to our
@@ -717,25 +1025,39 @@ const VILLAGE_SIGHT = 2;         // a tile this far from a village reveals it
  * raided us until turns 56 and 69, and they took two of our three settlements). @returns a log entry or null
  */
 function scoutVillage(u, def, ctx) {
-    ctx.unseenVillages ??= (safe(() => villagesOf(pid(), true), []) ?? []).filter((v) => !v.revealed);
-    if (ctx.unseenVillages.length === 0) return null;
+    if (unseenVillages(ctx).length === 0) return null;
     const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
     const near = (v) => Math.min(Infinity, ...ours.map((o) => safe(() => GameplayMap.getPlotDistance(o.x, o.y, v.x, v.y), Infinity)));
-    const taken = new Set([...goals.entries()].filter(([k, g]) => g.village && k !== unitKey(u.id)).map(([, g]) => g.village));
-    const list = ctx.unseenVillages.map((v) => ({ v, d: near(v) })).filter(({ v, d }) => d <= VILLAGE_SCOUT_RADIUS && !taken.has(`${v.x},${v.y}`)).sort((a, b) => a.d - b.d);
+    const taken = new Set(errands().filter(([k, g]) => g.village && k !== unitKey(u.id)).map(([, g]) => g.village));
+    const list = unseenVillages(ctx).map((v) => ({ v, d: near(v) }))
+        .filter(({ v, d }) => d <= VILLAGE_SCOUT_RADIUS && !taken.has(`${v.x},${v.y}`) && !sightMemory.givenUp(`${v.x},${v.y}`, Game.turn)).sort((a, b) => a.d - b.d);
     for (const { v } of list) {
+        const vk = `${v.x},${v.y}`;
         let best = null;
+        // Why its tiles are left: a village whose every sight tile failed or is in danger is given up for a while.
+        const why = { FAILED: 0, DANGER: 0, FAR: 0 };
+        let tiles = 0;
         for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(v.x, v.y, VILLAGE_SIGHT), []) ?? []) {
             const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             if (!loc || same(loc, v) || ctx.stepTo.has(`${loc.x},${loc.y}`)) continue;
-            if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || dangerNear(loc, 1, ctx)) continue;
+            if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
+            tiles++;
+            // One danger radius for the tile, its way and the step away (game 60, E4: a tile 2 from the guard was taken, and
+            // the scout fled from it the next turn at SCOUT_DANGER).
+            if (sightMemory.failed(vk, `${loc.x},${loc.y}`, Game.turn)) { why.FAILED++; continue; }
+            if (dangerNear(loc, SCOUT_DANGER, ctx)) { why.DANGER++; continue; }
             const p = pathTo(u, loc);
-            if (!p || p.turns > VILLAGE_SCOUT_TURNS || !wayIsSafe(u, p, 1, ctx) || startsWar(u, loc)) continue;
+            if (!p || p.turns > VILLAGE_SCOUT_TURNS || !wayIsSafe(u, p, SCOUT_DANGER, ctx) || startsWar(u, loc)) { why.FAR++; continue; }
             if (!best || p.turns < best.turns) best = { loc, turns: p.turns };
+        }
+        if (!best && tiles > 0 && why.FAILED + why.DANGER === tiles) {
+            sightMemory.giveUp(vk, Game.turn);
+            scoutLine(`${vk}|skip`, `${independentNameOf(v.id) ?? vk} skipped for ${SCOUT.VILLAGE_RETRY_TURNS} turns: of its ${tiles} sight tile(s) ${why.FAILED} blind or fled from, ${why.DANGER} within ${SCOUT_DANGER} of hostile units`);
+            continue;
         }
         if (!best || !moveTo(u, best.loc)) continue;
         ctx.stepTo.add(`${best.loc.x},${best.loc.y}`);
-        goals.set(unitKey(u.id), { village: `${v.x},${v.y}` });
+        goals.set(unitKey(u.id), { village: vk, at: `${best.loc.x},${best.loc.y}`, since: Game.turn });
         return { key: "SCOUT_VILLAGE", args: [nameOf(def), independentNameOf(v.id), best.loc.x, best.loc.y] };
     }
     return null;
@@ -743,9 +1065,9 @@ function scoutVillage(u, def, ctx) {
 
 function explore(u, def, ctx) {
     if (!hasTag(def, "UNIT_CLASS_AUTOEXPLORE")) return null;
-    // Hostile units near: away from them first (scouts are not for fighting).
-    if (hostileNear(u.location, SCOUT_DANGER, ctx)) {
-        const away = stepAway(u, def, ctx);
+    // Hostile units near, or a ship's reach (research/41 §3: ships killed 18 of our scouts in games 30-47): away first.
+    if (hostileNear(u.location, SCOUT_DANGER, ctx) || shipsReaching(u.location).length > 0) {
+        const away = scoutFlees(u, def, ctx);
         if (away) return away;
     }
     const heal = scoutHeals(u, def, ctx);
@@ -755,13 +1077,62 @@ function explore(u, def, ctx) {
     if (village) return village;
     const found = toDiscovery(u, def, ctx, DISCOVERY_RADIUS, DISCOVERY_MAX_TURNS);
     if (found) return found;
-    if (autoExploreIsSafe(u, ctx) && operate(u, "UNITOPERATION_AUTOMATE_EXPLORE")) return { key: "EXPLORE", args: [nameOf(def)] };
+    if (autoExploreIsSafe(u, ctx) && operate(u, "UNITOPERATION_AUTOMATE_EXPLORE")) {
+        // The game explores with it now: no goal of ours keeps it from a discovery or a village (game 60, SC-2).
+        goals.delete(unitKey(u.id));
+        return { key: "EXPLORE", args: [nameOf(def)] };
+    }
     // Danger around, or the game's automatic exploring is not offered (seen in game when its reach is explored):
     // walk to the edge of the fog ourselves, further than military units do, widely around danger.
     const frontier = toFrontier(u, def, ctx, SCOUT_RADIUS, SCOUT_MAX_TURNS, { keep: SCOUT_WIDE_KEEP });
     if (frontier) return frontier;
-    // Nothing safe to explore and a little hurt: it heals meanwhile instead of standing idle.
-    if (Number(u.Health?.damage) > 0 && !hostileNear(u.location, SCOUT_DANGER, ctx) && operate(u, "UNITOPERATION_REST_UNTIL_HEALED")) return { key: "HEAL", args: [nameOf(def)] };
+    // Rough seas (Exploration before Shipbuilding) keep the game's exploring off, for land scouts too: ours looks farther on
+    // its own landmass (game 60: both scouts idle every pass from E31 once the land near them was explored; SC-4).
+    const seas = roughSeas() && def.Domain === "DOMAIN_LAND";
+    if (seas) {
+        const far = toFrontier(u, def, ctx, SCOUT.FAR_RADIUS, SCOUT.FAR_TURNS, { keep: SCOUT_WIDE_KEEP, sameArea: true });
+        if (far) return far;
+    }
+    // Nothing safe to explore and a little hurt: it heals meanwhile instead of standing idle, not near a hostile village.
+    if (Number(u.Health?.damage) > 0 && !hostileNear(u.location, SCOUT_DANGER, ctx)) {
+        const off = restAwayFromVillages(u, def, ctx, "UNIT_AWAY");
+        if (off) return off;
+        if (operate(u, "UNITOPERATION_REST_UNTIL_HEALED")) return { key: "HEAL", args: [nameOf(def)] };
+    }
+    // Rough seas and nothing left on its land: it sleeps (woken when the seas calm or after SCOUT.SLEEP_TURNS) instead of
+    // being looked at and skipped every pass.
+    if (seas && !hostileNear(u.location, SCOUT_DANGER, ctx) && shipsReaching(u.location).length === 0 && operate(u, "UNITOPERATION_SLEEP")) {
+        scoutsAsleep.set(unitKey(u.id), Game.turn);
+        restedByUs.add(unitKey(u.id)); // the save keeps it: after a reload it is woken once and looks again
+        goals.delete(unitKey(u.id));
+        return { key: "SCOUT_SLEEPS", args: [nameOf(def)] };
+    }
+    return null;
+}
+
+/**
+ * Does a walking scout's goal still hold (game 60, SC-2: a scout walking to a village was sent to a discovery the next pass and
+ * back to the village the pass after, T1-T12, 48 re-orders of walking scouts in Antiquity)? Its village unseen and not given up,
+ * its tile not failed, out of danger and the way there safe; its discovery still there and out of danger; its frontier still
+ * one; and the game's queued destination (when it says) its goal's tile or waypoint. @returns the goal's tile, or null
+ */
+function scoutGoalHolds(u, g, ctx) {
+    const tile = (t) => {
+        const [x, y] = String(t ?? "").split(",").map(Number);
+        return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    };
+    const target = tile(g?.at ?? g?.discovery ?? g?.frontier);
+    if (!target || same(u.location, target)) return null;
+    const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
+    if (dest && dest.x >= 0 && !same(dest, target) && !(g.via && same(dest, g.via))) return null;
+    if (g.village) {
+        if (!unseenVillages(ctx).some((v) => `${v.x},${v.y}` === g.village) || sightMemory.givenUp(g.village, Game.turn)) return null;
+        if (sightMemory.failed(g.village, g.at, Game.turn) || dangerNear(target, SCOUT_DANGER, ctx)) return null;
+        const p = pathTo(u, target);
+        return p && wayIsSafe(u, p, SCOUT_DANGER, ctx) ? target : null;
+    }
+    if (g.discovery) return hasDiscovery(target) && !givenUp(g.discovery) && !dangerNear(target, SCOUT_DANGER, ctx) ? target : null;
+    if (g.frontier) return isFrontier(target, true) && !dangerNear(target, SCOUT_DANGER, ctx) ? target : null;
     return null;
 }
 
@@ -781,7 +1152,7 @@ export function neededRole() {
     const stats = safe(() => Players.get(pid()).Stats, null);
     let cities = Number(stats?.numCities) || 0;
     let towns = Number(stats?.numTowns) || 0;
-    for (const g of goals.values()) {
+    for (const g of errandGoals()) {
         if (g.role === "CITY") cities++;
         else if (g.role === "TOWN") towns++;
     }
@@ -799,33 +1170,60 @@ function riskArmy(unit, ctx) {
 }
 
 /**
- * Is a hostile military unit (hostileOwner, or a war risk's: riskArmy) within `radius` of this tile? Plots
- * are looked at once per pass (ctx.hostileAt memo).
+ * Is a hostile military unit (hostileOwner, or a war risk's: riskArmy) we see within `radius` of this tile (unitsSeenAt: seen
+ * now, or last seen there lately)? Plots are looked at once per pass (ctx.hostileAt memo). A settler (ctx.riskCalm) minds a
+ * hostile ship only where its next turn reaches the tile (countsForSettler).
  */
 function hostileNear(loc, radius, ctx) {
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, radius), []) ?? []) {
         if (!ctx.hostileAt.has(idx)) {
-            // 1: a hostile unit (or a Hostile war risk's soldier) stands there; 2: only a soldier of a war risk that is
-            // not Hostile; 0: none.
+            // 1: a hostile land or air unit (or a Hostile war risk's soldier) stands there; 2: only a soldier of a war risk
+            // that is not Hostile; 0: none; +4: a hostile commander (danger for settlers and scouts only: ctx.riskCalm,
+            // ctx.civilian). With hostile ships there: { code, ships, at }.
             const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             let code = 0;
-            for (const id of (at ? safe(() => MapUnits.getUnits(at.x, at.y), []) : null) ?? []) {
-                const unit = safe(() => Units.get(id), null);
-                if (hostileOwner(unit) || (riskArmy(unit, ctx) && ctx.riskHostile?.has(unit.owner))) {
-                    code = 1;
-                    break;
+            const ships = [];
+            for (const { unit } of at ? unitsSeenAt(at.x, at.y) : []) {
+                if (hostileOwner(unit) && safe(() => GameInfo.Units.lookup(unit.type)?.Domain, null) === "DOMAIN_SEA") {
+                    ships.push(unit);
+                    continue;
                 }
-                if (riskArmy(unit, ctx)) code = 2;
+                if (hostileOwner(unit) || (riskArmy(unit, ctx) && ctx.riskHostile?.has(unit.owner))) {
+                    code = (code & 4) | 1;
+                    continue;
+                }
+                if (riskArmy(unit, ctx) && !(code & 1)) code |= 2;
+                if (hostileCommander(unit)) code |= 4;
             }
-            ctx.hostileAt.set(idx, code);
+            if (code & 1) code &= ~2;
+            ctx.hostileAt.set(idx, ships.length > 0 ? { code, ships, at } : code);
         }
-        const code = ctx.hostileAt.get(idx);
-        if (code === 1 || code === true) return true;
+        const memo = ctx.hostileAt.get(idx);
+        const code = memo !== null && typeof memo === "object" ? memo.code : memo;
+        if (code === true || (code & 1)) return true;
+        // A hostile commander (M2): its army may unpack next to a settler or a scout.
+        if ((code & 4) && (ctx.riskCalm || ctx.civilian)) return true;
         // Settlers (ctx.riskCalm) mind a war risk's soldiers only next to them (research/24 X4: Napoleon's espionage
         // made him a risk A22-A70 and his soldiers kept every site «unsafe»).
-        if (code === 2 && !(ctx.riskCalm && safe(() => { const at = GameplayMap.getLocationFromIndex(idx); return GameplayMap.getPlotDistance(loc.x, loc.y, at.x, at.y); }, 0) > 1)) return true;
+        if ((code & 2) && !(ctx.riskCalm && safe(() => { const at = GameplayMap.getLocationFromIndex(idx); return GameplayMap.getPlotDistance(loc.x, loc.y, at.x, at.y); }, 0) > 1)) return true;
+        if (memo?.ships?.some((s) => !ctx.riskCalm || countsForSettler(s, memo.at, loc, ctx))) return true;
     }
     return false;
+}
+
+/**
+ * Does this hostile unit at `at` endanger a settler on `loc` (game 60, SC-7: settlers waited in a garrisoned St Petersburg
+ * for a Quadrireme parked 2 tiles off on the water)? A land or air unit does; a ship only when it is a warship whose next turn
+ * reaches `loc` (core inShipReach, research/41 §3), and never while the settler stands on our held centre (ctx.ignoreShips).
+ */
+function countsForSettler(unit, at, loc, ctx) {
+    const def = safe(() => GameInfo.Units.lookup(unit.type), null);
+    if (def?.Domain !== "DOMAIN_SEA") return true;
+    if (ctx?.ignoreShips) return false;
+    const role = shipRole(def);
+    if (role !== "SCREEN" && role !== "RANGED") return false;
+    const ship = shipRecord(unit, def, at);
+    return inShipReach(loc, ship, (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity), shoreOf(ship));
 }
 
 /**
@@ -881,8 +1279,10 @@ function tooCloseToForeign(loc, ctx) {
 // ANYWHERE_RADIUS where the game accepts a settlement (isValidLandClaimLocation), our own spacing aside: never next to a
 // village (it turns hostile at once within ANYWHERE_VILLAGE: root gotcha 27), never into danger, never a war.
 const ANYWHERE_IDLE_TURNS = 1; // game 42: at 3 the detours kept resetting the count, and it came at M53
-const ANYWHERE_RADIUS = 8;
-const ANYWHERE_PATHS = 12; // ways looked at, the nearest tiles first
+// Game 48: a settler stood at the capital M39-M49 under our countdown: every tile within 8 was owned, and the free land lay
+// 15-20 tiles away (founded there at M40-M46 by others). It looks as far as a bold walk reaches.
+const ANYWHERE_RADIUS = 20;
+const ANYWHERE_PATHS = 30; // ways looked at, the nearest tiles first
 const ANYWHERE_VILLAGE = 3;
 
 /** Is a village within ANYWHERE_VILLAGE of this tile? */
@@ -891,27 +1291,50 @@ function villageDoorstep(loc, ctx) {
     return ctx.villages.some((v) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, v.x, v.y), Infinity) <= ANYWHERE_VILLAGE);
 }
 
-/** The nearest tile this settler reaches safely where the game accepts a settlement, or null. */
+/**
+ * The nearest tile this settler reaches safely where the game accepts a settlement, or null; tiles on its own land
+ * (GameplayMap.getAreaId) first, so the ANYWHERE_PATHS ways are not spent on another landmass. With none, `ctx.anywhereWhy`
+ * counts why each tile within ANYWHERE_RADIUS was left (the settler's «no order» line; game 57: a settler stood about 20 turns
+ * at 64-68,19-22 under a military countdown, its 4 sites taken or out of reach, and found a tile only at M56).
+ */
 function anySite(u, taken, ctx) {
     const here = u.location;
+    const why = {};
+    const note = (r) => (why[r] = (why[r] ?? 0) + 1);
+    const area = (loc) => safe(() => GameplayMap.getAreaId(loc.x, loc.y), null);
+    const home = area(here);
     const tiles = [];
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, ANYWHERE_RADIUS), []) ?? []) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-        if (!loc || taken.has(`${loc.x},${loc.y}`) || onWater(loc)) continue;
-        if (safe(() => GameplayMap.getRevealedState(pid(), loc.x, loc.y), RevealedStates.HIDDEN) === RevealedStates.HIDDEN) continue;
-        tiles.push({ x: loc.x, y: loc.y, d: safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), Infinity) });
+        if (!loc) continue;
+        if (taken.has(`${loc.x},${loc.y}`)) { note("TAKEN"); continue; }
+        if (onWater(loc)) { note("WATER"); continue; }
+        if (safe(() => GameplayMap.getRevealedState(pid(), loc.x, loc.y), RevealedStates.HIDDEN) === RevealedStates.HIDDEN) { note("HIDDEN"); continue; }
+        // Another player's land is no claim (cheap to ask first; the game's own word decides in siteStillFree).
+        const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+        if (owner !== -1 && owner !== null && owner !== pid()) { note("FOREIGN"); continue; }
+        const away = home !== null && area(loc) !== home ? 1 : 0;
+        tiles.push({ x: loc.x, y: loc.y, away, d: safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), Infinity) });
     }
-    tiles.sort((a, b) => a.d - b.d);
+    tiles.sort((a, b) => a.away - b.away || a.d - b.d);
     let paths = 0;
-    for (const t of tiles) {
+    for (let i = 0; i < tiles.length; i++) {
+        const t = tiles[i];
         const loc = { x: t.x, y: t.y, any: true };
-        if (!siteStillFree(loc) || hazardAt(loc) > 0 || dangerNear(loc, DANGER_RADIUS, ctx) || villageDoorstep(loc, ctx) || startsWar(u, loc)) continue;
+        const r = !siteStillFree(loc) ? "CLAIM" : hazardAt(loc) > 0 ? "HAZARD" : dangerNear(loc, DANGER_RADIUS, ctx) ? "DANGER"
+            : villageDoorstep(loc, ctx) ? "VILLAGE" : startsWar(u, loc) ? "WAR" : null;
+        if (r) { note(r); continue; }
         if (same(here, loc)) return { ...loc, turns: 0, source: "ANY", role: null };
-        if (++paths > ANYWHERE_PATHS) break;
+        if (++paths > ANYWHERE_PATHS) {
+            why.UNTRIED = tiles.length - i;
+            break;
+        }
         const p = pathTo(u, loc);
-        if (!p || p.turns > maxWalk(ctx) || !wayIsSafe(u, p, PATH_DANGER, ctx)) continue;
+        const v = !p ? "NO_PATH" : p.turns > maxWalk(ctx) ? "FAR" : !wayIsSafe(u, p, PATH_DANGER, ctx) ? "UNSAFE_WAY" : null;
+        if (v) { note(t.away ? `${v}_AWAY` : v); continue; }
         return { ...loc, turns: p.turns, source: "ANY", role: null };
     }
+    ctx.anywhereWhy = { tiles: tiles.length, why };
     return null;
 }
 
@@ -925,8 +1348,9 @@ function siteIsSafe(loc, ctx) {
  * settler's), FAILED (its order there did not take), OCCUPIED (not a valid claim now), DANGER (hostile units
  * near it), FOREIGN (too close to a foreign settlement or a village), WAR (walking there starts a war), NO_PATH,
  * SEAS (only across rough seas), FAR (beyond `limit` turns), UNSAFE_WAY (the way passes within `wayDanger` of
- * hostile units), HAZARD (the plague or another damaging plot effect on it: game 18). pickSite and the "no order" log share it (research/24 X1: «2 sites known, 0 unsafe, 0 seas,
- * 0 too far» while both were out of reach).
+ * hostile units), HAZARD (the plague or another damaging plot effect on it: game 18), FRONT (on a war front with no guard to
+ * spare: onWarFront). pickSite and the "no order" log share it (research/24 X1: «2 sites known, 0 unsafe, 0 seas, 0 too far»
+ * while both were out of reach).
  */
 function siteVerdict(u, loc, taken, ctx, wayDanger, limit) {
     if (!loc) return { reason: "NO_PATH" };
@@ -937,6 +1361,7 @@ function siteVerdict(u, loc, taken, ctx, wayDanger, limit) {
     if (hazardAt(loc) > 0) return { reason: "HAZARD" };
     if (dangerNear(loc, DANGER_RADIUS, ctx)) return { reason: "DANGER" };
     if (tooCloseToForeign(loc, ctx)) return { reason: "FOREIGN" };
+    if (onWarFront(loc, ctx)) return { reason: "FRONT" };
     if (startsWar(u, loc)) return { reason: "WAR" };
     const p = pathTo(u, loc);
     if (!p) {
@@ -946,6 +1371,35 @@ function siteVerdict(u, loc, taken, ctx, wayDanger, limit) {
     if (p.turns > limit) return { reason: "FAR", turns: p.turns };
     if (!wayIsSafe(u, p, wayDanger, ctx)) return { reason: "UNSAFE_WAY" };
     return { turns: p.turns };
+}
+
+const FRONT_SITE_DISTANCE = 6; // a site this close to a settlement of a major at war with us, or a war risk, is on a front...
+const FRONT_SITE_GUARDS = 2;   // ...and waits until this many free melee soldiers could guard it
+
+/**
+ * A site on a war front with no guard to spare (research/42 F; game 53: Китион was founded at M42 on Tecumseh's front with
+ * one guard and fell at M74): within FRONT_SITE_DISTANCE of a settlement we see of a major at war with us or a war risk
+ * (ctx.riskOwners), while fewer than FRONT_SITE_GUARDS melee soldiers stand free (the defence's supply, not posted). A
+ * settler blocking a rival's countdown (ctx.bold) goes anyway.
+ */
+function onWarFront(loc, ctx) {
+    if (ctx.bold) return false;
+    ctx.frontCities ??= (() => {
+        const me = safe(() => Players.get(pid()), null);
+        const HIDDEN = globalThis.RevealedStates?.HIDDEN ?? 0;
+        const out = [];
+        for (const p of safe(() => Players.getAlive(), []) ?? []) {
+            if (!p?.isMajor || p.id === pid()) continue;
+            if (!ctx.riskOwners?.has(p.id) && !safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+            for (const c of safe(() => p.Cities.getCities(), []) ?? []) {
+                if (c?.location && safe(() => GameplayMap.getRevealedState(pid(), c.location.x, c.location.y), HIDDEN + 1) !== HIDDEN) out.push(c.location);
+            }
+        }
+        return out;
+    })();
+    if (!ctx.frontCities.some((c) => safe(() => GameplayMap.getPlotDistance(c.x, c.y, loc.x, loc.y), Infinity) <= FRONT_SITE_DISTANCE)) return false;
+    const free = (ctx.supply ?? []).filter((c) => !ctx.posts?.has(c.k) && !c.ranged && !c.packed && c.stage).length;
+    return free < FRONT_SITE_GUARDS;
 }
 
 /** The farthest walk a settler takes when it waited or walked too long: SETTLE_MAX_TURNS, BOLD_MAX_TURNS when bold. */
@@ -996,8 +1450,11 @@ function pickSite(u, taken, ctx, wayDanger = PATH_DANGER, { nearest = false, max
         }
         return best;
     }
-    // The role we need first; within it the best value per turn of walking (not the best site 10 turns away).
-    const worth = (p, t) => (Number(p.value ?? p.score) || 1 / (Number(p.rank) || 1)) / (1 + t / SETTLE_TURN_WEIGHT);
+    // The role we need first; within it the best value per turn of walking (not the best site 10 turns away). Below
+    // NEAR_SETTLEMENTS a turn of walking weighs twice as much (game 48: a settlement founded early beats a better one later).
+    const early = (Number(safe(() => Players.get(pid()).Stats.numSettlements, 0)) || 0) < NEAR_SETTLEMENTS;
+    const turnWeight = early ? SETTLE_TURN_WEIGHT / 2 : SETTLE_TURN_WEIGHT;
+    const worth = (p, t) => (Number(p.value ?? p.score) || 1 / (Number(p.rank) || 1)) / (1 + t / turnWeight);
     for (const group of [picks.filter((p) => (p.role ?? want) === want), picks.filter((p) => (p.role ?? want) !== want)]) {
         let best = null;
         for (const p of group) {
@@ -1027,12 +1484,28 @@ function pickSite(u, taken, ctx, wayDanger = PATH_DANGER, { nearest = false, max
 }
 
 /**
+ * pickSite's default answer for this settler, once a pass while `taken` and ctx.stepTo (findDetour's) stay as they were: the
+ * settler escorts ask it first (escortSettler) and settle() again (both doubled the settlers' site search).
+ */
+function defaultSite(u, taken, ctx) {
+    const key = `${[...taken].sort().join(";")}|${ctx.stepTo?.size ?? 0}`;
+    const memo = (ctx.defaultSites ??= new Map()).get(unitKey(u.id));
+    if (memo && memo.key === key) return memo.site;
+    const site = pickSite(u, taken, ctx);
+    ctx.defaultSites.set(unitKey(u.id), { key, site });
+    return site;
+}
+
+/**
  * A settler got no order: why, once a turn in UI.log (research/22 A1: game 7 had a settler idle for 28
  * turns with no word). When some site would be reachable but for rough seas, the research step goes to
  * Shipbuilding first (seasBlocked).
  */
 function noteNoSite(u, ctx, taken = new Set(), limit = siteLimit(ctx)) {
     const k = unitKey(u.id);
+    // What «settle anywhere» found (anySite), this settler's only.
+    const anywhere = ctx.anywhereWhy;
+    delete ctx.anywhereWhy;
     if (settlerNoOrder.get(k) === Game.turn) return;
     settlerNoOrder.set(k, Game.turn);
     const idle = settlerIdle.get(k);
@@ -1048,7 +1521,7 @@ function noteNoSite(u, ctx, taken = new Set(), limit = siteLimit(ctx)) {
         if (r === "DANGER") for (const w of dangerWhy(p, DANGER_RADIUS, ctx)) danger[w] = (danger[w] ?? 0) + 1;
     }
     if (why.SEAS > 0) seasBlockedTurn = Game.turn;
-    log.warn(`settler: no order at ${u.location.x},${u.location.y} (${settlerIdle.get(k).count} turns): ${picks.length} sites known, limit ${limit}t ${JSON.stringify(why)}${why.DANGER ? `; danger ${JSON.stringify(danger)}` : ""}${ctx.bold ? "; bold (a military countdown)" : ""}`);
+    log.warn(`settler: no order at ${u.location.x},${u.location.y} (${settlerIdle.get(k).count} turns): ${picks.length} sites known, limit ${limit}t ${JSON.stringify(why)}${why.DANGER ? `; danger ${JSON.stringify(danger)}` : ""}${ctx.bold ? "; bold (a military countdown)" : ""}${anywhere ? `; anywhere: none of ${anywhere.tiles} tile(s) ${JSON.stringify(anywhere.why)}` : ""}`);
 }
 
 /** A settler found no site on SETTLER_IDLE_TURNS turns in a row (the hud's relaxed search runs: research/24 X3). */
@@ -1095,7 +1568,37 @@ function unstick(u, def, taken, ctx) {
         taken.delete(`${goal.x},${goal.y}`);
     }
     goals.delete(k);
+    // A free tile next to where it stands, reached this turn, before another site farther away (game 48: stuck at 12,31 on
+    // its way to 9,31 at A10, it was sent to 19,31, then 17,46, and founded at A21).
+    const near = foundNearby(u, taken, ctx);
+    if (near && (!cap || cap.n < cap.cap) && moveTo(u, near)) {
+        taken.add(`${near.x},${near.y}`);
+        goals.set(k, near);
+        settlerProgress.set(k, { turn: Game.turn, turns: near.turns, goal: `${near.x},${near.y}`, stuck: 0 });
+        return { key: "SETTLE_MOVE", args: [nameOf(def), near.x, near.y, near.turns] };
+    }
     return settle(u, def, taken, ctx);
+}
+
+/**
+ * A tile within STUCK_FOUND_RADIUS of a stuck settler where a settlement may stand (the game's claim, our rules on foreign
+ * settlements and villages, no danger, no hazard), reached this turn by a safe way, the nearest first: a settlement now beats
+ * a better site found later. @returns { x, y, turns, source: "NEAR", role: null } or null
+ */
+function foundNearby(u, taken, ctx) {
+    const here = u.location;
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, STUCK_FOUND_RADIUS), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || same(loc, here) || onWater(loc)) continue;
+        tiles.push({ x: loc.x, y: loc.y, d: safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), 9) });
+    }
+    tiles.sort((a, b) => a.d - b.d);
+    for (const t of tiles) {
+        const v = siteVerdict(u, { x: t.x, y: t.y }, taken, ctx, PATH_DANGER, 1);
+        if (!v.reason) return { x: t.x, y: t.y, turns: v.turns, source: "NEAR", role: null };
+    }
+    return null;
 }
 
 /**
@@ -1157,7 +1660,7 @@ function runFromDanger(u, def, ctx) {
             if (hostileNear(c.location, DANGER_RADIUS, ctx)) continue;
             const p = pathTo(u, c.location);
             if (!p || p.turns > SETTLE_MAX_TURNS || !wayIsSafe(u, p, RETREAT_DANGER, ctx) || !moveTo(u, c.location)) continue;
-            return { key: "SETTLER_RETREAT", args: [nameOf(def), safe(() => Locale.compose(c.name), "?")] };
+            return fled(u, def, { key: "SETTLER_RETREAT", args: [nameOf(def), safe(() => Locale.compose(c.name), "?")] }, ctx);
         }
         // Waited long enough: a near site by a way never next to them (research/22 A1).
         if (settlerWaits.get(k).count > SETTLER_MAX_WAITS) {
@@ -1177,15 +1680,31 @@ function runFromDanger(u, def, ctx) {
             const aside = stepAside(u, def, ctx, { away: true });
             if (aside) return aside;
         }
-        return { key: "SETTLER_WAITS", args: [nameOf(def), safe(() => Locale.compose(homes[0].c.name), "?")] };
+        return fled(u, def, { key: "SETTLER_WAITS", args: [nameOf(def), safe(() => Locale.compose(homes[0].c.name), "?")] }, ctx);
     }
     for (const { c } of homes.slice(0, RETREAT_TRIES)) {
         const p = pathTo(u, c.location);
         if (!p || p.turns > SETTLE_MAX_TURNS || !wayIsSafe(u, p, RETREAT_DANGER, ctx) || !moveTo(u, c.location)) continue;
-        return { key: "SETTLER_RETREAT", args: [nameOf(def), safe(() => Locale.compose(c.name), "?")] };
+        return fled(u, def, { key: "SETTLER_RETREAT", args: [nameOf(def), safe(() => Locale.compose(c.name), "?")] }, ctx);
     }
     // No safe way home: the reachable tile furthest from them.
     return stepAway(u, def, ctx, "SETTLER_AWAY", { ownLand: true });
+}
+
+/**
+ * Hostile units near a settler where it stands (settle, settlerAtRisk). On our garrisoned centre that is not under attack a
+ * ship does not count (game 60, SC-7: settlers waited in St Petersburg T65 and T81-T82 for a Quadrireme parked 2 tiles off on
+ * the water; elsewhere a ship counts where its next turn reaches: countsForSettler).
+ */
+function settlerInDanger(u, ctx) {
+    if (!(settlementAt(u.location) && garrisoned(u.location) && !centreDamaged(u.location))) return hostileNear(u.location, DANGER_RADIUS, ctx);
+    const before = ctx.ignoreShips;
+    ctx.ignoreShips = true;
+    try {
+        return hostileNear(u.location, DANGER_RADIUS, ctx);
+    } finally {
+        ctx.ignoreShips = before;
+    }
 }
 
 /**
@@ -1193,7 +1712,7 @@ function runFromDanger(u, def, ctx) {
  * its site, or near its way there.
  */
 function settlerAtRisk(u, ctx) {
-    if (hostileNear(u.location, DANGER_RADIUS, ctx)) return true;
+    if (settlerInDanger(u, ctx)) return true;
     const goal = goals.get(unitKey(u.id));
     if (goal?.x === undefined) return false;
     if (!siteIsSafe(goal, ctx)) return true;
@@ -1272,8 +1791,13 @@ function dashable(u, goal, ctx) {
     if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, goal.x, goal.y), Infinity) !== 1) return false;
     if (!(Number(u.Movement?.movementMovesRemaining ?? 0) > 0)) return false;
     if (!siteStillFree(goal) || tooCloseToForeign(goal, ctx) || hostileNear(goal, 1, ctx)) return false;
+    return roomUnderCap(ctx);
+}
+
+/** Below the settlement cap (the military lever's room past it counted): a settler on its site may found now. */
+function roomUnderCap(ctx) {
     const c = settlementCount();
-    return !c || c.n < c.cap + Math.max(0, Number(ctx.pastCap) || 0);
+    return !c || c.n < c.cap + Math.max(0, Number(ctx?.pastCap) || 0);
 }
 
 /**
@@ -1320,7 +1844,7 @@ function settle(u, def, taken, ctx) {
         noteFoundingNearVillage(goal);
         return { key: "SETTLE_FOUND", args: [nameOf(def), goal.x, goal.y] };
     }
-    if (hostileNear(u.location, DANGER_RADIUS, ctx)) {
+    if (settlerInDanger(u, ctx)) {
         // Next to its site with a move left: onto it, founding this pass (foundArrivals), not back home through the open
         // (game 35: Бристоль's settler turned back from the tile next to its site, 2-3 tiles from an independent's Warrior,
         // and founded 5 turns later).
@@ -1334,7 +1858,7 @@ function settle(u, def, taken, ctx) {
             const via = detourToward(u, goal, DANGER_RADIUS, ctx);
             if (via) {
                 settlerProgress.delete(k); // a detour is progress too (settlerStuck measures afresh)
-                return { key: "SETTLER_DETOUR", args: [nameOf(def), via.x, via.y, goal.x, goal.y] };
+                return fled(u, def, { key: "SETTLER_DETOUR", args: [nameOf(def), via.x, via.y, goal.x, goal.y] }, ctx);
             }
         }
         goals.delete(k);
@@ -1349,7 +1873,7 @@ function settle(u, def, taken, ctx) {
         if (out && !same(u.location, out) && moveTo(u, out.via ?? out)) {
             taken.add(`${out.x},${out.y}`);
             goals.set(k, out);
-            return { key: "SETTLER_LEAVES", args: [nameOf(def), safe(() => Locale.compose(home.name), "?"), out.x, out.y, out.turns ?? "?"] };
+            return fled(u, def, { key: "SETTLER_LEAVES", args: [nameOf(def), safe(() => Locale.compose(home.name), "?"), out.x, out.y, out.turns ?? "?"] }, ctx);
         }
         return runFromDanger(u, def, ctx);
     }
@@ -1360,7 +1884,7 @@ function settle(u, def, taken, ctx) {
             const via = detourToward(u, goal, DANGER_RADIUS, ctx);
             if (via) {
                 settlerProgress.delete(k); // a detour is progress too (settlerStuck measures afresh)
-                return { key: "SETTLER_DETOUR", args: [nameOf(def), via.x, via.y, goal.x, goal.y] };
+                return fled(u, def, { key: "SETTLER_DETOUR", args: [nameOf(def), via.x, via.y, goal.x, goal.y] }, ctx);
             }
         }
         if (!p || !wayIsSafe(u, p, PATH_DANGER, ctx)) goal = null;
@@ -1385,7 +1909,7 @@ function settle(u, def, taken, ctx) {
         if (near && near.turns < now) goal = near;
     }
     const before = goals.get(k);
-    if (!goal) goal = pickSite(u, taken, ctx);
+    if (!goal) goal = defaultSite(u, taken, ctx);
     // No site on SETTLER_IDLE_TURNS turns in a row: one up to SETTLE_MAX_TURNS away will do (research/24 X2: below 3
     // settlements a site 6+ turns away was never taken; idle 13+ turns with sites known).
     const idle = settlerIdle.get(k);
@@ -1425,7 +1949,7 @@ function settle(u, def, taken, ctx) {
         if (!moveTo(u, goal.via)) return null;
         ctx.stepTo.add(`${goal.via.x},${goal.via.y}`);
         settlerProgress.delete(k);
-        return { key: "SETTLER_DETOUR", args: [nameOf(def), goal.via.x, goal.via.y, goal.x, goal.y] };
+        return fled(u, def, { key: "SETTLER_DETOUR", args: [nameOf(def), goal.via.x, goal.via.y, goal.x, goal.y] }, ctx);
     }
     if (!moveTo(u, goal)) return null;
     // The way left now: the watchdog's first measure (settlerStuck).
@@ -1435,7 +1959,228 @@ function settle(u, def, taken, ctx) {
 
 /** Sites settlers are walking to, with the role planned there (for map tacks). */
 export function settlerGoals() {
-    return [...goals.values()].filter((g) => g.x !== undefined).map((g) => ({ x: g.x, y: g.y, role: g.role ?? null }));
+    return errandGoals().filter((g) => g.x !== undefined).map((g) => ({ x: g.x, y: g.y, role: g.role ?? null }));
+}
+
+// ---- settler escorts (game 60, economy E5) ---------------------------------------------------------
+
+const ESCORT_MARGIN = 5;        // an escort's Combat may be this much below the strongest raider within DANGER_RADIUS of the way
+const ESCORT_MAX_RAIDERS = 1;   // ...and at most this many raiders stand within PATH_DANGER of the way and the site
+const ESCORT_JOIN_TURNS = 3;    // the escort walks at most this far to the settler
+const settlerEscorts = new Map(); // settler key -> { escort: unit key, site: { x, y, role, relaxed }, turns, turn }
+
+/**
+ * A war risk's soldier near this tile as a settler minds it (hostileNear with ctx.riskCalm): a Hostile leader's within
+ * DANGER_RADIUS, another's next to it. It is no independent's raider: no escort walks past it.
+ */
+function riskSoldierNear(t, ctx) {
+    if (!(ctx.riskOwners?.size > 0)) return false;
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(t.x, t.y, DANGER_RADIUS), []) ?? []) {
+        const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        for (const { unit } of at ? unitsSeenAt(at.x, at.y) : []) {
+            if (!riskArmy(unit, ctx)) continue;
+            if (ctx.riskHostile?.has(unit.owner) || safe(() => GameplayMap.getPlotDistance(t.x, t.y, at.x, at.y), 9) <= 1) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * The independents' land soldiers we see near a settler's way and its site: [{ unit, def, s }] within DANGER_RADIUS, `close`
+ * the number within PATH_DANGER; null when another hostile unit is there (a major's, a war risk's: riskSoldierNear, a ship
+ * reaching it): no escort walks into that.
+ */
+function escortThreat(path, site, ctx) {
+    const tiles = [...(path?.plots ?? []).map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter(Boolean), site];
+    const found = new Map();
+    const close = new Set();
+    for (const t of tiles) {
+        if (riskSoldierNear(t, ctx)) return null;
+        for (const h of hostilesAround(t, DANGER_RADIUS)) {
+            const k = unitKey(h.unit.id);
+            const owner = hostileOwner(h.unit);
+            if (!owner?.independent || h.def?.Domain !== "DOMAIN_LAND") {
+                if (h.def?.Domain === "DOMAIN_SEA" && !countsForSettler(h.unit, h.at, t, ctx)) continue;
+                return null;
+            }
+            found.set(k, { unit: h.unit, def: h.def, s: unitStrength(h.def) });
+            if (safe(() => GameplayMap.getPlotDistance(t.x, t.y, h.at.x, h.at.y), 9) <= PATH_DANGER) close.add(k);
+        }
+    }
+    const list = [...found.values()];
+    return { list, close: close.size, strongest: Math.max(0, ...list.map((x) => x.s)) };
+}
+
+/**
+ * A settler with no safe site whose site or way is unsafe only because of independents' soldiers walks there with an escort
+ * (game 60: 77 settler-turns from done to founded, settlers waiting, retreating and detouring around independents' raiders
+ * while 2-6 free soldiers stood idle): a free melee soldier of the defence's supply (not posted, not a garrison, not at a front,
+ * hurt less than ESCORT_DAMAGE) whose Combat is no less than the strongest raider within DANGER_RADIUS of the way and the site
+ * less ESCORT_MARGIN, at most ESCORT_JOIN_TURNS from the settler. It first comes to the settler (the settler waits), then both
+ * go each turn to the settler's stop on its way; on the site the settler founds at once (foundArrivals). Founded, the soldier
+ * stays there as its holder (gotcha 63). UI.log `settler: … escorted by …` each turn. @returns log entries
+ */
+function escortSettlers(units, ctx, taken) {
+    const out = [];
+    const byKey = new Map(units.map((u) => [unitKey(u.id), u]));
+    // A settler gone (founded, lost): its escort is free.
+    for (const [sk, plan] of [...settlerEscorts]) {
+        if (byKey.has(sk)) continue;
+        if (goals.get(plan.escort)?.escortSettler === sk) goals.delete(plan.escort);
+        settlerEscorts.delete(sk);
+    }
+    for (const u of units) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const k = unitKey(u.id);
+        if (!def || !truthy(def.FoundCity) || ctx.ordered.has(k) || !u.location || !readyForOrders(u)) continue;
+        const e = safe(() => asSettler(ctx, () => escortSettler(u, def, ctx, byKey, taken)), null);
+        if (e) out.push(e);
+    }
+    return out;
+}
+
+/**
+ * No escort runs this pass («Поселенцы» off, or neither «Оборона» nor «Армия»): every plan ends and its soldier is free, so its
+ * `{escortSettler}` goal does not keep it out of the defence's supply until a reload.
+ */
+function releaseSettlerEscorts() {
+    for (const [sk, plan] of settlerEscorts) if (goals.get(plan.escort)?.escortSettler === sk) goals.delete(plan.escort);
+    settlerEscorts.clear();
+}
+
+/** Our settlements need their soldiers (homeUnsafeFor, as hunts judge it: ships alone do not call them home), once a pass. */
+const escortHomeNeeds = (ctx) => (ctx.escortHome ??= !!safe(() => homeUnsafeFor(ctx.ourUnits ?? [], ctx), false));
+
+/**
+ * The farthest walk an escort goes with a settler, as settle() judges the settler's own (siteLimit, maxWalk once it found no site
+ * on SETTLER_IDLE_TURNS turns in a row): below NEAR_SETTLEMENTS an escort makes no far site near (gotcha 79).
+ */
+function escortLimit(k, ctx) {
+    const idle = settlerIdle.get(k);
+    const starved = !!idle && idle.count >= SETTLER_IDLE_TURNS && Game.turn - idle.lastTurn <= 1;
+    return starved ? maxWalk(ctx) : siteLimit(ctx);
+}
+
+function escortSettler(u, def, ctx, byKey, taken) {
+    const k = unitKey(u.id);
+    let plan = settlerEscorts.get(k);
+    if (plan?.turn === Game.turn) return null; // escorted already this turn
+    const drop = (why) => {
+        if (plan && goals.get(plan.escort)?.escortSettler === k) goals.delete(plan.escort);
+        if (plan) log.info(`settler: ${def.UnitType} at ${u.location.x},${u.location.y}: its escort leaves (${why})`);
+        settlerEscorts.delete(k);
+        plan = null;
+    };
+    const combat = (x) => Number(safe(() => GameInfo.Unit_Stats.lookup(safe(() => GameInfo.Units.lookup(x.type)?.UnitType, null))?.Combat, 0)) || 0;
+    const fits = (x, threat) => !!x && x.isOnMap !== false && !!x.location && (Number(x.Health?.damage) || 0) < ESCORT_DAMAGE && combat(x) >= threat.strongest - ESCORT_MARGIN;
+    if (plan) {
+        const escort = byKey.get(plan.escort);
+        const site = plan.site;
+        const p = same(u.location, site) ? null : pathTo(u, site);
+        const threat = p ? escortThreat(p, site, ctx) : null;
+        // A plan under way keeps the longest walk (maxWalk): the idle count that may have allowed it lapses while it walks.
+        const why = !escort ? "gone" : !p ? (same(u.location, site) ? "on the site" : "no way") : p.turns > maxWalk(ctx) ? "too far"
+            : !threat ? "other hostile units near the way" : threat.close > ESCORT_MAX_RAIDERS ? `${threat.close} raiders near the way`
+            : !fits(escort, threat) ? "too weak or hurt" : !siteStillFree(site) || tooCloseToForeign(site, ctx) || hazardAt(site) > 0 ? "the site is lost"
+            // A threatened settlement short of guards: the defence takes the soldier next pass.
+            : escortHomeNeeds(ctx) ? "a settlement of ours needs its soldiers" : null;
+        if (why) {
+            drop(why);
+            return null;
+        }
+    } else {
+        if (hostileNear(u.location, 1, ctx) || escortHomeNeeds(ctx)) return null;
+        const free = (ctx.supply ?? []).filter((c) => !c.packed && c.stage && !c.ranged && !c.atFront && !ctx.posts?.has(c.k) && !ctx.ordered.has(c.k)
+            && c.u.canMove !== false && c.u.hasMoved !== true);
+        if (free.length === 0) return null;
+        // Only a settler with no safe site of its own (settle would wait, retreat or go around): not one whose goal settle()
+        // keeps, nor one with a safe site, its own goal not counted as another settler's (settle() frees it too).
+        const own = goals.get(k);
+        if (own?.x !== undefined && !own.escorted && !settlerAtRisk(u, ctx)) return null;
+        const mine = own?.x !== undefined ? `${own.x},${own.y}` : null;
+        const limit = escortLimit(k, ctx);
+        const freed = !!mine && taken.delete(mine);
+        const safeSite = defaultSite(u, taken, ctx) ?? (limit > siteLimit(ctx) ? pickSite(u, taken, ctx, PATH_DANGER, { maxTurns: limit }) : null);
+        if (freed) taken.add(mine);
+        if (safeSite) return null;
+        const early = (Number(safe(() => Players.get(pid()).Stats.numSettlements, 0)) || 0) < NEAR_SETTLEMENTS;
+        const turnWeight = early ? SETTLE_TURN_WEIGHT / 2 : SETTLE_TURN_WEIGHT;
+        let best = null;
+        for (const pk of state.get().results.sites?.picks ?? []) {
+            const site = { x: pk.x, y: pk.y, relaxed: !!pk.relaxed, role: pk.role ?? null };
+            const v = siteVerdict(u, site, taken, ctx, PATH_DANGER, limit);
+            if (v.reason !== "DANGER" && v.reason !== "UNSAFE_WAY") continue;
+            const p = pathTo(u, site);
+            if (!p || p.turns > limit) continue;
+            const threat = escortThreat(p, site, ctx);
+            if (!threat || threat.list.length === 0 || threat.close > ESCORT_MAX_RAIDERS) continue;
+            const escort = free.map((c) => ({ c, t: pathTurns(c.u, u.location) })).filter(({ c, t }) => t !== null && t <= ESCORT_JOIN_TURNS && fits(c.u, threat))
+                .sort((a, b) => a.t - b.t)[0];
+            if (!escort) continue;
+            const w = (Number(pk.value ?? pk.score) || 1 / (Number(pk.rank) || 1)) / (1 + p.turns / turnWeight);
+            if (!best || w > best.w) best = { w, site, escort: escort.c, threat };
+        }
+        if (!best) return null;
+        // The site keeps `relaxed`: tooCloseToForeign judges a relaxed pick by its own distances on every later pass.
+        plan = { escort: best.escort.k, site: { x: best.site.x, y: best.site.y, role: best.site.role, relaxed: best.site.relaxed }, turns: 0, turn: -1, since: Game.turn };
+        settlerEscorts.set(k, plan);
+        goals.set(best.escort.k, { escortSettler: k });
+        log.info(`settler: ${def.UnitType} at ${u.location.x},${u.location.y} takes ${best.escort.def.UnitType} as its escort to ${best.site.x},${best.site.y} (Combat ${combat(best.escort.u)} against the strongest raider's ${best.threat.strongest}; ${best.threat.list.length} near the way)`);
+    }
+    const escort = byKey.get(plan.escort);
+    const edef = safe(() => GameInfo.Units.lookup(escort.type), null);
+    const ek = plan.escort;
+    goals.set(k, { x: plan.site.x, y: plan.site.y, role: plan.site.role, relaxed: plan.site.relaxed, escorted: ek });
+    taken.add(`${plan.site.x},${plan.site.y}`);
+    // The escort comes to the settler first: onto its tile, else next to it; the settler waits.
+    if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, escort.location.x, escort.location.y), 9) > 1) {
+        if (escort.hasMoved === true || ctx.ordered.has(ek)) return null;
+        const spots = [u.location, ...tilesAt(u.location, 1).filter((l) => !same(l, u.location))]
+            .filter((l) => !onWater(l) && roomForSoldier(l) && !ctx.stepTo.has(`${l.x},${l.y}`));
+        const spot = spots.map((l) => ({ l, t: pathTurns(escort, l) })).filter((x) => x.t !== null).sort((a, b) => a.t - b.t)[0]?.l;
+        if (!spot) {
+            drop();
+            return null;
+        }
+        wakeUnit(escort);
+        if (!moveTo(escort, spot)) {
+            drop();
+            return null;
+        }
+        ctx.ordered.add(ek);
+        restedByUs.delete(ek);
+        ctx.stepTo.add(`${spot.x},${spot.y}`);
+        operate(u, "UNITOPERATION_SKIP_TURN");
+        ctx.ordered.add(k);
+        plan.turn = Game.turn;
+        log.info(`settler: ${def.UnitType} at ${u.location.x},${u.location.y} waits for its escort ${edef?.UnitType ?? "?"} (from ${escort.location.x},${escort.location.y} to ${spot.x},${spot.y})`);
+        return { key: "SETTLER_ESCORT_COMING", args: [nameOf(def), edef ? nameOf(edef) : "?"] };
+    }
+    // Together: both to the farthest tile of the settler's way this turn that the escort reaches too, with room for both.
+    const p = pathTo(u, plan.site);
+    if (!p || ctx.ordered.has(ek) || escort.hasMoved === true) return null;
+    const stops = [];
+    (p.plots ?? []).forEach((idx, i) => {
+        if ((Number(p.steps?.[i]) || 1) <= 1) stops.push(safe(() => GameplayMap.getLocationFromIndex(idx), null));
+    });
+    const stop = stops.filter(Boolean).reverse().find((l) => (same(l, escort.location) || (roomForSoldier(l) && (pathTurns(escort, l) ?? 9) <= 1))
+        && roomFor(def, l) && hazardAt(l) === 0 && !ctx.stepTo.has(`${l.x},${l.y}`));
+    if (!stop) return null;
+    wakeUnit(escort);
+    if (!same(stop, escort.location) && !moveTo(escort, stop)) return null;
+    if (!moveTo(u, stop)) return null;
+    ctx.ordered.add(ek);
+    ctx.ordered.add(k);
+    restedByUs.delete(ek);
+    ctx.stepTo.add(`${stop.x},${stop.y}`);
+    plan.turns++;
+    plan.turn = Game.turn;
+    settlerProgress.delete(k);
+    // On its site this turn: it founds right after (foundArrivals), the escort standing by; at the settlement cap it waits
+    // there instead (settle's waitAtCap: SETTLER_AT_CAP next pass), as every settler does.
+    if (same(stop, plan.site) && roomUnderCap(ctx)) dashes.set(k, { x: stop.x, y: stop.y, turn: Game.turn, role: plan.site.role ?? null });
+    log.info(`settler: ${def.UnitType} at ${u.location.x},${u.location.y} escorted by ${edef?.UnitType ?? "?"} toward ${plan.site.x},${plan.site.y}: both to ${stop.x},${stop.y}; escorted ${plan.turns} turn(s) since T${plan.since}`);
+    return { key: "SETTLER_ESCORTED", args: [nameOf(def), edef ? nameOf(edef) : "?", plan.site.x, plan.site.y] };
 }
 
 // ---- military -------------------------------------------------------------------------------
@@ -1455,9 +2200,11 @@ const RANGED_GUARD_RADIUS = 2; // a soldier this close to one of our settlements
  * of our settlements (it is attacking it), then at any military unit, then at anything else, the
  * most damaged first; never at a tile with no unit (a village or a district: no effect). Seen in
  * game 5: crossbowmen shot scouts and an empty village tile (strength 5) while a swordsman took
- * the town next to them. `hostileOnly`: only at a soldier we are at war with (a guard woken to shoot).
+ * the town next to them. `hostileOnly`: only at a soldier we are at war with (a guard woken to shoot), or a hostile commander
+ * after them (M2: game 60's busy guards never shot Вьядхапура's pillaging commander); `held`: tiles left to a raider hunt's
+ * general (W5: heldFor).
  */
-function rangedAttack(u, def, { hostileOnly = false } = {}) {
+function rangedAttack(u, def, { hostileOnly = false, held = null } = {}) {
     if (u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return null;
     const op = globalThis.UnitOperationTypes?.RANGE_ATTACK ?? "UNITOPERATION_RANGE_ATTACK";
     const r = safe(() => Game.UnitOperations.canStart(u.id, op, {}, false), null);
@@ -1470,7 +2217,8 @@ function rangedAttack(u, def, { hostileOnly = false } = {}) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(r.Plots[i]), null);
         if (!loc || startsWar(u, loc)) continue;
         const there = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).filter(Boolean);
-        if (there.length === 0 || (hostileOnly && !there.some((t) => hostileOwner(t)))) continue;
+        if (there.length === 0 || (hostileOnly && !there.some((t) => hostileOwner(t) || hostileCommander(t)))) continue;
+        if (held && heldFor(held, u, loc)) continue;
         const military = there.some((t) => safe(() => GameInfo.Units.lookup(t.type)?.CoreClass, null) === "CORE_CLASS_MILITARY");
         const attacking = military && ours.some((c) => safe(() => GameplayMap.getPlotDistance(c.x, c.y, loc.x, loc.y), Infinity) <= RANGED_GUARD_RADIUS);
         const dmg = (attacking ? 2000 : 0) + (military ? 1000 : 0) + damageAt(loc);
@@ -1533,8 +2281,8 @@ function stepAside(u, def, ctx, { away = false } = {}) {
             }
             const turns = pathTurns(u, loc);
             if (turns === null) why.noPath++;
-            else if (turns > STEP_ASIDE_MAX_TURNS) why.far++;
-            else if (startsWar(u, loc)) why.war++;
+            else if (turns > STEP_ASIDE_MAX_TURNS) refused.far++;
+            else if (startsWar(u, loc)) refused.war++;
             if (turns === null || turns > STEP_ASIDE_MAX_TURNS || startsWar(u, loc)) continue;
             const own = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1) === pid();
             const dist = safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), r);
@@ -1593,7 +2341,9 @@ function makeRoom(u, def, ctx) {
             if (turns === null || turns > 1 || startsWar(n, to) || !moveTo(n, to)) continue;
             ctx.stepTo.add(`${to.x},${to.y}`);
             ctx.ordered.add(k);
-            ctx.entries.push({ key: "MADE_ROOM", args: [nameOf(safe(() => GameInfo.Units.lookup(n.type), null)), nameOf(def)] });
+            const made = { key: "MADE_ROOM", args: [nameOf(safe(() => GameInfo.Units.lookup(n.type), null)), nameOf(def)] };
+            noteEntryUnit(made, n, spot);
+            ctx.entries.push(made);
             return true;
         }
     }
@@ -1633,31 +2383,66 @@ function isFrontier(loc, landUnit) {
 function roam(u, def, ctx) {
     const found = toDiscovery(u, def, ctx, ROAM_RADIUS, ROAM_MAX_TURNS);
     if (found) return found;
-    if (autoExploreIsSafe(u, ctx) && operate(u, "UNITOPERATION_AUTOMATE_EXPLORE")) return { key: "EXPLORE", args: [nameOf(def)] };
+    if (autoExploreIsSafe(u, ctx) && operate(u, "UNITOPERATION_AUTOMATE_EXPLORE")) {
+        goals.delete(unitKey(u.id));
+        return { key: "EXPLORE", args: [nameOf(def)] };
+    }
     return toFrontier(u, def, ctx, ROAM_RADIUS, ROAM_MAX_TURNS);
 }
 
-/** A random revealed tile next to the fog within `radius`, reached in at most `maxTurns`. */
-function toFrontier(u, def, ctx, radius, maxTurns, { keep = SCOUT_DANGER } = {}) {
+/**
+ * The best revealed tile next to the fog within `radius`, reached in at most `maxTurns` (game 60, SC-3: a random tile re-drawn
+ * every pass took our scouts back and forth; they revealed the least land of ten civilizations by T20): the hidden tiles within
+ * SCOUT.HIDDEN_RADIUS of it over 1 + the turns to it, SCOUT.HEADING_BONUS for going on the way it went last time, less
+ * SCOUT.CROWD_PENALTY near another unit's goal; chance only between equals. `sameArea`: on its own landmass only
+ * (GameplayMap.getAreaId). A scout keeps it as its goal (`frontier`: scoutGoalHolds).
+ */
+function toFrontier(u, def, ctx, radius, maxTurns, { keep = SCOUT_DANGER, sameArea = false } = {}) {
     const here = u.location;
     const land = def.Domain !== "DOMAIN_SEA";
+    const k = unitKey(u.id);
+    const HIDDEN = globalThis.RevealedStates?.HIDDEN ?? 0;
+    const area = (l) => safe(() => GameplayMap.getAreaId(l.x, l.y), null);
+    const home = sameArea ? area(here) : null;
+    // The game's maps wrap east-west: the shorter way round (within a scout's radius it is the plain one anyway).
+    const width = Number(safe(() => GameplayMap.getGridWidth(), 0)) || 0;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    // Other units' goals: the tiles they walk to.
+    const others = [...goals.entries()].filter(([gk]) => gk !== k)
+        .map(([, g]) => String(g.frontier ?? g.at ?? g.discovery ?? (g.x !== undefined ? `${g.x},${g.y}` : "")).split(",").map(Number))
+        .filter((t) => t.length === 2 && Number.isFinite(t[0]) && Number.isFinite(t[1])).map(([x, y]) => ({ x, y }));
+    const heading = frontierHeading.get(k);
     const candidates = [];
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, radius), []) ?? []) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
         if (!loc || same(loc, here) || ctx.stepTo.has(`${loc.x},${loc.y}`)) continue;
-        if (isFrontier(loc, land) && !dangerNear(loc, keep, ctx)) candidates.push(loc);
+        if (!isFrontier(loc, land) || dangerNear(loc, keep, ctx)) continue;
+        if (sameArea && home !== null && area(loc) !== home) continue;
+        let hidden = 0;
+        for (const n of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, SCOUT.HIDDEN_RADIUS), []) ?? []) {
+            const t = safe(() => GameplayMap.getLocationFromIndex(n), null);
+            if (t && safe(() => GameplayMap.getRevealedState(pid(), t.x, t.y), HIDDEN) === HIDDEN) hidden++;
+        }
+        const dx = wrapDx(here.x, loc.x, width, true);
+        const dy = loc.y - here.y;
+        const facts = { hidden, aligned: keepsHeading(heading, dx, dy), crowded: others.some((o) => dist(o, loc) <= SCOUT.CROWD_RADIUS) };
+        // First by the straight distance (two tiles a turn); the way is asked for the best few only.
+        candidates.push({ loc, dx, dy, facts, tie: ctx.random(), guess: frontierScore({ ...facts, turns: dist(here, loc) / 2 }) });
     }
-    // A random direction: shuffle, then the first one reachable soon without war.
-    for (let i = candidates.length - 1; i > 0; i--) {
-        const j = Math.floor(ctx.random() * (i + 1));
-        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    candidates.sort((a, b) => b.guess - a.guess || a.tie - b.tie);
+    const scored = [];
+    for (const c of candidates.slice(0, ROAM_TRIES * 2)) {
+        const p = pathTo(u, c.loc);
+        if (!p || p.turns > maxTurns || !wayIsSafe(u, p, keep > SCOUT_DANGER ? keep - 1 : 1, ctx) || startsWar(u, c.loc)) continue;
+        scored.push({ ...c, score: frontierScore({ ...c.facts, turns: p.turns }) });
     }
-    for (const loc of candidates.slice(0, ROAM_TRIES)) {
-        const p = pathTo(u, loc);
-        if (!p || p.turns > maxTurns || !wayIsSafe(u, p, keep > SCOUT_DANGER ? keep - 1 : 1, ctx) || startsWar(u, loc)) continue;
-        if (!moveTo(u, loc)) continue;
-        ctx.stepTo.add(`${loc.x},${loc.y}`);
-        return { key: "ROAM", args: [nameOf(def), loc.x, loc.y] };
+    scored.sort((a, b) => b.score - a.score || a.tie - b.tie);
+    for (const c of scored) {
+        if (!moveTo(u, c.loc)) continue;
+        ctx.stepTo.add(`${c.loc.x},${c.loc.y}`);
+        frontierHeading.set(k, { dx: c.dx, dy: c.dy });
+        if (hasTag(def, "UNIT_CLASS_AUTOEXPLORE")) goals.set(k, { frontier: `${c.loc.x},${c.loc.y}`, since: Game.turn });
+        return { key: "ROAM", args: [nameOf(def), c.loc.x, c.loc.y] };
     }
     return null;
 }
@@ -1685,6 +2470,7 @@ export function leadersNearExplorers({ explore = false, roam = false } = {}) {
 // ---- upgrades -------------------------------------------------------------------------------
 
 const MAX_UPGRADES = 3; // per pass
+const ARMY_UPGRADE = "UNITCOMMAND_UPGRADE_ARMY"; // a commander's packed soldiers, all at once (the army panel's button)
 
 /**
  * What an upgrade to `to` may cost: the game gives no price beforehand (the unit panel shows it only
@@ -1718,9 +2504,14 @@ export function upgradeUnits(budget, threats = [], { mode = "ANY", ageEnding = f
     const gold = () => Number(safe(() => Players.Treasury?.get?.(pid())?.goldBalance, null) ?? safe(() => Players.get(pid()).Treasury.goldBalance, 0)) || 0;
     const b = typeof budget?.free === "function" ? budget : createBudget({ gold: gold(), reserve: Number(budget) || 0 });
     if (ageEnding) return out;
-    const near = (u) => threats.some((t) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, t.settlement.x, t.settlement.y), 99) <= THREAT_RADIUS);
+    // A packed soldier stands where its army stands (unitTile: off the map its own location is -9999; after game 55).
+    const dist = (u, s) => {
+        const at = unitTile(u);
+        return at ? safe(() => GameplayMap.getPlotDistance(at.x, at.y, s.x, s.y), 99) : 99;
+    };
+    const near = (u) => threats.some((t) => dist(u, t.settlement) <= THREAT_RADIUS);
     // An exposed settlement's holder next (research/37 §4C), before units elsewhere.
-    const holding = (u) => exposed.some((e) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, e.settlement.x, e.settlement.y), 99) <= HOLDER_RADIUS);
+    const holding = (u) => exposed.some((e) => dist(u, e.settlement) <= HOLDER_RADIUS);
     // Gold income below zero (upkeep grows with each upgrade): only units defending a threatened settlement.
     const broke = (Number(safe(() => Players.get(pid()).Stats.getNetYield(YieldTypes.YIELD_GOLD), 0)) || 0) < 0;
     const candidates = (safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])
@@ -1731,8 +2522,39 @@ export function upgradeUnits(budget, threats = [], { mode = "ANY", ageEnding = f
     // With a war at our door, units near a threatened settlement may use all the gold, like its defenders
     // (research/23 D5: game 8, no upgrade in the whole war while the savings goals held the free gold).
     const pool = (u) => (war && near(u) ? b.all() : b.free());
+    // A commander's packed soldiers upgrade together first (after game 55; the army panel's «upgrade all» button):
+    // UNITCOMMAND_UPGRADE_ARMY on the commander, "Upgrade all eligible units in the army", with NO_TARGET as the unit panel
+    // sends a command, when the game offers it. Priced at its soldiers' estimates (the game's own price is only in the
+    // tooltip, AdditionalDescription, which UI.log keeps); its soldiers are then left out below.
+    const viaArmy = new Set();
+    const all = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
+    const upgradeOf = (u) => GameInfo.UnitUpgrades?.find((r) => r.Unit === safe(() => GameInfo.Units.lookup(u.type)?.UnitType, null))?.UpgradeUnit ?? null;
+    for (const c of all) {
+        if (out.length >= MAX_UPGRADES) break;
+        if (!c.isCommanderUnit || c.isOnMap === false || !c.location) continue;
+        const members = all.filter((x) => x !== c && !x.isCommanderUnit && x.isOnMap === false && sameId(x.armyId, c.armyId) && upgradeOf(x)
+            && safe(() => GameInfo.Units.lookup(x.type).CoreClass, null) === "CORE_CLASS_MILITARY" && ((!broke && mode !== "THREAT") || near(x)));
+        if (members.length === 0) continue;
+        const eligible = members.filter((x) => safe(() => Game.UnitCommands.canStart(x.id, UPGRADE, NO_TARGET, false), null)?.Success);
+        const priced = eligible.length > 0 ? eligible : members;
+        const cost = priced.reduce((sum, x) => sum + upgradeEstimate(upgradeOf(x)), 0);
+        const gold = members.some((x) => war && near(x)) ? b.all() : b.free();
+        if (cost > gold) continue;
+        const r = safe(() => Game.UnitCommands.canStart(c.id, ARMY_UPGRADE, NO_TARGET, false), null);
+        if (!r?.Success) continue;
+        Game.UnitCommands.sendRequest(c.id, ARMY_UPGRADE, { ...NO_TARGET });
+        const cdef = safe(() => GameInfo.Units.lookup(c.type), null);
+        b.spend(cost, { kind: "UPGRADE", label: `${nameOf(cdef)} (${priced.length})` });
+        for (const x of members) {
+            viaArmy.add(unitKey(x.id));
+            noteMeleeObtained(safe(() => GameInfo.Units.lookup(upgradeOf(x)), null), "upgraded");
+        }
+        const told = [r.AdditionalDescription ?? []].flat().map((t) => safe(() => Locale.compose(t), t)).join(" ");
+        log.info(`upgrade: ${cdef?.UnitType ?? "?"} at ${c.location.x},${c.location.y} upgrades its army [${priced.map((x) => `${safe(() => GameInfo.Units.lookup(x.type).UnitType, "?")} -> ${upgradeOf(x)}`).join(", ")}]: estimate ${Math.round(cost)}; the game says "${told}"`);
+        out.push({ key: "ARMY_UPGRADED", args: [nameOf(cdef), priced.length, Math.round(cost)] });
+    }
     for (const u of candidates) {
-        if (out.length >= MAX_UPGRADES || pool(u) <= 0) continue;
+        if (out.length >= MAX_UPGRADES || pool(u) <= 0 || viaArmy.has(unitKey(u.id))) continue;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         const to = GameInfo.UnitUpgrades?.find((r) => r.Unit === def?.UnitType)?.UpgradeUnit;
         const cost = upgradeEstimate(to);
@@ -1755,8 +2577,10 @@ export function upgradeUnits(budget, threats = [], { mode = "ANY", ageEnding = f
 export function upgradeFirstMelee(minStrength, pool) {
     const UPGRADE = "UNITCOMMAND_UPGRADE";
     const A = globalThis.UnitActivityTypes;
+    // A soldier packed in an army may be upgraded too: the army panel selects it and the unit panel offers the same command
+    // (after game 55).
     for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
-        if (u.isCommanderUnit || u.isOnMap === false || (A && u.activityType === A.OPERATION)) continue;
+        if (u.isCommanderUnit || (A && u.activityType === A.OPERATION)) continue;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         const to = GameInfo.UnitUpgrades?.find((r) => r.Unit === def?.UnitType)?.UpgradeUnit;
         const toDef = to ? safe(() => GameInfo.Units.lookup(to), null) : null;
@@ -1779,12 +2603,42 @@ export function upgradeFirstMelee(minStrength, pool) {
  * that power is HOSTILE to us (at war; Game.IndependentPowers, as its unit flags show it: red),
  * not while NEUTRAL (at peace, yellow; seen in game 6: a village at peace with us for 40 turns kept
  * two towns "threatened", which bought walls and soldiers while gold ran out); a major player's
- * while we are at war with it. @returns the independent's id, the owner, or null
+ * while we are at war with it. `anyClass`: a scout, a commander or a settler of theirs too (UI.log's `units:` line).
+ * @returns the independent's id, the owner, or null
  */
-function hostileOwner(unit) {
+export function hostileOwner(unit, { anyClass = false } = {}) {
     if (!unit || unit.owner === pid()) return null;
     const def = safe(() => GameInfo.Units.lookup(unit.type), null);
-    if (def?.CoreClass !== "CORE_CLASS_MILITARY") return null;
+    if (!anyClass && def?.CoreClass !== "CORE_CLASS_MILITARY") return null;
+    return ownerAtWar(unit);
+}
+
+/**
+ * A land commander of a player at war with us (FORMATION_CLASS_COMMAND; an independent's too), hostileOwner's owner rules (M2,
+ * game 60: Вьядхапура's Army Commander pillaged next to Тула every 2 turns T89-T139, 54 repairs for 1,408 gold, and was struck
+ * only by idle Slingers until T98). A target and danger for settlers and scouts, never a raider in threatenedSettlements (it
+ * buys no walls or guards). @returns the owner (hostileOwner's) or null
+ */
+function hostileCommander(unit) {
+    if (!unit || unit.owner === pid()) return null;
+    const def = safe(() => GameInfo.Units.lookup(unit.type), null);
+    if (def?.FormationClass !== "FORMATION_CLASS_COMMAND" || def.Domain !== "DOMAIN_LAND") return null;
+    return ownerAtWar(unit);
+}
+
+/** A hostile scout (CORE_CLASS_RECON) of a player at war with us (SC-6): a sortie target in a general's radius only. */
+function hostileScout(unit) {
+    if (!unit || unit.owner === pid()) return null;
+    const def = safe(() => GameInfo.Units.lookup(unit.type), null);
+    if (def?.CoreClass !== "CORE_CLASS_RECON" || def.Domain !== "DOMAIN_LAND") return null;
+    return ownerAtWar(unit);
+}
+
+/** The owner of another player's unit when we are at war with it (hostileOwner), else null. */
+function ownerAtWar(unit) {
+    // Killed earlier in this pass (our strike step runs first; game 60 T67: a Warrior struck dead at 68,10 still counted for
+    // a hurt Slinger's step away): no threat.
+    if (unit.isDead === true || (Number(unit.Health?.damage) || 0) >= (Number(unit.Health?.maxDamage) || Infinity)) return null;
     const owner = safe(() => Players.get(unit.owner), null);
     if (owner?.isIndependent) {
         const indep = safe(() => Game.IndependentPowers.getIndependentPlayerIDFromUnit(unit.id), unit.owner);
@@ -1797,6 +2651,9 @@ function hostileOwner(unit) {
     return safe(() => Players.get(pid()).Diplomacy.isAtWarWith(unit.owner), false) ? { id: unit.owner, independent: false } : null;
 }
 
+/** The first hostile unit (hostileOwner) we see now on this tile (unitsSeenAt), or undefined: a target. */
+const hostileSeenAt = (loc) => (loc ? unitsSeenAt(loc.x, loc.y, { remembered: false }).map((e) => e.unit).find((e) => hostileOwner(e)) : undefined);
+
 /** Is this settlement's centre damaged (Players.Districts, as the game's district health bars read it)? */
 function centreDamaged(loc) {
     const districts = safe(() => Players.Districts.get(pid()), null);
@@ -1805,10 +2662,24 @@ function centreDamaged(loc) {
     return Number.isFinite(health) && Number.isFinite(max) && max > 0 && health < max;
 }
 
+/** This settlement's centre health and its maximum, as centreDamaged reads them (NaN when unknown). */
+function centreHealth(loc) {
+    const districts = safe(() => Players.Districts.get(pid()), null);
+    return { health: Number(safe(() => districts.getDistrictHealth(loc), NaN)), maxHealth: Number(safe(() => districts.getDistrictMaxHealth(loc), NaN)) };
+}
+
+/** The share of its health a centre of ours keeps (1 when unknown). */
+function centreShare(loc) {
+    const districts = safe(() => Players.Districts.get(pid()), null);
+    const health = Number(safe(() => districts.getDistrictHealth(loc), NaN));
+    const max = Number(safe(() => districts.getDistrictMaxHealth(loc), NaN));
+    return Number.isFinite(health) && max > 0 ? Math.max(0, Math.min(1, health / max)) : 1;
+}
+
 let fortifications = null; // FORTIFICATION-tagged types (GameInfo.TypeTags)
 
 /** Walls standing on this centre: a finished, undamaged FORTIFICATION building (any age's or civilization's walls). */
-function walledCentre(loc) {
+export function walledCentre(loc) {
     fortifications ??= new Set((GameInfo.TypeTags?.filter((t) => t.Tag === "FORTIFICATION") ?? []).map((t) => t.Type));
     for (const id of safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? []) {
         const c = safe(() => Constructibles.getByComponentID(id), null);
@@ -1858,28 +2729,33 @@ export function threatenedSettlements() {
         let close = 0;
         let land = 0; // land units: what a land defender can fight (research/22 B7)
         let ships = 0; // naval units: only ranged units (and walls) hit them (game 10)
+        const shipStats = []; // their Unit_Stats rows: who out-guns them (research/41 §3)
         let air = 0;
         let strongest = null; // the strongest land raider: { type, s }
         for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(c.location.x, c.location.y, THREAT_RADIUS), []) ?? []) {
             const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             if (!loc) continue;
             const d = safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, c.location.x, c.location.y), Infinity);
-            for (const id of safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []) {
-                const k = unitKey(id);
+            // The units we see there, or saw there lately (unitsSeenAt: game 60, SCM-2).
+            for (const { unit } of unitsSeenAt(loc.x, loc.y)) {
+                const k = unitKey(unit.id);
                 if (seen.has(k)) continue;
-                const h = hostileOwner(safe(() => Units.get(id), null));
+                const h = hostileOwner(unit);
                 if (!h || (!damaged && d > 1 && atHome(h, loc))) continue;
                 seen.add(k);
                 owners.set(h.id, h);
                 if (d <= THREAT_CLOSE) close++;
-                const kind = safe(() => GameInfo.Units.lookup(Units.get(id)?.type), null);
+                const kind = safe(() => GameInfo.Units.lookup(unit.type), null);
                 const domain = kind?.Domain ?? null;
                 if (domain !== "DOMAIN_SEA" && domain !== "DOMAIN_AIR") {
                     land++;
                     const s = kind ? unitStrength(kind) : 0;
                     if (!strongest || s > strongest.s) strongest = { type: kind?.UnitType ?? "?", s };
-                } else if (domain === "DOMAIN_SEA") ships++;
-                else air++;
+                } else if (domain === "DOMAIN_SEA") {
+                    ships++;
+                    const st = kind ? safe(() => GameInfo.Unit_Stats.lookup(kind.UnitType), null) : null;
+                    if (st) shipStats.push(st);
+                } else air++;
             }
         }
         // A land raider stronger than every melee guard of ours there (none: any raider). Research/36 §3: game 29's
@@ -1891,8 +2767,9 @@ export function threatenedSettlements() {
         const threatened = seen.size >= THREAT_MIN || close > 0 || (seen.size > 0 && damaged) || strong;
         if (threatened) {
             out.push({
-                settlement: { x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?") }, count: seen.size, land, ships, air, close,
+                settlement: { x: c.location.x, y: c.location.y, name: safe(() => Locale.compose(c.name), "?") }, count: seen.size, land, ships, shipStats, air, close,
                 damaged, walled: walledCentre(c.location), strong, strongest: strongest?.type ?? null, owners: [...owners.values()],
+                ...centreHealth(c.location), // health, maxHealth: how hard the centre is pressed (centreLow)
             });
         }
     }
@@ -1915,13 +2792,16 @@ function approach(u, def, ctx) {
         ];
         let best = null;
         for (const t of towns) {
+            const sight = `${t.location.x},${t.location.y}`;
             for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(t.location.x, t.location.y, APPROACH_DISTANCE), []) ?? []) {
                 const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
                 if (!loc || safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, t.location.x, t.location.y), 0) < APPROACH_DISTANCE) continue;
                 if ((safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).length > 0 || ctx.stepTo.has(`${loc.x},${loc.y}`)) continue;
                 if (dangerNear(loc, 1, ctx)) continue; // not next to its units
+                // A tile a scout or an earlier visit found blind (noteBlindSight; game 60, SC-1).
+                if (sightMemory.failed(sight, `${loc.x},${loc.y}`, Game.turn)) continue;
                 const d = safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), Infinity);
-                if (!best || d < best.d) best = { loc, d };
+                if (!best || d < best.d) best = { loc, d, sight };
             }
         }
         const keep = losses.has(`indep:${indep}`) ? SCOUT_DANGER : 1;
@@ -1931,12 +2811,12 @@ function approach(u, def, ctx) {
             const via = detourToward(u, best.loc, keep, ctx);
             if (!via) continue;
             ctx.approached.add(indep);
-            goals.set(unitKey(u.id), { approach: indep });
+            goals.set(unitKey(u.id), { approach: indep, at: `${best.loc.x},${best.loc.y}`, sight: best.sight });
             return { key: "DETOUR", args: [nameOf(def), best.loc.x, best.loc.y, via.x, via.y] };
         }
         if (!moveTo(u, best.loc)) continue;
         ctx.approached.add(indep);
-        goals.set(unitKey(u.id), { approach: indep });
+        goals.set(unitKey(u.id), { approach: indep, at: `${best.loc.x},${best.loc.y}`, sight: best.sight });
         ctx.stepTo.add(`${best.loc.x},${best.loc.y}`);
         return { key: "APPROACH", args: [nameOf(def), independentNameOf(indep)] };
     }
@@ -1992,6 +2872,22 @@ export const rangedWanted = (t, { support = true } = {}) => Math.min(RANGED_GUAR
  * centre for 8 of 200 a blow and never took it down.
  */
 export const wallsHold = (t) => !!t?.walled && !t?.damaged && (t?.owners ?? []).every((o) => o?.independent);
+
+/**
+ * A centre under real attack: below this share of its health (game 60: a scratch, 181 of 200 on a walled centre, sent walls for
+ * another district ahead of the Ha'amonga a Maui two turns from done, lost by a turn). Its walls pass everything, a raced wonder
+ * too (wallsSlot), and its defenders pass an item done this turn (frontLoadUnits).
+ */
+export const WALLS_URGENT_SHARE = 0.5;
+
+/** Is this threatened settlement's centre below WALLS_URGENT_SHARE of its health? Damaged with no health known: yes (as before). */
+export function centreLow(t) {
+    if (!t?.damaged) return false;
+    const health = Number(t.health);
+    const max = Number(t.maxHealth);
+    if (!Number.isFinite(health) || !(max > 0)) return true;
+    return health < WALLS_URGENT_SHARE * max;
+}
 
 /**
  * Melee guards a threatened settlement wants: one per land raider, and one on its centre whatever the raiders
@@ -2069,11 +2965,18 @@ export function guardDetail(threat, units = safe(() => Players.get(pid()).Units.
         const kind = safe(() => GameInfo.Units.lookup(u.type), null);
         if (u.isCommanderUnit) continue;
         if (!(ranged ? isRangedGuard(kind) || (antiShip && isSiegeGuard(kind)) : isMeleeGuard(kind))) continue;
+        // Against ships alone a ranged guard counts only when it out-guns or out-ranges them (research/41 §3: game 38's Field
+        // Cannons counted against Frigates and died); with land raiders too it still serves against those.
+        if (antiShip && !(Number(threat.land) > 0) && !fightsShips(safe(() => GameInfo.Unit_Stats.lookup(kind.UnitType), null), threat.shipStats ?? [])) continue;
         // Off the map (research/37 §5C): unpacking from an army here this pass (a turn out), or reinforcing an army that stands
         // here (its ETA, and a turn to deploy: a reinforcement arrives packed). Packed in an army otherwise: no guard.
         if (u.isOnMap === false) {
             const up = unpacking.get(unitKey(u.id));
+            const mo = marchOf(u, key);
+            const rt = mo ? null : rapidTurns(u, key, units);
             if (up?.turn === Game.turn && up.key === key) incoming.push({ u, turns: 1 });
+            else if (mo) incoming.push({ u, turns: marchTurns(mo, units) });
+            else if (rt !== null) incoming.push({ u, turns: rt });
             else {
                 const at = reinforcingAt(u, units);
                 if (at && safe(() => GameplayMap.getPlotDistance(at.x, at.y, s.x, s.y), Infinity) <= GUARD_RADIUS) incoming.push({ u, turns: reinforcementTurns(u) + 1 });
@@ -2083,6 +2986,12 @@ export function guardDetail(threat, units = safe(() => Players.get(pid()).Units.
         if (!u.location) continue;
         const wet = afloat(u);
         const g = goals.get(unitKey(u.id));
+        // Packed this pass for a march (the game packs it after the pass): coming with its commander.
+        if (g?.march !== undefined) {
+            const mo = marchOf(u);
+            if (mo?.m.key === key) incoming.push({ u, turns: marchTurns(mo, units) });
+            if (mo) continue;
+        }
         if (g?.guard !== undefined && !g.front) {
             const p = safe(() => guardProgress(u, g), null);
             if (p) {
@@ -2164,7 +3073,7 @@ function wakeUnit(u) {
 }
 
 /** Our melee soldiers at a war front: within STAGE_RADIUS, or sent there and still on their way. */
-function frontGuards(front, units) {
+export function frontGuards(front, units = safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
     const s = front.settlement;
     const key = `${s.x},${s.y}`;
     let n = 0;
@@ -2202,8 +3111,13 @@ function defenceDemands(ctx, units) {
         const h = holderDetail(e, units);
         if (h.present.length + h.incoming.length === 0) out.push({ t: e, key: `${e.settlement.x},${e.settlement.y}`, ranged: false, n: 1, front: false, exposed: true, rank: 8, count: 0 });
     }
+    // The free melee soldiers shared across the fronts of wars (research/42 B1).
+    const warFronts = ctx.fronts.filter((f) => f.atWar).length;
+    const freeMelee = (ctx.supply ?? []).filter((c) => !c.ranged && !c.packed && c.stage && c.atFront === undefined).length;
+    const share = warFronts > 0 ? Math.floor(freeMelee / warFronts) : 0;
+    ctx.frontShare = share;
     for (const f of ctx.fronts) {
-        const n = FRONT_GUARDS - frontGuards(f, units);
+        const n = frontGuardsPosted(f, share) - frontGuards(f, units);
         if (n > 0) out.push({ t: f, key: `${f.settlement.x},${f.settlement.y}`, ranged: false, n, front: true, rank: 10, count: 0 });
     }
     // By rank, then the raiders' number (a stable sort keeps the exposed and the fronts in their own order).
@@ -2248,7 +3162,7 @@ function defenceSupply(units, ctx) {
         const ranged = isRangedGuard(def) || siege;
         if (!ranged && !isMeleeGuard(def)) continue;
         const commander = commanders.find((c) => sameId(c.armyId, u.armyId));
-        if (!commander?.location) continue;
+        if (!commander?.location || marching(commander) || rapid?.ck === unitKey(commander.id)) continue;
         // Its army unpacks this pass (unpackArmies): it comes out next to its commander.
         if (unpacking.get(k)?.turn === Game.turn) continue;
         // On its way to an army as a reinforcement: not packed yet.
@@ -2265,7 +3179,8 @@ function defenceSupply(units, ctx) {
         if (!ranged && !isMeleeGuard(def)) continue;
         if (u.isOnMap === false || u.canMove === false || u.hasMoved === true || !u.location || afloat(u)) continue;
         if ((Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE) continue;
-        const act = u.activityType;
+        // A walk cancelled this pass for the plague (checkWalks) is none: the game shows it stopped only later.
+        const act = ctx.walkCancelled?.has(k) ? A?.NONE : u.activityType;
         if (A && act !== undefined && (act === A.OPERATION || act === A.HEAL)) continue;
         const resting = !!A && act !== undefined && act !== A.NONE && act !== A.AWAKE;
         const g = goals.get(k);
@@ -2285,37 +3200,85 @@ function defenceSupply(units, ctx) {
  * REINFORCE_RADIUS (STAGE_RADIUS on our own land for a front), reached within REINFORCE_MAX_TURNS. Melee: the nearest to
  * the settlement, then to the unit. Ranged: off the centre (a melee unit holds it: research/24 W2), within its range of a
  * raider (research/37 §3B: a post on the far side left every raider out of reach), and of those the furthest from them;
- * with no raider in sight, next to the centre.
+ * with no raider in sight, next to the centre. A ranged (or hurt) soldier never takes a walk of several turns whose first
+ * end-of-turn stop is unsafe (firstStopUnsafe; game 60 T66): it is noted in ctx.unsafeWays.
  */
 function postFor(u, s, ctx, { ranged = false, front = false, holder = false, from = u } = {}) {
     const radius = front ? STAGE_RADIUS : holder ? HOLDER_RADIUS : REINFORCE_RADIUS;
     const raiders = ranged ? hostilesAround(s, THREAT_RADIUS + 1) : [];
     const range = ranged ? Math.max(1, Number(safe(() => GameInfo.Unit_Stats.lookup(GameInfo.Units.lookup(u.type).UnitType)?.Range, 0)) || 2) : 0;
+    const kind = safe(() => GameInfo.Units.lookup(u.type), null);
     const tiles = [];
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, radius), []) ?? []) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-        if (!loc || ctx.stepTo.has(`${loc.x},${loc.y}`) || !roomForSoldier(loc)) continue;
-        // Not on a navigable river either: an embarked soldier cannot fight (research/37 §3C).
-        if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
-        const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
-        if (front ? owner !== pid() : owner !== -1 && owner !== null && owner !== pid()) continue;
+        if (!loc || ctx.stepTo.has(`${loc.x},${loc.y}`) || !roomForSoldier(loc) || !postGround(loc, front)) continue;
         const near = safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, s.x, s.y), 0);
         const far = safe(() => GameplayMap.getPlotDistance(from.location.x, from.location.y, loc.x, loc.y), 0);
         const back = raiders.length > 0 ? Math.min(...raiders.map((h) => safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, h.at.x, h.at.y), 9))) : 0;
         const outOfRange = raiders.length > 0 && back > range ? 1000 : 0;
-        tiles.push({ loc, score: ranged ? outOfRange + (near === 0 ? 500 : 0) + near * 30 - back * 40 + far : near * 100 + far });
+        // Off the centre, within reach of a ship it does not out-gun: last, the fewest ships first (research/41 §3). A melee
+        // unit holds the centre whatever ships do.
+        const wet = !ranged && near === 0 ? 0 : SHIP_POST_PENALTY * shipThreat(loc, kind).length;
+        tiles.push({ loc, score: wet + (ranged ? outOfRange + (near === 0 ? 500 : 0) + near * 30 - back * 40 + far : near * 100 + far) });
     }
     tiles.sort((a, b) => a.score - b.score);
     // A packed member leaves its army next to its commander (a deploy takes its turn) and walks from there.
     const extra = from === u ? 0 : 1;
+    const fragile = ranged || (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE;
     for (const { loc } of tiles.slice(0, REINFORCE_TRIES)) {
-        const walk = pathTurns(from, loc);
-        const turns = walk === null ? null : walk + extra;
+        const p = pathTo(from, loc);
+        const turns = p ? p.turns + extra : null;
         if (turns === null || turns > REINFORCE_MAX_TURNS || startsWar(from, loc) || hazardAt(loc) > 0) continue;
+        if (fragile && p.turns > 1 && firstStopUnsafe(u, kind, p, ctx)) {
+            (ctx.unsafeWays ??= new Set()).add(unitKey(u.id));
+            continue;
+        }
         return { loc, turns };
     }
     return null;
 }
+
+/** Ground a post may stand on (postFor): land, not a navigable river (an embarked soldier cannot fight: research/37 §3C), passable, ours or nobody's (a front's: ours). */
+function postGround(loc, front) {
+    if (onWater(loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) return false;
+    const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+    return front ? owner === pid() : owner === -1 || owner === null || owner === pid();
+}
+
+/**
+ * Has this settlement (a war front's: `front`; an exposed one's holder: `holder`) a post off the plague, its room aside
+ * (postFor's tiles)? A defender bought elsewhere for an infected settlement walks only to a clean post (postFor refuses
+ * hazards): with none, it stands in the city that bought it, and the next turn bought another (the review of game 60's
+ * package: a Warrior bought in Selby for York every turn while the plague lay on every tile within 2, none sent).
+ */
+export function cleanPostNear(s, { front = false, holder = false } = {}) {
+    const radius = front ? STAGE_RADIUS : holder ? HOLDER_RADIUS : REINFORCE_RADIUS;
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, radius), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (loc && postGround(loc, front) && !(hazardAt(loc) > 0)) return true;
+    }
+    return false;
+}
+
+/**
+ * Is the first end-of-turn stop of a soldier's walk (turnStop) unsafe for a ranged or hurt one (core stopUnsafe)? Next to a land
+ * raider, or in reach of WALK.REACH_MIN or more hostile soldiers (ships it does not out-gun too) that it and our soldiers on or
+ * next to that stop do not out-number. Game 60 T66: a Slinger sent as a spare to Тула, 4 turns away, past four raiders, was hit
+ * on its first step (65,12) and killed the next turn.
+ */
+function firstStopUnsafe(u, def, p, ctx) {
+    const stop = turnStop(p);
+    if (!stop) return false;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const land = hostilesAround(stop, REACH_LOOK).filter((h) => h.def?.Domain === "DOMAIN_LAND");
+    const nextToRaider = land.some((h) => dist(stop, h.at) <= 1);
+    const reach = land.filter((h) => dist(stop, h.at) <= reachOf(h)).length + shipThreat(stop, def).length;
+    const ours = (ctx.ourUnits ?? []).filter((s) => !sameId(s.id, u.id) && !s.isCommanderUnit && s.isOnMap !== false && s.location
+        && dist(s.location, stop) <= 1 && isSoldier(safe(() => GameInfo.Units.lookup(s.type), null))).length;
+    return stopUnsafe({ nextToRaider, reach, ours });
+}
+
+const SHIP_POST_PENALTY = 2000; // a post's score for each ship in reach the unit does not out-gun
 
 /**
  * Who goes where (research/36 §4): each settlement's lack, most urgent first, gets the free soldier of that role that
@@ -2337,14 +3300,25 @@ function planDefence(units, ctx) {
             // stands at the settlement in need; a holder is a melee member.
             const armyOk = (c) => !c.packed || (!deployed.has(unitKey(c.packed.id))
                 && (!hostileNear(c.packed.location, ESCAPE_DANGER, ctx) || safe(() => GameplayMap.getPlotDistance(c.packed.location.x, c.packed.location.y, s.x, s.y), 9) <= GUARD_RADIUS));
-            const picks = supply.filter((c) => !ctx.posts.has(c.k) && c.ranged === d.ranged && (!c.siege || d.antiShip) && c.from !== d.key && (!d.front || (c.stage && c.atFront === undefined)) && armyOk(c))
+            // Against ships alone, only a unit that out-guns or out-ranges them (research/41 §3).
+            const gunsOk = (c) => !d.antiShip || Number(d.t.land) > 0 || fightsShips(safe(() => GameInfo.Unit_Stats.lookup(c.def.UnitType), null), d.t.shipStats ?? []);
+            const picks = supply.filter((c) => !ctx.posts.has(c.k) && c.ranged === d.ranged && (!c.siege || d.antiShip) && c.from !== d.key && (!d.front || (c.stage && c.atFront === undefined)) && armyOk(c) && gunsOk(c))
                 .map((c) => ({ c, d: safe(() => GameplayMap.getPlotDistance((c.packed ?? c.u).location.x, (c.packed ?? c.u).location.y, s.x, s.y), Infinity) }))
                 .filter((x) => x.d <= REINFORCE_REACH && !(x.c.atFront === d.key))
                 .sort((a, b) => a.d - b.d).slice(0, REINFORCE_PICKS);
             let best = null;
             for (const { c } of picks) {
+                ctx.unsafeWays?.delete(c.k);
                 const post = postFor(c.u, s, ctx, { ranged: d.ranged, front: d.front, holder: !!d.exposed, from: c.packed ?? c.u });
                 if (post && (!best || post.turns < best.post.turns)) best = { c, post };
+                // Its only ways there stop where raiders reach it (game 60 T66): said in the defence line.
+                else if (!post && ctx.unsafeWays?.has(c.k)) {
+                    const list = (ctx.notSent ??= new Map()).get(d.key) ?? [];
+                    const at = (c.packed ?? c.u).location;
+                    const text = `${c.def?.UnitType ?? "?"} at ${at.x},${at.y} (unsafe way)`;
+                    if (!list.includes(text)) list.push(text);
+                    ctx.notSent.set(d.key, list);
+                }
             }
             // Far, or no way on foot: a reinforcement to our commander's army there, when it comes sooner (research/37 §5C.3).
             const rein = d.exposed ? null : reinforcementFor(d, supply, ctx, best);
@@ -2445,8 +3419,8 @@ export function armyInventory(units = safe(() => Players.get(pid()).Units.getUni
  */
 function unpackArmies(ctx) {
     const out = [];
-    const needs = [...ctx.threats, ...ctx.fronts];
-    if (needs.length === 0) return out;
+    const all = [...ctx.threats, ...ctx.fronts];
+    if (all.length === 0) return out;
     const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
     for (const a of ctx.armies ?? []) {
         const soldiers = a.packed.filter((u) => isSoldier(safe(() => GameInfo.Units.lookup(u.type), null)));
@@ -2454,6 +3428,8 @@ function unpackArmies(ctx) {
         if (soldiers.length === 0 || ctx.ordered.has(ck) || afloat(a.cmdr)) continue;
         // Asked this turn already (the end-of-turn retry reads the army before the game has moved them): not again.
         if (soldiers.some((u) => unpacking.get(unitKey(u.id))?.turn === Game.turn)) continue;
+        // The vanguard's ready army waits packed at a quiet war front (after game 54): it unpacks where raiders are.
+        const needs = rapid?.ck === ck ? ctx.threats : all;
         const near = needs.map((t) => ({ t, d: dist(a.at, t.settlement) })).filter((x) => x.d <= GUARD_RADIUS).sort((x, y) => x.d - y.d)[0];
         if (!near) continue;
         const s = near.t.settlement;
@@ -2561,6 +3537,316 @@ function deployMember(u, def, post) {
     return { key: "DEPLOYED", args: [nameOf(def), post.t.settlement.name] };
 }
 
+// ---- packed marches (research/42 B2, research/41 Phase 3) -----------------------------------------------------------
+
+const PACK_MIN = 2;          // a general packs at least this many soldiers for a march...
+const PACK_SLOW_TURNS = 3;   // ...for a settlement or a front whose posted guards walk this many turns or more...
+const PACK_MAX_TURNS = 8;    // ...when its packed army gets there within this many
+const FORCE_MARCH = "UNITCOMMAND_FORCE_MARCH"; // +3 moves for some of the units' health (ARMY_FORCE_MARCH_MOVEMENT_BONUS)
+const marches = new Map();   // commander key -> { key, at: {x,y}, name, start, members: [unit keys], turns, walk }
+let marchNoted = -1;         // the turn UI.log gave the marches (probe P-A7)
+
+/** The march this unit is packed in (or about to be) toward settlement `key` (any when null): { ck, m } or null. */
+function marchOf(u, key = null) {
+    const k = unitKey(u.id);
+    for (const [ck, m] of marches) if (m.members.includes(k) && (key === null || m.key === key)) return { ck, m };
+    return null;
+}
+
+/** The turns before a march's soldiers stand at its settlement: the commander's way there and a turn to unpack. */
+function marchTurns(mo, units) {
+    const c = (units ?? []).find((x) => unitKey(x.id) === mo.ck);
+    const t = c?.location ? pathTurns(c, mo.m.at) : null;
+    return (t ?? mo.m.turns) + 1;
+}
+
+/** Is this commander marching (its army packed toward a settlement)? */
+const marching = (c) => !!c && marches.has(unitKey(c.id));
+
+/**
+ * A general packs the soldiers going to the same fight and marches with them (research/42 B2; game 53: Китион's
+ * reinforcements came one at a time, 2-6 turns out, while its centre fell in five turns; the user: "commanders are not
+ * packing units"). For a threatened settlement or a front whose posted guards walk PACK_SLOW_TURNS or more, a land commander
+ * not at another fight, with at least PACK_MIN of those soldiers (or free ones) next to it, packs them one by one
+ * (`UNITCOMMAND_ADD_TO_ARMY` on each soldier: canStart with no target lists the commanders' tiles, then {X, Y} of its tile,
+ * as the game's add-to-army mode sends it; never PACK_ARMY, which takes every unit next to it, garrisons too) and marches
+ * there when its own way (one more turn to unpack) is no longer than their walk on average and within PACK_MAX_TURNS. Its
+ * members count as coming with its turns (guardDetail); at the settlement the army unpacks (unpackArmies). A march whose
+ * settlement needs nothing any more unpacks where it stands. UI.log `army: march …` each turn (probe P-A7: the turns a
+ * packed army takes against the walk). Runs after the defence plan, before the unit loop. @returns log entries
+ */
+function packMarches(units, ctx) {
+    const out = [];
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const byKey = new Map(units.map((u) => [unitKey(u.id), u]));
+    const needs = new Map([...ctx.threats, ...ctx.fronts].map((t) => [`${t.settlement.x},${t.settlement.y}`, t]));
+    // Marches under way: on toward their settlement, or unpacked where they stand when it needs nothing any more.
+    for (const [ck, m] of [...marches]) {
+        const c = byKey.get(ck);
+        const packed = m.members.map((k) => byKey.get(k)).filter((u) => u && u.isOnMap === false);
+        if (!c || c.isOnMap === false || !c.location || (packed.length === 0 && Game.turn > m.start)) {
+            marches.delete(ck);
+            continue;
+        }
+        if (ctx.ordered.has(ck)) continue; // unpacking at the settlement this pass (unpackArmies)
+        if (!needs.has(m.key)) {
+            const OP = "UNITCOMMAND_UNPACK_ARMY";
+            const plots = (safe(() => Game.UnitCommands.canStart(c.id, OP, {}, false), null)?.Plots ?? [])
+                .map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter((l) => l && !onWater(l));
+            if (plots.length > 0) {
+                Game.UnitCommands.sendRequest(c.id, OP, { X: plots[0].x, Y: plots[0].y });
+                ctx.ordered.add(ck);
+            }
+            log.info(`army: ${typeOf(c)} at ${where(c.location)} ends its march to ${m.name}: it needs nothing now (${packed.length} unpacked)`);
+            marches.delete(ck);
+            continue;
+        }
+        if (dist(c.location, m.at) <= GUARD_RADIUS || c.canMove === false) continue;
+        wakeUnit(c);
+        // Urgent (a damaged centre, raiders close) with healthy soldiers: Force March, +3 moves for some of their health,
+        // when the game offers it (a promotion's command).
+        const need = needs.get(m.key);
+        if ((need?.damaged || Number(need?.close) > 0) && packed.every((u) => (Number(u.Health?.damage) || 0) < ESCAPE_DAMAGE)
+            && safe(() => Game.UnitCommands.canStart(c.id, FORCE_MARCH, NO_TARGET, false), null)?.Success) {
+            Game.UnitCommands.sendRequest(c.id, FORCE_MARCH, { ...NO_TARGET });
+            log.info(`army: ${typeOf(c)} at ${where(c.location)} force-marches to ${m.name} (${packed.length} packed)`);
+        }
+        if (moveTo(c, m.at)) {
+            ctx.ordered.add(ck);
+            goals.set(ck, { post: `${m.at.x},${m.at.y}`, turn: Game.turn });
+        }
+    }
+    // New marches: the posts of this pass that walk far, grouped by settlement.
+    const slow = new Map();
+    for (const [k, p] of ctx.posts ?? []) {
+        if (p.packed || p.reinforce || p.exposed || !(p.turns >= PACK_SLOW_TURNS)) continue;
+        if (!slow.has(p.key)) slow.set(p.key, { t: p.t, posts: [] });
+        slow.get(p.key).posts.push([k, p]);
+    }
+    for (const [key, need] of slow) {
+        const s = need.t.settlement;
+        for (const c of landCommanders(units)) {
+            const ck = unitKey(c.id);
+            if (marching(c) || ctx.ordered.has(ck) || c.isOnMap === false || !c.location || afloat(c) || c.canMove === false || c.hasMoved === true) continue;
+            if (inCampaign(ck) || inField(ck) || (Number(c.Health?.damage) || 0) >= ESCAPE_DAMAGE) continue;
+            // Not taken from another fight: a general within GUARD_RADIUS of another threatened settlement stays there.
+            if (ctx.threats.some((t) => `${t.settlement.x},${t.settlement.y}` !== key && dist(c.location, t.settlement) <= GUARD_RADIUS)) continue;
+            const army = (ctx.armies ?? []).find((a) => a.cmdr === c);
+            const room = (army?.capacity ?? ARMY_CAPACITY) - (army?.packed.length ?? 0) - (army?.incoming.length ?? 0) - (army?.reserved ?? 0);
+            const beside = (u) => !!u?.location && dist(u.location, c.location) <= 1 && u.isOnMap !== false && !afloat(u) && !ctx.ordered.has(unitKey(u.id));
+            const walkers = need.posts.filter(([k]) => beside(byKey.get(k)));
+            const extra = (ctx.supply ?? []).filter((x) => !x.packed && x.stage && !ctx.posts.has(x.k) && x.atFront === undefined && beside(x.u) && !x.siege);
+            const members = [...walkers.map(([k, p]) => ({ k, u: byKey.get(k), walk: p.turns })), ...extra.map((x) => ({ k: x.k, u: x.u, walk: pathTurns(x.u, s) }))]
+                .filter((x) => x.walk !== null && x.walk !== undefined).slice(0, Math.max(0, room));
+            if (members.length < PACK_MIN) continue;
+            const turns = pathTurns(c, s);
+            if (turns === null || turns > PACK_MAX_TURNS || startsWar(c, s)) continue;
+            const walk = members.reduce((n, x) => n + x.walk, 0) / members.length;
+            if (turns + 1 > walk) continue;
+            const at = safe(() => GameplayMap.getIndexFromXY(c.location.x, c.location.y), -1);
+            const joined = [];
+            for (const x of members) {
+                const r = safe(() => Game.UnitCommands.canStart(x.u.id, "UNITCOMMAND_ADD_TO_ARMY", {}, false), null);
+                if (!(r?.Plots ?? []).includes(at)) continue;
+                wakeUnit(x.u);
+                Game.UnitCommands.sendRequest(x.u.id, "UNITCOMMAND_ADD_TO_ARMY", { X: c.location.x, Y: c.location.y });
+                ctx.ordered.add(x.k);
+                ctx.posts.delete(x.k);
+                restedByUs.delete(x.k);
+                goals.set(x.k, { march: ck, turn: Game.turn });
+                joined.push(x);
+            }
+            if (joined.length === 0) {
+                log.warn(`army: ${typeOf(c)} at ${where(c.location)} could pack none of ${members.length} for ${s.name}: the game offered not its tile (probe P-A6)`);
+                continue;
+            }
+            wakeUnit(c);
+            moveTo(c, s);
+            ctx.ordered.add(ck);
+            goals.set(ck, { post: `${s.x},${s.y}`, turn: Game.turn });
+            marches.set(ck, { key, at: { x: s.x, y: s.y }, name: s.name, start: Game.turn, members: joined.map((x) => x.k), turns, walk });
+            log.info(`army: ${typeOf(c)} at ${where(c.location)} packs ${joined.length} [${joined.map((x) => typeOf(x.u)).join(", ")}] and marches to ${s.name} at ${where(s)}: ${turns} turn(s) packed, +1 to unpack (walking ${walk.toFixed(1)} on average; probe P-A7)`);
+            out.push({ key: "ARMY_MARCH", args: [nameOf(safe(() => GameInfo.Units.lookup(c.type), null)), joined.length, s.name] });
+            break;
+        }
+    }
+    if (marches.size > 0 && marchNoted !== Game.turn) {
+        marchNoted = Game.turn;
+        log.info(`army: marches [${[...marches].map(([ck, m]) => {
+            const c = byKey.get(ck);
+            return `${typeOf(c)} at ${where(c?.location)} -> ${m.name} ${where(m.at)} since T${m.start} (planned ${m.turns}t, walking ${m.walk.toFixed(1)})`;
+        }).join("; ")}]`);
+    }
+    return out;
+}
+
+// ---- the vanguard's packed army and Overrun (after game 54) ----------------------------------------------------------
+
+const RAPID_SIZE = 3;     // soldiers the vanguard keeps packed while a war or raids call for a quick answer...
+const RAPID_DAMAGE = 20;  // ...each hurt less than this...
+const RALLY_TURNS = 3;    // ...walking to it from at most this many turns away
+const OVERRUN = "UNITCOMMAND_ARMY_OVERRUN";
+let rapid = null;         // { ck, turn }: the vanguard with soldiers packed in its army this pass
+
+/** The vanguard: the land commander of that role on the map, or null. */
+function vanguardOf(units, ctx) {
+    return landCommanders(units).find((u) => ctx.commanderRoles?.get(unitKey(u.id)) === "VANGUARD" && u.isOnMap !== false && !!u.location) ?? null;
+}
+
+/** The soldiers packed in this commander's army. */
+function packedSoldiers(c, units) {
+    return (units ?? []).filter((u) => u !== c && !u.isCommanderUnit && u.isOnMap === false && sameId(u.armyId, c.armyId)
+        && isSoldier(safe(() => GameInfo.Units.lookup(u.type), null)));
+}
+
+/** A war at our door, a threatened settlement or raids lately: the vanguard's army stays packed for a quick answer. */
+const rapidCalled = (ctx) => ctx.fronts.some((f) => f.atWar) || ctx.threats.length > 0 || raidedLately();
+
+/**
+ * Notes this pass's packed vanguard (before the defence plan: its army is neither split up nor unpacked at a quiet front),
+ * only while rapidCalled: in peace an army packed at an age's start (Regroup) gives its soldiers as before.
+ */
+function noteRapid(units, ctx) {
+    rapid = null;
+    const v = vanguardOf(units, ctx);
+    if (v && !marching(v) && rapidCalled(ctx) && packedSoldiers(v, units).length > 0) rapid = { ck: unitKey(v.id), turn: Game.turn };
+}
+
+/** Turns before a soldier packed in the vanguard's army stands at settlement `key`, the vanguard's post; null when it is not. */
+function rapidTurns(u, key, units) {
+    if (!rapid || rapid.turn !== Game.turn || goals.get(rapid.ck)?.post !== key) return null;
+    const c = units.find((x) => unitKey(x.id) === rapid.ck);
+    if (!c?.location || !sameId(u.armyId, c.armyId)) return null;
+    const [x, y] = key.split(",").map(Number);
+    if (plotDist(c.location, { x, y }) <= GUARD_RADIUS) return 1;
+    const t = pathTurns(c, { x, y });
+    return t === null ? null : t + 1;
+}
+
+/** A settlement of ours threatened on one of the last GENERAL.RAIDED_TURNS turns (raidHistory). */
+function raidedLately() {
+    const turn = safe(() => Game.turn, -1);
+    return [...raidHistory.values()].some((list) => list.some((x) => turn - x < GENERAL.RAIDED_TURNS && x <= turn));
+}
+
+/**
+ * Force March for an army going to a fight that cannot wait (a damaged centre, raiders close) with every packed soldier
+ * healthy: +3 moves for some of their health, when the game offers it (a promotion's command). @returns true when sent
+ */
+function forceMarchIfUrgent(c, need, units) {
+    const packed = packedSoldiers(c, units);
+    if (packed.length === 0 || !(need?.damaged || Number(need?.close) > 0)) return false;
+    if (packed.some((u) => (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE)) return false;
+    if (!safe(() => Game.UnitCommands.canStart(c.id, FORCE_MARCH, NO_TARGET, false), null)?.Success) return false;
+    Game.UnitCommands.sendRequest(c.id, FORCE_MARCH, { ...NO_TARGET });
+    log.info(`army: ${typeOf(c)} at ${where(c.location)} force-marches to ${need.settlement?.name ?? "?"} (${packed.length} packed)`);
+    return true;
+}
+
+/**
+ * The vanguard keeps a packed army (after game 54; the user: "packing units into commander and moving them that way to move
+ * faster"): while a war is at our door or raids came lately, and it stands at no fight, the free soldiers the defence leaves
+ * (healthy, at no front, on no errand) join its army up to RAPID_SIZE: one next to it at once (UNITCOMMAND_ADD_TO_ARMY: canStart
+ * with no target lists the commanders' tiles, then {X, Y} of its tile), one within RALLY_TURNS walks next to it (goal
+ * `{rally}`). Packed they travel at its speed (Mobility +1, terrain ignored; Force March to an urgent fight), count as coming
+ * to its post (guardDetail), are neither split up by the defence nor unpacked at a quiet front, unpack at a threatened
+ * settlement (unpackArmies) or at a hunt, strike the same turn (the hud's second strike: Initiative lets them move), and
+ * overrun weaker units (commanderAttacks). Runs after the field operations, before the unit loop. @returns log entries
+ */
+function rallyVanguard(units, ctx) {
+    const out = [];
+    const v = vanguardOf(units, ctx);
+    const ck = v ? unitKey(v.id) : null;
+    const active = !!v && !marching(v) && !inCampaign(ck) && !inField(ck) && !ctx.ordered.has(ck) && !afloat(v)
+        && (Number(v.Health?.damage) || 0) < ESCAPE_DAMAGE
+        && rapidCalled(ctx)
+        && !ctx.threats.some((t) => plotDist(v.location, t.settlement) <= GUARD_RADIUS);
+    // Walkers of a rally no longer on are free again.
+    for (const [k, g] of [...goals]) if (g?.rally !== undefined && (!active || g.rally !== ck)) goals.delete(k);
+    if (!active) return out;
+    const army = (ctx.armies ?? []).find((a) => a.cmdr === v);
+    const packed = packedSoldiers(v, units);
+    let room = Math.min(RAPID_SIZE, army?.capacity ?? ARMY_CAPACITY) - packed.length - (army?.incoming.length ?? 0);
+    if (room <= 0) return out;
+    const def = (u) => safe(() => GameInfo.Units.lookup(u.type), null);
+    // Not a soldier the defence posted or its formation moves this pass (planFormations: a rally walker that stopped by a
+    // threatened town is its guard there; the fight simulator's raids60 after game 60's packages merged: the formation's HOLD
+    // onto an empty centre went unsent while the rally walked that Warrior on to the vanguard).
+    const kept = (k) => ctx.ordered.has(k) || ctx.posts.has(k) || !!ctx.formation?.has(k);
+    const walking = units.filter((u) => goals.get(unitKey(u.id))?.rally === ck && u.isOnMap !== false && !!u.location && !kept(unitKey(u.id)));
+    const free = (ctx.supply ?? []).filter((c) => !kept(c.k) && !inField(c.k) && !inCampaign(c.k) && !c.packed && c.stage && !c.siege && c.atFront === undefined
+        && (Number(c.u.Health?.damage) || 0) < RAPID_DAMAGE && !!c.u.location && !afloat(c.u)).map((c) => c.u);
+    const cands = [...walking, ...free.filter((u) => !walking.includes(u))]
+        .map((u) => ({ u, k: unitKey(u.id), melee: isMeleeGuard(def(u)), d: plotDist(u.location, v.location) }))
+        .sort((a, b) => Number(b.melee) - Number(a.melee) || a.d - b.d);
+    const at = safe(() => GameplayMap.getIndexFromXY(v.location.x, v.location.y), -1);
+    const taken = new Set();
+    const joined = [];
+    const sent = [];
+    for (const x of cands) {
+        if (room <= 0) break;
+        if (x.d <= 1) {
+            const r = safe(() => Game.UnitCommands.canStart(x.u.id, "UNITCOMMAND_ADD_TO_ARMY", {}, false), null);
+            if (!(r?.Plots ?? []).includes(at)) continue;
+            wakeUnit(x.u);
+            Game.UnitCommands.sendRequest(x.u.id, "UNITCOMMAND_ADD_TO_ARMY", { X: v.location.x, Y: v.location.y });
+            ctx.ordered.add(x.k);
+            restedByUs.delete(x.k);
+            goals.delete(x.k);
+            joined.push(x);
+            room--;
+            continue;
+        }
+        const spot = campaignSpot(x.u, v.location, 1, taken);
+        const t = spot ? pathTurns(x.u, spot) : null;
+        if (t === null || t > RALLY_TURNS || startsWar(x.u, spot)) continue;
+        wakeUnit(x.u);
+        if (!moveTo(x.u, spot)) continue;
+        taken.add(`${spot.x},${spot.y}`);
+        ctx.ordered.add(x.k);
+        restedByUs.delete(x.k);
+        goals.set(x.k, { rally: ck, turn: Game.turn });
+        sent.push(`${typeOf(x.u)} ${where(x.u.location)} in ${t}t`);
+        room--;
+    }
+    if (joined.length + sent.length > 0) {
+        log.info(`army: the vanguard ${typeOf(v)} at ${where(v.location)} packs [${joined.map((x) => typeOf(x.u)).join(", ")}], called [${sent.join("; ")}]; ${packed.length} packed already (a ready army: after game 54)`);
+    }
+    if (joined.length > 0) out.push({ key: "VANGUARD_PACKS", args: [nameOf(def(v)), joined.length] });
+    if (sent.length > 0) out.push({ key: "VANGUARD_RALLY", args: [nameOf(def(v)), sent.length] });
+    return out;
+}
+
+/**
+ * An army with soldiers packed in it overruns a weaker hostile unit (`UNITCOMMAND_ARMY_OVERRUN`, "Destroy a weaker Unit without
+ * needing to Deploy stacked Units": canStart with no target gives the Plots, then {X, Y}, as interface-mode-army-overrun.js
+ * sends it; after game 54): no soldier risked, a fight for the general's XP. It ends on that tile, so only where no other
+ * hostile land soldier stands next to it and no ship reaches it; the one nearest our settlements first, the most damaged on a
+ * tie. @returns a log entry or null
+ */
+async function overrunRaider(cmdr, def, units) {
+    const packed = packedSoldiers(cmdr, units);
+    if (packed.length === 0) return null;
+    const ours = ourCentres();
+    let best = null;
+    for (const idx of safe(() => Game.UnitCommands.canStart(cmdr.id, OVERRUN, {}, false), null)?.Plots ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || startsWar(cmdr, loc)) continue;
+        const enemy = hostileSeenAt(loc);
+        if (!enemy) continue;
+        if (hostilesAround(loc, 1).some((h) => !same(h.at, loc) && h.def?.Domain === "DOMAIN_LAND") || shipsReaching(loc).length > 0) continue;
+        const d = Math.min(Infinity, ...ours.map((c) => plotDist(c, loc)));
+        const score = -d * 100 + damageAt(loc);
+        if (!best || score > best.score) best = { loc, enemy, score };
+    }
+    if (!best) return null;
+    Game.UnitCommands.sendRequest(cmdr.id, OVERRUN, { X: best.loc.x, Y: best.loc.y });
+    log.info(`army: ${typeOf(cmdr)} at ${where(cmdr.location)} overruns ${typeOf(best.enemy)} at ${where(best.loc)} with ${packed.length} packed`);
+    await untilEvent("Combat", COMBAT_WAIT_MS);
+    const theirs = safe(() => GameInfo.Units.lookup(best.enemy.type), null);
+    return { key: "ARMY_OVERRUN", args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.loc.x, best.loc.y] };
+}
+
 // ---- formations (research/37 Phase 4) ------------------------------------------------------------
 
 /** A tile's terrain defence for a unit standing there: its feature's and its terrain's DefenseModifier (forest +2, marsh -2). */
@@ -2582,6 +3868,8 @@ function resting(u) {
  * where it stands), moved already, on its way or healing, or resting by the player's own order (the autopilot's own
  * fortified soldiers may move: restedByUs).
  */
+const HOLD_HURT_MAX = 70; // a melee unit hurt less than this may still step onto an empty, damaged centre next to it
+
 function formationStill(u, ctx) {
     const k = unitKey(u.id);
     if (ctx.posts.has(k) || ctx.ordered.has(k)) return "ordered";
@@ -2625,7 +3913,32 @@ function planFormations(units, ctx) {
             }
         }
         if (members.length === 0) return;
-        const f = { centre: { x: s.x, y: s.y }, land, targets: hostiles.map((h) => ({ x: h.at.x, y: h.at.y })), sectors: sectorsOf(land, dist), members, dist, defence: terrainDefence };
+        // A hurt melee member next to an empty, damaged centre may step onto it, and only onto it (research/41 §3: in all 11
+        // `formation:` lines of games 37-47 with an empty damaged centre, a hurt melee unit stood next to it).
+        if (t.damaged && !members.some((m) => same(m.at, s)) && roomForSoldier(s)) {
+            for (const m of members) {
+                if (m.role === "melee" && m.still === "hurt" && (Number(m.u.Health?.damage) || 0) < HOLD_HURT_MAX && dist(m.at, s) === 1
+                    && m.u.canMove !== false && m.u.hasMoved !== true && !afloat(m.u)) {
+                    m.still = null;
+                    m.onlyCentre = true;
+                }
+            }
+        }
+        const shipsHere = hostiles.filter((h) => h.def?.Domain === "DOMAIN_SEA").map((h) => safe(() => GameInfo.Unit_Stats.lookup(h.def.UnitType), null)).filter(Boolean);
+        const defs = new Map(members.map((m) => [m.key, m.def]));
+        const threatMemo = new Map();
+        // Ships in reach of a tile that this member (or the commander: its key is not a member's) does not out-gun.
+        const shipCount = (k, loc) => {
+            const memo = `${k}|${loc.x},${loc.y}`;
+            if (!threatMemo.has(memo)) threatMemo.set(memo, shipThreat(loc, defs.get(k) ?? null).length);
+            return threatMemo.get(memo);
+        };
+        const f = {
+            centre: { x: s.x, y: s.y }, damaged: !!t.damaged, land, targets: hostiles.map((h) => ({ x: h.at.x, y: h.at.y, ship: h.def?.Domain === "DOMAIN_SEA" })),
+            sectors: sectorsOf(land, dist), members, dist, defence: terrainDefence,
+            outGuns: (k) => fightsShips(safe(() => GameInfo.Unit_Stats.lookup(defs.get(k)?.UnitType), null), shipsHere),
+            shipThreat: hostileShips().length > 0 ? shipCount : null,
+        };
         // Free tiles a soldier may stand on and still guard this settlement (its nearest threatened one, the first listed
         // on a tie, as guardDetail counts it).
         const tiles = [];
@@ -2662,6 +3975,100 @@ function planFormations(units, ctx) {
     });
 }
 
+const ROTATE_DAMAGE = 40; // a formation member hurt this much swaps out for a fresh soldier (research/41 Phase 4)...
+const ROTATE_FRESH = 20;  // ...one hurt less than this
+const ROTATE_MAX = 3;     // swaps a pass
+
+/**
+ * Hurt soldiers swap out at a threatened settlement (research/41 Phase 4, built after game 54; the user, 21 October: "hurt
+ * units swap out"): a formation member hurt ROTATE_DAMAGE or more gives its tile to a free soldier of its role hurt less than
+ * ROTATE_FRESH. One next to it swaps places with it (UNITOPERATION_SWAP_UNITS {X, Y}, as the game's own move onto our unit
+ * sends it: world-input.js); else the hurt one first withdraws to a tile it reaches out of every hostile unit's reach (or into
+ * one of our centres), and the fresh one takes its tile in the same pass. The centre's holder swaps only for a fresh melee
+ * unit taking the centre. With no fresh soldier in reach the hurt one stays (the escape still takes it in danger). Game 54:
+ * 57 `formation:` stays were "hurt" while free soldiers stood within reach. Fills ctx.swaps. @returns log entries
+ */
+function rotateFront(units, ctx) {
+    const out = [];
+    ctx.swaps = new Map();
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const NONE = globalThis.UnitOperationMoveModifiers?.NONE ?? 0;
+    for (const [key, form] of ctx.formations ?? []) {
+        for (const m of form.f.members) {
+            if (out.length >= ROTATE_MAX) return out;
+            const u = m.u;
+            // A member on the plague leaves it by itself (leaveHazard), and no fresh soldier is swapped onto it (game 60:
+            // Астрахань's formation listed its Spearman and Slinger, hurt 65 and 53, on infected tiles; a swap bypasses
+            // moveTo's hazard guard).
+            if (hazardAt(m.at) > 0) {
+                m.still = "plague";
+                continue;
+            }
+            if ((Number(u.Health?.damage) || 0) < ROTATE_DAMAGE || ctx.ordered.has(m.key) || ctx.formation.has(m.key)) continue;
+            if (u.canMove === false || u.hasMoved === true || afloat(u) || resting(u) && !restedByUs.has(m.key)) continue;
+            const melee = m.role === "melee";
+            const fresh = (ctx.supply ?? [])
+                .filter((c) => !ctx.posts.has(c.k) && !ctx.ordered.has(c.k) && !c.packed && c.stage && !!c.ranged === !melee && !c.siege
+                    && (Number(c.u.Health?.damage) || 0) < ROTATE_FRESH && !!c.u.location && !(hazardAt(c.u.location) > 0))
+                .map((c) => ({ c, d: dist(c.u.location, m.at) }))
+                .filter((x) => x.d <= REINFORCE_RADIUS + 1)
+                .sort((a, b) => a.d - b.d);
+            for (const { c, d } of fresh.slice(0, REINFORCE_PICKS)) {
+                const name = (x) => safe(() => GameInfo.Units.lookup(x.type)?.UnitType, "?");
+                let how = null;
+                // Next to it: the two change places in one order.
+                const args = { X: m.at.x, Y: m.at.y, Modifiers: NONE };
+                if (d === 1 && safe(() => Game.UnitOperations.canStart(c.u.id, "UNITOPERATION_SWAP_UNITS", args, false), null)?.Success) {
+                    wakeUnit(u);
+                    wakeUnit(c.u);
+                    Game.UnitOperations.sendRequest(c.u.id, "UNITOPERATION_SWAP_UNITS", args);
+                    how = `${name(u)} ${where(m.at)} <-> ${name(c.u)} ${where(c.u.location)} (swapped)`;
+                } else {
+                    const t = pathTurns(c.u, m.at);
+                    if (t === null || t > 1 || startsWar(c.u, m.at)) continue;
+                    const back = withdrawTile(u, m.def, ctx, m.at);
+                    if (!back) continue;
+                    wakeUnit(u);
+                    if (!moveTo(u, back)) continue;
+                    ctx.stepTo.add(`${back.x},${back.y}`);
+                    wakeUnit(c.u);
+                    moveTo(c.u, m.at);
+                    how = `${name(u)} ${where(m.at)} -> ${where(back)}; ${name(c.u)} ${where(c.u.location)} -> ${where(m.at)}`;
+                }
+                ctx.ordered.add(m.key);
+                ctx.ordered.add(c.k);
+                restedByUs.delete(m.key);
+                restedByUs.delete(c.k);
+                ctx.posts.set(c.k, { key, loc: m.at, turns: 1, rotate: true, unit: c.def?.UnitType ?? "?", at: { x: c.u.location.x, y: c.u.location.y }, sent: true });
+                const list = ctx.swaps.get(key) ?? [];
+                list.push(how);
+                ctx.swaps.set(key, list);
+                out.push({ key: "FORMATION_SWAP", args: [nameOf(m.def), nameOf(c.def), form.name] });
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+/** The tile a hurt soldier withdraws to this turn: out of every hostile unit's and ship's reach, else one of our centres with room; the nearest. */
+function withdrawTile(u, def, ctx, from) {
+    let best = null;
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(from.x, from.y, 2), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || same(loc, from) || ctx.stepTo.has(`${loc.x},${loc.y}`) || !roomFor(def, loc) || onWater(loc) || hazardAt(loc) > 0) continue;
+        if (safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
+        const out = hostilesInReach(loc).length + shipsReaching(loc).length === 0;
+        const centre = settlementAt(loc) && districtHolds(loc);
+        if (!out && !centre) continue;
+        const t = pathTurns(u, loc);
+        if (t === null || t > 1 || startsWar(u, loc)) continue;
+        const score = (out ? 0 : 10) + safe(() => GameplayMap.getPlotDistance(from.x, from.y, loc.x, loc.y), 9);
+        if (!best || score < best.score) best = { loc, score };
+    }
+    return best?.loc ?? null;
+}
+
 /** A soldier's move in its settlement's formation, woken first when the autopilot had fortified it. @returns a log entry or null */
 function formMove(u, def, ctx) {
     const k = unitKey(u.id);
@@ -2676,9 +4083,10 @@ function formMove(u, def, ctx) {
 
 /**
  * A land commander at a threatened settlement (postCommander): the tile within GUARD_RADIUS where its radius (1, +1 with
- * Merit) covers the most of the formation's soldiers (their tiles after this pass's moves), never next to a land raider,
- * on our land or nobody's, with room for a commander (a soldier may share it), reached this turn; it stays put unless
- * that covers FORM.MIN_GAIN more. @returns a log entry or null (it stays: the skip step skips its turn)
+ * Merit) covers the most of the formation's soldiers (their tiles after this pass's moves), never next to a land raider
+ * unless under a healthy soldier of ours (research/42 A2: in the front line, where the fights are), on our land or
+ * nobody's, with room for a commander (a soldier may share it), reached this turn; it stays put unless that covers
+ * FORM.COMMANDER_GAIN more. @returns a log entry or null (it stays: the skip step skips its turn)
  */
 function formCommander(u, def, form, ctx) {
     const s = form.f.centre;
@@ -2701,7 +4109,33 @@ function formCommander(u, def, form, ctx) {
     // Moved in its formation lately: it stays (game 38: three moves on three turns in a row, the last for +20).
     const last = commanderMoved.get(unitKey(u.id));
     const held = last !== undefined && Game.turn - last < FORM.COMMANDER_HOLD && Game.turn >= last;
-    const pick = held ? null : commanderTile(form.f, { at: { x: u.location.x, y: u.location.y }, radius }, [...form.at.values()], tiles, reach);
+    // The soldiers about to fight (next to a land raider, or a ranged one with a target in range): its XP comes from their
+    // fights (research/41 §4D).
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const fighters = [...form.at.entries()].filter(([k, loc]) => {
+        const m = form.f.members.find((x) => x.key === k);
+        return !!m && (form.f.land.some((h) => dist(loc, h) === 1) || (m.role === "ranged" && form.f.targets.some((h) => dist(loc, h) <= m.range)));
+    }).map(([, loc]) => loc);
+    // A tile a healthy soldier of ours holds after this pass's moves: the commander stands under it (research/42 A2). Not
+    // under a hurt one off the garrison: it withdraws from raiders near in this same pass (defend's stepAway; the fight
+    // simulator's raids60 scene: the general went under a Warrior with 17 damage that withdrew, and an Archer caught it
+    // alone, in 4 of 10 seeds).
+    const units = ctx.ourUnits ?? [];
+    const stays = (s) => {
+        const damage = Number(s.Health?.damage) || 0;
+        return damage === 0 || (damage < SHIELD_DAMAGE && !!ctx.garrison?.has(unitKey(s.id)));
+    };
+    const healthy = (k) => {
+        const s = units.find((x) => unitKey(x.id) === k);
+        return !!s && stays(s);
+    };
+    const shielded = (loc) => [...form.at.entries()].some(([k, at]) => same(at, loc) && healthy(k))
+        || units.some((s) => s.location && same(s.location, loc) && !form.at.has(unitKey(s.id)) && shieldAt(loc, [s]) && stays(s));
+    // Only where it may stand (commanderSafeAt, the rule its escape and its walk share): under such a soldier, on a centre that
+    // holds, else out of every hostile unit's reach. Before, a tile merely not next to a land raider would do, and an Archer
+    // two tiles off caught it there (raids60).
+    const safeTiles = tiles.filter((t) => shielded(t) || commanderSafeAt(t, [], ctx));
+    const pick = held ? null : commanderTile(form.f, { at: { x: u.location.x, y: u.location.y }, radius, key: unitKey(u.id) }, [...form.at.values()], safeTiles, reach, FORM.COMMANDER_GAIN, fighters, shielded);
     form.commander = { unit: def.UnitType, at: { x: u.location.x, y: u.location.y }, to: pick?.to ?? null, gain: pick?.gain ?? 0 };
     const stand = pick?.to ?? u.location;
     taken.add(`${stand.x},${stand.y}`);
@@ -2725,7 +4159,7 @@ function logFormations(ctx) {
         const moves = [...ctx.formation.values()].filter((m) => m.key === key);
         const moved = new Set([...ctx.formation.entries()].filter(([, m]) => m.key === key).map(([k]) => k));
         const holder = f.members.find((m) => m.role === "melee" && same(m.at, f.centre));
-        const stay = f.members.filter((m) => !moved.has(m.key)).map((m) => `${m.def?.UnitType ?? "?"} at ${at(m.at)} (${same(m.at, f.centre) ? "on the centre" : m.still ?? "no better post"})`);
+        const stay = f.members.filter((m) => !moved.has(m.key)).map((m) => `${m.def?.UnitType ?? "?"} at ${at(m.at)} (${m.still === "plague" ? "plague" : same(m.at, f.centre) ? "on the centre" : m.still ?? "no better post"})`);
         const c = form.commander;
         const parts = [
             `sectors ${f.sectors.length} [${f.sectors.map((sec) => `${sec.length} near ${at(sec[0])}`).join("; ")}]${f.targets.length > f.land.length ? `, ships ${f.targets.length - f.land.length}` : ""}`,
@@ -2734,6 +4168,8 @@ function logFormations(ctx) {
             `stay [${stay.join("; ")}]`,
         ];
         if (c) parts.push(`commander ${c.unit} at ${at(c.at)}${c.to ? ` -> ${at(c.to)} +${Math.round(c.gain)}${c.sent ? "" : " NOT SENT"}` : c.held ? " stays (moved lately)" : " stays"}`);
+        const swaps = ctx.swaps?.get(key) ?? [];
+        if (swaps.length > 0) parts.push(`swaps [${swaps.join("; ")}]`);
         log.info(`formation: ${form.name}: ${parts.join("; ")}; ${form.tiles} free tile(s)`);
     }
 }
@@ -2753,7 +4189,7 @@ function logDefence(ctx, units) {
         if (defenceNoted.get(key) === Game.turn) continue;
         defenceNoted.set(key, Game.turn);
         const sent = [...ctx.posts.values()].filter((p) => p.key === key)
-            .map((p) => `${p.unit} from ${p.at.x},${p.at.y} in ${p.turns}t${p.resting ? " (woken)" : ""}${p.packed ? " (from an army)" : ""}${p.reinforce ? " (reinforcing the army there)" : ""}${p.from ? ` (spare at ${p.from})` : ""}${p.sent ? "" : " NOT SENT"}`);
+            .map((p) => `${p.unit} from ${p.at.x},${p.at.y} in ${p.turns}t${p.resting ? " (woken)" : ""}${p.packed ? " (from an army)" : ""}${p.reinforce ? " (reinforcing the army there)" : ""}${p.from ? ` (spare at ${p.from})` : ""}${p.rotate ? " (swapping in for a hurt one)" : ""}${p.sent ? "" : " NOT SENT"}`);
         const parts = [];
         if (ctx.threats.includes(t)) {
             const m = guardDetail(t, units, ctx.threats);
@@ -2771,8 +4207,10 @@ function logDefence(ctx, units) {
             const h = holderDetail(t, units);
             const v = t.village ?? {};
             parts.push(`exposed (${safe(() => independentNameOf(v.id), null) ?? `village ${v.id ?? "?"}`} at ${t.d ?? "?"} tiles): holder ${h.present.length} + ${h.incoming.length} coming [${list(h)}]`);
-        } else parts.push(`war front (${t.leader ?? "?"}): melee ${frontGuards(t, units)} of ${FRONT_GUARDS}`);
+        } else parts.push(`war front (${t.leader ?? "?"}${t.army ? `, ${t.army} of their soldiers near${Number.isFinite(t.seen) && t.seen !== t.army ? ` lately, ${t.seen} now` : ""}` : ""}${t.atWar ? ", at war" : ""}): melee ${frontGuards(t, units)} of ${frontGuardsPosted(t, ctx.frontShare)}`);
         parts.push(`sent [${sent.join("; ")}]`);
+        const notSent = ctx.notSent?.get(key) ?? [];
+        if (notSent.length > 0) parts.push(`not sent [${notSent.join("; ")}]`);
         log.info(`defence: ${s.name}: ${parts.join("; ")}; ${free} free soldier(s) left`);
     }
 }
@@ -2804,7 +4242,9 @@ export function promoteUnits() {
     const out = [];
     const PROMOTE = globalThis.UnitCommandTypes?.PROMOTE;
     if (PROMOTE === undefined) return out;
-    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+    const all = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
+    let roles = null; // the generals' roles (research/41 Phase 2), read once
+    for (const u of all) {
         const exp = u.Experience;
         if (!exp?.canPromote) continue;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
@@ -2818,13 +4258,15 @@ export function promoteUnits() {
         // Our order (PROMOTION_PREFERENCE), the others in the game's order; commendations after promotions (they are a
         // separate pool: both are spent, one a pass).
         const isCommendation = (p) => { const d = safe(() => GameInfo.UnitPromotions.lookup(p), null); return d?.Commendation === true || d?.Commendation === "true"; };
-        // A campaign's commander (research/37 §9B) takes the mobile order (Initiative, Mobility, Regiments) unless it is a
-        // veteran defender already (core commanderProfile).
-        const discipline = new Map(options.map((o) => [o.promotion, o.discipline]));
-        const has = (p) => discipline.has(p) && !!safe(() => exp.hasPromotion(discipline.get(p), p), false);
-        const prefs = u.isCommanderUnit && commanderProfile(has, { leads: inCampaign(unitKey(u.id)) }) === "MOBILE"
-            ? [...MOBILE_PROMOTIONS, ...PROMOTION_PREFERENCE.filter((p) => !MOBILE_PROMOTIONS.includes(p))] : PROMOTION_PREFERENCE;
-        const rank = (o, i) => (isCommendation(o.promotion) ? 100000 : 0) + (prefs.includes(o.promotion) ? prefs.indexOf(o.promotion) : 1000 + i);
+        // A land commander takes its role's order (research/41 Phase 2): the vanguard Mobility, Initiative, Quartermaster,
+        // Regiments and Merit first; the bastion the defensive order (a campaign's leader is the vanguard unless a veteran
+        // defender: commanderRoles).
+        const role = u.isCommanderUnit && isLandCommander(def) ? (roles ??= commanderRoles(all)).get(unitKey(u.id)) ?? "BASTION" : null;
+        const prefs = role ? promotionOrder(role, PROMOTION_PREFERENCE) : PROMOTION_PREFERENCE;
+        const commendations = role ? commendationOrder(role) : PROMOTION_PREFERENCE;
+        const rank = (o, i) => (isCommendation(o.promotion)
+            ? 100000 + (commendations.includes(o.promotion) ? commendations.indexOf(o.promotion) : 1000 + i)
+            : (prefs.includes(o.promotion) ? prefs.indexOf(o.promotion) : 1000 + i));
         const ordered = options.map((o, i) => ({ o, r: rank(o, i) })).sort((a, b) => a.r - b.r).map((x) => x.o);
         for (const o of ordered) {
             const promo = safe(() => GameInfo.UnitPromotions.lookup(o.promotion), null);
@@ -2931,11 +4373,11 @@ function campaignTile(loc, u = null) {
  * The staging area: a free land tile CAMPAIGN.STAGE_DIST from the target's centre, with no hostile soldier next to it,
  * nearest our own settlements (our land first, then nobody's). @returns { x, y } or null
  */
-function stagingTile(t) {
+function stagingTile(t, dist = CAMPAIGN.STAGE_DIST) {
     const ours = ourCentres();
     let best = null;
-    for (const loc of tilesAt(t, CAMPAIGN.STAGE_DIST)) {
-        if (plotDist(loc, t) !== CAMPAIGN.STAGE_DIST || !campaignTile(loc) || hostilesAround(loc, 1).length > 0) continue;
+    for (const loc of tilesAt(t, dist)) {
+        if (plotDist(loc, t) !== dist || !campaignTile(loc) || hostilesAround(loc, 1).length > 0) continue;
         const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
         const home = Math.min(Infinity, ...ours.map((c) => plotDist(c, loc)));
         const score = home * 10 + (owner === pid() ? 0 : owner === -1 || owner === null ? 3 : 6);
@@ -2954,14 +4396,21 @@ function enemiesNear(t) {
     return { n: h.length, best: Math.max(0, ...h.map((x) => unitStrength(x.def))) };
 }
 
-/** Our settlements are safe enough to send soldiers away: no centre damaged, every threatened one guarded or guards sent. */
+/**
+ * Our settlements are safe enough to send soldiers away: every threatened one guarded or guards sent (a damaged centre too:
+ * the defence plan sends the free soldiers there first, and an operation takes only those it left free). Game 53
+ * (research/42 B4): a damaged centre anywhere blocked everything, so Китион was never retaken (`a settlement of ours needs
+ * its soldiers`) while 15-26 soldiers stood free. Guards on their way count when they arrive within guardDeadline + 1 (W3,
+ * game 60: Самара's «melee 1 + 2 coming of 3» kept every hunt home A82-A91; the operations' review runs before the defence
+ * plan, when this pass's posts are none yet).
+ */
 function homeUnsafe(units, ctx) {
     for (const t of ctx.threats) {
-        if (t.damaged) return true;
         const key = `${t.settlement.x},${t.settlement.y}`;
-        const present = safe(() => guardDetail(t, units, ctx.threats).present.length, 0);
-        const sent = [...(ctx.posts?.values() ?? [])].filter((p) => p.key === key && !p.ranged).length;
-        if (present + sent < guardsWanted(t)) return true;
+        const d = safe(() => guardDetail(t, units, ctx.threats), null) ?? { present: [], incoming: [] };
+        const counted = new Set([...d.present, ...d.incoming.filter((x) => x.turns <= guardDeadline(t) + 1).map((x) => x.u)].map((u) => unitKey(u.id)));
+        const sent = [...(ctx.posts?.entries() ?? [])].filter(([k, p]) => p.key === key && !p.ranged && !counted.has(k)).length;
+        if (counted.size + sent < guardsWanted(t)) return true;
     }
     return false;
 }
@@ -3148,7 +4597,8 @@ function moveCampaign(units, ctx) {
         if (!def || (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE || u.canMove === false || u.hasMoved === true) continue;
         if (A && u.activityType === A.HEAL) continue;
         if (c.stage === "GATHER") {
-            if (plotDist(u.location, c.staging) <= CAMPAIGN.NEAR_STAGE) continue;
+            // Gathered, it waits there; not on the plague (the unit loop leaves a member to its campaign: game 60).
+            if (plotDist(u.location, c.staging) <= CAMPAIGN.NEAR_STAGE && !(hazardAt(u.location) > 0)) continue;
             const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
             if (A && u.activityType === A.OPERATION && dest && plotDist(dest, c.staging) <= 1) continue;
             const loc = campaignSpot(u, c.staging, 1, taken);
@@ -3338,6 +4788,1058 @@ export function keepRetaken() {
     return out;
 }
 
+// ---- field operations: village hunts and the training war (research/41 §6-§7) -----------------------------------------
+
+// One at a time, beside a campaign (which comes first): { kind: "HUNT" | "WAR", key, target: { x, y, name }, enemy (its
+// player), started, stage: "GATHER" | "FIGHT", staging, members: Set of unit keys, commander, progressTurn, kills, lost,
+// enemyCount, reason, xpStart, levelStart, xpTurn, yieldsStart }
+let fieldOp = null;
+const fieldRetry = new Map();   // target "x,y" -> the turn it may be tried again
+let fieldNoted = -1;            // the turn UI.log described the operation, or why none started
+let warPlan = null;             // { enemy, turn }: a training war declared (choices), its army gathers from the next pass
+let fieldReadiness = null;      // { turn, free, melee, commander }: what the defence leaves free (the training war's readiness)
+
+function resetFieldOps() {
+    fieldOp = null;
+    fieldRetry.clear();
+    fieldNoted = -1;
+    warPlan = null;
+    fieldReadiness = null;
+}
+
+/** The running field operation, a copy (the hud, choices, tests). */
+export function fieldOpState() {
+    return fieldOp ? { ...fieldOp, members: [...fieldOp.members] } : null;
+}
+
+/** The independent we hunt now (befriending leaves it alone), or null. */
+export const huntedIndependent = () => (fieldOp?.kind === "HUNT" ? fieldOp.enemy : null);
+
+/** The leader of our training war, declared or under way, or null (peace waits while it runs). */
+export const trainingWarEnemy = () => (fieldOp?.kind === "WAR" ? fieldOp.enemy : warPlan?.enemy ?? null);
+
+/** A training war declared on this leader this turn (choices): its army gathers from the next pass. */
+export function planTrainingWar(enemy) {
+    warPlan = { enemy, turn: Game.turn };
+}
+
+/** The soldiers the defence left free at the last unit step, and whether a land commander was free (the war's readiness). */
+export const readinessForWar = () => (fieldReadiness?.turn === Game.turn ? fieldReadiness : null);
+
+const inField = (k) => !!fieldOp && (fieldOp.members.has(k) || fieldOp.commander === k);
+/** An operation's name in UI.log. */
+const fieldKindName = (op) => (op.kind === "HUNT" ? "hunt" : op.kind === "RAIDERS" ? "raiders" : "training war");
+const FIELD_RULES = { HUNT, WAR: TRAINING, RAIDERS: RAIDER };
+
+/**
+ * Soldiers of `owner` we see on the land within `r` of a tile: { n, best (melee strength), tiles: [{ x, y, id }] }; `commanders`:
+ * its land commanders too (a raider hunt's targets, M2).
+ */
+function soldiersOf(owner, loc, r, { commanders = false } = {}) {
+    const tiles = [];
+    let best = 0;
+    for (const at of tilesAt(loc, r)) {
+        // Only those we see now (unitsSeenAt: game 60, SCM-2); its tiles are targets.
+        for (const { unit } of unitsSeenAt(at.x, at.y, { remembered: false })) {
+            const def = unit ? safe(() => GameInfo.Units.lookup(unit.type), null) : null;
+            const commander = commanders && def?.FormationClass === "FORMATION_CLASS_COMMAND";
+            if (!unit || unit.owner !== owner || !(isSoldier(def) || commander) || def.Domain !== "DOMAIN_LAND") continue;
+            tiles.push({ x: at.x, y: at.y, id: unit.id });
+            best = Math.max(best, unitStrength(def));
+        }
+    }
+    return { n: tiles.length, best, tiles };
+}
+
+const REL_NAMES = ["HOSTILE", "UNFRIENDLY", "NEUTRAL", "FRIENDLY", "HELPFUL"];
+/** Our relationship with a leader by name ("HOSTILE".."HELPFUL"), or null. */
+function relationName(id) {
+    const R = globalThis.DiplomacyPlayerRelationships ?? {};
+    const rel = safe(() => Players.get(pid()).Diplomacy.getRelationshipEnum(id), null);
+    return REL_NAMES.find((n) => R[`PLAYER_RELATIONSHIP_${n}`] === rel) ?? null;
+}
+
+/**
+ * The villages we will not befriend (core huntReason; the user, 21 October), seen, within HUNT.REACH of our settlements,
+ * the nearest first: a crisis encampment, one another leader befriends (not one already Unfriendly or Hostile with us),
+ * any past half the age, or one whose befriending our Influence does not pay for within HUNT.SAVE_TURNS turns. Never one
+ * we befriend, never a city-state. @returns [{ x, y, id, name, reason, d }]
+ */
+function huntTargets() {
+    const ours = ourCentres();
+    const GIVE = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN;
+    const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
+    const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
+    const me = safe(() => Players.get(pid()), null);
+    const influence = Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+    const income = Number(safe(() => me.Stats.getNetYield(YieldTypes.YIELD_DIPLOMACY), 0)) || 0;
+    const apm = Game.AgeProgressManager;
+    const max = Number(safe(() => apm.getMaxAgeProgressionPoints(), 0)) || 0;
+    const ageShare = max > 0 ? (Number(safe(() => apm.getCurrentAgeProgressionPoints(), 0)) || 0) / max : 0;
+    const out = [];
+    for (const v of safe(() => villagesOf(pid()), []) ?? []) {
+        if (v.friendly) continue;
+        const p = safe(() => Players.get(v.id), null);
+        if (!p || p.isMinor) continue;
+        const d = Math.min(Infinity, ...ours.map((c) => plotDist(c, v)));
+        if (d > HUNT.REACH) continue;
+        const gives = (safe(() => Game.Diplomacy.getPlayerEvents(v.id), []) ?? []).filter((a) => GIVE !== undefined && a.actionType === GIVE);
+        const project = GIVE === undefined ? null : (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), v.id, T, G, -1, T), []) ?? []).find((pr) => pr.actionType === GIVE);
+        const target = (project?.targetList1 ?? []).find((t) => t?.targetID === v.id) ?? project?.targetList1?.[0];
+        const reason = huntReason({
+            ours: gives.some((a) => a.initialPlayer === pid()),
+            others: gives.filter((a) => a.initialPlayer !== pid()).map((a) => relationName(a.initialPlayer) ?? "NEUTRAL"),
+            crisis: v.type === "IMPROVEMENT_ENCAMPMENT", ageShare, influence, income, cost: Number(target?.costYieldD) || 0,
+        });
+        if (!reason) continue;
+        out.push({ x: v.x, y: v.y, id: v.id, name: safe(() => independentNameOf(v.id), null) ?? `village ${v.id}`, reason, d });
+    }
+    return out.sort((a, b) => a.d - b.d);
+}
+
+const HOME_DAMAGE_SHARE = 0.5; // a centre hit only by the hunted owner's raiders keeps a hunt going while it keeps this share
+
+/**
+ * Our settlements need their soldiers: a centre damaged, or a threatened settlement short of guards, raiders of anyone but
+ * `ignore` (the village we hunt, the leader of our training war: their raids are the fight we went for). Ships alone do not
+ * call them home while the centre holds: no land soldier answers them (root CLAUDE.md gotcha 78), and game 58's hunt of
+ * Керманцы ended after a turn of fighting for one galley at Хоалы, 11 tiles away. A centre damaged by `ignore` alone does
+ * not either while it keeps HOME_DAMAGE_SHARE of its health (W3, game 60: Самара at 171/200 behind its walls, hit by Шэнле's
+ * own raiders, kept every hunt of Шэнле home A82-A91).
+ */
+function homeUnsafeFor(units, ctx, ignore) {
+    const others = ctx.threats.filter((t) => {
+        if (!(t.damaged || Number(t.land) > 0)) return false;
+        const owners = t.owners ?? [];
+        const onlyIgnored = ignore !== null && ignore !== undefined && owners.length > 0 && owners.every((o) => o?.id === ignore);
+        if (!onlyIgnored) return true;
+        return !!t.damaged && centreShare(t.settlement) < HOME_DAMAGE_SHARE;
+    });
+    return homeUnsafe(units, { ...ctx, threats: others });
+}
+
+/** Free soldiers for an operation: the defence's supply (not posted, not packed, not at a front, healthy) reaching `at` in time. */
+function freeSoldiers(ctx, at, turns) {
+    return (ctx.supply ?? []).filter((c) => !ctx.posts.has(c.k) && !c.packed && c.stage && c.atFront === undefined && c.from === undefined
+        && (Number(c.u.Health?.damage) || 0) < ESCAPE_DAMAGE)
+        .map((c) => ({ ...c, turns: at ? pathTurns(c.u, at) : 0 }))
+        .filter((c) => c.turns !== null && c.turns <= turns)
+        .sort((a, b) => a.turns - b.turns);
+}
+
+/** The members picked: melee first, then shooters (siege last: no districts here), up to MAX_MEMBERS. */
+function pickMembers(free, rules) {
+    const shooters = free.filter((c) => c.ranged && !c.siege);
+    const melee = free.filter((c) => !c.ranged).slice(0, rules.MAX_MEMBERS - Math.min(2, shooters.length));
+    return { melee, picked: [...melee, ...shooters.slice(0, Math.max(0, rules.MAX_MEMBERS - melee.length))] };
+}
+
+/**
+ * A land commander for an operation: the vanguard first, not posted at a threatened settlement (unless `postOk` says that
+ * post's fight is this operation's: a raider hunt, M1), reaching `at` in time. Against `independent`s one still below
+ * EXPERIENCE_MAX_BARB_LEVEL first (W6, game 60: from level 2 an independent's fight gave 1 XP). @returns { u, turns, post } or null
+ */
+function fieldCommander(units, ctx, at, turns, { independent = false, postOk = null } = {}) {
+    const threatened = new Set(ctx.threats.map((x) => `${x.settlement.x},${x.settlement.y}`));
+    const capped = (u) => independent && !belowIndependentCap(xpOf(u).level, xpParams());
+    return units.filter((u) => u.isCommanderUnit && u.isOnMap !== false && u.location && isLandCommander(safe(() => GameInfo.Units.lookup(u.type), null))
+        && !ctx.ordered.has(unitKey(u.id)) && !inCampaign(unitKey(u.id)))
+        .map((u) => ({ u, post: goals.get(unitKey(u.id))?.post ?? null }))
+        .filter((x) => !threatened.has(x.post ?? "") || !!postOk?.(x.post))
+        .map((x) => ({ ...x, turns: pathTurns(x.u, at), vanguard: ctx.commanderRoles?.get(unitKey(x.u.id)) === "VANGUARD" }))
+        .filter((x) => x.turns !== null && x.turns <= turns)
+        .sort((a, b) => Number(capped(a.u)) - Number(capped(b.u)) || Number(b.vanguard) - Number(a.vanguard) || a.turns - b.turns)[0] ?? null;
+}
+
+let xpParamCache = null;
+/** The game's EXPERIENCE_* parameters (GameInfo.GlobalParameters), core XP_DEFAULTS where the game has none. */
+function xpParams() {
+    const source = GameInfo.GlobalParameters;
+    if (xpParamCache?.source === source) return xpParamCache.params;
+    const params = { ...XP_DEFAULTS };
+    for (const r of source?.filter((x) => String(x.Name).startsWith("EXPERIENCE_")) ?? []) {
+        const v = Number(r.Value);
+        if (Number.isFinite(v)) params[r.Name] = v;
+    }
+    xpParamCache = { source, params };
+    return params;
+}
+
+const xpOf = (u) => ({ level: Number(safe(() => u.Experience?.getLevel, 0)) || 0, xp: Number(safe(() => u.Experience?.experiencePoints, 0)) || 0 });
+
+/** Starts an operation: its members and commander carry the goal { field: key }. */
+function beginField(op, picked, cmdr, units) {
+    fieldOp = op;
+    for (const c of picked) goals.set(c.k, { field: op.key, turn: Game.turn });
+    if (cmdr) {
+        op.commander = unitKey(cmdr.u.id);
+        goals.set(op.commander, { field: op.key, turn: Game.turn });
+        const x = xpOf(cmdr.u);
+        op.levelStart = x.level;
+        op.xp = x.level * 1000 + x.xp;
+        op.xpTurn = Game.turn;
+    }
+}
+
+/** Ends the running operation: its members and commander go back to the other orders. */
+function endFieldOp(reason, out) {
+    const op = fieldOp;
+    if (!op) return;
+    for (const [k, g] of [...goals.entries()]) if (g?.field === op.key) goals.delete(k);
+    // A raider hunt's general gets back the post it hunted from (M1).
+    if (op.tie && op.commander) goals.set(op.commander, { post: op.tie, turn: Game.turn });
+    fieldOp = null;
+    if (op.kind === "WAR") warPlan = null;
+    if (reason !== "DONE") fieldRetry.set(op.key, Game.turn + (op.kind === "HUNT" ? HUNT.RETRY_TURNS : op.kind === "RAIDERS" ? RAIDER.RETRY_TURNS : TRAINING.MAX_TURNS));
+    const what = fieldKindName(op);
+    log.warn(`${what}: ${op.target.name}: ${reason} after ${Game.turn - op.started} turn(s) (${op.stage}; kills ${op.kills}, lost ${op.lost})`);
+    // A raider hunt has its own words for its end (its raiders, not a village; its own stall).
+    const why = op.kind === "RAIDERS" && RAIDER_WHY.has(reason) ? `LOC_XPL_AP_RAIDER_WHY_${reason}` : `LOC_XPL_AP_FIELD_WHY_${reason}`;
+    out.push({ key: op.kind === "HUNT" ? "HUNT_ENDED" : op.kind === "RAIDERS" ? "RAIDER_HUNT_ENDED" : "TRAINING_WAR_ENDED", args: [op.target.name, safe(() => Locale.compose(why), reason)] });
+}
+
+/** Ends our training war from outside (choices: the option switched off). */
+export function endTrainingWar(reason = "OFF") {
+    const out = [];
+    if (fieldOp?.kind === "WAR") endFieldOp(reason, out);
+    warPlan = null;
+    return out;
+}
+
+/** Declares war on an independent (its village), as the game's map does it (diplomacy-manager.js startWarFromMap). */
+function declareOnIndependent(id) {
+    if (safe(() => Players.get(pid()).Diplomacy.isAtWarWith(id), false)) return true;
+    if (!safe(() => Players.get(pid()).Diplomacy.canDeclareWarOn(id), null)?.Success) return false;
+    const DECLARE = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_DECLARE_WAR;
+    const OP = globalThis.PlayerOperationTypes?.DECLARE_WAR;
+    if (DECLARE === undefined || OP === undefined) return false;
+    const args = { Player1: pid(), Player2: id, Type: DECLARE };
+    if (!safe(() => Game.PlayerOperations.canStart(pid(), OP, args, false), null)?.Success) return false;
+    Game.PlayerOperations.sendRequest(pid(), OP, args);
+    return true;
+}
+
+/** Our War Support lead in the war with this leader (the ribbon's reading: model-diplo-ribbon.js), or null with no war. */
+export function warSupportNet(enemy) {
+    const war = (safe(() => Game.Diplomacy.getJointEvents(pid(), enemy, false), []) ?? []).find((e) => e?.actionTypeName === "DIPLOMACY_ACTION_DECLARE_WAR");
+    if (!war) return null;
+    const header = safe(() => Game.Diplomacy.getDiplomaticEventData(war.uniqueID), null);
+    const supporting = (safe(() => Game.Diplomacy.getSupportingPlayersWithBonusEnvoys(war.uniqueID), []) ?? []).length;
+    const opposing = (safe(() => Game.Diplomacy.getOpposingPlayersWithBonusEnvoys(war.uniqueID), []) ?? []).length;
+    const initial = header?.initialPlayer === pid();
+    return { id: war.uniqueID, initial, net: initial ? supporting - opposing : opposing - supporting };
+}
+
+/** The empire's science, culture, gold and production a turn (the training war's cost: research/41 §7E). */
+function empireYields() {
+    const me = safe(() => Players.get(pid()), null);
+    const Y = globalThis.YieldTypes ?? {};
+    return ["YIELD_SCIENCE", "YIELD_CULTURE", "YIELD_GOLD", "YIELD_PRODUCTION"]
+        .reduce((a, k) => a + (Number(safe(() => me.Stats.getNetYield(Y[k]), 0)) || 0), 0);
+}
+
+/** Majors at war with us besides `enemy`. */
+const otherWars = (enemy) => (safe(() => Players.getAlive(), []) ?? [])
+    .some((p) => p?.isMajor && p.id !== pid() && p.id !== enemy && !!safe(() => Players.get(pid()).Diplomacy.isAtWarWith(p.id), false));
+
+/**
+ * The operation's review, before the defence plan (one that ends gives its soldiers back to it this pass): members gone
+ * (lost) or hurt HURT (out), its progress (fewer of their soldiers near it: kills), its end (core huntEnd / trainingEnd),
+ * and the fight once gathered (fieldReady; a hunt declares war on the village then).
+ */
+function reviewFieldOp(units, ctx, options, out) {
+    const op = fieldOp;
+    if (!op) return;
+    const rules = FIELD_RULES[op.kind];
+    const byKey = new Map(units.map((u) => [unitKey(u.id), u]));
+    for (const k of [...op.members]) {
+        const u = byKey.get(k);
+        if (!u) op.lost++;
+        if (!u || (Number(u.Health?.damage) || 0) >= rules.HURT) {
+            op.members.delete(k);
+            if (goals.get(k)?.field === op.key) goals.delete(k);
+        }
+    }
+    if (op.commander && !byKey.has(op.commander)) op.commander = null;
+    // The opponents of our fights in this operation (the Combat listener: noteFights) that are gone are kills, counted
+    // before a raider hunt follows the next soldier (W7, game 60 A71: the hunted Archer died, the next one 2 tiles away kept
+    // the count at 1, and the hunt ended STALL with «kills 0»). One fought before last turn and still alive is forgotten: it
+    // may walk out of sight later, which is no kill.
+    let tracked = 0;
+    for (const [k, f] of [...(op.fought ?? new Map())]) {
+        const e = safe(() => Units.get(f.id), null);
+        if (e && e.isOnMap !== false && (Number(e.Health?.damage) || 0) < (Number(e.Health?.maxDamage) || 100)) {
+            if (!(Game.turn - f.turn <= 1)) op.fought.delete(k);
+            continue;
+        }
+        op.fought.delete(k);
+        tracked++;
+    }
+    // A raider hunt follows the one hunted (it moves).
+    if (op.kind === "RAIDERS") followRaider(op);
+    const anchor = op.kind === "WAR" ? op.staging : op.target;
+    const enemies = soldiersOf(op.enemy, anchor, op.kind === "HUNT" ? HUNT.ENEMY_RADIUS : op.kind === "RAIDERS" ? RAIDER.ENEMY_RADIUS : TRAINING.DEPTH, { commanders: op.kind === "RAIDERS" });
+    const dropped = op.enemyCount !== null && op.stage === "FIGHT" ? Math.max(0, op.enemyCount - enemies.n) : 0;
+    if (Math.max(dropped, tracked) > 0) {
+        op.kills += Math.max(dropped, tracked);
+        op.progressTurn = Game.turn;
+    }
+    op.enemyCount = enemies.n;
+    const members = [...op.members].map((k) => byKey.get(k)).filter(Boolean);
+    const melee = members.filter((u) => isMeleeGuard(safe(() => GameInfo.Units.lookup(u.type), null))).length;
+    const homeUnsafeNow = homeUnsafeFor(units, ctx, op.enemy);
+    let end;
+    if (op.kind === "HUNT") {
+        const gone = !(safe(() => villagesOf(pid(), true), []) ?? []).some((v) => v.id === op.enemy && same(v, op.target));
+        const FRIENDLY = globalThis.IndependentRelationship?.FRIENDLY;
+        const befriended = !!safe(() => Players.get(op.enemy)?.isMinor, false)
+            || (FRIENDLY !== undefined && safe(() => Game.IndependentPowers.getIndependentRelationship(op.enemy, pid()), null) === FRIENDLY);
+        end = huntEnd(op, {
+            turn: Game.turn, gone, befriended, on: !!options.hunt, victoryNear: !!options.victoryNear, homeUnsafe: homeUnsafeNow,
+            melee, units: members.length, lost: op.lost, kills: op.kills,
+        });
+    } else if (op.kind === "RAIDERS") {
+        // Tied to the settlement its general was posted at (M1): not followed beyond GUARD_RADIUS + 2 of it.
+        const far = Math.min(Infinity, ...ourCentres().map((c) => plotDist(c, op.target))) > RAIDER.REACH + 2
+            || (!!op.tie && plotDist(keyAt(op.tie), op.target) > GUARD_RADIUS + 2);
+        end = raiderEnd(op, {
+            turn: Game.turn, gone: !!op.gone, far, on: !!options.huntRaiders, victoryNear: !!options.victoryNear, homeUnsafe: homeUnsafeNow,
+            melee, units: members.length, lost: op.lost, kills: op.kills,
+        });
+    } else {
+        const cmdr = op.commander ? byKey.get(op.commander) : null;
+        if (cmdr) {
+            const x = xpOf(cmdr);
+            const now = x.level * 1000 + x.xp;
+            if (now > op.xp) op.xpTurn = Game.turn;
+            op.xp = now;
+            op.promotions = Math.max(0, x.level - (op.levelStart ?? x.level));
+        }
+        const weary = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).some((c) => !!safe(() => c.Happiness?.hasWarWeariness, false));
+        end = trainingEnd(op, {
+            turn: Game.turn, on: !!options.trainingWar, atWar: !!safe(() => Players.get(pid()).Diplomacy.isAtWarWith(op.enemy), false),
+            promotions: op.promotions ?? 0, weary, supportNet: warSupportNet(op.enemy)?.net ?? 0, lost: op.lost, kills: op.kills,
+            thirdParty: otherWars(op.enemy), homeUnsafe: homeUnsafeNow, yields: empireYields(), yieldsStart: op.yieldsStart,
+        });
+        if (!end && melee < 1) end = "FORCE";
+    }
+    if (end) {
+        endFieldOp(end, out);
+        return;
+    }
+    if (op.stage === "GATHER") {
+        const arrived = members.filter((u) => u.isOnMap !== false && u.location && plotDist(u.location, op.staging) <= rules.NEAR_STAGE);
+        const meleeArrived = arrived.filter((u) => isMeleeGuard(safe(() => GameInfo.Units.lookup(u.type), null))).length;
+        const cmdr = op.commander ? byKey.get(op.commander) : null;
+        const commanderAway = !!cmdr && cmdr.isOnMap !== false && !!cmdr.location && plotDist(cmdr.location, op.staging) > rules.NEAR_STAGE;
+        if (!fieldReady(op, { turn: Game.turn, arrived: arrived.length, members: members.length, meleeArrived, commanderAway }, rules)) return;
+        // A hunt starts the war with the village now, when its army stands by (not before: its units would raid).
+        if (op.kind === "HUNT" && !declareOnIndependent(op.enemy)) {
+            endFieldOp("NO_WAR", out);
+            return;
+        }
+        op.stage = "FIGHT";
+        op.progressTurn = Game.turn;
+        op.xpTurn = Game.turn;
+        out.push({ key: op.kind === "HUNT" ? "HUNT_FIGHT" : "TRAINING_WAR_FIGHT", args: [op.target.name, arrived.length] });
+    }
+}
+
+/**
+ * A hunt starts (the user, 21 October: "villages that will not be befriended") for the nearest village of huntTargets when
+ * our settlements are safe, no victory of ours is near, and the soldiers the defence leaves free reaching its staging area
+ * within GATHER_TURNS are enough (core fieldForce: 2 melee, 3 in all, 1 more than its soldiers near it); a land commander,
+ * the vanguard first, leads it. Its war is declared only once they have gathered (reviewFieldOp).
+ */
+function startHunt(units, ctx, options, out) {
+    const note = (text) => {
+        if (fieldNoted === Game.turn) return;
+        fieldNoted = Game.turn;
+        log.info(`hunt: none: ${text}`);
+    };
+    const targets = huntTargets().filter((t) => {
+        const retry = fieldRetry.get(`${t.x},${t.y}`);
+        return retry === undefined || Game.turn >= retry;
+    });
+    if (targets.length === 0) return;
+    const t = targets[0];
+    if (options.victoryNear) return note(`${t.name}: a victory of ours is near`);
+    // Its own raids are the fight we go for (W3: game 60 passed null, so Шэнле's raids on Самара kept its hunt home).
+    if (homeUnsafeFor(units, ctx, t.id)) return note(`${t.name}: a settlement of ours needs its soldiers`);
+    const staging = stagingTile(t, HUNT.STAGE_DIST);
+    if (!staging) return note(`${t.name}: no staging tile ${HUNT.STAGE_DIST} tiles from it`);
+    const free = freeSoldiers(ctx, staging, HUNT.GATHER_TURNS);
+    const { melee, picked } = pickMembers(free, HUNT);
+    const enemy = soldiersOf(t.id, t, HUNT.ENEMY_RADIUS);
+    // Its general (the hunt is for its XP: game 54's hunt of Аванти went without one, 8 turns away): one reaching it within
+    // COMMANDER_TURNS, and none starts without one while a general of ours stands on the map. The soldiers packed in its army
+    // go too (they unpack at the staging area: moveFieldOp).
+    const cmdr = fieldCommander(units, ctx, staging, HUNT.COMMANDER_TURNS, { independent: true });
+    const packed = cmdr ? packedSoldiers(cmdr.u, units) : [];
+    const defOf = (u) => safe(() => GameInfo.Units.lookup(u.type), null);
+    const force = fieldForce({
+        melee: melee.length + packed.filter((u) => isMeleeGuard(defOf(u))).length, units: picked.length + packed.length, enemies: enemy.n,
+        ourBest: Math.max(0, ...picked.map((c) => unitStrength(c.def)), ...packed.map((u) => unitStrength(defOf(u)))), theirBest: enemy.best,
+    }, HUNT);
+    if (!force.ok) return note(`${t.name} (${t.reason}): not enough force (${force.why}; ${free.length} free within ${HUNT.GATHER_TURNS} turns${packed.length ? `, ${packed.length} packed` : ""})`);
+    if (!cmdr && landCommanders(units).some((u) => u.isOnMap !== false && !!u.location)) return note(`${t.name} (${t.reason}): no free general within ${HUNT.COMMANDER_TURNS} turns`);
+    const key = `${t.x},${t.y}`;
+    beginField({
+        kind: "HUNT", key, target: { x: t.x, y: t.y, name: t.name }, enemy: t.id, started: Game.turn, stage: "GATHER", staging,
+        members: new Set([...picked.map((c) => c.k), ...packed.map((u) => unitKey(u.id))]), commander: null, progressTurn: Game.turn, kills: 0, lost: 0, enemyCount: null, reason: t.reason,
+    }, [...picked, ...packed.map((u) => ({ k: unitKey(u.id) }))], cmdr, units);
+    log.warn(`hunt: ${t.name} at ${where(t)} (${t.reason}): started with ${picked.length} [${picked.map((c) => `${c.def.UnitType} in ${c.turns}t`).join(", ")}], staging ${where(staging)}, its soldiers ${enemy.n} (best ${enemy.best}), commander ${cmdr ? `${typeOf(cmdr.u)} in ${cmdr.turns}t` : "none"}`);
+    out.push({ key: "HUNT_STARTED", args: [t.name, picked.length] });
+}
+
+// ---- raider hunts («Охота на рейдеров», after game 54) ----------------------------------------------------------------
+
+let raiderNoted = -1; // the turn UI.log said why no raider hunt started
+const RAIDER_WHY = new Set(["DONE", "STALL", "FAR"]); // ends a raider hunt words its own way (LOC_XPL_AP_RAIDER_WHY_*)
+
+/** A tile a raider hunt may stand on or follow to: within RAIDER.REACH + 1 of our settlements, on our land or nobody's. */
+function raiderGround(l) {
+    const owner = safe(() => GameplayMap.getOwner(l.x, l.y), -1);
+    if (owner !== -1 && owner !== null && owner !== pid()) return false;
+    return ourCentres().some((c) => plotDist(c, l) <= RAIDER.REACH + 1);
+}
+
+/**
+ * Hostile soldiers roaming near our land (after game 54): a land soldier of a player at war with us (an independent's too)
+ * that we see within RAIDER.REACH of one of our settlements, on our land or nobody's, not on a village or a district, not
+ * guarding its own village (within VILLAGE_GUARD_RADIUS: that is a village hunt), with its fellows within ENEMY_RADIUS; the
+ * nearest to our settlements first, the smallest group on a tie. @returns [{ x, y, owner, name, n, best, d }]
+ */
+function raiderTargets() {
+    const ours = ourCentres();
+    const VISIBLE = globalThis.RevealedStates?.VISIBLE;
+    const villages = safe(() => villagesOf(pid(), true), []) ?? [];
+    const seen = new Set();
+    const out = [];
+    for (const c of ours) {
+        for (const at of tilesAt(c, RAIDER.REACH)) {
+            const k = `${at.x},${at.y}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            if (VISIBLE !== undefined && safe(() => GameplayMap.getRevealedState(pid(), at.x, at.y), VISIBLE) !== VISIBLE) continue;
+            for (const { unit } of unitsSeenAt(at.x, at.y, { remembered: false })) {
+                const def = unit ? safe(() => GameInfo.Units.lookup(unit.type), null) : null;
+                // A hostile land commander too (M2: game 60's pillager next to Тула, T89-T139).
+                const commander = !!hostileCommander(unit);
+                if (!unit || (!commander && (unit.isCommanderUnit || !hostileOwner(unit) || !isSoldier(def))) || def.Domain !== "DOMAIN_LAND") continue;
+                // Not one a fight of ours this pass already finished (W7).
+                if ((Number(unit.Health?.damage) || 0) >= (Number(unit.Health?.maxDamage) || 100)) continue;
+                if (!raiderGround(at) || validId(safe(() => Game.Combat.getDefensibleDistrict({ x: at.x, y: at.y }), null))) continue;
+                if (villages.some((v) => v.id === unit.owner && plotDist(v, at) <= VILLAGE_GUARD_RADIUS)) continue;
+                const group = soldiersOf(unit.owner, at, RAIDER.ENEMY_RADIUS, { commanders: true });
+                const name = safe(() => Players.get(unit.owner)?.isMajor, false) ? leaderOf(unit.owner) : (safe(() => independentNameOf(unit.owner), null) ?? `p${unit.owner}`);
+                out.push({ x: at.x, y: at.y, owner: unit.owner, name, n: group.n, best: group.best, d: Math.min(Infinity, ...ours.map((o) => plotDist(o, at))), id: unit.id, commander });
+            }
+        }
+    }
+    return out.sort((a, b) => a.d - b.d || a.n - b.n);
+}
+
+/**
+ * A raider hunt starts (the user, after game 54: "will commander chase exp much more aggressively so we can get more
+ * level?"; «Охота на рейдеров», on by default with «Оборона»): the nearest raider of raiderTargets whose owner's last hunt did
+ * not fail within RETRY_TURNS, when our settlements are safe (that owner's raids aside), a general reaches it within
+ * COMMANDER_TURNS (the point is its XP: none without one), and the soldiers the defence leaves free within GATHER_TURNS plus
+ * those packed in the general's army are enough (core fieldForce: a melee one, two in all, one more than their soldiers
+ * near it). No gathering: it is fought at once (moveFieldOp, fieldAssault), followed while it stays near our land.
+ */
+function startRaiderHunt(units, ctx, options, out) {
+    const note = (text) => {
+        if (raiderNoted === Game.turn) return;
+        raiderNoted = Game.turn;
+        log.info(`raiders: none: ${text}`);
+    };
+    const targets = raiderTargets().filter((t) => {
+        const retry = fieldRetry.get(`raid:${t.owner}`);
+        return retry === undefined || Game.turn >= retry;
+    });
+    if (targets.length === 0) return;
+    const t = targets[0];
+    if (options.victoryNear) return note(`${t.name} at ${where(t)}: a victory of ours is near`);
+    if (homeUnsafeFor(units, ctx, t.owner)) return note(`${t.name} at ${where(t)}: a settlement of ours needs its soldiers`);
+    const staging = stagingTile(t, 2) ?? stagingTile(t, 1);
+    if (!staging) return note(`${t.name} at ${where(t)}: no tile to come from`);
+    // The general posted at the very settlement this raider threatens may hunt it: that fight is this one (M1, game 60: 44
+    // of 73 `raiders: none` lines were «no free general», the only one posted at a threatened settlement, in 20 of them the
+    // one the raider stood at). The hunt stays tied to that settlement (raiderEnd's FAR) and gives the post back at its end.
+    const tiedTo = (post) => {
+        const th = ctx.threats.find((x) => `${x.settlement.x},${x.settlement.y}` === post);
+        return !!th && plotDist(th.settlement, t) <= THREAT_RADIUS && (th.owners ?? []).some((o) => o?.id === t.owner);
+    };
+    const independent = !!safe(() => Players.get(t.owner)?.isIndependent, false);
+    const cmdr = fieldCommander(units, ctx, staging, RAIDER.COMMANDER_TURNS, { independent, postOk: tiedTo });
+    if (!cmdr) return note(`${t.name} at ${where(t)}: no free general within ${RAIDER.COMMANDER_TURNS} turns`);
+    const tie = cmdr.post && tiedTo(cmdr.post) ? cmdr.post : null;
+    const packed = packedSoldiers(cmdr.u, units);
+    const free = freeSoldiers(ctx, staging, RAIDER.GATHER_TURNS);
+    const { melee, picked } = pickMembers(free, RAIDER);
+    const defOf = (u) => safe(() => GameInfo.Units.lookup(u.type), null);
+    const force = fieldForce({
+        melee: melee.length + packed.filter((u) => isMeleeGuard(defOf(u))).length, units: picked.length + packed.length, enemies: t.n,
+        ourBest: Math.max(0, ...picked.map((c) => unitStrength(c.def)), ...packed.map((u) => unitStrength(defOf(u)))), theirBest: t.best,
+    }, RAIDER);
+    if (!force.ok) return note(`${t.name} at ${where(t)}: not enough force (${force.why}; ${free.length} free within ${RAIDER.GATHER_TURNS} turns, ${packed.length} packed)`);
+    beginField({
+        kind: "RAIDERS", key: `raid:${t.owner}`, target: { x: t.x, y: t.y, name: t.name }, enemy: t.owner, started: Game.turn, stage: "FIGHT", staging,
+        members: new Set([...picked.map((c) => c.k), ...packed.map((u) => unitKey(u.id))]), commander: null, progressTurn: Game.turn, kills: 0, lost: 0,
+        enemyCount: t.n, reason: "RAIDERS", tie, targetId: t.id ?? null, fought: new Map(),
+    }, [...picked, ...packed.map((u) => ({ k: unitKey(u.id) }))], cmdr, units);
+    const tieName = tie ? safe(() => Locale.compose(settlementAt(keyAt(tie)).name), null) ?? tie : null;
+    log.warn(`raiders: ${t.name} at ${where(t)} (${t.n} of theirs, best ${t.best}): hunted by ${typeOf(cmdr.u)} in ${cmdr.turns}t with ${picked.length} [${picked.map((c) => `${c.def.UnitType} in ${c.turns}t`).join(", ")}]${packed.length ? ` and ${packed.length} packed` : ""}${tieName ? `; hunted by the general posted at ${tieName}` : ""}`);
+    out.push({ key: "RAIDER_HUNT_STARTED", args: [t.name, picked.length + packed.length] });
+}
+
+/** A raider hunt follows the one hunted: the soldier of theirs within FOLLOW of where it stood, the nearest; gone with none. */
+function followRaider(op) {
+    const near = soldiersOf(op.enemy, op.target, RAIDER.FOLLOW, { commanders: true }).tiles.sort((a, b) => plotDist(a, op.target) - plotDist(b, op.target));
+    op.gone = near.length === 0;
+    if (near[0]) op.target = { x: near[0].x, y: near[0].y, name: op.target.name };
+}
+
+/** Unpacks a commander's army on the offered tile nearest `toward` (UNITCOMMAND_UNPACK_ARMY, as unpackArmies). @returns the tile or null */
+function unpackToward(c, toward) {
+    const OP = "UNITCOMMAND_UNPACK_ARMY";
+    const plots = (safe(() => Game.UnitCommands.canStart(c.id, OP, {}, false), null)?.Plots ?? [])
+        .map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter((l) => l && !onWater(l));
+    const best = plots.sort((a, b) => plotDist(a, toward) - plotDist(b, toward))[0];
+    if (!best) return null;
+    Game.UnitCommands.sendRequest(c.id, OP, { X: best.x, Y: best.y });
+    return best;
+}
+
+/**
+ * A training war declared (choices, the turn before) starts here: the army gathers 3 tiles from their settlement nearest
+ * ours, on our side, with the soldiers the defence leaves free and the vanguard (research/41 §7C).
+ */
+function startTrainingWar(units, ctx, out) {
+    const enemy = warPlan.enemy;
+    if (!safe(() => Players.get(pid()).Diplomacy.isAtWarWith(enemy), false)) {
+        if (Game.turn - warPlan.turn > 1) warPlan = null; // the declaration did not take
+        return;
+    }
+    const ours = ourCentres();
+    const theirs = (safe(() => Players.get(enemy).Cities.getCities(), []) ?? []).filter((c) => c?.location)
+        .map((c) => ({ c, d: Math.min(Infinity, ...ours.map((o) => plotDist(o, c.location))) })).sort((a, b) => a.d - b.d)[0];
+    if (!theirs) {
+        warPlan = null;
+        return;
+    }
+    const t = { x: theirs.c.location.x, y: theirs.c.location.y, name: safe(() => Locale.compose(theirs.c.name), "?") };
+    const staging = stagingTile(t, TRAINING.STAGE_DIST);
+    if (!staging) return;
+    const free = freeSoldiers(ctx, staging, TRAINING.GATHER_TURNS);
+    const { picked } = pickMembers(free, TRAINING);
+    const cmdr = fieldCommander(units, ctx, staging, TRAINING.COMMANDER_TURNS);
+    const leader = leaderOf(enemy);
+    beginField({
+        kind: "WAR", key: `war:${enemy}`, target: { ...t, name: `${t.name} (${leader})` }, enemy, started: Game.turn, stage: "GATHER", staging,
+        members: new Set(picked.map((c) => c.k)), commander: null, progressTurn: Game.turn, kills: 0, lost: 0, enemyCount: null,
+        reason: "WAR", yieldsStart: empireYields(), promotions: 0,
+    }, picked, cmdr, units);
+    log.warn(`training war: ${leader}: the army gathers at ${where(staging)} facing ${t.name} with ${picked.length} [${picked.map((c) => `${c.def.UnitType} in ${c.turns}t`).join(", ")}], commander ${cmdr ? `${typeOf(cmdr.u)} in ${cmdr.turns}t` : "none"}`);
+    out.push({ key: "TRAINING_WAR_GATHER", args: [leader, picked.length] });
+}
+
+/**
+ * The members' moves this pass (sent before the unit loop). Gathering: next to the staging tile. The fight: a melee member
+ * next to their nearest soldier (a hunt: next to the village when none is left), a ranged one within its range of one, not
+ * next to one when it can; never past DEPTH tiles of the staging tile in a war. The commander: the tile within 2 of the
+ * fight where its radius covers the most members, never next to a soldier of theirs (a hunt: next to the village when it
+ * can, so the dispersal's XP is its own). @returns log entries
+ */
+function moveFieldOp(units, ctx) {
+    const out = [];
+    const op = fieldOp;
+    if (!op) return out;
+    const rules = FIELD_RULES[op.kind];
+    const A = globalThis.UnitActivityTypes;
+    const taken = new Set();
+    const planned = new Map(); // unit key -> where a member goes this pass
+    const anchor = op.kind === "WAR" ? op.staging : op.target;
+    const depth = op.kind === "HUNT" ? HUNT.ENEMY_RADIUS + 1 : op.kind === "RAIDERS" ? RAIDER.ENEMY_RADIUS + 1 : TRAINING.DEPTH;
+    const enemies = op.stage === "FIGHT" ? soldiersOf(op.enemy, anchor, depth, { commanders: op.kind === "RAIDERS" }).tiles : [];
+    // A raider is followed only on our land or nobody's, near our settlements (raiderGround).
+    const inBounds = (l) => op.kind === "HUNT" || (op.kind === "RAIDERS" ? raiderGround(l) : plotDist(l, op.staging) <= TRAINING.DEPTH);
+    const move = (u, def, loc, key) => {
+        if (same(u.location, loc)) return;
+        wakeUnit(u);
+        if (!moveTo(u, loc)) return;
+        taken.add(`${loc.x},${loc.y}`);
+        planned.set(unitKey(u.id), loc);
+        ctx.ordered.add(unitKey(u.id));
+        out.push({ key, args: [nameOf(def), op.target.name] });
+    };
+    for (const u of units) {
+        const k = unitKey(u.id);
+        if (!op.members.has(k) || ctx.ordered.has(k) || u.isOnMap === false || !u.location) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE || u.canMove === false || u.hasMoved === true) continue;
+        if (A && u.activityType === A.HEAL) continue;
+        if (op.stage === "GATHER") {
+            // Gathered, it waits there; not on the plague (the unit loop leaves a member to its operation: game 60).
+            if (plotDist(u.location, op.staging) <= rules.NEAR_STAGE && !(hazardAt(u.location) > 0)) continue;
+            const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
+            if (A && u.activityType === A.OPERATION && dest && plotDist(dest, op.staging) <= 1) continue;
+            const loc = campaignSpot(u, op.staging, 1, taken);
+            if (loc) move(u, def, loc, "FIELD_GATHER");
+            continue;
+        }
+        if (campaignRanged(def)) {
+            const range = unitRange(def);
+            if (enemies.some((e) => plotDist(u.location, e) <= range)) continue;
+            const aim = [...enemies].sort((a, b) => plotDist(u.location, a) - plotDist(u.location, b))[0];
+            if (!aim) continue;
+            const ok = (l) => inBounds(l) && plotDist(l, aim) <= range && !enemies.some((e) => plotDist(l, e) <= 1);
+            const loc = campaignSpot(u, aim, range, taken, ok);
+            if (loc) move(u, def, loc, "FIELD_ADVANCE");
+            continue;
+        }
+        if (enemies.some((e) => plotDist(u.location, e) === 1)) continue;
+        const aim = [...enemies].sort((a, b) => plotDist(u.location, a) - plotDist(u.location, b))[0] ?? (op.kind === "HUNT" ? op.target : null);
+        if (!aim || (op.kind === "HUNT" && !enemies.length && plotDist(u.location, aim) <= 1)) continue;
+        const loc = campaignSpot(u, aim, 1, taken, (l) => inBounds(l) && plotDist(l, aim) === 1 && !(op.kind === "HUNT" && same(l, op.target)));
+        if (loc) move(u, def, loc, "FIELD_ADVANCE");
+    }
+    // The commander, by the fight: its radius (1) over the most members; a hunt's next to the village first.
+    const cmdr = op.commander ? units.find((u) => unitKey(u.id) === op.commander) : null;
+    // One already on its way is judged again each pass (game 61, E9-E12: the hunt's general walked alone for three turns to
+    // 54,23, next to a Heavy Archer standing on the staging tile, its soldiers 2-5 tiles behind, and was shot down there):
+    // a next stop or a destination it may no longer stand on stops the walk; it is placed again on the next pass.
+    if (cmdr && cmdr.isOnMap !== false && cmdr.location && !ctx.ordered.has(op.commander) && !readyForOrders(cmdr)) {
+        const out2 = stopUnsafeWalk(cmdr, units, ctx);
+        if (out2) out.push(out2);
+    }
+    if (cmdr && cmdr.isOnMap !== false && cmdr.location && !ctx.ordered.has(op.commander) && readyForOrders(cmdr)) {
+        const def = safe(() => GameInfo.Units.lookup(cmdr.type), null);
+        // Members packed in its army (after game 54) unpack at the staging area, or by the fight toward their nearest soldier.
+        const packedHere = units.filter((u) => u.isOnMap === false && op.members.has(unitKey(u.id)) && sameId(u.armyId, cmdr.armyId));
+        const place = op.stage === "GATHER" ? op.staging : anchor;
+        if (packedHere.length > 0 && plotDist(cmdr.location, place) <= 2) {
+            const toward = op.stage === "GATHER" ? op.staging : [...enemies].sort((a, b) => plotDist(cmdr.location, a) - plotDist(cmdr.location, b))[0] ?? anchor;
+            const at = unpackToward(cmdr, toward);
+            if (at) {
+                ctx.ordered.add(op.commander);
+                log.info(`${fieldKindName(op)}: ${typeOf(cmdr)} at ${where(cmdr.location)} unpacks ${packedHere.length} toward ${where(toward)} (${op.target.name})`);
+                out.push({ key: "FIELD_UNPACKED", args: [nameOf(def), packedHere.length, op.target.name] });
+                return out;
+            }
+        }
+        let loc = null;
+        const packedArmy = armyShields(cmdr, units);
+        // Gathering, it stands where it may (commanderSafeAt: never next to a hostile land unit, out of every one's reach, or
+        // under a soldier of ours), else as close as is safe (game 61: it went to the staging area first, alone).
+        if (op.stage === "GATHER" && plotDist(cmdr.location, op.staging) > 1) {
+            loc = campaignSpot(cmdr, op.staging, 1, taken, (l) => packedArmy || commanderSafeAt(l, units, ctx));
+            if (!loc && !packedArmy && def) loc = commanderAdvance(cmdr, def, op.staging, units, ctx);
+        }
+        else {
+            const members = units.filter((u) => op.members.has(unitKey(u.id)) && u.location && u.isOnMap !== false);
+            const at = (u) => planned.get(unitKey(u.id)) ?? u.location;
+            // A member about to fight after this pass's moves (an enemy within its range): its fight is a focused attack for the
+            // general (after game 54: 4-8 XP each).
+            const fighting = (u) => {
+                const d = safe(() => GameInfo.Units.lookup(u.type), null);
+                const range = d && campaignRanged(d) ? unitRange(d) : 1;
+                return enemies.some((e) => plotDist(at(u), e) <= range);
+            };
+            // It stands under a healthy member (where one stands or goes this pass: the soldier is the one attacked, research/42
+            // A2), or where commanderSafeAt allows, or anywhere with its army packed; elsewhere it escaped the next pass.
+            const shields = new Set(members.filter((u) => (Number(u.Health?.damage) || 0) < SHIELD_DAMAGE).map((u) => `${at(u).x},${at(u).y}`));
+            let best = null;
+            for (const l of tilesAt(anchor, 2)) {
+                const shielded = shields.has(`${l.x},${l.y}`);
+                if (!shielded && (taken.has(`${l.x},${l.y}`) || enemies.some((e) => plotDist(l, e) <= 1))) continue;
+                if ((op.kind === "HUNT" && same(l, op.target)) || (op.kind === "RAIDERS" && !raiderGround(l))) continue;
+                if (onWater(l) || safe(() => GameplayMap.isImpassable(l.x, l.y), false) || hazardAt(l) > 0) continue;
+                if ((safe(() => MapUnits.getUnits(l.x, l.y), []) ?? []).some((id) => safe(() => Units.get(id), null)?.owner !== pid())) continue;
+                if (!shielded && !packedArmy && !commanderSafeAt(l, units, ctx)) continue;
+                const covered = members.filter((u) => plotDist(at(u), l) <= 1).length;
+                const fights = members.filter((u) => plotDist(at(u), l) <= 1 && fighting(u)).length;
+                const score = covered * 10 + fights * 20 + (fights > 0 ? 30 : 0) + (shielded ? 10 : 0)
+                    + (op.kind === "HUNT" && plotDist(l, op.target) === 1 ? 5 : 0) - plotDist(cmdr.location, l);
+                if (!best || score > best.score) best = { l, score };
+            }
+            loc = best && !same(best.l, cmdr.location) ? best.l : null;
+            // No safe tile by the fight: as close as is safe (commanderAdvance).
+            if (!best && plotDist(cmdr.location, anchor) > 2 && def) loc = commanderAdvance(cmdr, def, anchor, units, ctx);
+        }
+        // A walk whose first turn stops where it may not stand: as close as is safe this turn instead (gathering too: game 61).
+        if (loc && def && !packedArmy) {
+            const p = pathTo(cmdr, loc);
+            const stop = p && p.turns > 1 ? turnStop(p) : null;
+            if (stop && !commanderSafeAt(stop, units, ctx)) loc = commanderAdvance(cmdr, def, loc, units, ctx);
+        }
+        if (loc && def) move(cmdr, def, loc, "FIELD_COMMANDER");
+    }
+    return out;
+}
+
+/**
+ * A commander on its way whose next end-of-turn stop, or its destination when that is reached this turn, it may no longer
+ * stand on (commanderSafeAt; its army packed aside): the order is cancelled (UNITCOMMAND_CANCEL, as checkWalks) and it is
+ * placed again on the next pass. @returns a log entry or null
+ */
+function stopUnsafeWalk(u, units, ctx) {
+    const A = globalThis.UnitActivityTypes;
+    if (!A || u.activityType !== A.OPERATION || armyShields(u, units)) return null;
+    const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
+    if (!dest || !(dest.x >= 0) || same(dest, u.location)) return null;
+    const p = pathTo(u, dest);
+    const stop = p && p.turns > 1 ? turnStop(p) : dest;
+    if (!stop || same(stop, u.location) || commanderSafeAt(stop, units, ctx)) return null;
+    const CANCEL = "UNITCOMMAND_CANCEL";
+    if (!safe(() => Game.UnitCommands.canStart(u.id, CANCEL, NO_TARGET, false), null)?.Success) return null;
+    Game.UnitCommands.sendRequest(u.id, CANCEL, { ...NO_TARGET });
+    ctx.ordered.add(unitKey(u.id));
+    const def = safe(() => GameInfo.Units.lookup(u.type), null);
+    log.info(`generals: ${def?.UnitType ?? "?"} at ${u.location.x},${u.location.y} walking to ${dest.x},${dest.y}: its stop ${stop.x},${stop.y} is unsafe now (${hostilesInReach(stop).length} hostile(s) reach it), the walk is cancelled`);
+    return { key: "COMMANDER_WALK_STOPPED", args: [nameOf(def), stop.x, stop.y] };
+}
+
+/** UI.log once a turn: the operation, its members, its enemies near and its commander's experience. */
+function logFieldOp(units) {
+    const op = fieldOp;
+    if (!op || fieldNoted === Game.turn) return;
+    fieldNoted = Game.turn;
+    const byKey = new Map(units.map((u) => [unitKey(u.id), u]));
+    const members = [...op.members].map((k) => byKey.get(k)).filter(Boolean);
+    const cmdr = op.commander ? byKey.get(op.commander) : null;
+    const rules = FIELD_RULES[op.kind];
+    const support = op.kind === "WAR" ? warSupportNet(op.enemy) : null;
+    log.warn(`${fieldKindName(op)}: ${op.stage} ${op.target.name} at ${where(op.target)} (${op.reason}): staging ${where(op.staging)}; members [${members.map((u) => `${typeOf(u)} ${where(u.location)}${u.Health?.damage ? ` -${u.Health.damage}` : ""}`).join("; ")}]; their soldiers near ${op.enemyCount ?? "?"}; kills ${op.kills}, lost ${op.lost}; turn ${Game.turn - op.started} of ${rules.MAX_TURNS}${support ? `; War Support ${support.net}` : ""}; commander ${cmdr ? `${typeOf(cmdr)} ${where(cmdr.location)} (${xpText(cmdr)})` : "none"}`);
+}
+
+/** The operation's review step, before the defence plan. @returns log entries */
+function fieldReviewStep(units, ctx, options) {
+    const out = [];
+    if (fieldOp?.kind === "HUNT" && !options.hunt) endFieldOp("OFF", out);
+    if (fieldOp?.kind === "WAR" && !options.trainingWar) endFieldOp("OFF", out);
+    if (!options.trainingWar) warPlan = null;
+    reviewFieldOp(units, ctx, options, out);
+    if (fieldOp) for (const k of [fieldOp.commander, ...fieldOp.members]) if (k && goals.get(k)?.field !== fieldOp.key) goals.set(k, { field: fieldOp.key, turn: Game.turn });
+    return out;
+}
+
+/**
+ * The field step of commandUnits (after the defence plan and a campaign: they come first): the readiness for a training war
+ * (choices reads it), an operation's end when home needs its soldiers, else one starts (a declared training war first, then
+ * a hunt), and the members move. @returns log entries
+ */
+function fieldStep(units, ctx, options) {
+    const out = [];
+    const free = freeSoldiers(ctx, null, Infinity);
+    fieldReadiness = {
+        turn: Game.turn, free: free.length, melee: free.filter((c) => !c.ranged).length,
+        commander: units.some((u) => u.isCommanderUnit && u.isOnMap !== false && isLandCommander(safe(() => GameInfo.Units.lookup(u.type), null))
+            && !inCampaign(unitKey(u.id)) && !ctx.threats.some((t) => goals.get(unitKey(u.id))?.post === `${t.settlement.x},${t.settlement.y}`)),
+    };
+    if (fieldOp && homeUnsafeFor(units, ctx, fieldOp.enemy)) {
+        endFieldOp("HOME", out);
+        ctx.supply = defenceSupply(units, ctx);
+        planDefence(units, ctx);
+        return out;
+    }
+    if (!fieldOp && !campaign && options.trainingWar && warPlan) startTrainingWar(units, ctx, out);
+    // Raiders near our land before villages: they come and go (after game 54).
+    if (!fieldOp && !campaign && options.huntRaiders) startRaiderHunt(units, ctx, options, out);
+    if (!fieldOp && !campaign && options.hunt) startHunt(units, ctx, options, out);
+    if (fieldOp) {
+        out.push(...moveFieldOp(units, ctx));
+        logFieldOp(units);
+    }
+    return out;
+}
+
+// ---- skirmishes (after game 58; core SKIRMISH) ---------------------------------------------------------------------------
+
+let skirmishNoted = -1; // the turn of the last `skirmish:` line
+
+/** Is this independent at war with us (its relationship Hostile, or a war declared)? */
+function atWarWithIndependent(id) {
+    const R = globalThis.IndependentRelationship;
+    const rel = safe(() => Game.IndependentPowers.getIndependentRelationship(id, pid()), null);
+    if (R && rel === R.HOSTILE) return true;
+    if (R && rel !== null && rel !== undefined) return false;
+    return !!safe(() => Players.get(pid()).Diplomacy.isAtWarWith(id), false);
+}
+
+/**
+ * The village to skirmish with: seen, at war with us, within SKIRMISH.REACH of our settlements, with soldiers of its own near
+ * it (an empty one is dispersed: disperseHere), the nearest first; not while home needs the soldiers. @returns
+ * { v, name, s (our settlement nearest it: the fight is held there), enemies: [{ x, y, id, melee }], d } or null
+ */
+function skirmishTarget(units, ctx) {
+    const ours = ourCentres();
+    const list = [];
+    for (const v of safe(() => villagesOf(pid()), []) ?? []) {
+        if (v.friendly || safe(() => Players.get(v.id)?.isMinor, false) || !atWarWithIndependent(v.id)) continue;
+        const d = Math.min(Infinity, ...ours.map((c) => plotDist(c, v)));
+        if (d > SKIRMISH.REACH) continue;
+        const enemies = soldiersOf(v.id, v, SKIRMISH.GUARD_RADIUS).tiles.map((t) => {
+            const def = safe(() => GameInfo.Units.lookup(safe(() => Units.get(t.id), null)?.type), null);
+            return { ...t, melee: !!def && !campaignRanged(def) };
+        });
+        if (enemies.length === 0) continue;
+        const s = [...ours].sort((a, b) => plotDist(a, v) - plotDist(b, v))[0];
+        list.push({ v, d, s, enemies, name: safe(() => independentNameOf(v.id), null) ?? `village ${v.id}` });
+    }
+    list.sort((a, b) => a.d - b.d);
+    return list.find((t) => !homeUnsafeFor(units, ctx, t.v.id)) ?? null;
+}
+
+let skirmishNoneNoted = -1; // the turn of the last `skirmish: none:` line
+
+/** Why no village is skirmished with (W9), for UI.log: the nearest village at war with us, how far, unseen, empty, home. */
+function skirmishWhy(units, ctx) {
+    const ours = ourCentres();
+    const near = (safe(() => villagesOf(pid(), true), []) ?? [])
+        .filter((v) => !v.friendly && !safe(() => Players.get(v.id)?.isMinor, false) && atWarWithIndependent(v.id))
+        .map((v) => ({ v, d: Math.min(Infinity, ...ours.map((c) => plotDist(c, v))) })).sort((a, b) => a.d - b.d)[0];
+    if (!near) return "no village at war with us";
+    const name = safe(() => independentNameOf(near.v.id), null) ?? `village ${near.v.id}`;
+    const parts = [`nearest ${name} at ${near.d} tiles (reach ${SKIRMISH.REACH})`];
+    if (near.v.revealed === false) parts.push("unseen");
+    else if (near.d <= SKIRMISH.REACH) {
+        if (soldiersOf(near.v.id, near.v, SKIRMISH.GUARD_RADIUS).n === 0) parts.push("no soldier of theirs near it");
+        const home = ctx.threats.find((x) => homeUnsafeFor(units, { ...ctx, threats: [x] }, near.v.id));
+        if (home) parts.push(`home unsafe: ${home.settlement.name}`);
+    }
+    return parts.join(", ");
+}
+
+/**
+ * A shooter's post: our settlement's centre or a tile next to it (the fight is held there: the simulator showed shooters
+ * posted in the open struck dead the next turn), never next to one of the village's melee soldiers, free for a soldier,
+ * reached within SKIRMISH.TURNS; one within its range of their soldiers first (else it waits there for them), then by the
+ * enemy melee soldiers within MELEE_NEAR of it and its walk. Its own tile when that is such a post already.
+ * @returns { loc, turns, inRange } or null
+ */
+function skirmishPost(u, def, t, taken, ctx) {
+    const range = unitRange(def);
+    const inRange = (l) => t.enemies.some((e) => plotDist(l, e) <= range);
+    const safeFrom = (l) => !t.enemies.some((e) => e.melee && plotDist(l, e) <= 1) && t.enemies.filter((e) => plotDist(l, e) <= SKIRMISH.EXPOSURE_RADIUS).length <= SKIRMISH.EXPOSURE_MAX;
+    const pre = (l) => (inRange(l) ? 0 : SKIRMISH.OUT_OF_RANGE) + t.enemies.filter((e) => e.melee && plotDist(l, e) <= SKIRMISH.MELEE_NEAR).length * SKIRMISH.MELEE_COST;
+    let best = null;
+    if (plotDist(u.location, t.s) <= 1 && safeFrom(u.location) && !taken.has(`${u.location.x},${u.location.y}`)) best = { loc: { x: u.location.x, y: u.location.y }, turns: 0, score: pre(u.location) };
+    for (const l of tilesAt(t.s, 1)) {
+        const k = `${l.x},${l.y}`;
+        if (taken.has(k) || ctx.stepTo.has(k) || !safeFrom(l) || same(l, u.location)) continue;
+        if (onWater(l) || safe(() => GameplayMap.isImpassable(l.x, l.y), false) || hazardAt(l) > 0 || !roomForSoldier(l)) continue;
+        if ((safe(() => MapUnits.getUnits(l.x, l.y), []) ?? []).some((id) => safe(() => Units.get(id), null)?.owner !== pid())) continue;
+        const p = pre(l);
+        if (best && p >= best.score) continue;
+        const turns = pathTurns(u, l);
+        if (turns === null || turns > SKIRMISH.TURNS || startsWar(u, l)) continue;
+        const score = p + turns * SKIRMISH.WALK_COST;
+        if (!best || score < best.score) best = { loc: l, turns, score };
+    }
+    return best ? { loc: best.loc, turns: best.turns, inRange: inRange(best.loc) } : null;
+}
+
+/**
+ * A skirmish with a hostile village next to our land (core SKIRMISH; the user, after game 58). The free ranged soldiers (the
+ * defence's supply, healthy) and those already shooting there take posts within range of its soldiers; a general (the
+ * vanguard first) stands where its radius covers the most of them, safe (commanderSafeAt), unpacking its army there; the strike
+ * step shoots (shootRaiders: soldiers we are at war with), again after this step when they arrived (SKIRMISH_POST). A hurt one
+ * leaves (it escapes or heals) and the next pass takes a fresh one. Not while a hunt, a raider hunt or a campaign runs. Its
+ * shooters and general are ordered for the pass (ctx.ordered), so the vanguard's rally and the unit loop leave them alone.
+ * @returns log entries
+ */
+function skirmishStep(units, ctx) {
+    const out = [];
+    if (fieldOp || campaign) return out;
+    const t = skirmishTarget(units, ctx);
+    if (!t) {
+        // Why none, every SKIRMISH.NONE_EVERY turns (W9: game 60 had no `skirmish:` line in 140 turns).
+        if (skirmishNoneNoted < 0 || Game.turn < skirmishNoneNoted || Game.turn - skirmishNoneNoted >= SKIRMISH.NONE_EVERY) {
+            skirmishNoneNoted = Game.turn;
+            log.info(`skirmish: none: ${skirmishWhy(units, ctx)}`);
+        }
+        return out;
+    }
+    const taken = new Set();
+    const shooters = [];
+    const byDist = (u) => plotDist(u.location, t.v);
+    // Those shooting there already (not posted elsewhere), then the free ones, the nearest first.
+    const here = units.filter((u) => {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const k = unitKey(u.id);
+        return def && isRangedGuard(def) && !u.isCommanderUnit && u.isOnMap !== false && u.location && !ctx.ordered.has(k) && !ctx.posts.has(k)
+            && !ctx.garrison.has(k) && !inField(k) && !inCampaign(k) && (Number(u.Health?.damage) || 0) < SKIRMISH.HURT
+            && plotDist(u.location, t.s) <= 1;
+    });
+    const free = (ctx.supply ?? []).filter((c) => c.ranged && !c.siege && !c.packed && c.stage && !ctx.posts.has(c.k) && !ctx.ordered.has(c.k)
+        && c.from === undefined && c.atFront === undefined && !inField(c.k) && !inCampaign(c.k) && (Number(c.u.Health?.damage) || 0) < SKIRMISH.HURT).map((c) => c.u);
+    for (const u of [...here.sort((a, b) => byDist(a) - byDist(b)), ...free.filter((u) => !here.includes(u)).sort((a, b) => byDist(a) - byDist(b))]) {
+        if (shooters.length >= SKIRMISH.SHOOTERS) break;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || u.canMove === false) continue;
+        const post = skirmishPost(u, def, t, taken, ctx);
+        if (!post) continue;
+        const k = unitKey(u.id);
+        taken.add(`${post.loc.x},${post.loc.y}`);
+        ctx.ordered.add(k);
+        if (post.turns > 0 && u.hasMoved !== true) {
+            wakeUnit(u);
+            if (moveTo(u, post.loc)) {
+                restedByUs.delete(k);
+                out.push({ key: "SKIRMISH_POST", args: [nameOf(def), t.name] });
+            }
+        }
+        shooters.push({ u, at: post.loc, turns: post.turns });
+    }
+    if (shooters.length === 0) {
+        if (skirmishNoted !== Game.turn) {
+            skirmishNoted = Game.turn;
+            log.info(`skirmish: none: ${t.name} at ${where(t.v)}: no ranged soldier of ours reaches a post within ${SKIRMISH.TURNS} turns`);
+        }
+        return out;
+    }
+    // Its general: the vanguard first, any land commander not posted at a threatened settlement, reaching it in time.
+    const threatened = new Set(ctx.threats.map((x) => `${x.settlement.x},${x.settlement.y}`));
+    const aim = t.s;
+    const cmdr = landCommanders(units).filter((c) => c.isOnMap !== false && c.location && !ctx.ordered.has(unitKey(c.id)) && !inField(unitKey(c.id)) && !inCampaign(unitKey(c.id))
+        && !threatened.has(goals.get(unitKey(c.id))?.post ?? "") && !marching(c))
+        .map((c) => ({ c, turns: pathTurns(c, aim), vanguard: ctx.commanderRoles?.get(unitKey(c.id)) === "VANGUARD" }))
+        .filter((x) => x.turns !== null && x.turns <= SKIRMISH.COMMANDER_TURNS)
+        .sort((a, b) => Number(b.vanguard) - Number(a.vanguard) || a.turns - b.turns)[0]?.c ?? null;
+    let cmdrText = "none";
+    if (cmdr) {
+        const ck = unitKey(cmdr.id);
+        const def = safe(() => GameInfo.Units.lookup(cmdr.type), null);
+        ctx.ordered.add(ck);
+        // Its packed soldiers come out by the shooters (they fight; packed they cannot).
+        const packed = packedSoldiers(cmdr, units);
+        if (packed.length > 0 && plotDist(cmdr.location, aim) <= 2 && unpackToward(cmdr, aim)) {
+            out.push({ key: "SKIRMISH_UNPACKED", args: [nameOf(def), packed.length, t.name] });
+            cmdrText = `${typeOf(cmdr)} ${where(cmdr.location)} unpacks ${packed.length}`;
+        } else {
+            const shields = new Set((ctx.ourUnits ?? []).filter((x) => x.isOnMap !== false && x.location && !x.isCommanderUnit && isMeleeGuard(safe(() => GameInfo.Units.lookup(x.type), null))
+                && (Number(x.Health?.damage) || 0) < SHIELD_DAMAGE).map((x) => `${x.location.x},${x.location.y}`));
+            let best = null;
+            for (const l of tilesAt(aim, 2)) {
+                const lk = `${l.x},${l.y}`;
+                const shielded = shields.has(lk);
+                if (!shielded && taken.has(lk)) continue;
+                if (onWater(l) || safe(() => GameplayMap.isImpassable(l.x, l.y), false) || hazardAt(l) > 0) continue;
+                if ((safe(() => MapUnits.getUnits(l.x, l.y), []) ?? []).some((id) => safe(() => Units.get(id), null)?.owner !== pid())) continue;
+                if (!commanderSafeAt(l, units, ctx) && !(same(l, cmdr.location) && armyShields(cmdr, units))) continue;
+                const covered = shooters.filter((s) => plotDist(s.at, l) <= 1).length;
+                if (covered === 0) continue;
+                const turns = same(l, cmdr.location) ? 0 : pathTurns(cmdr, l);
+                if (turns === null || turns > SKIRMISH.COMMANDER_TURNS) continue;
+                const score = covered * 20 + (shielded ? 10 : 0) + (same(l, t.s) ? 15 : 0) - turns * 5 - plotDist(cmdr.location, l);
+                if (!best || score > best.score) best = { l, score, covered };
+            }
+            if (best && !same(best.l, cmdr.location)) {
+                const p = pathTo(cmdr, best.l);
+                const stop = p && p.turns > 1 ? turnStop(p) : null;
+                const loc = stop && !commanderSafeAt(stop, units, ctx) && def ? commanderAdvance(cmdr, def, best.l, units, ctx) : best.l;
+                if (loc && moveTo(cmdr, loc)) out.push({ key: "SKIRMISH_COMMANDER", args: [nameOf(def), t.name] });
+                cmdrText = `${typeOf(cmdr)} ${where(cmdr.location)} -> ${where(loc ?? best.l)} covers ${best.covered}`;
+            } else if (best) cmdrText = `${typeOf(cmdr)} ${where(cmdr.location)} stays over ${best.covered}`;
+            else if (def) {
+                const loc = commanderAdvance(cmdr, def, aim, units, ctx);
+                if (loc && moveTo(cmdr, loc)) out.push({ key: "SKIRMISH_COMMANDER", args: [nameOf(def), t.name] });
+                cmdrText = `${typeOf(cmdr)} ${where(cmdr.location)} advances${loc ? ` to ${where(loc)}` : " (no safe tile)"}`;
+            }
+        }
+    }
+    if (skirmishNoted !== Game.turn) {
+        skirmishNoted = Game.turn;
+        log.warn(`skirmish: ${t.name} at ${where(t.v)}: their soldiers ${t.enemies.length} [${t.enemies.map((e) => `${where(e)}${e.melee ? "" : " ranged"}`).join("; ")}]; shooters [${shooters.map((s) => `${typeOf(s.u)} ${where(s.u.location)}${s.turns > 0 ? ` -> ${where(s.at)} ${s.turns}t` : ""}${s.u.Health?.damage ? ` -${s.u.Health.damage}` : ""}`).join("; ")}]; commander ${cmdr ? `${cmdrText} (${xpText(cmdr)})` : "none"}`);
+    }
+    return out;
+}
+
+/**
+ * A melee strike on a soldier next to `u` when the game's preview says it pays (tradePays: strikeWorthIt, a general's radius, a
+ * lone commander), not one left to a raider hunt's general (`hold`). Only a member with a move and an attack left, and only a
+ * strike the game carried out (a Combat event naming it) counts (W10, game 60 T109: three attack-moves sent by a Warrior
+ * FIELD_ADVANCE had spent, logged FIELD_STRUCK, no fight). @returns the target tile or null
+ */
+async function fieldStrike(u, targets, hold = null) {
+    const M = globalThis.UnitOperationMoveModifiers;
+    const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
+    if (M?.ATTACK === undefined) return null;
+    if (!(Number(u.Combat?.attacksRemaining) > 0) || !(Number(u.Movement?.movementMovesRemaining ?? 1) > 0)) return null;
+    const ourMax = Number(u.Health?.maxDamage) || 100;
+    const ourHealth = ourMax - (Number(u.Health?.damage) || 0);
+    let best = null;
+    for (const t of targets) {
+        if (plotDist(u.location, t) !== 1 || heldFor(hold, u, t)) continue;
+        const args = { X: t.x, Y: t.y, Modifiers: M.ATTACK };
+        if (!safe(() => Game.UnitOperations.canStart(u.id, MOVE, args, false), null)?.Success) continue;
+        const r = await simulateAttack(u, t);
+        if (!r?.Attacker || !r?.Defender) continue;
+        const enemy = safe(() => Units.get(r.Defender.ID ?? t.id), null);
+        const theirMax = Number(r.Defender.MaxHitPoints ?? enemy?.Health?.maxDamage) || 100;
+        const theirHealth = theirMax - (Number(enemy?.Health?.damage) || 0);
+        const dealt = Number(r.Defender.DamageTo) || 0;
+        const taken = Number(r.Attacker.DamageTo) || 0;
+        if (!tradePays(u, t, { answered: true, ourHealth, ourMax, theirHealth, dealt, taken })) continue;
+        const score = (dealt >= theirHealth ? 1000 : 0) + dealt - taken;
+        if (!best || score > best.score) best = { t, score };
+    }
+    if (!best) return null;
+    Game.UnitOperations.sendRequest(u.id, MOVE, { X: best.t.x, Y: best.t.y, Modifiers: M.ATTACK + (M.MOVE_IGNORE_UNEXPLORED_DESTINATION ?? 0) });
+    if (await untilCombatOf(u.id, COMBAT_WAIT_MS)) return best.t;
+    log.info(`field: ${typeOf(u)} strike on ${where(best.t)} not carried out (no Combat in ${COMBAT_WAIT_MS} ms)`);
+    return null;
+}
+
+/**
+ * The fight's attacks (from the hud's strike step, after the raiders' strikes and shots, and again after the unit step):
+ * melee members strike a soldier of theirs next to them when the preview pays; in a hunt, with no soldier of theirs on the
+ * village, a member next to it steps onto it to disperse it (disperseArrivals then; DISPERSE_INDEPENDENT works with no move
+ * left), the vanguard beside it. Ranged members shoot in the strike step (shootRaiders: soldiers we are at war with).
+ * @returns log entries
+ */
+export async function fieldAssault() {
+    const out = [];
+    const op = fieldOp;
+    if (!op || op.stage !== "FIGHT") return out;
+    const anchor = op.kind === "WAR" ? op.staging : op.target;
+    const depth = op.kind === "HUNT" ? HUNT.ENEMY_RADIUS + 1 : op.kind === "RAIDERS" ? RAIDER.ENEMY_RADIUS + 1 : TRAINING.DEPTH;
+    const members = () => (safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])
+        .filter((u) => op.members.has(unitKey(u.id)) && u.isOnMap !== false && u.location);
+    // A raider hunt's members out of its coming general's radius leave the raider to it (W5: raiderHold).
+    const hold = raiderHold(safe(() => Players.get(pid()).Units.getUnits(), []) ?? []);
+    for (const u of members()) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || campaignRanged(def) || !isSoldier(def) || !(Number(u.Combat?.attacksRemaining) > 0)) continue;
+        const targets = soldiersOf(op.enemy, anchor, depth, { commanders: op.kind === "RAIDERS" }).tiles;
+        const hit = await fieldStrike(u, targets, hold);
+        if (hit) out.push({ key: "FIELD_STRUCK", args: [nameOf(def), op.target.name, hit.x, hit.y] });
+    }
+    if (op.kind !== "HUNT") return out;
+    // The village: empty of their soldiers, a member steps onto it (or stands there: it disperses it now).
+    if (soldiersOf(op.enemy, op.target, 0).n > 0) return out;
+    const ctx = {};
+    for (const u of members()) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || !isSoldier(def) || def.Domain !== "DOMAIN_LAND") continue;
+        if (same(u.location, op.target)) {
+            const e = safe(() => disperseHere(u, def, ctx), null);
+            if (e) out.push(e);
+            return out;
+        }
+    }
+    const walker = members().map((u) => ({ u, def: safe(() => GameInfo.Units.lookup(u.type), null) }))
+        .filter(({ u, def }) => def && isSoldier(def) && !campaignRanged(def) && u.canMove !== false && plotDist(u.location, op.target) <= 2)
+        .map((x) => ({ ...x, turns: pathTurns(x.u, op.target) })).filter((x) => x.turns !== null && x.turns <= 1)
+        .sort((a, b) => (Number(a.u.Health?.damage) || 0) - (Number(b.u.Health?.damage) || 0))[0];
+    if (!walker || !moveTo(walker.u, op.target)) return out;
+    goals.set(unitKey(walker.u.id), { field: op.key, disperse: `${op.target.x},${op.target.y}`, turn: Game.turn });
+    out.push({ key: "DISPERSE_MOVE", args: [nameOf(walker.def), op.target.name, op.target.x, op.target.y] });
+    return out;
+}
+
 // ---- plot hazards: the plague, fallout, fire ----------------------------------------------------
 
 /**
@@ -3347,68 +5849,859 @@ export function keepRetaken() {
  * @returns the damage (0: safe)
  */
 export function hazardAt(loc) {
-    const idx = safe(() => GameplayMap.getIndexFromXY(loc.x, loc.y), -1);
-    if (!(idx >= 0)) return 0;
-    let worst = 0;
-    for (const e of safe(() => MapPlotEffects.getPlotEffects(idx), []) ?? []) {
-        const def = safe(() => GameInfo.PlotEffects.lookup(e.effectType), null);
-        if (!def || truthy(def.TriggerOnEnter)) continue;
-        worst = Math.max(worst, Number(def.Damage) || 0);
-    }
-    return worst;
+    return hazardInfo(loc).damage;
 }
 
-const HAZARD_RADIUS = 3;      // a unit on a hazardous tile looks this far for a safe one it reaches this turn
-const HAZARD_HOLD_HEALTH = 0.5; // with hostile units within DANGER_RADIUS a soldier above this health share holds its tile
+/**
+ * What a tile deals at a turn's start, and for how long: { damage (hazardAt), turns } (turns: the longest of its damaging
+ * effects' `duration`, as the game's plot tooltip shows it (plot-tooltip helpers.js getVisiblePlotEffects), PLAGUE.TURNS_UNKNOWN
+ * when it gives none; 0 on a safe tile).
+ */
+export function hazardInfo(loc) {
+    const idx = loc ? safe(() => GameplayMap.getIndexFromXY(loc.x, loc.y), -1) : -1;
+    if (!(idx >= 0)) return { damage: 0, turns: 0 };
+    if (passMemo?.hazards.has(idx)) return passMemo.hazards.get(idx);
+    const h = hazardNow(idx);
+    passMemo?.hazards.set(idx, h);
+    return h;
+}
+
+function hazardNow(idx) {
+    let damage = 0;
+    const durations = [];
+    for (const e of safe(() => MapPlotEffects.getPlotEffects(idx), []) ?? []) {
+        const def = safe(() => GameInfo.PlotEffects.lookup(e.effectType), null);
+        if (!def || truthy(def.TriggerOnEnter) || !(Number(def.Damage) > 0)) continue;
+        damage = Math.max(damage, Number(def.Damage) || 0);
+        durations.push(e.duration);
+    }
+    return { damage, turns: damage > 0 ? hazardTurns(durations) : 0 };
+}
+
+/** What a way's end-of-turn stop (a plot index) deals at the next turn's start: its hazard while it lasts until that turn. */
+function stopHazard(idx, turn) {
+    const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+    if (!loc) return 0;
+    const h = hazardInfo(loc);
+    return h.turns >= turn ? h.damage : 0;
+}
+
+/** The hazard's damage a walk takes at its end-of-turn stops before its destination (core turnStops, wayCost). */
+function wayHazard(u, p) {
+    const start = safe(() => GameplayMap.getIndexFromXY(u.location.x, u.location.y), -1);
+    return wayCost(turnStops(p, start), { hazard: stopHazard });
+}
+
+/** The tiles a unit reaches this turn lie within this radius: its moves left (2 when unknown), at most STEP_AWAY_MAX. */
+function reachRadius(u) {
+    const moves = Math.floor(Number(u?.Movement?.movementMovesRemaining ?? 2));
+    return Math.max(1, Math.min(STEP_AWAY_MAX, Number.isFinite(moves) ? moves : 2));
+}
+
+const HAZARD_HOLD_HEALTH = 0.5; // with a hostile unit next to it a soldier above this health share holds its tile
+// A safe tile next to the plague is caught next (game 48: 60 moves off plague tiles at A63-A67 and E55-E67, each to the nearest
+// safe tile, and our land units fell 23 -> 18 over E61-E67 with one loss in combat): a tile next to one counts this much more
+// walking, one 2 away half of it.
+const HAZARD_EDGE = 4;
+
+/** Whether a hazardous tile lies within `r` of this one (the plague spreads to its neighbours). */
+function hazardWithin(loc, r) {
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, r), []) ?? []) {
+        const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (at && !same(at, loc) && hazardAt(at) > 0) return true;
+    }
+    return false;
+}
 
 /**
- * A unit on a hazardous tile (hazardAt) moves this turn to the nearest safe tile it reaches: room for it, no hostile
- * unit next to it, land for a land unit, our land first; a resting or fortified one is woken. A healthy soldier with
- * hostile units near holds its tile (it defends). @returns a log entry or null
+ * Does this unit hold its hazardous tile? A healthy soldier holds a settlement's centre with raiders within DANGER_RADIUS (an
+ * empty centre is taken); elsewhere only an enemy next to it holds it there (game 48: within 3 kept units on plague tiles at
+ * the fronts). @returns the reason or null
+ */
+function holdsHazard(u, def, ctx) {
+    const health = 1 - (Number(u.Health?.damage) || 0) / (Number(u.Health?.maxDamage) || 100);
+    const centre = !!settlementAt(u.location);
+    if (!isSoldier(def) || !(health > HAZARD_HOLD_HEALTH) || !hostileNear(u.location, centre ? DANGER_RADIUS : 1, ctx)) return null;
+    return centre ? "holds the centre: raiders near" : "holds: a hostile unit next to it";
+}
+
+/**
+ * A clean tile a unit on a hazard may go to, or why not: { score } (the nearest, our land, clear of the hazard's edge:
+ * HAZARD_EDGE) or { why } ("infected", "taken", "impassable", "water", "marks"). `room`: none of its kind stands there (off:
+ * a tile one of our soldiers may free for it).
+ */
+function hazardRefuge(u, def, ctx, loc, { room = true } = {}) {
+    const here = u.location;
+    const key = `${loc.x},${loc.y}`;
+    if (hazardAt(loc) > 0) return { why: "infected" };
+    const kept = ctx.plagueReserved?.get(key);
+    if ((kept !== undefined && kept !== unitKey(u.id)) || ctx.stepTo.has(key) || (room && !roomFor(def, loc))) return { why: "taken" };
+    if (safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) return { why: "impassable" };
+    // Land for a land unit (a navigable river would embark it); water or a navigable river for a ship.
+    if (!standsOn(def, loc)) return { why: "water" };
+    // Our units' hit spots near it count, not those around the tile it leaves (dangerNear's `from`; game 60: our Quadrireme's
+    // own attacks from 66,5 kept 65,5 out at T133).
+    if (!ctx.bold && marksNear(loc, 1, here)) return { why: "marks" };
+    const ours = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1) === pid();
+    const d = safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), 9);
+    const edge = hazardWithin(loc, 1) ? HAZARD_EDGE : hazardWithin(loc, 2) ? HAZARD_EDGE / 2 : 0;
+    return { score: d + (ours ? 0 : 2) + edge };
+}
+
+/**
+ * A unit on a hazardous tile (hazardAt) leaves it by the cheapest way (core escapeWays; game 60, research/game60: Астрахань's
+ * Warrior, Slinger and Spearman found no clean tile reached in one turn at T133 and stood on the plague until it killed them at
+ * T135-T137, while 2-turn ways out cost at most 25): the nearest PLAGUE.PATHS clean tiles within PLAGUE.LOOK (hazardRefuge),
+ * reached within PLAGUE.ESCAPE_TURNS, each costing the plague's damage at its end-of-turn stops while it lasts there and
+ * PLAGUE.HOSTILE_COST for a stop next to a hostile unit, when that costs less than staying (the damage for each turn the plague
+ * still lasts here: MapPlotEffects `duration`). A resting or fortified one is woken; a healthy soldier with hostile units near
+ * holds its tile (holdsHazard). A walk of several turns carries the goal { hazard } and is checked every pass (checkWalks).
+ * @returns a log entry or null (ctx.hazardWhy says why it stays)
  */
 function leaveHazard(u, def, ctx) {
     const here = u.location;
-    const damage = hazardAt(here);
+    const { damage, turns: left } = hazardInfo(here);
     if (!(damage > 0) || def.CanBeDamaged === false || def.CanBeDamaged === "false") return null;
-    const health = 1 - (Number(u.Health?.damage) || 0) / (Number(u.Health?.maxDamage) || 100);
-    if (isSoldier(def) && health > HAZARD_HOLD_HEALTH && hostileNear(here, DANGER_RADIUS, ctx)) return null;
-    const options = [];
-    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, HAZARD_RADIUS), []) ?? []) {
+    const k = unitKey(u.id);
+    const why = (reason) => {
+        (ctx.hazardWhy ??= new Map()).set(k, reason);
+        return null;
+    };
+    const hold = holdsHazard(u, def, ctx);
+    if (hold) return why(hold);
+    const refused = {};
+    const count = (w) => {
+        refused[w] = (refused[w] ?? 0) + 1;
+    };
+    // The game's ways are asked for the tiles it likely reaches soonest (its moves a turn), the best scored first.
+    const radius = reachRadius(u);
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, PLAGUE.LOOK), []) ?? []) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-        if (!loc || same(loc, here) || hazardAt(loc) > 0 || !roomFor(def, loc)) continue;
-        if (safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
-        // Land for a land unit (a navigable river would embark it); water or a navigable river for a ship.
-        if (!standsOn(def, loc)) continue;
-        if (dangerNear(loc, 1, ctx)) continue;
-        const ours = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1) === pid();
-        const d = safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), 9);
-        options.push({ loc, score: d + (ours ? 0 : 2) });
+        if (!loc || same(loc, here)) continue;
+        const t = hazardRefuge(u, def, ctx, loc);
+        if (t.why) count(t.why);
+        else tiles.push({ loc, score: t.score, guess: Math.ceil(safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), 9) / radius) });
     }
-    options.sort((a, b) => a.score - b.score);
-    const WAKE = "UNITCOMMAND_WAKE";
-    let woken = false;
-    for (const { loc } of options) {
-        const p = pathTo(u, loc);
-        if (!p || p.turns > 1 || startsWar(u, loc)) continue;
-        if (!woken && !isIdle(u) && safe(() => Game.UnitCommands.canStart(u.id, WAKE, NO_TARGET, false), null)?.Success) {
-            Game.UnitCommands.sendRequest(u.id, WAKE, { ...NO_TARGET });
-            woken = true;
+    tiles.sort((a, b) => a.guess - b.guess || a.score - b.score);
+    const start = safe(() => GameplayMap.getIndexFromXY(here.x, here.y), -1);
+    const hostile = (idx) => {
+        const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        return !!at && hostileNear(at, 1, ctx);
+    };
+    const options = [];
+    let asked = 0;
+    for (const t of tiles) {
+        // Farther than its moves take it in PLAGUE.ESCAPE_TURNS: not asked.
+        if (t.guess > PLAGUE.ESCAPE_TURNS) {
+            count(`beyond ${PLAGUE.ESCAPE_TURNS} turns`);
+            continue;
         }
-        if (moveTo(u, loc)) return { key: "LEFT_HAZARD", args: [nameOf(def), loc.x, loc.y, damage] };
+        if (asked >= PLAGUE.PATHS) {
+            count("not asked");
+            continue;
+        }
+        asked++;
+        const p = pathTo(u, t.loc);
+        if (!p) count("unreachable");
+        else if (p.turns > PLAGUE.ESCAPE_TURNS) count(`beyond ${PLAGUE.ESCAPE_TURNS} turns`);
+        else if (startsWar(u, t.loc)) count("war");
+        else {
+            const stops = turnStops(p, start);
+            const cost = wayCost(stops, { hazard: stopHazard, hostile });
+            // The stops it takes on the plague knowingly (checkWalks re-plans only for others).
+            const infected = stops.slice(0, -1).filter((idx, i) => stopHazard(idx, i + 1) > 0);
+            options.push({ ...t, turns: Math.max(1, p.turns), cost, infected });
+            // Nothing beats the best scored clean tile reached this turn with no hostile unit next to it.
+            if (cost === 0 && p.turns <= 1) break;
+        }
+    }
+    const stay = damage * left;
+    const ways = escapeWays(options, stay);
+    if (ways.length > 0) wakeUnit(u);
+    for (const w of ways) {
+        if (!moveTo(u, w.loc, { throughHazard: true })) {
+            count("move refused");
+            continue;
+        }
+        ctx.stepTo.add(`${w.loc.x},${w.loc.y}`);
+        if (w.turns <= 1) return { key: "LEFT_HAZARD", args: [nameOf(def), w.loc.x, w.loc.y, damage] };
+        // Its errand (a site, a village, a post) waits under the walk and comes back once it ends (endHazardWalk).
+        const was = goals.get(k);
+        goals.set(k, { hazard: `${w.loc.x},${w.loc.y}`, cost: w.cost, infected: w.infected, turn: Game.turn, was: was?.hazard !== undefined ? was.was : was });
+        return { key: "LEFT_HAZARD_WALK", args: [nameOf(def), w.loc.x, w.loc.y, stay, w.turns, w.cost] };
+    }
+    const cheapest = [...options].sort((a, b) => a.cost - b.cost || a.turns - b.turns)[0];
+    const parts = Object.entries(refused).map(([w, n]) => `${n} ${w}`);
+    // Packing into a commander's army next to it is not tried (PLG-3): whether a hurt unit may join one and whether packed units
+    // are spared the plague's damage are unproven; UI.log names the case.
+    const cmdr = (ctx.ourUnits ?? []).find((c) => c.isCommanderUnit && c.isOnMap !== false && c.location && isLandCommander(safe(() => GameInfo.Units.lookup(c.type), null))
+        && safe(() => GameplayMap.getPlotDistance(c.location.x, c.location.y, here.x, here.y), 9) === 1 && !(hazardAt(c.location) > 0));
+    return why(`no way out: ${parts.join(", ") || "no tile"}${cheapest ? `; the cheapest costs ${cheapest.cost} in ${cheapest.turns}t to ${cheapest.loc.x},${cheapest.loc.y}` : ""}; staying costs ${stay}`
+        + `${cmdr ? `; a commander's army next to it at ${cmdr.location.x},${cmdr.location.y} (packing not tried)` : ""}`);
+}
+
+/** A clean tile with room this unit reaches this turn with no hostile unit next to it (the cheapest way out), the best by hazardRefuge. */
+function freeRefuge(u, def, ctx) {
+    const here = u.location;
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, reachRadius(u)), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || same(loc, here)) continue;
+        const t = hazardRefuge(u, def, ctx, loc);
+        if (!t.why && !hostileNear(loc, 1, ctx)) tiles.push({ loc, score: t.score });
+    }
+    tiles.sort((a, b) => a.score - b.score);
+    for (const t of tiles) {
+        const turns = pathTurns(u, t.loc);
+        if (turns !== null && turns <= 1 && !startsWar(u, t.loc)) return t.loc;
     }
     return null;
+}
+
+/** Where a soldier of ours freeing a tile for a unit on the plague steps to: a clean tile it reaches this turn, never `avoid`. */
+function stepOffFor(b, bdef, avoid, ctx) {
+    const from = b.location;
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(from.x, from.y, reachRadius(b)), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        const key = loc ? `${loc.x},${loc.y}` : "";
+        if (!loc || same(loc, from) || same(loc, avoid) || hazardAt(loc) > 0 || ctx.stepTo.has(key) || ctx.plagueReserved?.has(key)) continue;
+        if (!roomFor(bdef, loc) || !standsOn(bdef, loc) || safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || hostileNear(loc, 1, ctx)) continue;
+        const ours = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1) === pid();
+        const edge = hazardWithin(loc, 1) ? HAZARD_EDGE : 0;
+        tiles.push({ loc, score: safe(() => GameplayMap.getPlotDistance(from.x, from.y, loc.x, loc.y), 9) + (ours ? 0 : 2) + edge });
+    }
+    tiles.sort((a, b2) => a.score - b2.score);
+    for (const t of tiles) {
+        const turns = pathTurns(b, t.loc);
+        if (turns !== null && turns <= 1 && !startsWar(b, t.loc)) return t.loc;
+    }
+    return null;
+}
+
+/**
+ * A tile freed for a unit on the plague: a clean one it reaches this turn where exactly one soldier of ours stands, healthy
+ * (hurt less than ESCAPE_DAMAGE), free to move and not ordered this pass, that steps to another clean tile it reaches
+ * (stepOffFor). The unit moves in once it has gone (plagueArrivals). @returns a log entry or null
+ */
+function makePlagueRoom(u, def, ctx) {
+    const here = u.location;
+    const A = globalThis.UnitActivityTypes;
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, reachRadius(u)), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || same(loc, here)) continue;
+        const there = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null));
+        if (there.length === 0 || there.some((o) => !o || o.owner !== pid())) continue;
+        const soldiers = there.filter((o) => isSoldier(safe(() => GameInfo.Units.lookup(o.type), null)));
+        if (soldiers.length !== 1) continue;
+        const t = hazardRefuge(u, def, ctx, loc, { room: false });
+        if (t.why || hostileNear(loc, 1, ctx)) continue;
+        tiles.push({ loc, b: soldiers[0], score: t.score });
+    }
+    tiles.sort((a, b) => a.score - b.score);
+    for (const t of tiles) {
+        const b = t.b;
+        const bk = unitKey(b.id);
+        const bdef = safe(() => GameInfo.Units.lookup(b.type), null);
+        if (!bdef || b.isCommanderUnit || b.canMove === false || b.hasMoved === true || ctx.ordered.has(bk) || inCampaign(bk) || inField(bk)) continue;
+        // One with a post or a formation move of its own goes there (the defence's).
+        if (ctx.posts?.has(bk) || ctx.formation?.has(bk)) continue;
+        if ((Number(b.Health?.damage) || 0) >= ESCAPE_DAMAGE || (A && b.activityType === A.OPERATION)) continue;
+        const turns = pathTurns(u, t.loc);
+        if (turns === null || turns > 1 || startsWar(u, t.loc)) continue;
+        const to = stepOffFor(b, bdef, here, ctx);
+        if (!to) continue;
+        wakeUnit(b);
+        if (!moveTo(b, to)) continue;
+        restedByUs.delete(bk);
+        ctx.stepTo.add(`${to.x},${to.y}`);
+        ctx.stepTo.add(`${t.loc.x},${t.loc.y}`);
+        ctx.ordered.add(bk);
+        ctx.ordered.add(unitKey(u.id));
+        plagueRooms.set(unitKey(u.id), { x: t.loc.x, y: t.loc.y, turn: Game.turn });
+        return { key: "PLAGUE_ROOM", args: [nameOf(bdef), nameOf(def), t.loc.x, t.loc.y] };
+    }
+    return null;
+}
+
+/**
+ * Room on the plague's way out (game 60 T133: our own Archer stood on 67,7, the one clean tile Астрахань's three infected units
+ * reached that turn; it could have stepped aside, and none of them left): the units on hazardous tiles that will leave
+ * (holdsHazard aside), the most hurt first (their damage and the tile's against their health). Each keeps the clean free tile it
+ * reaches this turn (ctx.plagueReserved, which leaveHazard honours); one with none gets a tile freed (makePlagueRoom), one a pass
+ * and settlement, and moves in after (plagueArrivals); the others take a longer way (leaveHazard). Before the unit loop.
+ * @returns log entries
+ */
+function planPlagueRooms(units, ctx) {
+    const out = [];
+    ctx.plagueReserved = new Map();
+    const A = globalThis.UnitActivityTypes;
+    const list = [];
+    for (const u of units) {
+        const k = unitKey(u.id);
+        if (u.isOnMap === false || !u.location || u.canMove === false || u.hasMoved === true || ctx.ordered.has(k)) continue;
+        if (A && u.activityType === A.OPERATION && !ctx.walkCancelled?.has(k)) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || def.CanBeDamaged === false || def.CanBeDamaged === "false") continue;
+        const damage = hazardAt(u.location);
+        if (!(damage > 0) || holdsHazard(u, def, ctx)) continue;
+        list.push({ u, def, k, hurt: ((Number(u.Health?.damage) || 0) + damage) / (Number(u.Health?.maxDamage) || 100) });
+    }
+    if (list.length === 0) return out;
+    list.sort((a, b) => b.hurt - a.hurt);
+    const centres = ourCentres();
+    const freed = new Set(); // settlements that freed a tile this pass
+    for (const x of list) {
+        const free = freeRefuge(x.u, x.def, ctx);
+        if (free) {
+            ctx.plagueReserved.set(`${free.x},${free.y}`, x.k);
+            continue;
+        }
+        // One soldier of ours blocks only another soldier (one military unit a tile).
+        if (!isSoldier(x.def)) continue;
+        const home = [...centres].sort((a, b) => plotDist(a, x.u.location) - plotDist(b, x.u.location))[0];
+        const s = home ? `${home.x},${home.y}` : "field";
+        if (freed.has(s)) continue;
+        const e = makePlagueRoom(x.u, x.def, ctx);
+        if (!e) continue;
+        freed.add(s);
+        out.push(e);
+    }
+    return out;
+}
+
+/**
+ * Units on the plague move into the tiles our soldiers freed for them this pass (PLAGUE_ROOM), once the game shows those tiles
+ * free; the hud calls this right after the unit step. One still taken waits for the next pass. @returns log entries
+ */
+export function plagueArrivals() {
+    const out = [];
+    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+        const k = unitKey(u.id);
+        const r = plagueRooms.get(k);
+        if (!r || r.turn !== Game.turn || !u.location) continue;
+        plagueRooms.delete(k);
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def) continue;
+        const damage = hazardAt(u.location);
+        if (!roomFor(def, r) || !moveTo(u, r, { throughHazard: true })) {
+            log.info(`plague: ${def.UnitType} at ${u.location.x},${u.location.y} did not move into ${r.x},${r.y}: ${roomFor(def, r) ? "the move was refused" : "still taken"}`);
+            continue;
+        }
+        out.push({ key: "LEFT_HAZARD", args: [nameOf(def), r.x, r.y, damage] });
+    }
+    for (const [k, r] of [...plagueRooms]) if (r.turn !== Game.turn) plagueRooms.delete(k);
+    return out;
+}
+
+/**
+ * Walks that would stop on the plague (game 60: every walk of several turns was blind to it: moveTo checked only the
+ * destination, and leaveHazard skips units on their way): a unit on its way whose destination is now hazardous, or whose next
+ * end-of-turn stop is while it lasts, has its order cancelled (UNITCOMMAND_CANCEL, as releaseStuckMoves) and is re-planned:
+ * leaveHazard takes it this pass when it stands on a hazard (ctx.walkCancelled), else its own step next pass (moveTo then
+ * goes around the plague a turn at a time, cleanStep, or waits). A way out of the plague (goal { hazard }) is cancelled only for a stop infected since it
+ * was chosen, and its goal ends once the unit stops (the errand it had comes back). @returns log entries
+ */
+function checkWalks(units, ctx) {
+    const out = [];
+    ctx.walkCancelled = new Set();
+    const A = globalThis.UnitActivityTypes;
+    if (!A) return out;
+    for (const u of units) {
+        const k = unitKey(u.id);
+        const g = goals.get(k);
+        if (u.activityType !== A.OPERATION || u.isOnMap === false || !u.location) {
+            endHazardWalk(k, g);
+            continue;
+        }
+        const dest = safe(() => Units.getQueuedOperationDestination(u.id), null);
+        if (!dest || !(dest.x >= 0) || same(dest, u.location)) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!def || def.CanBeDamaged === false || def.CanBeDamaged === "false") continue;
+        let bad = hazardAt(dest) > 0 ? "its destination" : null;
+        // Its next stop lies within a turn's move: with no hazard that close, no way is asked of the game.
+        if (!bad && hazardWithin(u.location, reachRadius(u))) {
+            const p = pathTo(u, dest);
+            if (!p) continue;
+            // Not a unit that stays where it stands this turn (no move left): its next stop is its own tile.
+            const start = safe(() => GameplayMap.getIndexFromXY(u.location.x, u.location.y), -1);
+            const stops = turnStops(p, start);
+            if (g?.hazard !== undefined) {
+                // A way out of the plague: only a stop on it that was clean when it was chosen and is infected now.
+                const known = new Set(g.infected ?? []);
+                bad = stops.slice(0, -1).some((idx, i) => idx !== start && !known.has(idx) && stopHazard(idx, i + 1) > 0) ? "a stop on its way out" : null;
+            } else bad = stops.length > 1 && stops[0] !== start && stopHazard(stops[0], 1) > 0 ? "its next stop" : null;
+        }
+        if (!bad) continue;
+        const CANCEL = "UNITCOMMAND_CANCEL";
+        if (!safe(() => Game.UnitCommands.canStart(u.id, CANCEL, NO_TARGET, false), null)?.Success) continue;
+        Game.UnitCommands.sendRequest(u.id, CANCEL, { ...NO_TARGET });
+        endHazardWalk(k, g);
+        // A guard on its way is one no longer (guardProgress reads its move order, which the game drops only later): the
+        // defence plan sends it again this pass, around the plague (moveTo).
+        if (goals.get(k)?.guard !== undefined) goals.delete(k);
+        ctx.walkCancelled.add(k);
+        log.info(`plague: ${def.UnitType} at ${u.location.x},${u.location.y} walking to ${dest.x},${dest.y}: ${bad} is on the plague, the order is cancelled`);
+        out.push({ key: "WALK_HAZARD", args: [nameOf(def), dest.x, dest.y] });
+    }
+    return out;
+}
+
+/** A way out of the plague ends (the unit stopped, or its walk was cancelled): the errand it had before comes back. */
+function endHazardWalk(k, g) {
+    if (g?.hazard === undefined) return;
+    if (g.was) goals.set(k, g.was);
+    else goals.delete(k);
+}
+
+/**
+ * UI.log once a turn while units of ours stand on a hazardous tile after the unit step (research/game48: the plague's losses
+ * could not be told from the logs): each one, its damage, the plague's turns left there and why it stayed (game 60: why each
+ * tile was refused).
+ */
+function logPlague(units, ctx, ordered) {
+    const left = [];
+    for (const u of units) {
+        const k = unitKey(u.id);
+        if (u.isOnMap === false || !u.location) continue;
+        // Not one sent off it by any step (game 60: a Migrant resettle sent away was listed as stuck); not one an earlier step
+        // ordered (its reason is not ours to give); one that holds it and then fortifies is listed.
+        const sent = movesSent.get(k);
+        if (sent?.turn === Game.turn && !same(sent, u.location) && !(hazardAt(sent) > 0)) continue;
+        if (ordered.has(k) && !ctx.hazardWhy?.has(k)) continue;
+        const { damage, turns } = hazardInfo(u.location);
+        if (!(damage > 0)) continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const A = globalThis.UnitActivityTypes;
+        const why = ctx.hazardWhy?.get(k) ?? (A && u.activityType === A.OPERATION ? "on its way" : u.canMove === false ? "no moves" : "not looked at");
+        left.push(`${def?.UnitType ?? "?"} at ${u.location.x},${u.location.y} hurt ${Number(u.Health?.damage) || 0}, ${damage} a turn for ${turns} more turn(s) (${why})`);
+    }
+    if (left.length === 0 || plagueNoted === Game.turn) return;
+    plagueNoted = Game.turn;
+    log.info(`plague: ${left.length} unit(s) of ours on hazardous tiles (a way out looked for within ${PLAGUE.LOOK} tiles and ${PLAGUE.ESCAPE_TURNS} turns): ${left.join("; ")}`);
+}
+let plagueNoted = -1;
+
+// ---- the generals (research/41 Phase 2) ---------------------------------------------------------------
+
+/** has(promotion type) for a unit, through its promotion class's disciplines (as promoteUnits reads them). */
+function promotionHas(u, def, { chosen = false } = {}) {
+    const discipline = new Map();
+    GameInfo.UnitPromotionClassSets?.forEach((set) => {
+        if (set.PromotionClassType !== def?.PromotionClass) return;
+        GameInfo.UnitPromotionDisciplineDetails?.filter((d) => d.UnitPromotionDisciplineType === set.UnitPromotionDisciplineType)
+            .forEach((d) => discipline.set(d.UnitPromotionType, set.UnitPromotionDisciplineType));
+    });
+    const free = chosen ? freePromotions() : null;
+    return (p) => discipline.has(p) && !free?.has(p) && !!safe(() => u.Experience?.hasPromotion(discipline.get(p), p), false);
+}
+
+let freePromotionIndex = null; // { source, set }: the promotions the game hands out through an effect
+
+/**
+ * Promotions the game grants through an effect (EFFECT_GRANT_UNIT_PROMOTION naming a UnitPromotionType): every commander
+ * gets them, so they are no choice of ours and decide no role (`promotionHas(…, {chosen: true})`). Game 55: Rome's Cursus
+ * honorum gave every Army Commander Bulwark, a Bastion promotion, at A34; all three generals read BASTION from then on, so
+ * there was no vanguard (no packed army, no raids watched) and the next promotion went to Steadfast instead of Mobility.
+ */
+function freePromotions() {
+    const source = GameInfo.ModifierArguments;
+    if (freePromotionIndex && freePromotionIndex.source === source) return freePromotionIndex.set;
+    const effect = new Map();
+    for (const d of GameInfo.DynamicModifiers ?? []) effect.set(d.ModifierType, d.EffectType);
+    const type = new Map();
+    for (const m of GameInfo.Modifiers ?? []) type.set(m.ModifierId, m.ModifierType);
+    const set = new Set();
+    for (const a of source ?? []) {
+        if (a.Name === "UnitPromotionType" && effect.get(type.get(a.ModifierId)) === "EFFECT_GRANT_UNIT_PROMOTION") set.add(a.Value);
+    }
+    freePromotionIndex = { source, set };
+    return set;
+}
+
+/** Our land commanders, off the map too (one waiting to respawn still has its role). */
+const landCommanders = (units) => (units ?? []).filter((u) => u.isCommanderUnit && isLandCommander(safe(() => GameInfo.Units.lookup(u.type), null)));
+
+/**
+ * Every land commander's role (core assignRoles): VANGUARD or BASTION by what it took; of the undecided the one with the most
+ * XP is the vanguard when no other is. A campaign's leader with no Bastion promotion is the vanguard. @returns Map(key -> role)
+ */
+export function commanderRoles(units = safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+    const list = landCommanders(units).map((u) => {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const xp = (Number(safe(() => u.Experience?.getLevel, 0)) || 0) * 100 + (Number(safe(() => u.Experience?.experiencePoints, 0)) || 0);
+        return { key: unitKey(u.id), has: promotionHas(u, def, { chosen: true }), xp };
+    });
+    // An undecided vanguard stays the vanguard (game 49: with no XP the role followed the unit ids and changed hands when the
+    // second commander came).
+    const roles = assignRoles(list, lastRoles);
+    for (const c of list) if ((inCampaign(c.key) || inField(c.key)) && roleFromPromotions(c.has) !== "BASTION") roles.set(c.key, "VANGUARD");
+    lastRoles = roles;
+    return roles;
+}
+
+/**
+ * What the generals' effects are worth now (core/xpl-effect-value.js): our land commanders, whether one still lacks its role's
+ * key promotions, and whether one fights (a threatened settlement or a war at our door).
+ */
+export function generalsState() {
+    const units = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
+    const list = landCommanders(units);
+    const roles = commanderRoles(units);
+    const wanting = list.some((u) => keyPromotionsLeft(roles.get(unitKey(u.id)) ?? "BASTION", promotionHas(u, safe(() => GameInfo.Units.lookup(u.type), null))) > 0);
+    const me = safe(() => Players.get(pid()), null);
+    const atWar = (safe(() => Players.getAlive(), []) ?? []).some((p) => p && p.id !== pid() && p.isMajor !== false && !!safe(() => me.Diplomacy.isAtWarWith(p.id), false));
+    const fighting = atWar || (safe(() => threatenedSettlements(), []) ?? []).length > 0;
+    return { commanders: list.length, wanting, fighting };
+}
+
+const raidHistory = new Map(); // settlement key -> the turns it was threatened (the last GENERAL.RAIDED_TURNS)
+let lastRoles = new Map();      // unit key -> the role it had last (assignRoles keeps an undecided vanguard)
+
+/** Notes this turn's threatened settlements (once a turn each). */
+function noteRaids(threats) {
+    const turn = safe(() => Game.turn, -1);
+    for (const t of threats ?? []) {
+        const k = `${t.settlement.x},${t.settlement.y}`;
+        const turns = raidHistory.get(k) ?? [];
+        if (turns[turns.length - 1] !== turn) turns.push(turn);
+        raidHistory.set(k, turns.filter((x) => turn - x < GENERAL.RAIDED_TURNS && x <= turn));
+    }
+}
+
+/** Of these settlements, the one threatened on most of the last RAIDED_TURNS turns, else an exposed one; or null. */
+function mostRaided(cities, ctx) {
+    const turn = safe(() => Game.turn, -1);
+    const raids = (c) => (raidHistory.get(`${c.location.x},${c.location.y}`) ?? []).filter((x) => turn - x < GENERAL.RAIDED_TURNS && x <= turn).length;
+    const exposed = (c) => (ctx.exposed ?? []).some((e) => same(e.settlement, c.location));
+    const scored = cities.map((c) => ({ c, s: raids(c) * 2 + (exposed(c) ? 1 : 0) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
+    return scored[0]?.c ?? null;
+}
+
+const COMMANDER_ESCAPE_RADIUS = 3; // a commander in danger looks this far for a safer tile it reaches this turn
+const SHIELD_DAMAGE = 50;          // a land soldier of ours hurt less than this shields a commander on its tile...
+const DISTRICT_SAFE_SHARE = 0.5;   // ...and our centre does while its district keeps this share of its health
+
+/**
+ * A healthy land soldier of ours on this tile (research/42 A1; the user: "hiding underneath another war units"): a
+ * commander is another formation class (FORMATION_CLASS_COMMAND), so it shares the soldier's tile, and the soldier is the
+ * one attacked.
+ */
+function shieldAt(loc, units) {
+    return (units ?? []).some((s) => {
+        if (s.isCommanderUnit || s.isOnMap === false || !s.location || !same(s.location, loc)) return false;
+        if ((Number(s.Health?.damage) || 0) >= SHIELD_DAMAGE) return false;
+        const def = safe(() => GameInfo.Units.lookup(s.type), null);
+        return isSoldier(def) && def.Domain === "DOMAIN_LAND";
+    });
+}
+
+/**
+ * A hurt soldier of ours that still shields a land commander on its tile (shieldAt): it does not step away, withdraw or escape
+ * from under it in the pass, which would leave the commander alone where it stood for that shield (the fight simulator's
+ * raids60 after game 60's packages merged: the general escaped, or was placed by its hunt, under a Warrior hurt 40-48 that
+ * then withdrew in the same pass, and a raider caught the general alone, 2 of 10 seeds).
+ */
+const ourUnitsOf = (ctx) => ctx?.ourUnits ?? safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
+
+function sheltersCommander(u, units) {
+    if (!u?.location || u.isCommanderUnit || u.isOnMap === false || !shieldAt(u.location, [u])) return false;
+    return landCommanders(units).some((c) => c.isOnMap !== false && !!c.location && same(c.location, u.location));
+}
+
+/** Our centre here with its district at DISTRICT_SAFE_SHARE of its health or more (it takes the attacks; unknown: it does). */
+function districtHolds(loc) {
+    if (!settlementAt(loc)) return false;
+    const districts = safe(() => Players.Districts.get(pid()), null);
+    const health = Number(safe(() => districts.getDistrictHealth(loc), NaN));
+    const max = Number(safe(() => districts.getDistrictMaxHealth(loc), NaN));
+    if (!Number.isFinite(health) || !(max > 0)) return true;
+    return health / max >= DISTRICT_SAFE_SHARE;
+}
+
+/**
+ * Is this commander in danger: hit since our last pass (its tile is a hit spot of this turn), or standing where it may not
+ * (commanderSafeAt). @returns the reason or null
+ */
+function commanderDanger(u, units, ctx) {
+    if (!u.location || u.isOnMap === false || afloat(u)) return null;
+    // A hit on our centre while its district holds is its holder's: the district stands between them (the fight simulator,
+    // after game 58: the general left the town centre every time its holder was struck, and its XP with it).
+    // So is a hit under a healthy soldier of ours that still stands there (shieldAt): the soldier took it (the fight simulator's
+    // raids60, after the packages of game 60 merged: a general whose army had unpacked hurt stood under the healthy Warrior
+    // that had just struck, escaped off it for the hit, and an Archer caught it alone).
+    if (hitSpots.some((h) => h.turn === Game.turn && same(h, u.location)) && !districtHolds(u.location) && !shieldAt(u.location, units)) return "hit";
+    return armyShields(u, units) || commanderSafeAt(u.location, units, ctx) ? null : "in reach";
+}
+
+/**
+ * A healthy soldier packed in this commander's army: "If an Assembled Army is attacked, it defends as a single unit,
+ * leveraging the combined strength of all its components" (the Civilopedia's armies page; after game 54). Hit, it escapes
+ * all the same (a strong enough attack makes it deploy).
+ */
+function armyShields(c, units) {
+    return (units ?? []).some((u) => u !== c && !u.isCommanderUnit && u.isOnMap === false && sameId(u.armyId, c.armyId)
+        && (Number(u.Health?.damage) || 0) < SHIELD_DAMAGE && isSoldier(safe(() => GameInfo.Units.lookup(u.type), null)));
+}
+
+/**
+ * Where a commander may end its move, the one rule its escape and its walk share (game 49: walking to Йезд it stopped in a
+ * raider's reach, escaped back, and sat in the capital T16-T25 while Йезд was raided): under a healthy soldier of ours
+ * (shieldAt), on our centre while its district holds (districtHolds), else never next to a hostile land unit and out of
+ * every hostile unit's reach (ships too). Game 53 (research/42): any centre of ours counted, so the bastion stood alone on
+ * Китион's 0-health centre after its holder died and was hit four times and killed (M72-M74), and walking beside soldiers
+ * counted, so a Frigate shot it three times on the coast (M149-M150).
+ */
+function commanderSafeAt(loc, units, ctx, margin = 0) {
+    if (shieldAt(loc, units) || districtHolds(loc)) return true;
+    if (ctx?.hostileAt && hostileNear(loc, 1, ctx)) return false;
+    return hostilesInReach(loc, margin).length + shipsReaching(loc).length === 0;
+}
+
+/** The tile a path ends this turn on (the last plot the game reaches on turn 1), or null. */
+function turnStop(p) {
+    let at = null;
+    (p?.plots ?? []).forEach((idx, i) => {
+        if ((Number(p.steps?.[i]) || 1) <= 1) at = idx;
+    });
+    return at === null ? null : safe(() => GameplayMap.getLocationFromIndex(at), null);
+}
+
+const COMMANDER_ADVANCE_LOOK = 8; // tiles a commander checks a way to when it advances toward its post
+const ADVANCE_MARGIN = 1;         // ...and a tile in the open out of reach by this much more (a raider moves toward it)
+
+/**
+ * The tile nearest its post a commander reaches this turn and may stand on (commanderSafeAt), nearer than where it stands; or
+ * null (research/41 §4D: as close to the fight as is safe). In the open it must be out of reach by ADVANCE_MARGIN more: game
+ * 54 (A41-A48), the vanguard advanced from Ашшур to 67,15 out of reach, a raider stepped closer, and it escaped back the next
+ * turn, twice.
+ */
+function commanderAdvance(u, def, post, units, ctx) {
+    const here = u.location;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const now = dist(here, post);
+    const radius = Math.max(1, Number(def?.BaseMoves) || 2);
+    const tiles = [];
+    for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, radius), []) ?? []) {
+        const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+        if (!loc || same(loc, here) || !(dist(loc, post) < now)) continue;
+        if (onWater(loc) || !standsOn(def, loc) || !roomFor(def, loc) || hazardAt(loc) > 0) continue;
+        if (safe(() => GameplayMap.isImpassable(loc.x, loc.y), false) || !commanderSafeAt(loc, units, ctx, ADVANCE_MARGIN)) continue;
+        tiles.push({ loc, d: dist(loc, post), h: dist(here, loc) });
+    }
+    tiles.sort((a, b) => a.d - b.d || a.h - b.h);
+    for (const t of tiles.slice(0, COMMANDER_ADVANCE_LOOK)) {
+        const turns = pathTurns(u, t.loc);
+        if (turns !== null && turns <= 1 && !startsWar(u, t.loc)) return t.loc;
+    }
+    return null;
+}
+
+const ESCORT_DAMAGE = 30; // an escort is a free soldier of ours hurt less than this
+
+/**
+ * A commander walking to its post with an escort (research/42 A3; game 53: alone on the coast it was shot by Frigates at
+ * M31, M57 and M149-M150): when its walk would stop this turn where it may not stand (commanderSafeAt), a free soldier
+ * next to it (the defence's supply, not posted; last turn's escort first) that is healthy and reaches that stop this turn
+ * goes there first, and the commander joins it on its tile. The soldier carries the goal { escort } for the pass, so the
+ * defence leaves it alone. Runs after the defence plan, before the unit loop. @returns log entries
+ */
+function escortCommanders(units, ctx) {
+    const out = [];
+    for (const u of landCommanders(units)) {
+        const k = unitKey(u.id);
+        if (ctx.ordered.has(k) || u.canMove === false || u.isOnMap === false || !u.location || afloat(u)) continue;
+        if (u.hasMoved === true && !(Number(u.Movement?.movementMovesRemaining ?? 0) > 0)) continue;
+        const post = goals.get(k)?.post?.split(",").map(Number);
+        if (post?.length !== 2) continue;
+        const to = { x: post[0], y: post[1] };
+        if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, to.x, to.y), 0) <= GUARD_RADIUS) continue;
+        const p = pathTo(u, to);
+        if (!p || p.turns <= 1 || startsWar(u, to)) continue;
+        const stop = turnStop(p);
+        if (!stop || same(stop, u.location) || commanderSafeAt(stop, units, ctx) || !roomForSoldier(stop) || hazardAt(stop) > 0) continue;
+        const near = (x) => safe(() => GameplayMap.getPlotDistance(x.location.x, x.location.y, u.location.x, u.location.y), 9) <= 1;
+        const candidates = [
+            ...units.filter((x) => goals.get(unitKey(x.id))?.escort === k),
+            ...(ctx.supply ?? []).filter((c) => !c.packed && c.stage && !ctx.posts?.has(c.k) && !c.ranged).map((c) => c.u),
+        ].filter((x, i, all) => all.indexOf(x) === i && !ctx.ordered.has(unitKey(x.id)) && x.isOnMap !== false && !!x.location && near(x)
+            && (Number(x.Health?.damage) || 0) < ESCORT_DAMAGE && x.canMove !== false && x.hasMoved !== true);
+        const escort = candidates.find((x) => {
+            const t = pathTurns(x, stop);
+            return t !== null && t <= 1 && !startsWar(x, stop);
+        });
+        if (!escort) continue;
+        wakeUnit(escort);
+        if (!moveTo(escort, stop)) continue;
+        const ek = unitKey(escort.id);
+        ctx.ordered.add(ek);
+        restedByUs.delete(ek);
+        goals.set(ek, { escort: k, turn: Game.turn });
+        wakeUnit(u);
+        moveTo(u, stop);
+        ctx.ordered.add(k);
+        ctx.stepTo.add(`${stop.x},${stop.y}`);
+        ctx.commanderPosts ??= new Set();
+        ctx.commanderPosts.add(`${to.x},${to.y}`);
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const edef = safe(() => GameInfo.Units.lookup(escort.type), null);
+        log.info(`generals: ${def?.UnitType ?? "?"} walks to ${to.x},${to.y} with ${edef?.UnitType ?? "?"} as its escort: both to ${stop.x},${stop.y} (${p.turns} turn(s) to go; that stop alone is in hostile reach)`);
+        out.push({ key: "COMMANDER_ESCORTED", args: [nameOf(def), nameOf(edef), stop.x, stop.y] });
+    }
+    // Last turn's escorts not taken again are free.
+    for (const [ek, g] of [...goals.entries()]) if (g?.escort !== undefined && g.turn !== Game.turn) goals.delete(ek);
+    return out;
+}
+
+/**
+ * Commanders in danger escape first (research/41 §4F; the user, 21 October: "escaping as first unit if dangerous or under
+ * attack: a valuable asset"): to the tile within COMMANDER_ESCAPE_RADIUS it reaches this turn where it may stand
+ * (commanderSafeAt: under a healthy soldier first), the nearest its post, else the one in the fewest hostile units' reach
+ * (ships too); only when it is safer than where it stands. A commander that moved this turn but has moves left escapes too
+ * (game 53: on its walk along the coast it took a second Frigate shot). Game 32's commander was shot dead at its post by a
+ * Cog; game 45's Hazarapatis by a Warrior. When it finds nothing, UI.log says so once a turn. @returns entries
+ */
+function escapeCommanders(units, ctx) {
+    const out = [];
+    for (const u of landCommanders(units)) {
+        const k = unitKey(u.id);
+        if (ctx.ordered.has(k) || u.canMove === false) continue;
+        if (u.hasMoved === true && !(Number(u.Movement?.movementMovesRemaining ?? 0) > 0)) continue;
+        const why = commanderDanger(u, units, ctx);
+        if (!why) continue;
+        // Marching with its army packed (research/42 B2): it goes on unless hit.
+        if (marching(u) && why !== "hit") continue;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const here = u.location;
+        const exposure = (loc) => hostilesInReach(loc).length + shipsReaching(loc).length;
+        // A tile it may stand on (commanderSafeAt) first, under a soldier before the rest, the nearest its post (it stays near
+        // the fight), else the fewest hostile units in reach.
+        const post = goals.get(k)?.post?.split(",").map(Number);
+        const toPost = (loc) => (post?.length === 2 ? safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, post[0], post[1]), 0) : 0);
+        const score = (loc) => (commanderSafeAt(loc, units, ctx) ? toPost(loc) : 1000 + exposure(loc) * 100)
+            - (shieldAt(loc, units) ? 30 : 0) - (settlementAt(loc) ? 20 : 0);
+        const stay = why === "hit" ? Infinity : score(here);
+        const options = [];
+        for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(here.x, here.y, COMMANDER_ESCAPE_RADIUS), []) ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc || same(loc, here) || onWater(loc) || !standsOn(def, loc) || !roomFor(def, loc) || hazardAt(loc) > 0) continue;
+            if (safe(() => GameplayMap.isImpassable(loc.x, loc.y), false)) continue;
+            const d = safe(() => GameplayMap.getPlotDistance(here.x, here.y, loc.x, loc.y), 9);
+            options.push({ loc, s: score(loc) + d });
+        }
+        options.sort((a, b) => a.s - b.s);
+        let tried = 0;
+        let escaped = false;
+        const refused = { path: 0, far: 0, war: 0, move: 0 }; // game 61: «none reached this turn» while the game listed 3 tiles
+        for (const o of options) {
+            if (o.s >= stay) break;
+            tried++;
+            const t = pathTurns(u, o.loc);
+            if (t === null) { refused.path++; continue; }
+            if (t > 1) { refused.far++; continue; }
+            if (startsWar(u, o.loc)) { refused.war++; continue; }
+            wakeUnit(u);
+            if (!moveTo(u, o.loc)) { refused.move++; continue; }
+            ctx.ordered.add(k);
+            ctx.stepTo.add(`${o.loc.x},${o.loc.y}`);
+            // Its post stays its own: the other general picks another (game 54 A44: the vanguard escaped, and the bastion was
+            // posted to the same fight).
+            if (goals.get(k)?.post) (ctx.commanderPosts ??= new Set()).add(goals.get(k).post);
+            log.info(`generals: ${def?.UnitType ?? "?"} escaped from ${here.x},${here.y} to ${o.loc.x},${o.loc.y} (${why}${shieldAt(o.loc, units) ? ", under a soldier" : ""}; ${exposure(here)} hostile(s) reached it, ${exposure(o.loc)} there)`);
+            out.push({ key: "COMMANDER_ESCAPED", args: [nameOf(def), o.loc.x, o.loc.y] });
+            escaped = true;
+            break;
+        }
+        if (!escaped && escapeNoted.get(k) !== Game.turn) {
+            escapeNoted.set(k, Game.turn);
+            log.warn(`generals: ${def?.UnitType ?? "?"} at ${here.x},${here.y} is in danger (${why}; ${exposure(here)} hostile(s) reach it) and stays: ${options.length} tile(s) within ${COMMANDER_ESCAPE_RADIUS}, ${tried} safer, none reached this turn (no way ${refused.path}, more than a turn ${refused.far}, a war ${refused.war}, refused ${refused.move})`);
+        }
+    }
+    return out;
+}
+const escapeNoted = new Map(); // unit key -> the turn UI.log said a commander in danger found no way out
+
+/**
+ * UI.log once a turn while we have a land commander (research/41 §4): each one's role, tile, post and XP, so the next games
+ * show whether the generals stood at the fights and what they earned.
+ */
+function logGenerals(units, ctx) {
+    const list = landCommanders(units);
+    if (list.length === 0 || generalsNoted === Game.turn) return;
+    generalsNoted = Game.turn;
+    const parts = list.map((u) => {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const where = u.isOnMap === false || !u.location ? "off the map" : `at ${u.location.x},${u.location.y}`;
+        const post = goals.get(unitKey(u.id))?.post;
+        return `${ctx.commanderRoles?.get(unitKey(u.id)) ?? "?"} ${def?.UnitType ?? "?"} ${where}${post ? ` post ${post}` : ""} (${xpText(u)})`;
+    });
+    log.info(`generals: ${parts.join("; ")}`);
+}
+let generalsNoted = -1;
+
+/**
+ * The generals for the Autopilot tab (game 60's review, UI-8: their levels were only in UI.log): each land commander's role, type,
+ * level, XP, the XP of its next level and its post, read as the `xp:` lines read them.
+ */
+function generalsSummary(units, ctx) {
+    const num = (f) => {
+        const v = Number(safe(f, NaN));
+        return Number.isFinite(v) ? v : null;
+    };
+    return landCommanders(units).map((u) => ({
+        role: ctx.commanderRoles?.get(unitKey(u.id)) ?? null,
+        type: safe(() => GameInfo.Units.lookup(u.type).UnitType, null),
+        level: num(() => u.Experience.getLevel),
+        xp: num(() => u.Experience.experiencePoints),
+        next: num(() => u.Experience.experienceToNextLevel),
+        post: goals.get(unitKey(u.id))?.post ?? null,
+    }));
+}
+
+/**
+ * The units in their order, the land commanders among them by level, the lowest first: each takes its post in turn
+ * (commanderPost), so a fight with independents goes to the one that still gains full XP there (W6).
+ */
+function byLevel(units) {
+    const at = [];
+    units.forEach((u, i) => {
+        if (u.isCommanderUnit && isLandCommander(safe(() => GameInfo.Units.lookup(u.type), null))) at.push(i);
+    });
+    if (at.length < 2) return units;
+    const sorted = at.map((i) => units[i]).sort((a, b) => xpOf(a).level - xpOf(b).level);
+    const out = [...units];
+    at.forEach((i, n) => {
+        out[i] = sorted[n];
+    });
+    return out;
+}
+
+/** Units in a general's radius first (their fights give it XP: research/41 §6), the rest in their order. */
+function byGeneral(units) {
+    const cmd = landCommanders(units).filter((c) => c.isOnMap !== false && c.location);
+    if (cmd.length === 0) return units;
+    const radius = (c) => 1 + (safe(() => c.Experience?.hasPromotion("DISCIPLINE_ARMY_COMMENDATION_MERIT", "PROMOTION_COMMENDATION_ARMY_MERIT"), false) ? 1 : 0);
+    const near = (u) => !!u.location && cmd.some((c) => safe(() => GameplayMap.getPlotDistance(c.location.x, c.location.y, u.location.x, u.location.y), Infinity) <= radius(c));
+    return [...units.filter(near), ...units.filter((u) => !near(u))];
 }
 
 // ---- commanders (research/25) ------------------------------------------------------------------
 
 /** A land army commander (its promotion class): commanders of fleets are not posted. */
-function isLandCommander(def) {
+export function isLandCommander(def) {
     return def?.Domain === "DOMAIN_LAND" && (def.PromotionClass === "PROMOTION_CLASS_LAND_COMMANDER" || hasTag(def, "UNIT_CLASS_ARMY_COMMANDER"));
 }
 
 const COMMANDER_THREAT_TURNS = 6; // a threatened settlement draws a land commander that reaches it within this many turns...
 const COMMANDER_PEACE_TURNS = 4;  // ...an unhappy one in peace, this many
 const COMMANDER_UNHAPPY_GAIN = 3; // in peace a commander leaves a centre only for a settlement this much unhappier (below zero)
+const COMMANDER_PEACE_HOLD = 10;  // ...and not within this many turns of reaching its post (game 50: the bastion walked between
+                                  // the capital and Сучжоу three times in Modern, 4-5 turns each way, and left the capital the
+                                  // turn it arrived)
+const postArrived = new Map();    // unit key -> { post: "x,y", turn } the turn it first stood on its post
+const FRONT_SHARE_ARMY = 4;       // a war front facing this many enemy soldiers is shared by two generals
 
 /**
  * Where a land commander should stand: the centre of our most threatened settlement it reaches within
@@ -3436,10 +6729,56 @@ function commanderPost(u, ctx) {
     };
     const kept = goals.get(unitKey(u.id))?.post;
     const at = (t) => cities.find((c) => c.location.x === t.settlement.x && c.location.y === t.settlement.y);
-    const threatened = ctx.threats.map((t) => ({ t, c: at(t) })).filter((x) => x.c && free(x.c));
-    const own = threatened.find((x) => keyOf(x.c) === kept);
-    if (own && reaches(own.c, COMMANDER_THREAT_TURNS)) return { c: own.c };
-    for (const x of [...threatened].sort((a, b) => b.t.count - a.t.count)) if (reaches(x.c, COMMANDER_THREAT_TURNS)) return { c: x.c };
+    // Threatened settlements, a damaged centre first, then by raiders (research/41 Phase 2, game 48: both commanders kept
+    // their posts at settlements with one raider while Киото, 7 raiders, fell at A59): its own post unless another it reaches
+    // is much worse; one no other commander holds first, else the fight is shared (core threatPost).
+    const threatened = ctx.threats.map((t) => ({ t, c: at(t) })).filter((x) => x.c)
+        .sort((a, b) => Number(!!b.t.damaged) - Number(!!a.t.damaged) || b.t.count - a.t.count);
+    // Each fight's walk (0 within GUARD_RADIUS: it is there), and the fight it stands at is its own before its post (game 54:
+    // the vanguard walked away from Ашшур's 4 raiders toward Имгур-Энлиль's 2, three turns off).
+    const walk = (c) => {
+        if (dist(c) <= GUARD_RADIUS) return 0;
+        reaches(c, COMMANDER_THREAT_TURNS);
+        return turns.get(keyOf(c)) ?? Infinity;
+    };
+    const atFight = threatened.filter((x) => dist(x.c) <= GUARD_RADIUS).sort((a, b) => dist(a.c) - dist(b.c))[0];
+    // A fight's raiders count at the XP they give this general (W6: from EXPERIENCE_MAX_BARB_LEVEL an independent's fight
+    // gives the soft cap's 1); a far damaged centre at its health (threatPost's FAR_TURNS).
+    const level = xpOf(u).level;
+    const xpAt = (t) => fightXpShare({ level, independent: (t.owners ?? []).length > 0 && t.owners.every((o) => o?.independent) }, xpParams());
+    const entries = threatened.map((x) => ({
+        key: keyOf(x.c), count: x.t.count, damaged: !!x.t.damaged, health: centreShare(x.c.location), reach: dist(x.c) <= GUARD_RADIUS || reaches(x.c, COMMANDER_THREAT_TURNS),
+        taken: !free(x.c), turns: walk(x.c), shipsOnly: !(Number(x.t.land) > 0) && Number(x.t.ships) > 0, xp: xpAt(x.t),
+    }));
+    // Where it stands, or its post, with a fight of ours lately and no raider counted (an enemy commander, a ship our units
+    // fight: W4, game 60 A88-A98): one raider's worth, kept against a walk to another fight that is not much worse.
+    const fought = cities.filter((c) => !threatened.some((x) => x.c === c) && foughtLately(c.location) && (dist(c) <= GUARD_RADIUS || keyOf(c) === kept));
+    for (const c of fought) entries.push({ key: keyOf(c), count: 1, damaged: false, health: 1, reach: dist(c) <= GUARD_RADIUS || reaches(c, COMMANDER_THREAT_TURNS), taken: !free(c), turns: walk(c), fought: true });
+    const foughtHere = fought.find((c) => dist(c) <= GUARD_RADIUS);
+    const postKey = threatPost(entries, atFight ? keyOf(atFight.c) : foughtHere ? keyOf(foughtHere) : kept);
+    if (postKey) return { c: [...threatened.map((x) => x.c), ...fought].find((c) => keyOf(c) === postKey) };
+    // A war at our door and no fight in reach: each general waits at a war front facing an army of theirs, the biggest army
+    // first, one each (one facing FRONT_SHARE_ARMY soldiers or more is shared), its own kept while it stays one: the next
+    // raid starts there (game 54: in Antiquity's war both generals walked 4-6 turns between Ниневия and Дур-Катлимму behind
+    // the raids, the vanguard ended the age at XP 0 and the bastion at 4 of 7, lost at the age change).
+    const fronts = (ctx.fronts ?? []).filter((f) => f.atWar && Number(f.army) > 0)
+        .map((f) => ({ f, c: cities.find((c) => same(c.location, f.settlement)) }))
+        .filter((x) => x.c && reaches(x.c, COMMANDER_THREAT_TURNS))
+        .sort((a, b) => b.f.army - a.f.army || dist(a.c) - dist(b.c));
+    const front = fronts.find((x) => keyOf(x.c) === kept && (free(x.c) || x.f.army >= FRONT_SHARE_ARMY))
+        ?? fronts.find((x) => free(x.c)) ?? fronts.find((x) => x.f.army >= FRONT_SHARE_ARMY);
+    if (front) return { c: front.c };
+    // In peace it keeps the post it reached within COMMANDER_PEACE_HOLD turns.
+    const standing = cities.find((c) => same(c.location, here));
+    const arrived = postArrived.get(unitKey(u.id));
+    if (standing && free(standing) && arrived?.post === keyOf(standing) && Game.turn >= arrived.turn && Game.turn - arrived.turn < COMMANDER_PEACE_HOLD) {
+        return { c: standing };
+    }
+    // In peace the vanguard waits where raids come most (the last RAIDED_TURNS), else at an exposed settlement: its fights.
+    if (ctx.commanderRoles?.get(unitKey(u.id)) === "VANGUARD") {
+        const raided = mostRaided(cities.filter((c) => free(c) && reaches(c, COMMANDER_THREAT_TURNS)), ctx);
+        if (raided) return { c: raided };
+    }
     const happiness = (c) => Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_HAPPINESS), 0)) || 0;
     const on = cities.find((c) => same(c.location, here));
     const going = cities.find((c) => keyOf(c) === kept && free(c) && !same(c.location, here));
@@ -3466,10 +6805,28 @@ function postCommander(u, def, ctx) {
     // At a threatened settlement its formation places it (research/37 §6B: where its radius covers the most of them).
     const form = ctx.formations?.get(`${loc.x},${loc.y}`);
     if (form && safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, loc.x, loc.y), Infinity) <= GUARD_RADIUS) return formCommander(u, def, form, ctx);
-    if (same(u.location, loc)) return null; // at its post: the skip step skips its turn
+    if (same(u.location, loc)) {
+        // At its post: the skip step skips its turn. The turn it first stood there is noted (COMMANDER_PEACE_HOLD).
+        const k = unitKey(u.id);
+        if (postArrived.get(k)?.post !== `${loc.x},${loc.y}`) postArrived.set(k, { post: `${loc.x},${loc.y}`, turn: Game.turn });
+        return null;
+    }
     const p = pathTo(u, loc);
-    if (!p || !wayIsSafe(u, p, 1, ctx) || startsWar(u, loc) || !moveTo(u, loc)) return null;
-    return { key: "COMMANDER_POST", args: [nameOf(def), safe(() => Locale.compose(post.c.name), "?")] };
+    if (!p || startsWar(u, loc)) return null;
+    // Its centre reached this turn is safe (the district takes the attacks); a longer walk only by a safe way that ends this
+    // turn where it may stand (commanderSafeAt); else as close as is safe (game 49: the way to Йезд passed its raiders, so
+    // the commander sat in the capital T16-T25, 3 tiles from the fights).
+    const units = ctx.ourUnits ?? [];
+    const stop = p.turns > 1 ? turnStop(p) : null;
+    // The vanguard's packed army to a fight that cannot wait: Force March first (after game 54).
+    if (p.turns > 1 && rapid?.ck === unitKey(u.id)) forceMarchIfUrgent(u, ctx.threats.find((t) => same(t.settlement, loc)), units);
+    if ((p.turns <= 1 || (wayIsSafe(u, p, 1, ctx) && (!stop || armyShields(u, units) || commanderSafeAt(stop, units, ctx)))) && moveTo(u, loc)) {
+        return { key: "COMMANDER_POST", args: [nameOf(def), safe(() => Locale.compose(post.c.name), "?")] };
+    }
+    const step = commanderAdvance(u, def, loc, units, ctx);
+    if (!step || !moveTo(u, step)) return null;
+    log.info(`generals: ${def?.UnitType ?? "?"} advances from ${u.location.x},${u.location.y} to ${step.x},${step.y} toward its post ${loc.x},${loc.y} (${p.turns} turn(s) away; the way or this turn's stop is in hostile reach)`);
+    return { key: "COMMANDER_ADVANCE", args: [nameOf(def), safe(() => Locale.compose(post.c.name), "?"), step.x, step.y] };
 }
 
 let commanderParamsLogged = false;
@@ -3477,29 +6834,55 @@ let commanderParamsLogged = false;
 /** Once per session, UI.log lists the game's experience and army parameters (their values are compiled into the game). */
 function logCommanderParameters() {
     if (commanderParamsLogged) return;
-    const rows = GameInfo.GlobalParameters?.filter((r) => /^(EXPERIENCE_|ARMY_|COMMANDER_)/.test(String(r.Name))) ?? [];
+    // P-XP-1 (research/41 §2): with the focused attack's bonus and the purchase multiplier; the line comes out whole now
+    // (xpl-log splits what UI.log would cut at 1,022 characters).
+    const rows = GameInfo.GlobalParameters?.filter((r) => /^(EXPERIENCE_|ARMY_|COMMANDER_|COMBAT_FOCUSED_ATTACK_|UNIT_PURCHASE_MULTIPLIER)/.test(String(r.Name))) ?? [];
     if (rows.length === 0) return;
     commanderParamsLogged = true;
     log.warn(`commander parameters: ${rows.map((r) => `${r.Name}=${r.Value}`).join(", ")}`);
 }
 
 const focusNoted = new Map();   // "commander|command" -> the turn UI.log said why it made no focused attack
-const FOCUS_MIN_UNITS = 2;     // a focused attack needs this many of our units joining it...
+const FOCUS_MIN_UNITS = 1;     // a focused attack needs this many of our units joining it...
 const FOCUS_MIN_HEALTH = 0.5;  // ...each melee one with at least this share of its health
 
 /**
  * Commanders' focused attacks (research/25: every unit in its radius attacks one target, +2 strength each; each fight
- * gives the commander XP): Focus Fire (UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED) when FOCUS_MIN_UNITS ranged units with
- * an attack left can shoot the target, Coordinated Attack (…_MELEE) when as many healthy melee ones stand next to it
- * and the target is no stronger than the best of them + 2 and not in a district. Targets come from the game
- * (canStart(…, {}).Plots), hostile units only, the most damaged first. @returns { entries, ordered (unit keys) }
+ * gives the commander XP): Focus Fire (UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED) when a ranged unit with an attack left can
+ * shoot the target, Coordinated Attack (…_MELEE) when healthy melee ones stand next to it and the target is no stronger
+ * than the best of them + 2 and not in a district; with one melee unit only when the game's preview says its strike pays
+ * (strikeWorthIt). The game sets no minimum ("Order all Ranged Units within Command Radius to fire on a specified target.
+ * All Units have +2 Combat Strength"); ours of 2 refused 49 attacks in game 53 (`at most 0-1 of ours joining (need 2)`;
+ * research/42 A4). Targets come from the game (canStart(…, {}).Plots), hostile units only, the most joining, then the most
+ * damaged first. @returns { entries, ordered (unit keys) }
  */
 async function commanderAttacks(units, M) {
     const entries = [];
     const ordered = new Set();
     for (const cmdr of units) {
         const def = safe(() => GameInfo.Units.lookup(cmdr.type), null);
-        if (!cmdr.isCommanderUnit || !isLandCommander(def) || cmdr.isOnMap === false) continue;
+        // An air commander strikes with every plane based with it (research/42 C3), a carrier too.
+        if (cmdr.isCommanderUnit && isAirCommander(def)) {
+            const a = await airCommanderAttack(cmdr, def, units);
+            if (a) {
+                entries.push(a.entry);
+                for (const k of a.ordered) ordered.add(k);
+            }
+            continue;
+        }
+        // A Fleet Commander's focused attacks too (game 54's review: Focus Fire orders "all Heavy Naval Units within Command
+        // Radius", Coordinated Naval Attack "all Light Naval Units"): ranged ships and screens.
+        const fleet = isFleetCommander(def);
+        if (!cmdr.isCommanderUnit || !(isLandCommander(def) || fleet) || cmdr.isOnMap === false) continue;
+        // An army with soldiers packed in it overruns a weaker unit first (after game 54: a fight without deploying).
+        if (!fleet) {
+            const o = await overrunRaider(cmdr, def, units);
+            if (o) {
+                entries.push(o);
+                ordered.add(unitKey(cmdr.id));
+                continue;
+            }
+        }
         // Its radius as the game draws it (Units.getCommandRadiusPlots: support-unit-map-decoration.js; research/36 §6), else
         // 1, +1 with Merit.
         const plots = safe(() => Units.getCommandRadiusPlots(cmdr.id), null);
@@ -3512,14 +6895,14 @@ async function commanderAttacks(units, M) {
             ? radiusPlots.has(safe(() => GameplayMap.getIndexFromXY(x.location.x, x.location.y), -2))
             : safe(() => GameplayMap.getPlotDistance(x.location.x, x.location.y, cmdr.location.x, cmdr.location.y), 9) <= radius);
         const near = units.filter((x) => !x.isCommanderUnit && !ordered.has(unitKey(x.id)) && Number(x.Combat?.attacksRemaining) > 0 && !!x.location && inRadius(x));
-        for (const [cmd, ranged] of [["UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED", true], ["UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE", false]]) {
+        for (const [cmd, ranged] of fleet ? SEA_FOCUS : LAND_FOCUS) {
             const plots = safe(() => Game.UnitCommands.canStart(cmdr.id, cmd, {}, false), null)?.Plots ?? [];
-            let best = null;
+            const cands = [];
             // Why no attack, for UI.log once a turn (game 12 T31: the player found a Coordinated Attack we never made).
-            const why = { targets: plots.length, hostile: 0, district: 0, joining: 0, stronger: 0 };
+            const why = { targets: plots.length, hostile: 0, district: 0, joining: 0, stronger: 0, poor: 0 };
             for (const idx of plots) {
                 const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-                const enemy = loc ? (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).find((e) => hostileOwner(e)) : null;
+                const enemy = hostileSeenAt(loc) ?? null;
                 if (!enemy) continue;
                 why.hostile++;
                 // Not into a settlement's defences (the game answers an invalid id elsewhere).
@@ -3529,9 +6912,9 @@ async function commanderAttacks(units, M) {
                 }
                 const joining = near.filter((x) => {
                     const xd = safe(() => GameInfo.Units.lookup(x.type), null);
-                    if (ranged) return isRangedGuard(xd) && (safe(() => Game.UnitOperations.canStart(x.id, "UNITOPERATION_RANGE_ATTACK", {}, false), null)?.Plots ?? []).includes(idx);
+                    if (ranged) return (fleet ? shipRole(xd) === "RANGED" : isRangedGuard(xd)) && (safe(() => Game.UnitOperations.canStart(x.id, "UNITOPERATION_RANGE_ATTACK", {}, false), null)?.Plots ?? []).includes(idx);
                     const health = 1 - (Number(x.Health?.damage) || 0) / (Number(x.Health?.maxDamage) || 100);
-                    return isMeleeGuard(xd) && health >= FOCUS_MIN_HEALTH && safe(() => GameplayMap.getPlotDistance(x.location.x, x.location.y, loc.x, loc.y), 9) === 1;
+                    return (fleet ? shipRole(xd) === "SCREEN" : isMeleeGuard(xd)) && health >= FOCUS_MIN_HEALTH && safe(() => GameplayMap.getPlotDistance(x.location.x, x.location.y, loc.x, loc.y), 9) === 1;
                 });
                 why.joining = Math.max(why.joining, joining.length);
                 if (joining.length < FOCUS_MIN_UNITS) continue;
@@ -3543,13 +6926,24 @@ async function commanderAttacks(units, M) {
                     }
                 }
                 const score = joining.length * 100 + (Number(enemy.Health?.damage) || 0);
-                if (!best || score > best.score) best = { loc, enemy, joining, score };
+                cands.push({ loc, enemy, joining, score });
+            }
+            cands.sort((a, b) => b.score - a.score);
+            let best = null;
+            for (const c of cands) {
+                // A lone melee unit: only when the game's preview says its strike pays (the +2 is not in it: a safe margin).
+                if (!ranged && c.joining.length === 1 && !(await strikePays(c.joining[0], c.loc, c.enemy))) {
+                    why.poor++;
+                    continue;
+                }
+                best = c;
+                break;
             }
             if (!best) {
                 const key = `${unitKey(cmdr.id)}|${cmd}`;
                 if (why.targets > 0 && focusNoted.get(key) !== Game.turn) {
                     focusNoted.set(key, Game.turn);
-                    log.warn(`commander: no ${ranged ? "Focus Fire" : "Coordinated Attack"}: ${why.targets} target plot(s), ${why.hostile} hostile, ${why.district} in a district, at most ${why.joining} of ours joining (need ${FOCUS_MIN_UNITS}), ${why.stronger} too strong; ${near.length} unit(s) in its radius with an attack left`);
+                    log.warn(`commander: no ${ranged ? "Focus Fire" : "Coordinated Attack"}: ${why.targets} target plot(s), ${why.hostile} hostile, ${why.district} in a district, at most ${why.joining} of ours joining (need ${FOCUS_MIN_UNITS}), ${why.stronger} too strong, ${why.poor} not worth it alone; ${near.length} unit(s) in its radius with an attack left`);
                 }
                 continue;
             }
@@ -3557,22 +6951,33 @@ async function commanderAttacks(units, M) {
             for (const x of best.joining) ordered.add(unitKey(x.id));
             ordered.add(unitKey(cmdr.id));
             const theirs = safe(() => GameInfo.Units.lookup(best.enemy.type), null);
-            entries.push({ key: ranged ? "FOCUS_FIRE" : "COORDINATED_ATTACK", args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.loc.x, best.loc.y, best.joining.length] });
+            entries.push({ key: fleet ? (ranged ? "NAVAL_FOCUS_FIRE" : "NAVAL_COORDINATED_ATTACK") : ranged ? "FOCUS_FIRE" : "COORDINATED_ATTACK", args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.loc.x, best.loc.y, best.joining.length] });
             await untilEvent("Combat", COMBAT_WAIT_MS);
             break; // one focused attack per commander a pass
         }
-        if (ordered.has(unitKey(cmdr.id))) continue;
-        // Its own commands (research/40 C: unlocked by commendations and never used): Commander Attack finishes a raider
-        // already half dead, from the plots the game offers; Defensive Perimeter fortifies every unit in its radius while
-        // raiders stand within 2 of it.
-        const finish = (safe(() => Game.UnitCommands.canStart(cmdr.id, COMMANDER_ATTACK, {}, false), null)?.Plots ?? [])
+        if (ordered.has(unitKey(cmdr.id)) || fleet) continue;
+        // Its own commands (research/40 C: unlocked by commendations and never used): Commander Attack on a raider already
+        // half dead, or one the game's preview says it beats keeping COMMANDER_STRIKE_KEEP of its health (research/42 A5),
+        // from the plots the game offers; Defensive Perimeter fortifies every unit in its radius while raiders stand within
+        // 2 of it.
+        const offered = (safe(() => Game.UnitCommands.canStart(cmdr.id, COMMANDER_ATTACK, {}, false), null)?.Plots ?? [])
             .map((idx) => {
                 const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-                const enemy = loc ? (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).find((e) => hostileOwner(e)) : null;
+                const enemy = hostileSeenAt(loc) ?? null;
                 return { loc, enemy, damage: Number(enemy?.Health?.damage) || 0 };
             })
-            .filter((t) => t.enemy && t.damage >= COMMANDER_FINISH_DAMAGE)
-            .sort((a, b) => b.damage - a.damage)[0];
+            .filter((t) => t.enemy)
+            .sort((a, b) => b.damage - a.damage);
+        let finish = offered.find((t) => t.damage >= COMMANDER_FINISH_DAMAGE) ?? null;
+        for (const t of finish ? [] : offered.slice(0, 3)) {
+            const trade = await strikeTrade(cmdr, t.loc, t.enemy);
+            if (!trade?.answered) continue;
+            const kept = (trade.ourHealth - trade.taken) / trade.ourMax;
+            if (kept >= COMMANDER_STRIKE_KEEP && (trade.dealt >= trade.theirHealth || trade.dealt >= 2 * trade.taken)) {
+                finish = t;
+                break;
+            }
+        }
         if (finish) {
             Game.UnitCommands.sendRequest(cmdr.id, COMMANDER_ATTACK, { X: finish.loc.x, Y: finish.loc.y });
             ordered.add(unitKey(cmdr.id));
@@ -3590,9 +6995,12 @@ async function commanderAttacks(units, M) {
     return { entries, ordered };
 }
 
+const LAND_FOCUS = [["UNITCOMMAND_FOCUSED_ATTACK_LAND_RANGED", true], ["UNITCOMMAND_FOCUSED_ATTACK_LAND_MELEE", false]];
+const SEA_FOCUS = [["UNITCOMMAND_FOCUSED_ATTACK_SEA_RANGED", true], ["UNITCOMMAND_FOCUSED_ATTACK_SEA_MELEE", false]];
 const COMMANDER_ATTACK = "UNITCOMMAND_COMMANDER_ATTACK";
 const DEFENSIVE_PERIMETER = "UNITCOMMAND_DEFENSIVE_PERIMETER";
-const COMMANDER_FINISH_DAMAGE = 50; // a commander attacks only a raider at least this hurt (a commander is precious)
+const COMMANDER_FINISH_DAMAGE = 50; // a commander attacks a raider at least this hurt (a commander is precious)...
+const COMMANDER_STRIKE_KEEP = 0.7;  // ...or one the game's preview says it beats keeping this share of its health
 
 // ---- dispersing villages ----------------------------------------------------------------------
 
@@ -3607,11 +7015,13 @@ const indepName = (id) => independentNameOf(id);
  * leader's befriending: dispersing costs −30 relationship with them, GRIEVANCE_FROM_DISPERSING_IP;
  * ours: our Influence would be lost, and it ends the war by itself at progress 30).
  */
-function dispersible(v) {
+function dispersible(v, { hunted = false } = {}) {
     const R = globalThis.IndependentRelationship;
     const hostile = (R !== undefined && safe(() => Game.IndependentPowers.getIndependentRelationship(v.id, pid()), null) === R.HOSTILE)
         || !!safe(() => Players.get(pid()).Diplomacy.isAtWarWith(v.id), false);
     if (!hostile) return false;
+    // The village we hunt: another leader's befriending does not stop it (the user, 21 October; huntReason checked it).
+    if (hunted) return true;
     const GIVE = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN;
     return !(safe(() => Game.Diplomacy.getPlayerEvents(v.id), []) ?? []).some((a) => a.actionType === GIVE);
 }
@@ -3626,7 +7036,7 @@ function disperseHere(u, def, ctx) {
     if (def.CoreClass !== "CORE_CLASS_MILITARY" || def.Domain !== "DOMAIN_LAND" || u.isCommanderUnit || !u.location) return null;
     ctx.villages ??= safe(() => villagesOf(pid()), []) ?? [];
     const here = ctx.villages.find((v) => same(v, u.location));
-    if (!here || !dispersible(here) || !operate(u, "UNITOPERATION_DISPERSE_INDEPENDENT")) return null;
+    if (!here || !dispersible(here, { hunted: fieldOp?.kind === "HUNT" && fieldOp.enemy === here.id }) || !operate(u, "UNITOPERATION_DISPERSE_INDEPENDENT")) return null;
     goals.delete(unitKey(u.id));
     return { key: "DISPERSED", args: [nameOf(def), indepName(here.id)] };
 }
@@ -3682,14 +7092,100 @@ const REACH_LOOK = 6;       // ...and away from our settlements, one whose next 
  * too) within its moves + its range; terrain is not counted (the cautious side). Game 37 E8: a hurt Swordsman healing in
  * the field with no raider within HEAL_SAFE_RADIUS was shot by a Heavy Archer (2 moves, range 2) that walked up.
  */
-function hostilesInReach(loc) {
-    return hostilesAround(loc, REACH_LOOK).filter((h) => {
+function hostilesInReach(loc, margin = 0) {
+    return hostilesAround(loc, REACH_LOOK + margin).filter((h) => {
         if (!h.def || h.def.Domain === "DOMAIN_AIR") return false;
-        const st = safe(() => GameInfo.Unit_Stats.lookup(h.def.UnitType), null);
-        const ranged = Number(st?.RangedCombat) > 0 || Number(st?.Bombard) > 0;
-        const reach = Math.max(1, Number(h.def.BaseMoves) || 2) + (ranged ? Math.max(1, Number(st?.Range) || 1) : 1);
-        return safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, h.at.x, h.at.y), Infinity) <= reach;
+        return safe(() => GameplayMap.getPlotDistance(loc.x, loc.y, h.at.x, h.at.y), Infinity) <= reachOf(h) + margin;
     });
+}
+
+/** How far a hostile unit's next turn reaches (hostilesAround's { def }): a melee one its moves + 1, a ranged one its moves + its range. */
+function reachOf(h) {
+    const st = safe(() => GameInfo.Unit_Stats.lookup(h.def.UnitType), null);
+    const ranged = Number(st?.RangedCombat) > 0 || Number(st?.Bombard) > 0;
+    return Math.max(1, Number(h.def.BaseMoves) || 2) + (ranged ? Math.max(1, Number(st?.Range) || 1) : 1);
+}
+
+// ---- ships' reach (research/41 §3) ------------------------------------------------------------------
+
+let shipCache = { turn: -1, time: 0, list: [] };
+const SHIP_CACHE_MS = 1500;   // ships do not move within a pass
+const shoreMemo = new Map();  // "area|x,y|range" -> a water tile of that body within range (terrain: kept)
+
+/**
+ * The hostile warships we see (hostileOwner, a visible tile; trade ships and submarines aside: they never hit land), read
+ * from the players' unit lists once a pass: [{ at, def, stats, moves, range, area }].
+ */
+function hostileShips() {
+    const turn = safe(() => Game.turn, -1);
+    if (shipCache.turn === turn && Date.now() - shipCache.time < SHIP_CACHE_MS) return shipCache.list;
+    const VISIBLE = globalThis.RevealedStates?.VISIBLE;
+    const list = [];
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        if (!p || p.id === pid()) continue;
+        for (const unit of safe(() => p.Units.getUnits(), []) ?? []) {
+            const def = safe(() => GameInfo.Units.lookup(unit.type), null);
+            if (def?.Domain !== "DOMAIN_SEA" || !unit.location || !(unit.location.x >= 0)) continue;
+            const role = shipRole(def);
+            if (role !== "SCREEN" && role !== "RANGED") continue;
+            if (VISIBLE !== undefined && safe(() => GameplayMap.getRevealedState(pid(), unit.location.x, unit.location.y), VISIBLE) !== VISIBLE) continue;
+            if (!seenNow(unit) || !hostileOwner(unit)) continue;
+            list.push(shipRecord(unit, def, unit.location));
+        }
+    }
+    shipCache = { turn, time: Date.now(), list };
+    return list;
+}
+
+/** A ship as the reach rules read it (core inShipReach): { at, def, stats, moves, range, area }. */
+function shipRecord(unit, def, at) {
+    const stats = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
+    // getAreaId takes x and y, as the game's UI calls it (game 49: an index was refused six times, so every ship's
+    // water body was unknown and counted as all water).
+    return {
+        at: { x: at.x, y: at.y }, def, stats, moves: Math.max(1, Number(def.BaseMoves) || 3),
+        range: Math.max(1, Number(stats?.Range) || 1), area: safe(() => GameplayMap.getAreaId(at.x, at.y), null),
+    };
+}
+
+/** Whether a water tile of this ship's own body lies within `range` of a tile (a navigable river counts: the cautious side). */
+function shoreOf(ship) {
+    return (tile, range) => {
+        const k = `${ship.area}|${tile.x},${tile.y}|${range}`;
+        if (shoreMemo.has(k)) return shoreMemo.get(k);
+        let near = false;
+        for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(tile.x, tile.y, range), []) ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc || !onWater(loc)) continue;
+            const area = safe(() => GameplayMap.getAreaId(loc.x, loc.y), null);
+            if (ship.area === null || ship.area === undefined || area === ship.area || safe(() => GameplayMap.isNavigableRiver(loc.x, loc.y), false)) {
+                near = true;
+                break;
+            }
+        }
+        if (shoreMemo.size > 20000) shoreMemo.clear();
+        shoreMemo.set(k, near);
+        return near;
+    };
+}
+
+/** The hostile warships whose next turn reaches this land tile (core inShipReach). */
+function shipsReaching(loc) {
+    const ships = hostileShips();
+    if (!loc || ships.length === 0) return [];
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    return ships.filter((s) => inShipReach(loc, s, dist, shoreOf(s)));
+}
+
+/**
+ * The ships reaching this tile that a land unit of this type does not out-gun (core outGuns): all of them for a unit with
+ * no Bombard (melee units, scouts, commanders). Empty when it may stand there. @returns [ship]
+ */
+function shipThreat(loc, def) {
+    const ships = shipsReaching(loc);
+    if (ships.length === 0) return [];
+    const stats = def ? safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null) : null;
+    return outGuns(stats, ships.map((s) => s.stats)) ? [] : ships;
 }
 
 /** Within GUARD_RADIUS of one of our settlements' centres (a guard heals at its post: the old radius alone counts there). */
@@ -3753,15 +7249,14 @@ const ESCAPE_DANGER = 2;     // hostile soldiers this close put a hurt or restin
 const ESCAPE_DAMAGE = 30;    // ...a soldier with at least this much damage (of 100), or resting hurt
 const WATER_SAFE_RADIUS = 4; // shallow water hides a land unit from land melee units only: no hostile ship, ranged or air unit this close
 
-/** Hostile military units (at war with us) within `radius`: [{ def, at }]. */
+/** Hostile military units (at war with us) we see within `radius`, or saw there lately (unitsSeenAt): [{ def, at, unit, seen, turn }]. */
 function hostilesAround(loc, radius) {
     const out = [];
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, radius), []) ?? []) {
         const at = safe(() => GameplayMap.getLocationFromIndex(idx), null);
         if (!at) continue;
-        for (const id of safe(() => MapUnits.getUnits(at.x, at.y), []) ?? []) {
-            const unit = safe(() => Units.get(id), null);
-            if (hostileOwner(unit)) out.push({ def: safe(() => GameInfo.Units.lookup(unit.type), null), at });
+        for (const { unit, seen, turn } of unitsSeenAt(at.x, at.y)) {
+            if (hostileOwner(unit)) out.push({ def: safe(() => GameInfo.Units.lookup(unit.type), null), at, unit, seen, turn });
         }
     }
     return out;
@@ -3810,14 +7305,14 @@ function waterRefuge(u, def, ctx) {
  * @returns a log entry or null
  */
 function escape(u, def, ctx) {
-    if (afloat(u) || ctx.garrison.has(unitKey(u.id)) || !inDanger(u, def)) return null;
+    if (afloat(u) || ctx.garrison.has(unitKey(u.id)) || !inDanger(u, def) || sheltersCommander(u, ourUnitsOf(ctx))) return null;
     const wake = () => wakeUnit(u);
     const water = waterRefuge(u, def, ctx);
     if (water) {
         wake();
         if (moveTo(u, water)) {
             ctx.stepTo.add(`${water.x},${water.y}`);
-            return { key: "TO_WATER", args: [nameOf(def), water.x, water.y] };
+            return fled(u, def, { key: "TO_WATER", args: [nameOf(def), water.x, water.y] }, ctx);
         }
     }
     // A scout without water near steps away by its own rules (explore's stepAway).
@@ -3830,7 +7325,7 @@ function escape(u, def, ctx) {
         wake();
         if (!moveTo(u, at)) continue;
         ctx.stepTo.add(`${at.x},${at.y}`);
-        return { key: "WITHDRAW", args: [nameOf(def), at.x, at.y] };
+        return fled(u, def, { key: "WITHDRAW", args: [nameOf(def), at.x, at.y] }, ctx);
     }
     wake();
     return stepAway(u, def, ctx, "WITHDRAW");
@@ -3850,19 +7345,28 @@ function stayAtSea(u, def) {
 function defend(u, def, ctx) {
     if (def.CoreClass !== "CORE_CLASS_MILITARY") return null;
     // An aircraft strikes a raider near our settlements, else waits at its base.
-    if (def.Domain === "DOMAIN_AIR") return ctx.ordered.has(unitKey(u.id)) ? null : airAttack(u, def);
+    // A raider hunt's target is left to its coming general here too (W5: ctx.raiderHold; the review: an idle Slinger shot it).
+    if (def.Domain === "DOMAIN_AIR") return ctx.ordered.has(unitKey(u.id)) ? null : airAttack(u, def, ctx.raiderHold);
     const here = disperseHere(u, def, ctx);
     if (here) return here;
-    const shot = rangedAttack(u, def);
+    const shot = rangedAttack(u, def, { held: ctx.raiderHold });
     if (shot) return shot;
     if (Number(u.Health?.damage) > 0) {
+        // It stays under the commander it shields (it rests there).
+        const shelter = sheltersCommander(u, ourUnitsOf(ctx));
         // Not within reach of hostile units (ships too): a step back first, garrisons aside (research/23 D11:
         // game 8, a Mamluk healed on the coast next to two Cogs and was killed the next turn).
         // Away from our settlements, also when a raider's next turn reaches it (hostilesInReach; game 37 E8).
-        if (!ctx.garrison.has(unitKey(u.id)) && (hostileNear(u.location, HEAL_SAFE_RADIUS, ctx)
-            || (!nearOwnCentre(u.location, ctx) && hostilesInReach(u.location).length > 0))) {
+        // Within a ship's reach, also at its post (research/41 §3: game 38's Abambowa healed four turns on one coastal tile).
+        if (!shelter && !ctx.garrison.has(unitKey(u.id)) && (hostileNear(u.location, HEAL_SAFE_RADIUS, ctx)
+            || (!nearOwnCentre(u.location, ctx) && hostilesInReach(u.location).length > 0) || shipsReaching(u.location).length > 0)) {
             const back = stepAway(u, def, ctx, "WITHDRAW");
             if (back) return back;
+        }
+        // Not within VILLAGE_REST_KEEP of a hostile village in the field (game 60's scout: its soldiers gather there).
+        if (!shelter && !ctx.garrison.has(unitKey(u.id))) {
+            const off = restAwayFromVillages(u, def, ctx, "WITHDRAW");
+            if (off) return off;
         }
         if (operate(u, "UNITOPERATION_REST_UNTIL_HEALED")) return { key: "HEAL", args: [nameOf(def)] };
     }
@@ -3910,6 +7414,25 @@ function untilEvent(name, ms) {
         const onEvent = () => finish(true);
         const timer = setTimeout(() => finish(false), ms);
         safe(() => engine.on(name, onEvent), null);
+    });
+}
+
+/** Resolves true when a Combat event names this unit as its attacker or defender, false after `ms` without one (W10). */
+function untilCombatOf(id, ms) {
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (fired) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            safe(() => engine.off("Combat", onEvent), null);
+            resolve(fired);
+        };
+        const onEvent = (d) => {
+            if (sameId(d?.attacker, id) || sameId(d?.defender, id)) finish(true);
+        };
+        const timer = setTimeout(() => finish(false), ms);
+        safe(() => engine.on("Combat", onEvent), null);
     });
 }
 
@@ -3983,14 +7506,83 @@ function enemyStrength(unit) {
     return Number(safe(() => GameInfo.Unit_Stats.lookup(type)?.Combat, 0)) || 0;
 }
 
+const STRIKE_TRADE_GENERAL = 1.2; // in the radius of a general that gains full XP from that enemy (W11)...
+const STRIKE_KEEP_GENERAL = 0.6;  // ...while our unit keeps this share of its health
+
 /**
  * Is the predicted attack worth it? Our unit keeps at least STRIKE_KEEP of its health, and the
- * enemy dies or takes STRIKE_TRADE times the damage we take.
+ * enemy dies or takes STRIKE_TRADE times the damage we take. In the radius of a general that still gains full XP from that
+ * enemy (`general`: below EXPERIENCE_MAX_BARB_LEVEL, or a major's unit) STRIKE_TRADE_GENERAL will do while our unit keeps
+ * STRIKE_KEEP_GENERAL (W11, game 60: previews of 30/30, 32/28 and 22/40 taken/dealt on the hunted Archer were refused A72-A74
+ * and the raider hunt ended STALL; a melee fight in radius gave a general below level 2 about 3.4 XP).
  */
-export function strikeWorthIt({ ourHealth, ourMax, theirHealth, dealt, taken, siege = false }) {
+export function strikeWorthIt({ ourHealth, ourMax, theirHealth, dealt, taken, siege = false, general = false }) {
     if (!(ourMax > 0) || !(dealt > 0)) return false;
     if (ourHealth - taken < STRIKE_KEEP * ourMax) return false;
-    return dealt >= theirHealth || dealt >= (siege ? STRIKE_TRADE_SIEGE : STRIKE_TRADE) * Math.max(1, taken);
+    if (dealt >= theirHealth) return true;
+    if (general && ourHealth - taken >= STRIKE_KEEP_GENERAL * ourMax && dealt >= STRIKE_TRADE_GENERAL * Math.max(1, taken)) return true;
+    return dealt >= (siege ? STRIKE_TRADE_SIEGE : STRIKE_TRADE) * Math.max(1, taken);
+}
+
+/**
+ * A trade on that tile pays (strikeWorthIt, `general` when xpGeneralOver), or the target is a hostile commander alone on its
+ * tile and the game's preview says we take nothing (M2: a commander does no damage back, game 60's CombatLog: AttDmg 0).
+ */
+function tradePays(u, loc, trade, { siege = false } = {}) {
+    if (!trade || trade.impossible) return false;
+    // Only those we see now (unitsSeenAt: game 60, SCM-2).
+    const there = unitsSeenAt(loc.x, loc.y, { remembered: false }).map((e) => e.unit).filter(Boolean);
+    const enemy = there.find((e) => e.owner !== pid()) ?? null;
+    const loneCommander = there.length > 0 && there.every((e) => hostileCommander(e));
+    if (loneCommander && trade.answered && trade.taken === 0 && trade.dealt > 0) return true;
+    return strikeWorthIt({ ourHealth: trade.ourHealth, ourMax: trade.ourMax, theirHealth: trade.theirHealth, dealt: trade.dealt, taken: trade.taken, siege, general: !!xpGeneralOver(u, enemy?.owner) });
+}
+
+/** A land commander's radius: 1, +1 with Merit (byGeneral's). */
+const generalRadius = (c) => 1 + (safe(() => c.Experience?.hasPromotion("DISCIPLINE_ARMY_COMMENDATION_MERIT", "PROMOTION_COMMENDATION_ARMY_MERIT"), false) ? 1 : 0);
+
+/** A land commander of ours whose radius covers `u` and that gains full XP from `enemyOwner`'s units (W6, W11), or null. */
+function xpGeneralOver(u, enemyOwner) {
+    if (!u?.location || enemyOwner === undefined || enemyOwner === null) return null;
+    const independent = !!safe(() => Players.get(enemyOwner)?.isIndependent, false);
+    return landCommanders(safe(() => Players.get(pid()).Units.getUnits(), []) ?? []).find((c) => c !== u && c.isOnMap !== false && c.location
+        && plotDist(c.location, u.location) <= generalRadius(c) && fightXpShare({ level: xpOf(c).level, independent }, xpParams()) >= 1) ?? null;
+}
+
+/**
+ * A raider hunt's targets left to its general (W5, game 60 A109-A111: the strike step's STRUCK and a SORTIE killed the hunted
+ * Archer 3 tiles from the general, which got no XP; the hunt is for its XP): while the general is on its way (the hunt's first
+ * RAIDER.COMMANDER_TURNS turns), the tiles of the hunted owner's units near the target. @returns { op, cmdr, tiles } or null
+ */
+function raiderHold(units) {
+    const op = fieldOp;
+    if (op?.kind !== "RAIDERS" || op.stage !== "FIGHT" || !op.commander || Game.turn - op.started >= RAIDER.COMMANDER_TURNS) return null;
+    const cmdr = (units ?? []).find((u) => unitKey(u.id) === op.commander && u.isOnMap !== false && u.location);
+    if (!cmdr) return null;
+    const tiles = new Set(soldiersOf(op.enemy, op.target, RAIDER.ENEMY_RADIUS, { commanders: true }).tiles.map((t) => `${t.x},${t.y}`));
+    return tiles.size > 0 ? { op, cmdr, tiles } : null;
+}
+
+let holdNoted = -1; // the turn UI.log said a raider waits for its general
+
+/**
+ * Is a strike of `u` on `loc` left to the hunt's general (raiderHold)? Not when `u` stands in its radius (that fight is its XP),
+ * the raider besieges a settlement of ours, or it would kill `u` in its turn (core estimateStrike, its high end).
+ */
+function heldFor(hold, u, loc) {
+    if (!hold?.tiles.has(`${loc.x},${loc.y}`) || !u?.location) return false;
+    if (plotDist(hold.cmdr.location, u.location) <= generalRadius(hold.cmdr) || besieging(loc)) return false;
+    const enemy = unitsSeenAt(loc.x, loc.y, { remembered: false }).map((e) => e.unit).find((e) => e && e.owner !== pid());
+    if (enemy && plotDist(u.location, loc) <= 2) {
+        const ours = { strength: Number(safe(() => u.Combat.getMeleeStrength(false), 0)) || 0, damage: Number(u.Health?.damage) || 0 };
+        const blow = estimateStrike(ours, { strength: enemyStrength(enemy), damage: Number(enemy.Health?.damage) || 0 });
+        if (enemyStrength(enemy) > 0 && blow.taken >= (Number(u.Health?.maxDamage) || 100) - ours.damage) return false;
+    }
+    if (holdNoted !== Game.turn) {
+        holdNoted = Game.turn;
+        log.info(`raiders: ${hold.op.target.name} at ${where(loc)} waits for its general (${plotDist(hold.cmdr.location, loc)} tiles)`);
+    }
+    return true;
 }
 
 /**
@@ -4007,11 +7599,12 @@ function besieging(loc) {
 }
 
 /**
- * Hostile military units (hostileOwner) on our land or within THREAT_RADIUS of one of our
- * settlements, except those in a district (a settlement's defences: a siege, not a raid).
- * @returns [{ loc, id }]
+ * Hostile military units (hostileOwner) we see now (unitsSeenAt, not those only remembered: they cannot be struck) on our land
+ * or within THREAT_RADIUS of one of our settlements, except those in a district (a settlement's defences: a siege, not a raid);
+ * `commanders`: hostile land commanders too (M2), `scouts`: hostile scouts (SC-6), each marked with its `kind`.
+ * @returns [{ loc, id, kind: "soldier" | "commander" | "scout" }]
  */
-function raidersNear() {
+function raidersNear({ commanders = false, scouts = false } = {}) {
     const out = [];
     const seen = new Set();
     for (const c of safe(() => Players.get(pid()).Cities.getCities(), []) ?? []) {
@@ -4022,9 +7615,10 @@ function raidersNear() {
             if (!loc) continue;
             const district = safe(() => Game.Combat.getDefensibleDistrict({ x: loc.x, y: loc.y }), null);
             if (validId(district)) continue;
-            for (const id of safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []) {
-                const unit = safe(() => Units.get(id), null);
-                if (hostileOwner(unit)) out.push({ loc: { x: loc.x, y: loc.y }, id });
+            for (const { unit } of unitsSeenAt(loc.x, loc.y, { remembered: false })) {
+                if (hostileOwner(unit)) out.push({ loc: { x: loc.x, y: loc.y }, id: unit.id, kind: "soldier" });
+                else if (commanders && hostileCommander(unit)) out.push({ loc: { x: loc.x, y: loc.y }, id: unit.id, kind: "commander" });
+                else if (scouts && hostileScout(unit)) out.push({ loc: { x: loc.x, y: loc.y }, id: unit.id, kind: "scout" });
             }
         }
     }
@@ -4037,37 +7631,114 @@ const SHOTS_MAX = 8; // ranged shots a pass (each waits for its Combat event)
  * An air strike (research/36 §7: game 29 had no aircraft; Russia's Bomber hit our centres M60-M65): at a hostile
  * soldier within AIR_STRIKE_RADIUS of one of our settlements, the one attacking a settlement (RANGED_GUARD_RADIUS) first,
  * then the most damaged. Sent as the game's air attack mode sends it: `UNITOPERATION_AIR_ATTACK` canStart with no target
- * gives the Plots, then {X, Y} (interface-mode-air-attack.js). @returns a log entry or null
+ * gives the Plots, then {X, Y} (interface-mode-air-attack.js); `held`: a raider hunt's targets left to its general
+ * (raiderHold). @returns a log entry or null
  */
-function airAttack(u, def) {
-    if (u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return null;
-    const OP = "UNITOPERATION_AIR_ATTACK";
-    const r = safe(() => Game.UnitOperations.canStart(u.id, OP, {}, false), null);
-    if (!r?.Plots?.length) return null;
+function airAttack(u, def, held = null) {
+    const best = airTargets(u, "UNITOPERATION_AIR_ATTACK", false, held)[0];
+    return best ? sendAirAttack(u, def, best) : null;
+}
+
+/**
+ * The hostile soldiers an air unit (or an air commander's focused attack: `command`) may strike, the best first: within
+ * AIR_STRIKE_RADIUS of our settlements, a raider next to a damaged centre (a capture to prevent), an attacker of a
+ * settlement, a kill; less where an enemy fighter's base covers it (research/37 §7D); none `held` for a raider hunt's general
+ * (W5: heldFor). @returns [{ loc, enemy, score }]
+ */
+function airTargets(u, op, command = false, held = null) {
+    if (!command && u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return [];
+    const r = command ? safe(() => Game.UnitCommands.canStart(u.id, op, {}, false), null) : safe(() => Game.UnitOperations.canStart(u.id, op, {}, false), null);
+    if (!r?.Plots?.length) return [];
     const ours = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
     const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
     const fighters = enemyFighterBases();
-    let best = null;
+    const out = [];
     for (const idx of r.Plots) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
         if (!loc || startsWar(u, loc)) continue;
-        const enemy = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null))
-            .find((t) => hostileOwner(t));
-        if (!enemy) continue;
+        const enemy = hostileSeenAt(loc);
+        if (!enemy || (held && heldFor(held, u, loc))) continue;
         const d = Math.min(Infinity, ...ours.map((c) => dist(c, loc)));
         if (!(d <= AIR_STRIKE_RADIUS)) continue;
-        // Research/37 §7D: a raider next to a damaged centre (a capture to prevent), an attacker of a settlement, a kill;
-        // less where an enemy fighter's base covers it (an interception).
         const capture = ours.some((c) => dist(c, loc) === 1 && centreDamaged(c));
         const covered = fighters.some((f) => dist(f.at, loc) <= f.range);
-        const score = airTargetScore({ d, damage: damageAt(loc), capture, covered });
-        if (!best || score > best.score) best = { loc, enemy, score };
+        out.push({ loc, enemy, score: airTargetScore({ d, damage: damageAt(loc), capture, covered }) });
     }
-    if (!best) return null;
-    Game.UnitOperations.sendRequest(u.id, OP, { X: best.loc.x, Y: best.loc.y });
-    const theirs = safe(() => GameInfo.Units.lookup(best.enemy.type), null);
-    return { key: "AIR_STRIKE", args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.loc.x, best.loc.y] };
+    return out.sort((a, b) => b.score - a.score);
 }
+
+/** The game's air attack on that target, as its air attack mode sends it. @returns a log entry */
+function sendAirAttack(u, def, t) {
+    Game.UnitOperations.sendRequest(u.id, "UNITOPERATION_AIR_ATTACK", { X: t.loc.x, Y: t.loc.y });
+    const theirs = safe(() => GameInfo.Units.lookup(t.enemy.type), null);
+    return { key: "AIR_STRIKE", args: [nameOf(def), theirs ? nameOf(theirs) : "?", t.loc.x, t.loc.y] };
+}
+
+/**
+ * An air strike that asks the game's preview first (research/41 Phase 6, P-AIR-4; research/42 C3): of the best targets,
+ * the first whose trade pays (strikeWorthIt). What the preview says of an air attack is not known yet: only a full answer
+ * that the trade is poor holds a strike back; no answer, or one without our side, strikes as before (the game's canStart
+ * offered the tile). UI.log says once a turn what the preview answered (probe P-AIR-4). @returns a log entry or null
+ */
+async function airStrike(u, def, held = null) {
+    const list = airTargets(u, "UNITOPERATION_AIR_ATTACK", false, held);
+    for (const t of list.slice(0, AIR_PREVIEW_TRIES)) {
+        const trade = await strikeTrade(u, t.loc, t.enemy);
+        if (airPreviewNoted !== Game.turn) {
+            airPreviewNoted = Game.turn;
+            log.info(`air: preview for ${def?.UnitType ?? "?"} on ${t.loc.x},${t.loc.y}: ${trade?.impossible ? "no attacker side" : trade?.answered ? `${trade.dealt} dealt, ${trade.taken} taken` : "no answer"} (probe P-AIR-4)`);
+        }
+        if (trade?.answered && !strikeWorthIt({ ourHealth: trade.ourHealth, ourMax: trade.ourMax, theirHealth: trade.theirHealth, dealt: trade.dealt, taken: trade.taken })) continue;
+        return sendAirAttack(u, def, t);
+    }
+    return null;
+}
+let airPreviewNoted = -1;
+const AIR_PREVIEW_TRIES = 3; // targets an air strike's preview is asked for, the best first
+
+/**
+ * An air commander's focused attack (research/42 C3; every plane of its class based there strikes one target, +2 each), by
+ * the class each command orders (the game's text, after game 54: Ground Attack, `…_AIR_TO_LAND`, orders "eligible Attack Air
+ * Units"; Carpet Bomb, `…_AIR_BOMB`, "Bomber Units"; Fighter Sweep, `…_AIR_TO_AIR`, "all Fighter Units ... engage any
+ * intercepting enemy Fighters"; research/42 sent Ground Attack for bombers): with AIR_FOCUS_MIN planes of that class with an
+ * attack left, at the best target (airTargets). When an enemy fighter covers that target and AIR_FOCUS_MIN of our fighters are
+ * there, they sweep it first and the strike waits for the next pass. A carrier is an air commander too.
+ * @returns { entry, ordered } or null
+ */
+async function airCommanderAttack(cmdr, def, units) {
+    const planes = units.filter((u) => !u.isCommanderUnit && sameId(u.armyId, cmdr.armyId) && isAircraft(safe(() => GameInfo.Units.lookup(u.type), null), u)
+        && Number(u.Combat?.attacksRemaining) > 0);
+    const ofClass = (tag) => planes.filter((u) => hasTag(safe(() => GameInfo.Units.lookup(u.type), null), tag));
+    const fighters = ofClass("UNIT_CLASS_INTERCEPTOR");
+    for (const [OP, tag, key] of AIR_COMMANDS) {
+        const group = ofClass(tag);
+        if (group.length < AIR_FOCUS_MIN) continue;
+        const best = airTargets(cmdr, OP, true)[0];
+        if (!best) continue;
+        const theirs = safe(() => GameInfo.Units.lookup(best.enemy.type), null);
+        // Their fighters cover it: ours sweep it first (Fighter Sweep), when the game offers that tile.
+        const SWEEP = "UNITCOMMAND_FOCUSED_ATTACK_AIR_TO_AIR";
+        const covered = enemyFighterBases().some((f) => safe(() => GameplayMap.getPlotDistance(f.at.x, f.at.y, best.loc.x, best.loc.y), Infinity) <= f.range);
+        const idx = safe(() => GameplayMap.getIndexFromXY(best.loc.x, best.loc.y), -1);
+        if (covered && fighters.length >= AIR_FOCUS_MIN && (safe(() => Game.UnitCommands.canStart(cmdr.id, SWEEP, {}, false), null)?.Plots ?? []).includes(idx)) {
+            Game.UnitCommands.sendRequest(cmdr.id, SWEEP, { X: best.loc.x, Y: best.loc.y });
+            await untilEvent("Combat", COMBAT_WAIT_MS);
+            return { entry: { key: "AIR_SWEEP", args: [nameOf(def), best.loc.x, best.loc.y, fighters.length] }, ordered: [unitKey(cmdr.id), ...fighters.map((u) => unitKey(u.id))] };
+        }
+        Game.UnitCommands.sendRequest(cmdr.id, OP, { X: best.loc.x, Y: best.loc.y });
+        await untilEvent("Combat", COMBAT_WAIT_MS);
+        return { entry: { key, args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.loc.x, best.loc.y, group.length] }, ordered: [unitKey(cmdr.id), ...group.map((u) => unitKey(u.id))] };
+    }
+    return null;
+}
+const AIR_FOCUS_MIN = 2; // an air commander's focused attack wants this many planes of the class it orders
+// Its commands, bombers first (the heaviest strike), and the class each orders (the game's text).
+const AIR_COMMANDS = [
+    ["UNITCOMMAND_FOCUSED_ATTACK_AIR_BOMB", "UNIT_CLASS_BOMBER", "AIR_CARPET_BOMB"],
+    ["UNITCOMMAND_FOCUSED_ATTACK_AIR_TO_LAND", "UNIT_CLASS_GROUND_ATTACKER", "AIR_FOCUSED_ATTACK"],
+];
+/** An air commander: an Aerodrome or Squadron Commander, or a carrier (a naval Squadron Commander: research/54). */
+const isAirCommander = (def) => !!def && (def.Domain === "DOMAIN_AIR" || hasTag(def, "UNIT_CLASS_CARRIER_COMMANDER")) && hasTag(def, "UNIT_CLASS_COMMAND");
 
 /**
  * A military aircraft, not an air commander: every Airfield's Aerodrome Commander and the Squadron Commander are
@@ -4109,10 +7780,11 @@ const FLIGHT_MASTERY = "NODE_TECH_MO_FLIGHT"; // ...+1 at an Airfield's commande
 const AIR_ARMY_CAPACITY = 4;         // an army's slots when the game does not say (Civilopedia: "initial capacity is 4")
 
 /**
- * Our air bases (research/37 §3E, §7A): each Airfield's Aerodrome Commander and each Squadron Commander, its tile, the city
- * an Airfield belongs to, its free slots (the army's combatUnitCapacity less our aircraft packed in it), the planes in it
- * and how far a fighter based there intercepts (INTERCEPT_RANGE, +1 for an Aerodrome, +1 after Flight's mastery; Ace
- * promotions not counted). @returns [{ at, type, city (ComponentID) or null, free, range, planes: [type] }]
+ * Our air bases (research/37 §3E, §7A): each Airfield's Aerodrome Commander, each Squadron Commander and each carrier (game
+ * 54's review: "Once based on a carrier, Air Units can launch air attacks and intercept enemy aircraft just as they would on
+ * land"), its tile, the city an Airfield belongs to, its free slots (the army's combatUnitCapacity less our aircraft packed
+ * in it), the planes in it and how far a fighter based there intercepts (INTERCEPT_RANGE, +1 for an Aerodrome, +1 after
+ * Flight's mastery; Ace promotions not counted). @returns [{ at, type, city (ComponentID) or null, free, range, planes: [type] }]
  */
 export function airBases() {
     const mine = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
@@ -4120,9 +7792,9 @@ export function airBases() {
     const out = [];
     for (const c of mine) {
         const def = safe(() => GameInfo.Units.lookup(c.type), null);
-        // An Airfield's Aerodrome Commander (+1 interception range), or a Squadron Commander (research/37 §7A).
+        // An Airfield's Aerodrome Commander (+1 interception range), a Squadron Commander (research/37 §7A) or a carrier.
         const aerodrome = def?.UnitType === "UNIT_AERODROME_COMMANDER";
-        if (!aerodrome && def?.UnitType !== "UNIT_SQUADRON_COMMANDER") continue;
+        if (!aerodrome && !isSquadronCommander(def) && !isCarrier(def)) continue;
         const at = unitTile(c);
         if (!at) continue;
         const army = safe(() => Armies.get(c.armyId), null);
@@ -4174,9 +7846,10 @@ export function shipRole(def) {
  * (RANGE_ATTACK). Only hostile units within NAVAL.STRIKE_RADIUS of one of our settlements: one next to a damaged centre
  * first, then a settlement's attacker, then the most damaged (airTargetScore). A submarine never takes a land target. Before,
  * only RANGE_ATTACK was asked, which melee ships very likely lack: our Galleys and Ironclads never hit anything. UI.log
- * gives each ship type's answers once a session (probe P-NAV-1). @returns a log entry or null
+ * gives each ship type's answers once a session (probe P-NAV-1). `held`: a raider hunt's targets left to its general
+ * (raiderHold). @returns a log entry or null
  */
-async function shipAttack(u, def) {
+async function shipAttack(u, def, held = null) {
     if (u.Combat && !(Number(u.Combat.attacksRemaining) > 0)) return null;
     const role = shipRole(def);
     if (!isWarship(role)) return null;
@@ -4195,8 +7868,9 @@ async function shipAttack(u, def) {
         for (const idx of r?.Plots ?? []) {
             const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
             if (!loc || startsWar(u, loc)) continue;
-            const enemy = (safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []).map((id) => safe(() => Units.get(id), null)).find((t) => hostileOwner(t));
-            if (!enemy) continue;
+            const enemy = hostileSeenAt(loc);
+            // A raider hunt's target is left to its coming general (W5: heldFor).
+            if (!enemy || (held && heldFor(held, u, loc))) continue;
             if (role === "SUBMARINE" && !safe(() => GameplayMap.isWater(loc.x, loc.y), false)) continue;
             const d = Math.min(Infinity, ...ours.map((c) => dist(c, loc)));
             if (!(d <= NAVAL.STRIKE_RADIUS)) continue;
@@ -4237,7 +7911,7 @@ async function shipAttack(u, def) {
  * its own path within NAVAL.POST_MAX_TURNS (a ship in another sea or a lake has none: research/37 §8B, reach is a path),
  * the nearest to the settlement first. @returns { loc, turns } or null
  */
-function navalPost(x, s, ctx) {
+function navalPost(x, s, ctx, why = null) {
     const tiles = [];
     for (const idx of safe(() => GameplayMap.getPlotIndicesInRadius(s.x, s.y, GUARD_RADIUS), []) ?? []) {
         const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
@@ -4247,8 +7921,10 @@ function navalPost(x, s, ctx) {
         tiles.push({ loc, score: near * 100 + far });
     }
     tiles.sort((a, b) => a.score - b.score);
+    if (why) why.reason = tiles.length === 0 ? "no free water tile" : "no path";
     for (const { loc } of tiles.slice(0, REINFORCE_TRIES)) {
         const turns = pathTurns(x.u, loc);
+        if (why && turns !== null && turns > NAVAL.POST_MAX_TURNS) why.reason = `${turns} turns`;
         if (turns === null || turns > NAVAL.POST_MAX_TURNS || startsWar(x.u, loc)) continue;
         return { loc, turns };
     }
@@ -4313,7 +7989,15 @@ function planNavalGuards(units, ctx) {
         if (navalNoted.get(key) !== Game.turn) {
             navalNoted.set(key, Game.turn);
             const name = (x) => x.def.UnitType;
-            log.info(`naval: ${t.settlement.name}: ships ${t.ships}; warships there [${present.map(name).join(", ")}], coming [${coming.map(name).join(", ")}]; sent [${sent.join("; ")}]; ${ships.filter((x) => !used.has(x.k) && free(x)).length} free warship(s)`);
+            // Why each free warship stayed (research/41 §3: 46 of 186 `naval:` lines of games 37-47 had free warships and sent none).
+            const idle = ships.filter((x) => !used.has(x.k) && free(x));
+            const notSent = idle.map((x) => {
+                if (lack <= 0) return `${name(x)} at ${where(x.u.location)} (not needed)`;
+                const why = {};
+                navalPost(x, t.settlement, ctx, why);
+                return `${name(x)} at ${where(x.u.location)} (${why.reason ?? "?"})`;
+            });
+            log.info(`naval: ${t.settlement.name}: ships ${t.ships}; warships there [${present.map(name).join(", ")}], coming [${coming.map(name).join(", ")}]; sent [${sent.join("; ")}]; ${idle.length} free warship(s)${notSent.length > 0 ? `; not sent [${notSent.join("; ")}]` : ""}`);
         }
     }
     return out;
@@ -4423,6 +8107,149 @@ function rebaseFighters(ctx, units) {
     return out;
 }
 
+/** A Squadron Commander (an air one: a carrier is a naval Squadron Commander), a carrier, a Fleet Commander (the game's tags). */
+export const isSquadronCommander = (def) => def?.Domain === "DOMAIN_AIR" && (def.UnitType === "UNIT_SQUADRON_COMMANDER" || hasTag(def, "UNIT_CLASS_SQUADRON_COMMANDER"));
+export const isCarrier = (def) => !!def && (def.UnitType === "UNIT_CARRIER_COMMANDER" || hasTag(def, "UNIT_CLASS_CARRIER_COMMANDER"));
+export const isFleetCommander = (def) => def?.Domain === "DOMAIN_SEA" && (def.PromotionClass === "PROMOTION_CLASS_NAVAL_COMMANDER" || hasTag(def, "UNIT_CLASS_FLEET_COMMANDER"));
+
+const SQUADRON_HOLD = 5;          // a Squadron Commander moves its base at most every this many turns
+const squadronMoved = new Map();  // unit key -> the turn it last established a base
+
+/**
+ * Squadron Commanders set up their air base where fighter cover is wanted (game 54's review: the game's text, "Air
+ * Squadrons ... can Establish Air Bases on flat tiles with no Urban District that are not owned by another player", and
+ * planes "cannot Rebase to a Squadron Commander until that Squadron Commander has used its Establish Air Base action";
+ * research/42 left them unused): `ctx.airCover` settlements no other base covers, on the tile the game offers
+ * (UNITOPERATION_ESTABLISH_BASE: canStart with no target gives the Plots, then {X, Y}, as interface-mode-establish-base.js
+ * sends it) that covers the most of them within a fighter's interception from it, then the nearest them; only for more than
+ * it covers where it stands, at most every SQUADRON_HOLD turns. The fighters rebase to it after (rebaseFighters).
+ * @returns log entries
+ */
+function establishSquadronBases(ctx, units) {
+    const out = [];
+    const targets = ctx.airCover ?? [];
+    if (targets.length === 0) return out;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const bases = safe(() => airBases(), []) ?? [];
+    const mastery = (Number(safe(() => Game.ProgressionTrees.getNode(pid(), FLIGHT_MASTERY)?.depthUnlocked, 0)) || 0) >= 2 ? 1 : 0;
+    const range = INTERCEPT_RANGE + mastery;
+    for (const u of units) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (!u.isCommanderUnit || !isSquadronCommander(def)) continue;
+        const k = unitKey(u.id);
+        if (ctx.ordered.has(k) || Game.turn - (squadronMoved.get(k) ?? -Infinity) < SQUADRON_HOLD) continue;
+        const here = unitTile(u);
+        const others = bases.filter((b) => !(here && same(b.at, here) && b.type === def.UnitType));
+        const open = targets.filter((t) => !others.some((b) => dist(b.at, t) <= b.range));
+        if (open.length === 0) continue;
+        const now = here ? open.filter((t) => dist(here, t) <= range).length : 0;
+        let best = null;
+        for (const idx of safe(() => Game.UnitOperations.canStart(u.id, "UNITOPERATION_ESTABLISH_BASE", {}, false), null)?.Plots ?? []) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc) continue;
+            const covers = open.filter((t) => dist(loc, t) <= range);
+            if (covers.length <= now) continue;
+            const near = Math.min(...covers.map((t) => dist(loc, t)));
+            const score = covers.length * 100 - near * 10 - (here ? dist(here, loc) : 0);
+            if (!best || score > best.score) best = { loc, covers, score };
+        }
+        if (!best) continue;
+        Game.UnitOperations.sendRequest(u.id, "UNITOPERATION_ESTABLISH_BASE", { X: best.loc.x, Y: best.loc.y });
+        squadronMoved.set(k, Game.turn);
+        ctx.ordered.add(k);
+        const names = best.covers.map((t) => t.name ?? where(t));
+        log.info(`air: ${def.UnitType} establishes a base at ${where(best.loc)} (from ${here ? where(here) : "off the map"}) for ${names.join(", ")}: no other base of ours covers them`);
+        out.push({ key: "SQUADRON_BASE", args: [nameOf(def), names.join(", ")] });
+    }
+    return out;
+}
+
+/**
+ * Carriers sail where fighter cover is wanted and no land base covers it (game 54's review: "a powerful, mobile, Naval
+ * Squadron Commander that can extend the range of your airforce across the sea"): `ctx.airCover` settlements that no
+ * Airfield or Squadron base covers, the nearest first, to a water tile within GUARD_RADIUS of it (navalPost, as warships);
+ * its fighters there intercept and its planes strike from it (commanderAttacks). @returns log entries
+ */
+function postCarriers(units, ctx) {
+    const out = [];
+    const targets = ctx.airCover ?? [];
+    if (targets.length === 0) return out;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const land = (safe(() => airBases(), []) ?? []).filter((b) => !isCarrier(safe(() => GameInfo.Units.lookup(b.type), null)));
+    const open = targets.filter((t) => !land.some((b) => dist(b.at, t) <= b.range));
+    const taken = new Set();
+    for (const u of units) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const k = unitKey(u.id);
+        if (!isCarrier(def) || u.isOnMap === false || !u.location || ctx.ordered.has(k) || u.canMove === false || u.hasMoved === true) continue;
+        const range = INTERCEPT_RANGE;
+        // It covers one already: it stays.
+        if (open.some((t) => dist(u.location, t) <= range - 1)) continue;
+        const target = open.filter((t) => !taken.has(`${t.x},${t.y}`)).sort((a, b) => dist(u.location, a) - dist(u.location, b))[0];
+        if (!target) continue;
+        const post = navalPost({ u, def, k }, target, ctx);
+        if (!post) continue;
+        wakeUnit(u);
+        if (!moveTo(u, post.loc)) continue;
+        taken.add(`${target.x},${target.y}`);
+        ctx.ordered.add(k);
+        ctx.stepTo.add(`${post.loc.x},${post.loc.y}`);
+        log.info(`air: ${def.UnitType} sails to ${where(post.loc)} (${post.turns} turn(s)) to cover ${target.name ?? where(target)}: no land base of ours covers it`);
+        out.push({ key: "CARRIER_SAILS", args: [nameOf(def), target.name ?? "?"] });
+    }
+    return out;
+}
+
+/**
+ * Fleet Commanders stand with our warships where ships attack us (game 54's review: Coordinated Naval Attack orders "all
+ * Light Naval Units within Command Radius", Focus Fire "all Heavy Naval Units", +2 each; commanderAttacks sends them): at
+ * the threatened settlement with ships where the most of our warships stand or are sent (planNavalGuards), on the water tile
+ * a warship of ours holds (it shares the tile: FORMATION_CLASS_COMMAND; the ship is the one attacked) that covers the most
+ * of them, else toward that settlement's waters (navalPost) when the walk's first stop is out of every hostile ship's reach
+ * or under a warship of ours. With no such fight it stays. @returns log entries
+ */
+function postFleetCommanders(units, ctx) {
+    const out = [];
+    const fights = ctx.threats.filter((t) => Number(t.ships) > 0);
+    if (fights.length === 0) return out;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const warships = units.filter((x) => !x.isCommanderUnit && x.isOnMap !== false && !!x.location && isWarship(shipRole(safe(() => GameInfo.Units.lookup(x.type), null))));
+    if (warships.length === 0) return out;
+    const keyOf = (t) => `${t.settlement.x},${t.settlement.y}`;
+    const ours = (t) => warships.filter((x) => dist(x.location, t.settlement) <= GUARD_RADIUS + 1 || (goals.get(unitKey(x.id))?.naval && goals.get(unitKey(x.id))?.guard === keyOf(t))).length;
+    const shielded = (loc) => warships.some((x) => same(x.location, loc) && (Number(x.Health?.damage) || 0) < SHIELD_DAMAGE);
+    for (const u of units) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        const k = unitKey(u.id);
+        if (!u.isCommanderUnit || !isFleetCommander(def) || u.isOnMap === false || !u.location || ctx.ordered.has(k) || u.canMove === false || u.hasMoved === true) continue;
+        const fight = [...fights].sort((a, b) => ours(b) - ours(a) || dist(u.location, a.settlement) - dist(u.location, b.settlement))[0];
+        if (!fight || ours(fight) === 0) continue;
+        // Near the fight: the warship's tile covering the most of them (radius 1), reached this turn.
+        let best = null;
+        for (const x of warships) {
+            if (dist(x.location, fight.settlement) > GUARD_RADIUS + 1 || !shielded(x.location)) continue;
+            const covered = warships.filter((y) => dist(y.location, x.location) <= 1).length;
+            const t = same(x.location, u.location) ? 0 : pathTurns(u, x.location);
+            if (t === null || t > 1) continue;
+            if (!best || covered > best.covered || (covered === best.covered && t < best.t)) best = { loc: x.location, covered, t };
+        }
+        let to = best?.loc ?? null;
+        if (!best) {
+            const post = navalPost({ u, def, k }, fight.settlement, ctx);
+            const p = post ? pathTo(u, post.loc) : null;
+            const stop = p ? (p.turns <= 1 ? post.loc : turnStop(p)) : null;
+            if (stop && (shielded(stop) || shipsReaching(stop).length === 0)) to = post.loc;
+        }
+        if (!to || same(to, u.location)) continue;
+        wakeUnit(u);
+        if (!moveTo(u, to)) continue;
+        ctx.ordered.add(k);
+        log.info(`naval: ${def.UnitType} to ${where(to)} for ${fight.settlement.name ?? where(fight.settlement)}: ${ours(fight)} warship(s) of ours there${best ? `, ${best.covered} in its radius, under a warship` : ""}`);
+        out.push({ key: "FLEET_COMMANDER_POST", args: [nameOf(def), fight.settlement.name ?? "?"] });
+    }
+    return out;
+}
+
 /**
  * UI.log once a turn while we have an air base or a plane (research/37 §10, Phase 5): each base with its planes, free
  * slots and interception range, the settlements wanting cover (why, and how many fighters cover each), and the rebases.
@@ -4435,7 +8262,7 @@ function logAirWing(ctx) {
     const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
     const fighters = ctx.airFighters ?? [];
     const cover = (ctx.airCover ?? []).map((t) => `${t.name ?? where(t)} (${t.why ?? "?"}) covered by ${fighters.filter((f) => dist(f.at, t) <= f.range).length}`);
-    log.info(`air: bases [${bases.map((b) => `${b.type === "UNIT_SQUADRON_COMMANDER" ? "squadron" : "airfield"} ${where(b.at)} [${b.planes.join(", ")}] free ${b.free} intercepts ${b.range}`).join("; ")}]; cover wanted [${cover.join("; ")}]; rebases [${(ctx.airRebases ?? []).join("; ")}]`);
+    log.info(`air: bases [${bases.map((b) => `${b.type === "UNIT_AERODROME_COMMANDER" ? "airfield" : isCarrier(safe(() => GameInfo.Units.lookup(b.type), null)) ? "carrier" : "squadron"} ${where(b.at)} [${b.planes.join(", ")}] free ${b.free} intercepts ${b.range}`).join("; ")}]; cover wanted [${cover.join("; ")}]; rebases [${(ctx.airRebases ?? []).join("; ")}]`);
 }
 
 // ---- probes for the next phases (research/37 §3F, §11C; UI.log only) ----------------------------------
@@ -4446,9 +8273,118 @@ const PROBE_COMBAT_LINES = 2; // Combat event payloads a turn, while aircraft ar
 let probeTurn = -1;
 let airAbout = false;        // aircraft of ours or of a leader at war with us seen this turn (the Combat probe listens then)
 let combatLogged = { turn: -1, n: 0 };
+const xpNoted = new Map();    // commander key -> its last xp line (P-XP-2, P-DEATH-1)
 
 const where = (l) => (l ? `${l.x},${l.y}` : "?");
 const typeOf = (u) => safe(() => GameInfo.Units.lookup(u.type)?.UnitType, "?");
+
+/** A commander's level, XP and promotions, as the game's promotion panel reads them (model-unit-promotion.js). */
+function xpText(u) {
+    const e = u?.Experience;
+    if (!e) return "no Experience";
+    const v = (f) => safe(f, "?");
+    return `level ${v(() => e.getLevel)}, XP ${v(() => e.experiencePoints)}/${v(() => e.experienceToNextLevel)}, promotions ${v(() => e.getTotalPromotionsEarned)} (points ${v(() => e.getStoredPromotionPoints)}, commendations ${v(() => e.getStoredCommendations)})`;
+}
+
+/**
+ * What a fight gave our land commanders (W6, game 60), for the `fight:` line (data/xpl-unit-log.js noteFight: it replaced the
+ * `xp: combat` probe). generalXpAtFight: a commander's XP when last read (the `xp:` probe, its last fight line) and at the
+ * fight, which becomes the last read. @returns { was: { level, xp } | null, at: { level, xp } }
+ */
+export function generalXpAtFight(c) {
+    const k = unitKey(c.id);
+    const was = xpSeen.get(k) ?? null;
+    const at = xpOf(c);
+    xpSeen.set(k, at);
+    return { was, at };
+}
+
+/**
+ * A moment (XP_AFTER_MS) after a fight of ours at `at`, `xp: after the fight T…: <type> <key> XP a -> b` for each land
+ * commander of ours within 2 tiles whose XP moved since the event (whichever way the game orders the award and the event;
+ * and whether a commander 2 tiles away, outside its radius, gains).
+ */
+export function xpAfterFight(at) {
+    if (!at || !(at.x >= 0)) return;
+    const turn = safe(() => Game.turn, -1);
+    const near = (safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])
+        .filter((c) => c.isCommanderUnit && c.isOnMap !== false && c.location && isLandCommander(safe(() => GameInfo.Units.lookup(c.type), null)) && plotDist(c.location, at) <= 2)
+        .map((c) => ({ id: c.id, k: unitKey(c.id), at: xpOf(c) }));
+    if (near.length === 0) return;
+    const xpFmt = (x) => (x ? `L${x.level} ${x.xp}` : "?");
+    const after = () => {
+        for (const n of near) {
+            const c = safe(() => Units.get(n.id), null);
+            const later = c ? xpOf(c) : null;
+            if (!later || (later.level === n.at.level && later.xp === n.at.xp)) continue;
+            xpSeen.set(n.k, later);
+            log.info(`xp: after the fight T${turn}: ${typeOf(c)} ${n.k} XP ${xpFmt(n.at)} -> ${xpFmt(later)}`);
+        }
+    };
+    const timer = safe(() => setTimeout(() => safe(after, null), XP_AFTER_MS), null);
+    safe(() => timer?.unref?.(), null);
+}
+
+const XP_AFTER_MS = 250;      // a fight's XP is read again this long after its Combat event
+const xpSeen = new Map();     // commander key -> { level, xp } last read (fight lines, the xp: probe)
+
+/**
+ * Our fights, for the generals' posts and the operations' kills (the Combat event: attacker, defender). A settlement of ours
+ * within THREAT_RADIUS of a fight of ours keeps its general's post FIGHT_MEMORY turns (W4: an enemy commander or a ship our
+ * units fight counts, which threatenedSettlements leaves out); an opponent of a field operation's enemy is remembered, its
+ * death a kill (W7: reviewFieldOp).
+ */
+function noteFights(d) {
+    const me = pid();
+    const side = d?.attacker?.owner === me ? "attacker" : d?.defender?.owner === me ? "defender" : null;
+    if (!side) return;
+    const ours = d[side];
+    const theirs = side === "attacker" ? d.defender : d.attacker;
+    const turn = safe(() => Game.turn, -1);
+    const at = safe(() => Units.get(ours), null)?.location ?? safe(() => Districts.get(ours)?.location, null);
+    if (at && at.x >= 0) {
+        for (const c of ourCentres()) if (plotDist(c, at) <= THREAT_RADIUS) fightMemory.set(`${c.x},${c.y}`, turn);
+    }
+    // A unit of theirs, not a district (a training war's shot at a soldier in their city hits its district: no kill to count).
+    if (fieldOp && theirs && theirs.owner === fieldOp.enemy && !safe(() => Districts.get(theirs), null)) (fieldOp.fought ??= new Map()).set(idString(theirs), { id: theirs, turn });
+}
+const fightMemory = new Map(); // settlement "x,y" -> the last turn of a fight of ours near it
+
+/** Was there a fight of ours near this settlement within GENERAL.FIGHT_MEMORY turns (noteFights)? */
+function foughtLately(loc) {
+    const t = fightMemory.get(`${loc.x},${loc.y}`);
+    return t !== undefined && Game.turn >= t && Game.turn - t <= GENERAL.FIGHT_MEMORY;
+}
+
+const PROBE_HOSTILE_COMMANDERS = 4; // hostile commanders a turn in UI.log at most
+
+/**
+ * M2's probe (UI.log, once a turn): each hostile land commander we see now (unitsSeenAt) within THREAT_RADIUS of our
+ * settlements, its army's size, and whether the game offers an attack on it to our soldiers next to it (MOVE_TO with ATTACK,
+ * as the map asks) and an Overrun to our generals with soldiers packed (UNITCOMMAND_ARMY_OVERRUN's Plots, as overrunRaider
+ * asks).
+ */
+function probeHostileCommanders(mine) {
+    const M = globalThis.UnitOperationMoveModifiers;
+    const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
+    const seen = new Set();
+    for (const c of ourCentres()) {
+        for (const at of tilesAt(c, THREAT_RADIUS)) {
+            for (const { unit } of unitsSeenAt(at.x, at.y, { remembered: false })) {
+                if (seen.size >= PROBE_HOSTILE_COMMANDERS || seen.has(idString(unit.id)) || !hostileCommander(unit)) continue;
+                seen.add(idString(unit.id));
+                const army = safe(() => Armies.get(unit.armyId), null);
+                const attack = mine.filter((u) => !u.isCommanderUnit && u.isOnMap !== false && u.location && plotDist(u.location, at) === 1 && isSoldier(safe(() => GameInfo.Units.lookup(u.type), null)))
+                    .map((u) => `${typeOf(u)} ${safe(() => Game.UnitOperations.canStart(u.id, MOVE, { X: at.x, Y: at.y, Modifiers: M?.ATTACK ?? 0 }, false), null)?.Success ? "yes" : "no"}`);
+                const idx = safe(() => GameplayMap.getIndexFromXY(at.x, at.y), -1);
+                const overrun = landCommanders(mine).filter((g) => g.isOnMap !== false && packedSoldiers(g, mine).length > 0)
+                    .map((g) => `${typeOf(g)} ${(safe(() => Game.UnitCommands.canStart(g.id, OVERRUN, {}, false), null)?.Plots ?? []).includes(idx) ? "yes" : "no"}`);
+                const name = safe(() => Locale.compose(settlementAt(c).name), null) ?? where(c);
+                log.info(`hostile commander: p${unit.owner} ${typeOf(unit)} at ${where(at)} ${plotDist(c, at)} tile(s) from ${name}: army ${army?.unitCount ?? "?"}, damage ${unit.Health?.damage ?? "?"}; attack offered [${attack.join(", ") || "no soldier of ours next to it"}]; overrun offered [${overrun.join(", ") || "no army of ours packed"}]`);
+            }
+        }
+    }
+}
 
 /**
  * Once a turn (the first full pass): P-A1, each of our commanders' armies when it changes (an age's first turn makes new
@@ -4475,6 +8411,18 @@ export function probeMilitary() {
         if (armyNoted.get(k) !== line) log.info(line);
         armyNoted.set(k, line);
     }
+    // P-XP-2, P-DEATH-1 (research/41 §2): each land commander's level, XP and promotions when they change; a defeated
+    // one shows onMap=false at -9999,-9999 until it respawns.
+    for (const c of mine) {
+        if (!c.isCommanderUnit || !isLandCommander(safe(() => GameInfo.Units.lookup(c.type), null))) continue;
+        const line = `xp: ${typeOf(c)} ${unitKey(c.id)} at ${where(c.location)} onMap=${c.isOnMap}; ${xpText(c)}`;
+        const k = unitKey(c.id);
+        if (xpNoted.get(k) !== line) log.info(line);
+        xpNoted.set(k, line);
+        xpSeen.set(k, xpOf(c));
+    }
+    // M2: hostile commanders near us, and whether the game lets us attack or overrun them.
+    safe(() => probeHostileCommanders(mine), null);
     // P-A3: reinforcements on their way.
     for (const u of mine) {
         const to = Number(safe(() => me.Armies.getUnitReinforcementCommanderId(u.id, pid()), -1));
@@ -4519,6 +8467,7 @@ export function probeMilitary() {
 try {
     engine.on("Combat", (d) => {
         safe(() => noteAirRaid(d), null);
+        safe(() => noteFights(d), null);
         if (!airAbout) return;
         const turn = safe(() => Game.turn, -1);
         if (combatLogged.turn !== turn) combatLogged = { turn, n: 0 };
@@ -4552,11 +8501,11 @@ function shootsFromAfar(def) {
  * are at war with only, one after another, each after the last one's Combat event so the next sees the damage
  * (rangedAttack: the one attacking our settlement first, then the most damaged). @returns log entries
  */
-async function shootRaiders(ordered) {
+async function shootRaiders(ordered, hold = null) {
     const out = [];
     const A = globalThis.UnitActivityTypes;
     const centres = new Set((safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => `${c.location.x},${c.location.y}`));
-    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+    for (const u of byGeneral(safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])) {
         if (out.length >= SHOTS_MAX) break;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         // Aircraft too (based ones may count as off the map): the game's air attack (airAttack).
@@ -4564,13 +8513,41 @@ async function shootRaiders(ordered) {
         if (!isSoldier(def) || u.isCommanderUnit || (!air && u.isOnMap === false) || ordered.has(unitKey(u.id)) || !shootsFromAfar(def)) continue;
         if (!(Number(u.Combat?.attacksRemaining) > 0) || (A && u.activityType === A.OPERATION)) continue;
         if (def.Domain === "DOMAIN_LAND" && !centres.has(`${u.location?.x},${u.location?.y}`) && inDanger(u, def)) continue;
-        const e = air ? airAttack(u, def) : def.Domain === "DOMAIN_SEA" ? await shipAttack(u, def) : rangedAttack(u, def, { hostileOnly: true });
+        const e = air ? await airStrike(u, def, hold) : def.Domain === "DOMAIN_SEA" ? await shipAttack(u, def, hold) : rangedAttack(u, def, { hostileOnly: true, held: hold });
         if (!e) continue;
         ordered.add(unitKey(u.id));
         out.push(e);
         await untilEvent("Combat", COMBAT_WAIT_MS);
     }
     return out;
+}
+
+/**
+ * What a strike of this unit on that tile would trade, by the game's preview (simulateAttack), else the estimate
+ * (core/xpl-combat.js, pessimistic for us). @returns { answered, impossible, dealt, taken, ourHealth, ourMax, theirHealth }
+ * or null (no estimate either)
+ */
+async function strikeTrade(u, loc, enemy) {
+    const r = await simulateAttack(u, loc);
+    const answered = !!(r?.Attacker && r?.Defender);
+    // An answer without our side: the game says no attack is possible (its attack preview hides itself).
+    if (r && !answered) return { impossible: true };
+    const ourMax = Number(u.Health?.maxDamage) || 100;
+    const ourHealth = ourMax - (Number(u.Health?.damage) || 0);
+    const them = answered ? safe(() => Units.get(r.Defender.ID), null) ?? enemy : enemy;
+    const theirMax = Number((answered ? r.Defender.MaxHitPoints : null) ?? them?.Health?.maxDamage) || 100;
+    const theirHealth = theirMax - (Number(them?.Health?.damage) || 0);
+    if (answered) return { answered, dealt: Number(r.Defender.DamageTo) || 0, taken: Number(r.Attacker.DamageTo) || 0, ourHealth, ourMax, theirHealth };
+    const melee = Number(safe(() => u.Combat.getMeleeStrength(false), 0)) || 0;
+    const guess = estimateStrike({ strength: melee, damage: Number(u.Health?.damage) || 0 }, { strength: enemyStrength(them), damage: Number(them?.Health?.damage) || 0 });
+    if (!guess || !(enemyStrength(them) > 0)) return null;
+    return { answered: false, dealt: guess.dealt, taken: guess.taken, ourHealth, ourMax, theirHealth };
+}
+
+/** Does a strike of this unit on that tile pay (tradePays on strikeTrade: strikeWorthIt, a general's radius, a lone commander)? */
+async function strikePays(u, loc, enemy) {
+    const t = await strikeTrade(u, loc, enemy);
+    return tradePays(u, loc, t, { siege: besieging(loc) });
 }
 
 /**
@@ -4595,14 +8572,16 @@ export async function strikeRaiders() {
         entries.push(...focused.entries);
         for (const k of focused.ordered) ordered.add(k);
     }
+    // A raider hunt's target is left to its general while it comes (W5: raiderHold).
+    const hold = raiderHold(safe(() => Players.get(pid()).Units.getUnits(), []) ?? []);
     // Ranged soldiers next, those on guard too (game 27): their damage may make a melee strike worth it.
-    const shots = await shootRaiders(ordered);
+    const shots = await shootRaiders(ordered, hold);
     entries.push(...shots);
     if (!strikes) return { entries, ordered };
     const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
     // Why nothing struck, for UI.log (seen in game: no strike in a whole game, cause unknown).
     const seen = { pairs: 0, noAnswer: 0, impossible: 0, poor: 0 };
-    for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
+    for (const u of byGeneral(safe(() => Players.get(pid()).Units.getUnits(), []) ?? [])) {
         if (entries.length - shots.length >= STRIKE_MAX) break;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         if (def?.CoreClass !== "CORE_CLASS_MILITARY" || u.isCommanderUnit || u.isOnMap === false || u.canMove === false || ordered.has(unitKey(u.id))) continue;
@@ -4613,8 +8592,10 @@ export async function strikeRaiders() {
         const ourMax = Number(u.Health?.maxDamage) || 100;
         const ourHealth = ourMax - (Number(u.Health?.damage) || 0);
         let best = null;
-        for (const t of raidersNear()) {
+        // Hostile commanders too (M2): a lone one only when the preview says we take nothing (tradePays).
+        for (const t of raidersNear({ commanders: true })) {
             if (safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, t.loc.x, t.loc.y), 9) !== 1) continue;
+            if (heldFor(hold, u, t.loc)) continue;
             const args = { X: t.loc.x, Y: t.loc.y, Modifiers: M.ATTACK };
             if (startsWar(u, t.loc) || !safe(() => Game.UnitOperations.canStart(u.id, MOVE, args, false), null)?.Success) continue;
             seen.pairs++;
@@ -4638,7 +8619,7 @@ export async function strikeRaiders() {
             if (!answered && !(guess && enemyStrength(enemy) > 0)) continue;
             const dealt = answered ? Number(r.Defender.DamageTo) || 0 : guess.dealt;
             const taken = answered ? Number(r.Attacker.DamageTo) || 0 : guess.taken;
-            if (!strikeWorthIt({ ourHealth, ourMax, theirHealth, dealt, taken, siege: besieging(t.loc) })) {
+            if (!tradePays(u, t.loc, { answered, ourHealth, ourMax, theirHealth, dealt, taken }, { siege: besieging(t.loc) })) {
                 if (answered) seen.poor++;
                 continue;
             }
@@ -4654,7 +8635,80 @@ export async function strikeRaiders() {
         await untilEvent("Combat", COMBAT_WAIT_MS);
     }
     if (entries.length === 0 && seen.pairs > 0) log.warn(`strike: ${seen.pairs} raider(s) next to our melee units, ${seen.noAnswer} without the game's prediction, ${seen.impossible} impossible, ${seen.poor} not worth it`);
+    entries.push(...await sorties(ordered, M, hold));
     return { entries, ordered };
+}
+
+const SORTIE_RADIUS = 3;   // a raider this close to one of our settlements is struck by soldiers that reach it this turn...
+const SORTIE_MAX = 3;      // ...at most this many a pass...
+const SORTIE_DAMAGE = 30;  // ...each hurt less than this...
+const SORTIE_CROWD = 2;    // ...never into a raider with more than this many other hostile land units next to it
+const SORTIE_SCOUTS = 1;   // hostile scouts struck a pass at most (SC-6)
+
+/**
+ * Sorties (research/42 B3; game 53: 407 attacks on us in Modern, 129 on districts, while we struck only raiders already next
+ * to a melee unit and 15-26 soldiers stood free): a healthy melee soldier with every move and an attack left, not on one of
+ * our centres (its holder stays), goes out to a hostile land unit within SORTIE_RADIUS of our settlements that it reaches
+ * this turn, when the game's preview says the strike pays (strikeTrade, strikeWorthIt), the general's radius first; sent as
+ * the map's attack (MOVE_TO with ATTACK). Not into a crowd. A hostile commander too (M2; a lone one when the preview says we
+ * take nothing), and a hostile scout (SC-6: game 60's scouts of Шэнле and Цзэши walked 2-3 tiles from the capital, never
+ * struck) only by a soldier in a land commander's radius, after every other target, SORTIE_SCOUTS a pass. A raider hunt's
+ * target is left to its general while it comes (W5: heldFor). @returns log entries
+ */
+async function sorties(ordered, M, hold = null) {
+    const out = [];
+    if (M?.ATTACK === undefined) return out;
+    const MOVE = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
+    const cities = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location);
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const targets = raidersNear({ commanders: true, scouts: true }).filter((t) => cities.some((c) => dist(c, t.loc) <= SORTIE_RADIUS));
+    if (targets.length === 0) return out;
+    const struck = new Set();
+    const all = safe(() => Players.get(pid()).Units.getUnits(), []) ?? [];
+    const generals = landCommanders(all).filter((c) => c.isOnMap !== false && c.location);
+    let scouts = 0;
+    for (const u of byGeneral(all)) {
+        if (out.length >= SORTIE_MAX) break;
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (def?.CoreClass !== "CORE_CLASS_MILITARY" || def.Domain !== "DOMAIN_LAND" || u.isCommanderUnit || u.isOnMap === false || !u.location) continue;
+        if (u.canMove === false || u.hasMoved === true || ordered.has(unitKey(u.id)) || afloat(u)) continue;
+        if (!(Number(u.Combat?.attacksRemaining) > 0) || (Number(u.Health?.damage) || 0) >= SORTIE_DAMAGE) continue;
+        if (cities.some((c) => same(c, u.location))) continue;
+        const melee = Number(safe(() => u.Combat.getMeleeStrength(false), 0)) || 0;
+        if (!(melee > 0) || Number(u.Combat?.rangedStrength ?? 0) > melee || Number(u.Combat?.bombardStrength ?? 0) > melee) continue;
+        const reachTiles = Math.max(1, Number(def.BaseMoves) || 2);
+        const underGeneral = generals.some((c) => dist(c.location, u.location) <= generalRadius(c));
+        let best = null;
+        for (const t of targets) {
+            const k = `${t.loc.x},${t.loc.y}`;
+            const d = dist(u.location, t.loc);
+            if (struck.has(k) || d < 2 || d > reachTiles) continue;
+            if (t.kind === "scout" && (scouts >= SORTIE_SCOUTS || !underGeneral)) continue;
+            if (heldFor(hold, u, t.loc)) continue;
+            const enemy = safe(() => Units.get(t.id), null);
+            if (safe(() => GameInfo.Units.lookup(enemy?.type)?.Domain, null) !== "DOMAIN_LAND") continue;
+            const crowd = targets.filter((o) => o !== t && o.kind === "soldier" && dist(o.loc, t.loc) === 1).length;
+            if (crowd > SORTIE_CROWD || startsWar(u, t.loc)) continue;
+            const turns = pathTurns(u, t.loc);
+            if (turns === null || turns > 1) continue;
+            if (!safe(() => Game.UnitOperations.canStart(u.id, MOVE, { X: t.loc.x, Y: t.loc.y, Modifiers: M.ATTACK }, false), null)?.Success) continue;
+            const trade = await strikeTrade(u, t.loc, enemy);
+            if (!tradePays(u, t.loc, trade, { siege: besieging(t.loc) })) continue;
+            const score = (trade.dealt >= trade.theirHealth ? 1000 : 0) + trade.dealt - trade.taken - d - (t.kind === "scout" ? 2000 : 0);
+            if (!best || score > best.score) best = { t, enemy, score };
+        }
+        if (!best) continue;
+        if (best.t.kind === "scout") scouts++;
+        wakeUnit(u);
+        Game.UnitOperations.sendRequest(u.id, MOVE, { X: best.t.loc.x, Y: best.t.loc.y, Modifiers: M.ATTACK + (M.MOVE_IGNORE_UNEXPLORED_DESTINATION ?? 0) });
+        ordered.add(unitKey(u.id));
+        restedByUs.delete(unitKey(u.id));
+        struck.add(`${best.t.loc.x},${best.t.loc.y}`);
+        const theirs = safe(() => GameInfo.Units.lookup(best.enemy?.type), null);
+        out.push({ key: "SORTIE", args: [nameOf(def), theirs ? nameOf(theirs) : "?", best.t.loc.x, best.t.loc.y] });
+        await untilEvent("Combat", COMBAT_WAIT_MS);
+    }
+    return out;
 }
 
 /** The operations and commands the game allows this unit now (for the log when nothing else worked). */
@@ -4669,6 +8723,147 @@ export function allowedOperations(u) {
         const r = type ? safe(() => Game.UnitCommands.canStart(u.id, type, NO_TARGET, false), null) : null;
         if (r?.Success || r?.Plots?.length) out.push(`cmd:${type.replace("UNITCOMMAND_", "")}${r.Success ? "" : "@"}`);
     }
+    return out;
+}
+
+// ---- nuclear weapons (research/42 D, «Ядерное оружие») -------------------------------------------------------------
+
+const WMD_DEVICE = "WMD_NUCLEAR_DEVICE";
+const WMD_PROJECT = "PROJECT_PRODUCE_WMD";
+export const MANHATTAN = "WONDER_MANHATTAN_PROJECT";
+const WMD_MEMORY = "wmd"; // the settings' game memory: "<made>|<used>" (no screen of the game reads the stock)
+
+/** The weapons we hold: the Manhattan Project's and each one produced, less the strikes made (our own count). */
+export function nuclearArsenal() {
+    const [made, used] = String(safe(() => settings.recall(gameKey(), WMD_MEMORY), null) ?? "0|0").split("|").map(Number);
+    return Math.max(0, (made || 0) - (used || 0));
+}
+
+function noteWeapons(made, used) {
+    const [m, u] = String(safe(() => settings.recall(gameKey(), WMD_MEMORY), null) ?? "0|0").split("|").map(Number);
+    safe(() => settings.remember(gameKey(), { [WMD_MEMORY]: `${(m || 0) + made}|${(u || 0) + used}` }), null);
+}
+
+// Our cities finishing the Manhattan Project or a weapon (CityProductionCompleted: its productionItem is the type's hash).
+try {
+    engine.on("CityProductionCompleted", (d) => {
+        const city = safe(() => Cities.get(d?.cityID), null);
+        if ((city?.owner ?? d?.cityID?.owner) !== pid()) return;
+        const item = d?.productionItem;
+        const project = safe(() => GameInfo.Projects.lookup(WMD_PROJECT)?.$hash, null);
+        const wonder = safe(() => GameInfo.Constructibles.lookup(MANHATTAN)?.$hash, null);
+        if (item === undefined || item === null || (item !== project && item !== wonder)) return;
+        noteWeapons(1, 0);
+        log.info(`nuclear: ${item === wonder ? MANHATTAN : WMD_PROJECT} done in ${safe(() => Locale.compose(city.name), "?")}: ${nuclearArsenal()} weapon(s) held`);
+    });
+} catch (_e) {
+    // No engine events here.
+}
+
+let nukedTurn = -1;     // one strike a turn at most
+let nukeNoted = -1;     // the turn UI.log said why no strike was made
+
+/**
+ * A nuclear strike on an enemy army attacking us (research/42 D3; «Ядерное оружие»): an air commander of ours with a
+ * Bomber based there (Aerodrome, Squadron, Carrier) that the game lets strike (canStart UNITOPERATION_WMD_STRIKE with
+ * {Type: WMD_NUCLEAR_DEVICE}: its Plots, as the game's strike mode asks), on the tile whose blast (the weapon's BlastRadius
+ * and the commander's wMDBlastRadius, as that mode draws it) holds the most land units of players at war with us, at least
+ * NUKE.MIN_UNITS, within NUKE.NEAR of our settlements; never a blast that touches a unit or a tile of ours, of a player not
+ * at war with us, or a settlement's centre (armies only), and never one the game says starts a new war
+ * (willActionStartWarInArea). One a turn. @returns log entries
+ */
+export async function nuclearStrike({ cities = false } = {}) {
+    const out = [];
+    if (nukedTurn === Game.turn) return out;
+    const me = pid();
+    const player = safe(() => Players.get(me), null);
+    const ours = safe(() => player.Units.getUnits(), []) ?? [];
+    const commanders = ours.filter((u) => u.isCommanderUnit && isAirCommander(safe(() => GameInfo.Units.lookup(u.type), null)));
+    if (commanders.length === 0) return out;
+    const dist = (a, b) => safe(() => GameplayMap.getPlotDistance(a.x, a.y, b.x, b.y), Infinity);
+    const home = (safe(() => player.Cities.getCities(), []) ?? []).map((c) => c.location);
+    const centres = new Map(); // "x,y" -> { owner, wasOurs }
+    for (const p of safe(() => Players.getAlive(), []) ?? []) {
+        for (const c of safe(() => p.Cities.getCities(), []) ?? []) centres.set(`${c.location.x},${c.location.y}`, { owner: p.id, wasOurs: safe(() => c.originalOwner, -1) === me && p.id !== me, name: safe(() => Locale.compose(c.name), "") });
+    }
+    const atWar = (owner) => owner === me ? false : !!safe(() => player.Diplomacy.isAtWarWith(owner), false);
+    const facts = (loc) => {
+        const owner = safe(() => GameplayMap.getOwner(loc.x, loc.y), -1);
+        const c = centres.get(`${loc.x},${loc.y}`);
+        const f = {
+            ours: owner === me, third: owner !== -1 && owner !== null && owner !== me && !atWar(owner), centre: !!c, enemies: 0,
+            // «Ядерные удары по городам»: an enemy city may be the target, never one that was ours (game 54's review).
+            enemyCentre: !!c && c.owner !== me && atWar(c.owner) && !!safe(() => Players.get(c.owner)?.isMajor, false), wasOurs: !!c?.wasOurs,
+        };
+        for (const id of safe(() => MapUnits.getUnits(loc.x, loc.y), []) ?? []) {
+            const u = safe(() => Units.get(id), null);
+            if (!u) continue;
+            if (u.owner === me) f.ours = true;
+            // Enemies only where we see them (game 60, SCM-2); anyone else's unit keeps the blast off, seen or not.
+            else if (hostileOwner(u)) f.enemies += seenNow(u) && safe(() => GameInfo.Units.lookup(u.type)?.Domain, null) === "DOMAIN_LAND" ? 1 : 0;
+            else f.third = true;
+        }
+        return f;
+    };
+    let best = null;
+    let city = null;
+    let offered = 0;
+    for (const cmdr of commanders) {
+        const args = { Type: Database.makeHash(WMD_DEVICE) };
+        const r = safe(() => Game.UnitOperations.canStart(cmdr.id, "UNITOPERATION_WMD_STRIKE", args, false), null);
+        const plots = r?.Plots ?? [];
+        offered += plots.length;
+        if (plots.length === 0) continue;
+        const stats = safe(() => GameInfo.Unit_Stats.lookup(GameInfo.Units.lookup(cmdr.type).UnitType), null);
+        const wmd = safe(() => GameInfo.WMDs.lookup(stats?.WMDType ?? WMD_DEVICE), null);
+        const radius = (Number(wmd?.BlastRadius) || 1) + (Number(safe(() => cmdr.Combat.combatModifiers.wMDBlastRadius, 0)) || 0);
+        const cands = [];
+        const cityCands = [];
+        for (const idx of plots) {
+            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
+            if (!loc) continue;
+            const near = Math.min(Infinity, ...home.map((h) => dist(h, loc)));
+            if (!(near <= NUKE.NEAR)) continue;
+            const tiles = (safe(() => GameplayMap.getPlotIndicesInRadius(loc.x, loc.y, radius), []) ?? [])
+                .map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null)).filter(Boolean).map(facts);
+            const verdict = blastVerdict(tiles);
+            const onCity = cities && !verdict.ok ? cityBlastVerdict(tiles) : null;
+            if (!verdict.ok && !onCity?.ok) continue;
+            if (safe(() => player.Diplomacy.willActionStartWarInArea(cmdr.id, loc, radius), null)?.Success) continue;
+            if (verdict.ok) cands.push({ cmdr, loc, radius, near, verdict });
+            else cityCands.push({ cmdr, loc, radius, near, verdict: onCity });
+        }
+        const b = bestBlast(cands);
+        if (b && (!best || b.verdict.enemies > best.verdict.enemies)) best = b;
+        const c = bestCityBlast(cityCands);
+        if (c && (!city || c.near < city.near)) city = c;
+    }
+    // An army attacking us first (the defensive default); an enemy city only with «Ядерные удары по городам».
+    if (!best && city) {
+        Game.UnitOperations.sendRequest(city.cmdr.id, "UNITOPERATION_WMD_STRIKE", { X: city.loc.x, Y: city.loc.y, Type: Database.makeHash(WMD_DEVICE) });
+        nukedTurn = Game.turn;
+        noteWeapons(0, 1);
+        const def = safe(() => GameInfo.Units.lookup(city.cmdr.type), null);
+        const name = centres.get(`${city.loc.x},${city.loc.y}`)?.name || `${city.loc.x},${city.loc.y}`;
+        log.warn(`nuclear: ${def?.UnitType ?? "?"} struck the city at ${city.loc.x},${city.loc.y} (${name}; radius ${city.radius}): ${city.verdict.cities} enemy city(ies), ${city.verdict.enemies} enemy land unit(s), ${city.near} tile(s) from our nearest settlement; ${nuclearArsenal()} weapon(s) left`);
+        out.push({ key: "NUKE_CITY_STRUCK", args: [nameOf(def), name] });
+        await untilEvent("Combat", COMBAT_WAIT_MS);
+        return out;
+    }
+    if (!best) {
+        if (offered > 0 && nukeNoted !== Game.turn) {
+            nukeNoted = Game.turn;
+            log.info(`nuclear: no strike: ${offered} tile(s) offered, none with ${NUKE.MIN_UNITS}+ enemy land units within ${NUKE.NEAR} of our settlements clear of ours, a third party and every settlement`);
+        }
+        return out;
+    }
+    Game.UnitOperations.sendRequest(best.cmdr.id, "UNITOPERATION_WMD_STRIKE", { X: best.loc.x, Y: best.loc.y, Type: Database.makeHash(WMD_DEVICE) });
+    nukedTurn = Game.turn;
+    noteWeapons(0, 1);
+    const def = safe(() => GameInfo.Units.lookup(best.cmdr.type), null);
+    log.warn(`nuclear: ${def?.UnitType ?? "?"} struck ${best.loc.x},${best.loc.y} (radius ${best.radius}): ${best.verdict.enemies} enemy land unit(s), ${best.near} tile(s) from our nearest settlement; ${nuclearArsenal()} weapon(s) left`);
+    out.push({ key: "NUKE_STRUCK", args: [nameOf(def), best.loc.x, best.loc.y, best.verdict.enemies] });
+    await untilEvent("Combat", COMBAT_WAIT_MS);
     return out;
 }
 
@@ -4843,10 +9038,17 @@ function deliverTreasure(u, def, ctx) {
 
 /** Is this tile an urban district of a settlement (its centre or an urban quarter)? */
 function urbanAt(loc) {
-    const d = safe(() => Districts.getAtLocation({ x: loc.x, y: loc.y }), null);
-    const type = d ? safe(() => GameInfo.Districts.lookup(d.type)?.DistrictType, null) : null;
+    const type = districtTypeAt(loc);
     return type === "DISTRICT_CITY_CENTER" || type === "DISTRICT_URBAN";
 }
+
+/** The district on a tile (Districts.getAtLocation: DISTRICT_CITY_CENTER, DISTRICT_URBAN, DISTRICT_RURAL, …), or null. */
+function districtTypeAt(loc) {
+    const d = safe(() => Districts.getAtLocation({ x: loc.x, y: loc.y }), null);
+    return d ? safe(() => GameInfo.Districts.lookup(d.type)?.DistrictType, null) : null;
+}
+
+const ruralAt = (loc) => districtTypeAt(loc) === "DISTRICT_RURAL";
 
 const MISSION_REFUSED_TURNS = 10; // a tile the game refused to spread on stays off this long...
 const MISSION_CITY_REFUSALS = 2;  // ...and a settlement refused this many times within it
@@ -4868,10 +9070,12 @@ function spreadReligion(u, def, ctx) {
     if (targets.length === 0) return null;
     const tileKey = (l) => `${l.x},${l.y}`;
     const refused = (l) => Game.turn - (missionRefused.get(tileKey(l)) ?? -Infinity) < MISSION_REFUSED_TURNS;
-    // A settlement of no religion anywhere in it, else the half that still needs ours. Never unit.getActivationPlots here: it
-    // takes a unit command, and asked for this operation it crashed the game (a native null read, 20 October: our first
-    // Missionary's first order; gotcha 74).
-    const fits = (t, loc) => !refused(loc) && (t.none || (t.urban ? urbanAt(loc) : !urbanAt(loc)));
+    // A settlement of no religion from any of its districts, urban or rural (game 60: 9 of 29 spreads refused, «must stand in
+    // the appropriate district», every one on a tile of no district in a settlement of no religion), else from the half that
+    // still needs ours: an urban district, or a rural one. Never unit.getActivationPlots here: it takes a unit command, and
+    // asked for this operation it crashed the game (a native null read, 20 October: our first Missionary's first order;
+    // gotcha 74).
+    const fits = (t, loc) => !refused(loc) && (t.none ? urbanAt(loc) || ruralAt(loc) : t.urban ? urbanAt(loc) : ruralAt(loc));
     const hereId = safe(() => GameplayMap.getOwningCityFromXY(u.location.x, u.location.y), null);
     const here = hereId ? safe(() => Cities.get(hereId), null) : null;
     const t0 = here ? targets.find((t) => keyOf(t.city) === keyOf(here)) : null;
@@ -4885,18 +9089,19 @@ function spreadReligion(u, def, ctx) {
         const c = missionCities.get(keyOf(t0.city));
         missionCities.set(keyOf(t0.city), { n: c && Game.turn - c.turn < MISSION_REFUSED_TURNS ? c.n + 1 : 1, turn: Game.turn });
         const r = safe(() => Game.UnitOperations.canStart(u.id, SPREAD, NO_TARGET, false), null);
-        log.info(`mission: ${def.UnitType} at ${u.location.x},${u.location.y} in ${safe(() => Locale.compose(t0.city.name), "?")} refused: ${JSON.stringify(r?.FailureReasons ?? [])}; urban ${t0.urban}, rural ${t0.rural}, none ${t0.none} (probe)`);
+        log.info(`mission: ${def.UnitType} at ${u.location.x},${u.location.y} in ${safe(() => Locale.compose(t0.city.name), "?")} refused: ${JSON.stringify(r?.FailureReasons ?? [])}; urban ${t0.urban}, rural ${t0.rural}, none ${t0.none}; district ${districtTypeAt(u.location) ?? "none"} (probe)`);
     }
     // Where to go: its own goal while that settlement still needs it, else the first no other Missionary walks to.
     const own = goals.get(unitKey(u.id))?.mission;
-    const walking = new Set([...goals].filter(([k, g]) => k !== unitKey(u.id) && g?.mission).map(([, g]) => g.mission));
+    const walking = new Set(errands().filter(([k, g]) => k !== unitKey(u.id) && g.mission).map(([, g]) => g.mission));
     const ordered = [...targets.filter((t) => keyOf(t.city) === own), ...targets.filter((t) => keyOf(t.city) !== own && !walking.has(keyOf(t.city)))];
     const dist = (l) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, l.x, l.y), Infinity);
     for (const t of ordered.slice(0, 4)) {
+        // The nearest urban tile first for a settlement of no religion (it converts both halves at once from there).
         const plots = (safe(() => t.city.getPurchasedPlots(), []) ?? [])
             .map((i) => safe(() => GameplayMap.getLocationFromIndex(i), null))
             .filter((l) => l && !safe(() => GameplayMap.isWater(l.x, l.y), false) && fits(t, l))
-            .sort((a, b) => dist(a) - dist(b));
+            .sort((a, b) => Number(t.none && urbanAt(b)) - Number(t.none && urbanAt(a)) || dist(a) - dist(b));
         for (const p of plots.slice(0, 6)) {
             if (same(u.location, p)) continue;
             const way = pathTo(u, p);
@@ -4942,7 +9147,7 @@ function commanderSpecial(u, def, ctx, options) {
         goals.delete(unitKey(u.id));
         return { key: "LEGATUS_FOUNDED", args: [nameOf(def), u.location.x, u.location.y] };
     }
-    const taken = new Set([...goals].filter(([k, g]) => k !== unitKey(u.id) && g?.x !== undefined).map(([, g]) => `${g.x},${g.y}`));
+    const taken = new Set(errands().filter(([k, g]) => k !== unitKey(u.id) && g.x !== undefined).map(([, g]) => `${g.x},${g.y}`));
     const dist = (l) => safe(() => GameplayMap.getPlotDistance(u.location.x, u.location.y, l.x, l.y), Infinity);
     for (const p of picks.filter((x) => !taken.has(`${x.x},${x.y}`)).sort((a, b) => dist(a) - dist(b)).slice(0, 4)) {
         const way = pathTo(u, p);
@@ -5065,6 +9270,12 @@ export function openTradeRoutes(settings) {
     return n;
 }
 
+/** The best trade route we could open now (the first within its partner's capacity, as the merchants take them): { value, imports } or null. */
+export function bestOpenRoute(settings) {
+    for (const r of tradeRoutes(settings)) if (capacityLeft(r.city.owner, new Map()) > 0) return { value: r.value, imports: r.imports };
+    return null;
+}
+
 /** Routes to this owner we may still open (trade capacity), counting the ones sent this turn. */
 function capacityLeft(owner, sentTo) {
     const trade = safe(() => Players.get(pid()).Trade, null);
@@ -5146,6 +9357,12 @@ function trade(u, def, ctx) {
 
 // ---- one pass -------------------------------------------------------------------------------
 
+// One unit pass reads the map as it stands (the game carries out our orders only after it): each of the game's ways and each
+// tile's hazards is asked once in it (the review of game 60's package: moveTo's look at a walk's stops doubled the path calls,
+// and a way out of the plague read each tile's plot effects about 20 times). { paths: key -> pathTo, hazards: plot -> hazardInfo,
+// sent: "x,y" -> the unit moveTo sent there }
+let passMemo = null;
+
 /**
  * Orders for every unit waiting for them, by what the options allow.
  * @param options { explore, settlers, defend, merchants, roam, random, approach: [independent ids],
@@ -5155,6 +9372,15 @@ function trade(u, def, ctx) {
  * @returns { entries, ordered: Set of unit keys, orderedAt: Map unit key -> { x, y } }
  */
 export function commandUnits(settings, options) {
+    passMemo = { paths: new Map(), hazards: new Map(), sent: new Map() };
+    try {
+        return commandUnitsPass(settings, options);
+    } finally {
+        passMemo = null;
+    }
+}
+
+function commandUnitsPass(settings, options) {
     const entries = [];
     const ordered = new Set();
     const orderedAt = new Map();
@@ -5172,6 +9398,8 @@ export function commandUnits(settings, options) {
         const g = goals.get(unitKey(u.id));
         if (g) g.lastAt = { x: u.location?.x, y: u.location?.y };
     }
+    // A sight tile reached with its village still unseen: blind (game 60, SC-1).
+    if (options.explore || options.defend || options.roam) safe(() => noteBlindSight(units, {}), null);
     loadRested();
     for (const k of [...restedByUs]) if (!alive.has(k)) restedByUs.delete(k);
     adoptCarriedOver(units);
@@ -5182,10 +9410,12 @@ export function commandUnits(settings, options) {
         const k = unitKey(u.id);
         const g = goals.get(k);
         if (g?.guard !== undefined && (!posts.has(g.guard) || !safe(() => guardProgress(u, g), null))) goals.delete(k);
+        // A march that ended (research/42 B2): its soldiers are free again.
+        else if (g?.march !== undefined && !marches.has(g.march)) goals.delete(k);
     }
-    const taken = new Set([...goals.values()].filter((g) => g.x !== undefined).map((g) => `${g.x},${g.y}`));
+    const taken = new Set(errandGoals().filter((g) => g.x !== undefined).map((g) => `${g.x},${g.y}`));
     let routes = null;
-    const walking = [...goals.values()].filter((g) => g.city);
+    const walking = errandGoals().filter((g) => g.city);
     const owners = new Map();
     for (const g of walking) owners.set(g.owner, (owners.get(g.owner) ?? 0) + 1);
     const garrison = new Set();
@@ -5204,14 +9434,14 @@ export function commandUnits(settings, options) {
         // Settlements the military lever founds past the cap (research/30 §1).
         pastCap: Math.max(0, Number(options.pastCap) || 0),
         // Independents a unit is already walking to (one at a time).
-        approached: new Set([...goals.values()].filter((g) => g.approach !== undefined).map((g) => g.approach)),
+        approached: new Set(errandGoals().filter((g) => g.approach !== undefined).map((g) => g.approach)),
         // Villages a soldier walks to, to disperse them (one each).
-        dispersing: new Set([...goals.values()].filter((g) => g.disperse).map((g) => g.disperse)),
+        dispersing: new Set(errandGoals().filter((g) => g.disperse).map((g) => g.disperse)),
         // Discoveries other units walk to (their goals), so two scouts never go for the same one.
-        discoveries: new Set([...goals.values()].filter((g) => g.discovery).map((g) => g.discovery)),
+        discoveries: new Set(errandGoals().filter((g) => g.discovery).map((g) => g.discovery)),
         // Dig and research sites other explorers walk to; the sites themselves are scanned once, when needed.
         artifactTaken: new Set([
-            ...[...goals.values()].filter((g) => g.artifact).map((g) => g.artifact),
+            ...errandGoals().filter((g) => g.artifact).map((g) => g.artifact),
             // A site an explorer already stands on (it digs there this pass).
             ...units.filter((u) => truthy(safe(() => GameInfo.Units.lookup(u.type)?.ExtractsArtifacts, false))).map((u) => `${u.location?.x},${u.location?.y}`),
         ]),
@@ -5234,6 +9464,8 @@ export function commandUnits(settings, options) {
     safe(() => logCommanderParameters(), null);
     if (options.explore || options.settlers || options.defend || options.merchants || options.roam) {
         entries.push(...(safe(() => releaseStuckMoves(units), []) ?? []));
+        // Walks that would stop on the plague are cancelled and re-planned (game 60).
+        entries.push(...(safe(() => checkWalks(units, ctx), []) ?? []));
     }
     // Roaming, approaching, reinforcing or dispersing: the first military unit standing in each of our cities stays as its garrison.
     {
@@ -5247,13 +9479,24 @@ export function commandUnits(settings, options) {
             garrison.add(unitKey(u.id));
         }
     }
+    // The generals (research/41 Phase 2): each land commander's role, the raids remembered for the vanguard's peace post, and
+    // a commander in danger escapes before any other unit takes the tiles it needs (the user: "a valuable asset").
+    ctx.ourUnits = units;
+    ctx.commanderRoles = safe(() => commanderRoles(units), null) ?? new Map();
+    safe(() => noteRaids(ctx.threats), null);
+    if (options.defend || options.roam) entries.push(...(safe(() => escapeCommanders(units, ctx), []) ?? []));
     // A running campaign's review first (research/37 Phase 7): one that ends gives its soldiers back to the defence below.
     if (options.defend) entries.push(...(safe(() => campaignReviewStep(units, ctx, options), []) ?? []));
+    // A village hunt or a training war (research/41 §6-§7): its review too, before the defence plan.
+    if (options.defend) entries.push(...(safe(() => fieldReviewStep(units, ctx, options), []) ?? []));
+    // No settler escort this pass: their soldiers are free for the defence below (game 60, economy E5).
+    if (!options.settlers || !(options.defend || options.roam)) releaseSettlerEscorts();
     // Who defends where (research/36 §4): with «Оборона» or «Армия».
     if (options.defend || options.roam) {
         try {
             // Armies (research/37 Phase 3): the inventory, and those at a threatened settlement or a front unpack first.
             ctx.armies = armyInventory(units);
+            noteRapid(units, ctx);
             entries.push(...unpackArmies(ctx));
             ctx.supply = defenceSupply(units, ctx);
             planDefence(units, ctx);
@@ -5269,6 +9512,14 @@ export function commandUnits(settings, options) {
             ctx.formation = new Map();
             ctx.formations = new Map();
         }
+        // Hurt soldiers there swap out for fresh ones (research/41 Phase 4).
+        entries.push(...(safe(() => rotateFront(units, ctx), []) ?? []));
+        // A commander whose walk stops in hostile reach takes a free soldier along (research/42 A3).
+        entries.push(...(safe(() => escortCommanders(units, ctx), []) ?? []));
+        // A settler kept from its site by independents' raiders walks there with one (game 60, economy E5).
+        if (options.settlers) entries.push(...(safe(() => escortSettlers(units, ctx, taken), []) ?? []));
+        // A general packs the soldiers walking far to one fight and marches with them (research/42 B2).
+        if (options.defend) entries.push(...(safe(() => packMarches(units, ctx), []) ?? []));
     }
     // Campaigns (research/37 Phase 7, «Наступление»): with the soldiers defence leaves free; off, a running one ends.
     if (options.defend) {
@@ -5277,15 +9528,49 @@ export function commandUnits(settings, options) {
         } catch (error) {
             log.debug("autopilot campaign failed", error);
         }
+        try {
+            entries.push(...fieldStep(units, ctx, options));
+        } catch (error) {
+            log.debug("autopilot field operation failed", error);
+        }
+        // A skirmish with a hostile village next to our land (after game 58): with village hunts or raider hunts on.
+        if (options.hunt || options.huntRaiders) entries.push(...(safe(() => skirmishStep(units, ctx), []) ?? []));
+        // The vanguard keeps a packed army ready while a war or raids call for it (after game 54), from the soldiers a hunt
+        // or a campaign left.
+        entries.push(...(safe(() => rallyVanguard(units, ctx), []) ?? []));
     }
     // Fighters rebase to cover what needs it (research/37 Phase 5); warships sail to the coasts ships attack (Phase 6).
+    // Squadron Commanders set up bases and carriers sail where cover is wanted (game 54's review), before the fighters rebase.
+    if (options.defend) entries.push(...(safe(() => establishSquadronBases(ctx, units), []) ?? []));
+    if (options.defend) entries.push(...(safe(() => postCarriers(units, ctx), []) ?? []));
     if (options.defend) entries.push(...(safe(() => rebaseFighters(ctx, units), []) ?? []));
     if (options.defend) entries.push(...(safe(() => planNavalGuards(units, ctx), []) ?? []));
+    // Fleet Commanders stand with the warships where ships attack us (their focused attacks: commanderAttacks).
+    if (options.defend) entries.push(...(safe(() => postFleetCommanders(units, ctx), []) ?? []));
+    // Units on the plague: the most hurt keep their clean tile, and a soldier of ours makes room where none is free (game 60).
+    if (options.defend || options.roam || options.explore || options.settlers || options.merchants) {
+        entries.push(...(safe(() => planPlagueRooms(units, ctx), []) ?? []));
+    }
+    // A raider hunt's target is left to its coming general in the loop too (W5: defend's shots; the hunt may start above).
+    ctx.raiderHold = safe(() => raiderHold(units), null);
     const A = globalThis.UnitActivityTypes;
     const seen = [];
-    for (const u of units) {
+    // Each entry the loop makes is noted with its unit and the tile it stood on (entryUnit), when the next unit comes.
+    let untagged = entries.length;
+    let loopUnit = null;
+    let loopAt = null;
+    const tagEntries = () => {
+        for (let i = untagged; i < entries.length; i++) noteEntryUnit(entries[i], loopUnit, loopAt);
+        untagged = entries.length;
+    };
+    for (const u of byLevel(units)) {
+        tagEntries();
+        loopUnit = u;
+        loopAt = u.location ? { x: u.location.x, y: u.location.y } : null;
         if (ordered.size >= MAX_UNIT_ORDERS) break;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        // Settlers and scouts see hostile commanders as danger too (M2: hostileNear).
+        ctx.civilian = !!def && (truthy(def.FoundCity) || hasTag(def, "UNIT_CLASS_AUTOEXPLORE"));
         const what = `${def?.UnitType ?? u.type}(act=${u.activityType},move=${u.canMove},moved=${u.hasMoved})`;
         // Ordered already in this pass, before the loop (an army's unpacking, a fighter's rebase, a warship's post) or by a
         // neighbour's room-making: its order stands (before, an unpacking commander could be sent to its post as well).
@@ -5297,6 +9582,11 @@ export function commandUnits(settings, options) {
         // skipped by the skip step). A hurt one escapes or heals like any other.
         if (def && inCampaign(unitKey(u.id)) && (Number(u.Health?.damage) || 0) < ESCAPE_DAMAGE) {
             seen.push(`${what}:campaign`);
+            continue;
+        }
+        // A hunt's or a training war's member or commander, not hurt: the operation's.
+        if (def && inField(unitKey(u.id)) && (Number(u.Health?.damage) || 0) < ESCAPE_DAMAGE) {
+            seen.push(`${what}:field`);
             continue;
         }
         if (options.leave?.has(unitKey(u.id))) {
@@ -5405,12 +9695,33 @@ export function commandUnits(settings, options) {
             if (own?.discovery) ctx.discoveries.delete(own.discovery);
             let e = null;
             try {
+                // Asleep by our hand (rough seas, nothing to explore): woken when the seas calm or after SCOUT.SLEEP_TURNS (after a
+                // reload, when only the save remembers it, at once).
+                const slept = scoutsAsleep.get(unitKey(u.id)) ?? (restedByUs.has(unitKey(u.id)) && A && u.activityType === A.SLEEP ? -Infinity : undefined);
+                const asleep = slept !== undefined && roughSeas() && Game.turn - slept < SCOUT.SLEEP_TURNS && Game.turn >= slept;
                 // Exploring by itself into hostile units: away from them first; hurt, or with danger within
                 // SCOUT_WIDE, it explores by our rules (explore: heal, our frontier widely) instead of the game's.
-                e = (hostileNear(u.location, SCOUT_DANGER, ctx) ? stepAway(u, def, ctx) : null)
-                    ?? (autoExploreIsSafe(u, ctx) ? null : explore(u, def, ctx))
-                    ?? (own?.village ? null : scoutVillage(u, def, ctx))
-                    ?? toDiscovery(u, def, ctx, DISCOVERY_RADIUS, DISCOVERY_MAX_TURNS);
+                const danger = hostileNear(u.location, SCOUT_DANGER, ctx) || shipsReaching(u.location).length > 0;
+                // Walking to a goal that still holds: it keeps its way; only a discovery it reaches this turn may take over
+                // (game 60, SC-2).
+                const kept = slept === undefined && !danger && own ? scoutGoalHolds(u, own, ctx) : null;
+                // Asleep, it is woken in danger too and gets away first (explore): UNITOPERATION_SLEEP lasts "until woken"; only
+                // ALERT wakes a unit when an enemy comes near (the game's text).
+                if (slept !== undefined && (!asleep || danger)) {
+                    scoutsAsleep.delete(unitKey(u.id));
+                    restedByUs.delete(unitKey(u.id));
+                    wakeUnit(u);
+                    e = explore(u, def, ctx);
+                } else if (kept) {
+                    e = toDiscovery(u, def, ctx, DISCOVERY_RADIUS, SCOUT.PREEMPT_TURNS);
+                    if (!e) scoutLine(`${unitKey(u.id)}|keeps`, `${def.UnitType} at ${u.location.x},${u.location.y} keeps its way to ${own.village ? `the village at ${own.village} (sight tile ${own.at})` : own.discovery ? `the discovery at ${own.discovery}` : `the frontier at ${own.frontier}`}`);
+                } else if (!asleep) {
+                    if (own && !danger) goals.delete(unitKey(u.id));
+                    e = (danger ? scoutFlees(u, def, ctx) : null)
+                        ?? (autoExploreIsSafe(u, ctx) ? null : explore(u, def, ctx))
+                        ?? scoutVillage(u, def, ctx)
+                        ?? toDiscovery(u, def, ctx, DISCOVERY_RADIUS, DISCOVERY_MAX_TURNS);
+                }
             } catch (error) {
                 log.debug(`autopilot discovery ${def.UnitType} failed`, error);
             }
@@ -5446,7 +9757,7 @@ export function commandUnits(settings, options) {
                 log.debug(`autopilot settler ${def.UnitType} check failed`, error);
             }
             if (risk) {
-                const own = goals.get(unitKey(u.id));
+                const own = errandOf(goals.get(unitKey(u.id)));
                 if (own?.x !== undefined) taken.delete(`${own.x},${own.y}`);
                 let e = null;
                 try {
@@ -5462,9 +9773,10 @@ export function commandUnits(settings, options) {
                 continue;
             }
         }
-        // On a plague (or fallout, fire) tile: out of it this turn, resting or not (game 18: the plague killed our
-        // fortified garrisons). Not a unit on its way (its move goes on).
-        if (def && u.isOnMap !== false && u.canMove !== false && (!A || u.activityType !== A.OPERATION)
+        // On a plague (or fallout, fire) tile: out of it, resting or not (game 18: the plague killed our fortified garrisons;
+        // game 60: by a way of several turns too). Not a unit on its way (its move goes on), unless its walk was just cancelled
+        // for the plague (checkWalks).
+        if (def && u.isOnMap !== false && u.canMove !== false && (!A || u.activityType !== A.OPERATION || ctx.walkCancelled?.has(unitKey(u.id)))
             && (options.defend || options.roam || options.explore || options.settlers || options.merchants)) {
             const e = safe(() => leaveHazard(u, def, ctx), null);
             if (e) {
@@ -5474,8 +9786,9 @@ export function commandUnits(settings, options) {
                 continue;
             }
         }
-        // A commander the game stopped on its way (moves left) gets its post again.
-        if (!isIdle(u) && !(u.isCommanderUnit && readyForOrders(u))) {
+        // A commander the game stopped on its way (moves left) gets its post again; a unit whose walk the plague cancelled this
+        // pass (checkWalks) gets new orders now (the review of game 60's package: it stood idle, and the skip step skipped it).
+        if (!isIdle(u) && !ctx.walkCancelled?.has(unitKey(u.id)) && !(u.isCommanderUnit && readyForOrders(u))) {
             seen.push(`${what}:busy`);
             continue;
         }
@@ -5514,7 +9827,7 @@ export function commandUnits(settings, options) {
         try {
             if (options.settlers && truthy(def.FoundCity)) {
                 // A settler's own goal is not "taken" for itself.
-                const own = goals.get(unitKey(u.id));
+                const own = errandOf(goals.get(unitKey(u.id)));
                 if (own?.x !== undefined) taken.delete(`${own.x},${own.y}`);
                 e = asSettler(ctx, () => settle(u, def, taken, ctx));
             } else if (options.settlers && hasTag(def, "UNIT_CLASS_POPULATION")) e = resettle(u, def, ctx);
@@ -5545,15 +9858,21 @@ export function commandUnits(settings, options) {
             ordered.add(unitKey(u.id));
         }
     }
+    tagEntries();
+    ctx.civilian = false;
     if (options.defend || options.roam) {
         safe(() => logDefence(ctx, units), null);
         safe(() => logFormations(ctx), null);
     }
     if (options.defend) safe(() => logAirWing(ctx), null);
+    safe(() => logPlague(units, ctx, ordered), null);
+    if (options.defend || options.roam) safe(() => logGenerals(units, ctx), null);
     safe(() => saveRested(), null);
     // The game cuts log lines at about 1000 characters: busy units are only counted.
     const busy = seen.filter((t) => t.endsWith(":busy")).length;
     log.info(`autopilot units: ${busy} busy; ${seen.filter((t) => !t.endsWith(":busy")).join("; ") || "no other"}`);
     for (const u of units) if (ordered.has(unitKey(u.id))) orderedAt.set(unitKey(u.id), { x: u.location?.x, y: u.location?.y });
-    return { entries, ordered, orderedAt };
+    // For the tab: the generals and the field operation under way (game 60's review, UI-8).
+    const generals = options.defend || options.roam ? safe(() => generalsSummary(units, ctx), []) : null;
+    return { entries, ordered, orderedAt, generals, fieldOp: fieldOp ? { kind: fieldOp.kind, stage: fieldOp.stage } : null };
 }

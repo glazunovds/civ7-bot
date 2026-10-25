@@ -274,7 +274,7 @@ const shown = [...pick.ranks[ranking], ...pick.more[ranking]].filter((t) => offe
 - **Data format:** the module stores pooled rank lists (`lists`, 2 base-36 characters per memento) and builds the frozen objects at import. Arrays are shared between pairs: do not mutate them.
 - **File name:** `mma-` prefix, because the game resolves UI imports by file name across all mods.
 - **Language:** the reasons are plain text, without game markup; Russian uses the game's terms. For the full game text, use the memento's own `FunctionalDescription` through `Locale`.
-- **Age:** a pick is scored for the age of the civilization it is paired with. At an age transition the screen offers the new civilization, so ask for that pair.
+- **Age:** a pick is scored for the age it is chosen for (the game allows any civilization in any age, so the pair's own age is not enough). At an age transition the screen offers the new civilization, so ask for that pair.
 
 ## 5. Re-running after a game update
 - `python -I tools/memento-advisor/build_table.py --markdown <file>` rewrites both outputs and prints counts, the default-focus split, the size and warnings.

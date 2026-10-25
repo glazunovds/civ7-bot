@@ -5,15 +5,16 @@
  * (seen in game 6: a town conversion and a Granary bought in one pass, the Granary refused; two
  * repairs that each "fit" the same gold). So every spend goes through one budget:
  *  - all():     the gold not spent yet (repairs, walls and defenders under threat: they cannot wait);
- *  - forGoal(): above the reserve (the goal's own purchase);
- *  - free():    above the reserve and what the goal holds (everything else);
+ *  - forGoal(): above the reserve (the goal's own purchase); a goal marked `noReserve` (a town's conversion on a non-final
+ *               age's last turns: the gold carries over in full, so the reserve keeps nothing then) the reserve too;
+ *  - free():    above the reserve, what the goal holds and what is kept for a defender (`keep`: a war risk) (everything else);
  *  - townLeft(share): plan purchases in towns (warehouses) take at most `share` of the free gold,
  *    none while a goal waits.
  * A goal is the most important purchase we are saving for (a town conversion, the victory path's
  * next building): while it waits, small purchases do not eat its gold.
  */
 
-export const GOAL_KINDS = Object.freeze(["CONVERT", "CODEX", "LEVER", "PADS", "AIRFIELD", "GDP", "BANK"]);
+export const GOAL_KINDS = Object.freeze(["CONVERT", "CODEX", "LEVER", "PADS", "AIRFIELD", "GDP", "BANK", "COMMANDER"]);
 export const TOWN_SHARE = 0.5;        // towns' plan purchases take at most this share of the free gold
 export const GOAL_FAIL_TURNS = 3;     // a goal bought this many turns in a row and still there: the game refuses it...
 export const GOAL_COOLDOWN = 5;       // ...dropped for this many turns
@@ -23,14 +24,16 @@ export const CONVERT_VERDICTS_PAST_FLOOR = Object.freeze(["CONVERT"]);
 export const AFTER_WIN_VERDICTS = Object.freeze(["CONVERT", "CONSIDER"]);
 
 /**
- * @param { gold, reserve, spent = 0, bought = Set of "sid|type" }
+ * @param { gold, reserve, spent = 0, bought = Set of "sid|type", keep = 0 }: `keep` stays out of free() only (a war risk's
+ * defender: the goal's own purchase may use it, a defender uses all()).
  * The old `{ bought, spent }` purchases record is a subset of this object, so callers written for
  * it still work.
  */
-export function createBudget({ gold = 0, reserve = 0, spent = 0, bought = new Set() } = {}) {
+export function createBudget({ gold = 0, reserve = 0, spent = 0, bought = new Set(), keep = 0 } = {}) {
     const b = {
         gold: Number(gold) || 0,
         reserve: Math.max(0, Number(reserve) || 0),
+        keep: Math.max(0, Number(keep) || 0),
         spent: Number(spent) || 0,
         townSpent: 0,
         bought,
@@ -43,10 +46,10 @@ export function createBudget({ gold = 0, reserve = 0, spent = 0, bought = new Se
             return b.gold - b.spent;
         },
         forGoal() {
-            return b.gold - b.spent - b.reserve;
+            return b.gold - b.spent - (b.goal && !b.goal.done && b.goal.noReserve ? 0 : b.reserve);
         },
         free() {
-            return Math.max(0, b.gold - b.spent - b.reserve - b.held());
+            return Math.max(0, b.gold - b.spent - b.reserve - b.held() - (Number(b.keep) || 0));
         },
         /** Gold left for plan purchases in towns: 0 while a goal waits, else `share` of the free gold (what towns spent included). */
         townLeft(share = TOWN_SHARE) {
@@ -95,9 +98,11 @@ export function createBudget({ gold = 0, reserve = 0, spent = 0, bought = new Se
 /**
  * The goal to save for: the first kind in `order` with a candidate (each kind's best first).
  * @param candidatesByKind { CONVERT: [goal], LEVER: [goal], ... } @param order kinds
- * @param memory goal memory (noteGoalBought) and the turn: goals the game kept refusing are skipped
+ * @param memory goal memory (noteGoalBought) and the turn: goals the game kept refusing are skipped; `have` the gold above
+ * the reserve, `haveAll` the gold not spent yet (a `noReserve` candidate's: game 60's T140 had 1,032 against Самара's 950
+ * with a 199 reserve, and the conversion's last turn dropped it)
  */
-export function chooseGoal(candidatesByKind, order, { memory = {}, turn = 0, have = Infinity, income = Infinity, turnsLeft = Infinity } = {}) {
+export function chooseGoal(candidatesByKind, order, { memory = {}, turn = 0, have = Infinity, haveAll = have, income = Infinity, turnsLeft = Infinity } = {}) {
     // Nothing the gold cannot cover before the age ends (research/24 G2: a codex building held 432 gold A67-A70);
     // a goal marked `anyHorizon` (a site its project needs) may take longer than GOAL_HORIZON, not past the age.
     const ageEnd = Number.isFinite(Number(turnsLeft)) ? Math.max(0, Number(turnsLeft) - 1) : Infinity;
@@ -107,7 +112,8 @@ export function chooseGoal(candidatesByKind, order, { memory = {}, turn = 0, hav
             if (!goalAllowed(memory, c.key, turn)) continue;
             // A goal sized to what the gold reaches (`sized`: the bank for the next age) is never out of reach; checked again,
             // a rounded gold or income dropped it (game 32: E64-E69 lost the Modern bank to a University goal).
-            if (!c.sized && !withinReach(Number(c.hold ?? c.cost), have, income, Math.min(c.anyHorizon ? Infinity : GOAL_HORIZON, ageEnd))) continue;
+            const h = c.noReserve ? Math.max(Number(have), Number(haveAll)) : have;
+            if (!c.sized && !withinReach(Number(c.hold ?? c.cost), h, income, Math.min(c.anyHorizon ? Infinity : GOAL_HORIZON, ageEnd))) continue;
             return { kind, ...c };
         }
     }

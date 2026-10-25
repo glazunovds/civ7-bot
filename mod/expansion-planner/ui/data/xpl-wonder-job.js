@@ -26,6 +26,11 @@ import { isCityCenterType, readAllTacks } from '../integrations/xpl-dmt-bridge.j
 
 const OPEN_NEIGHBOUR_VALUE = 0.25; // a free neighbour can later hold a building that gets the +1
 const RURAL_LOSS = 0.5;            // share of the tile's own yields lost under the wonder
+// ...all of them on an improved tile (a citizen works it: the game improves a tile when a citizen is placed there) or a resource
+// (adjacency M1, game 60: Byrsa took Астрахань's worked mine at 65,7, -4-5 production a turn for its 30 turns).
+const RURAL_LOSS_IMPROVED = 1;
+const YIELD_NAMES = ["food", "production", "gold", "science", "culture", "happiness", "influence"];
+const intactYields = new Map(); // plot -> its yields while its improvement stood unpillaged (a pillaged one reads them)
 const STATUS_ORDER = { IN_PROGRESS: 0, AVAILABLE: 1, LOCKED: 2, OURS: 3, BUILT: 4 };
 
 function safe(fn, fallback) {
@@ -177,15 +182,35 @@ function scorePlots(plots, ctx) {
         const later = wonderBoost(planned, rules.rulesByType, isActive);
         const f = facts.structures(idx);
         const urban = f?.district === "DISTRICT_URBAN" || f?.district === "DISTRICT_CITY_CENTER";
-        const loss = f?.known && !urban ? RURAL_LOSS * dot(weights, f.yields) : 0;
+        const lost = f?.known && !urban ? ruralYields(idx, f) : null;
+        const improved = !!lost?.improvement || !!f?.resource;
+        const loss = lost ? (improved ? RURAL_LOSS_IMPROVED : RURAL_LOSS) * dot(weights, lost.yields) : 0;
         const byYield = now.byYield.map((v, i) => v + later.byYield[i]);
         const value = dot(weights, byYield) + open * OPEN_NEIGHBOUR_VALUE - loss;
         const { x, y } = engineMap.location(idx);
-        scored.push({ idx, x, y, value, byYield, buildings: now.buildings, planned: later.buildings, open, loss, tacked: here.includes(wonderType), anchor });
+        // The improvement the wonder would take, for UI.log when it is ordered there (steps' orderWonder).
+        const replaces = lost?.improvement ? { type: lost.improvement, text: yieldText(lost.yields) } : null;
+        scored.push({ idx, x, y, value, byYield, buildings: now.buildings, planned: later.buildings, open, loss, tacked: here.includes(wonderType), anchor, replaces });
     }
     // The building plan's tile for it first: the plan placed the buildings around it (research/27 P1).
     scored.sort((a, b) => Number(b.anchor) - Number(a.anchor) || b.value - a.value || a.idx - b.idx);
     return scored;
+}
+
+/**
+ * A rural tile's yields the wonder would take, and its improvement: a pillaged improvement counts at the yields it gave intact
+ * (game 60: the mine at 65,7 was pillaged and repaired six times in the turns before Byrsa was ordered on it).
+ */
+function ruralYields(idx, f) {
+    const imp = (f.constructibles ?? []).find((c) => c.cls === "IMPROVEMENT");
+    if (!imp) return { yields: f.yields, improvement: null };
+    if (!imp.damaged) intactYields.set(idx, f.yields.slice());
+    return { yields: imp.damaged ? intactYields.get(idx) ?? f.yields : f.yields, improvement: imp.type };
+}
+
+/** "production 4, food 1": the non-zero yields, for UI.log. */
+function yieldText(yields) {
+    return yields.map((v, i) => (v ? `${YIELD_NAMES[i] ?? i} ${Math.round(v * 10) / 10}` : null)).filter(Boolean).join(", ") || "none";
 }
 
 export function runWonderPlanner(settings) {
@@ -254,11 +279,21 @@ export function runWonderPlanner(settings) {
                 rivalTurns: omniscient ? known.rivalTurns : null,
                 ageTurnsLeft,
             });
+            // A locked wonder: the race its unlock would start, our best city's turns at today's production (research's
+            // culture path asks it: research/game60 M3).
+            const unlockRace = status === "LOCKED" ? raceLabel({
+                ourTurns: lockedTurns(cities, def),
+                completedElsewhere: known.elsewhere,
+                rivalsSeen: known.seen,
+                rivalTurns: omniscient ? known.rivalTurns : null,
+                ageTurnsLeft,
+            }) : null;
             rows.push({
                 type,
                 name: compose(def.Name),
                 status,
                 race,
+                unlockRace,
                 baseYields,
                 baseValue: dot(weights, baseYields),
                 tier: wonderTier(type), // what its effect is worth beyond its yields (research/27 §4)
@@ -286,6 +321,17 @@ export function runWonderPlanner(settings) {
     state.set({ results: { ...state.get().results, wonders }, stale: { ...state.get().stale, wonders: false } });
     log.info(`wonder planner: ${rows.length} wonders (${rows.filter((r) => r.status === "AVAILABLE").length} available), ${cities.length} cities, ${omniscient ? "omniscient" : "fair"}, ${wonders.elapsedMs} ms`);
     return wonders;
+}
+
+/** Our best city's turns for a wonder not unlocked yet: its cost over the city's production now (Infinity: no city). */
+function lockedTurns(cities, def) {
+    let best = Infinity;
+    for (const city of cities) {
+        const cost = Number(safe(() => city.Production.getConstructibleProductionCost(def.ConstructibleType), 0)) || Number(def.Cost) || 0;
+        const prod = Math.max(1, Number(safe(() => city.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0);
+        if (cost > 0) best = Math.min(best, Math.ceil(cost / prod));
+    }
+    return best;
 }
 
 /**

@@ -372,6 +372,32 @@ test("victory focus: from the victories' own points; a new age's first turns re-
     }
 });
 
+// Research/42 F (game 53: Carthage keeps every settlement but the capital a town; the science focus had Innovation 34 at M70).
+test("victory focus: science is left out while the city limit is 1; the player's own target still counts", async () => {
+    settings.patch({ autopilot: { focus: true, victory: "AUTO", replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
+    const vm = Game.VictoryManager;
+    Game.VictoryManager = { isCountdownVictoryEnabled: () => true, getCountdownVictoryDominanceScore: () => -1 };
+    const focus = () => state.get().autopilot.focus?.cls;
+    world.met = [5];
+    try {
+        state.set({ autopilot: { ...state.get().autopilot, focus: null } });
+        world.agePoints = 5;
+        world.victoryPoints = { VICTORY_SCIENCE_MODERN: { 0: 60, 5: 4 }, VICTORY_CULTURE_MODERN: { 0: 30, 5: 25 }, VICTORY_ECONOMIC_MODERN: { 0: 50, 5: 300 } };
+        for (let i = 0; i < 4; i++) await autopilot.runTurn(true);
+        assert.equal(focus(), "SCIENCE", "no city limit: science leads");
+        world.cityLimit = 1;
+        for (let i = 0; i < 4; i++) await autopilot.runTurn(true);
+        assert.notEqual(focus(), "SCIENCE", "one city: not the science race");
+        settings.patch({ autopilot: { victory: "SCIENCE" } });
+        await autopilot.runTurn(true);
+        assert.equal(focus(), "SCIENCE", "the player asked for it");
+    } finally {
+        Game.VictoryManager = vm;
+        for (const k of ["victoryPoints", "agePoints", "met", "cityLimit"]) delete world[k];
+        settings.patch({ autopilot: { focus: false, victory: "AUTO" } });
+    }
+});
+
 test("«Оборона»: the pass strikes a raider next to a soldier when the game's prediction says it pays", async () => {
     settings.patch({ autopilot: { defend: true, focus: false, replanEvery: 0, skipUnits: false, endTurn: false, purchases: false } });
     world.units = [{ id: 30, type: "UNIT_WARRIOR", x: A.x, y: A.y }];

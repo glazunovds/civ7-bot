@@ -19,9 +19,13 @@ import { log } from '../services/xpl-log.js';
 import { effectYields, focusOfProfile, rankGovernments } from '../core/xpl-effect-value.js';
 import { beliefValue, pantheonValue, rankByValue } from '../core/xpl-religion.js';
 import { cardSwapGain, swapWorth } from '../core/xpl-research-value.js';
-import { campaignState, guardsFor, guardsWanted, peaceIntentFor, promoteUnits, threatenedSettlements } from './xpl-autopilot-units.js';
+import { campaignState, endTrainingWar, generalsState, guardsFor, guardsWanted, huntedIndependent, peaceIntentFor, planTrainingWar, promoteUnits, readinessForWar, threatenedSettlements, trainingWarEnemy, warSupportNet } from './xpl-autopilot-units.js';
+import { TRAINING, denounceAllowed, supportWanted, trainingTarget } from '../core/xpl-field-ops.js';
 import { followsOurReligion, independentNameOf, villagesOf } from './xpl-player-facts.js';
+import { settlementTiles } from './xpl-building-extras.js';
 import { gameKey, settings } from '../services/xpl-settings.js';
+import { state } from '../services/xpl-state.js';
+import { ageOutlook } from './xpl-town-job.js';
 
 function safe(fn, fallback) {
     try {
@@ -63,8 +67,14 @@ const waiting = (typeName) => notificationsOf(typeName).length > 0;
 
 // Independents threatening us that the game did not let us befriend in the last pass.
 let blockedIndependents = [];
-// Influence goes to befriending independents this turn (see befriendIndependents).
-let befriendBusy = false;
+// Influence kept for befriending this pass (see befriendIndependents): a threatening independent's price while we save for
+// it, any other's only on befriending's turn, Infinity once a befriending was sent this pass (the balance does not change
+// within a pass). Endeavors, steals, reconciliation, reforms and incorporation spend only what lies above it (game 60, M6).
+let befriendReserve = 0;
+let befriendReserveTurn = -1; // the turn befriendIndependents set it (reserveNow)
+// Befriending's turn: after an endeavor or a steal a befriending we save for keeps its price, after a befriending started
+// the next endeavor or steal goes first (game 60: 2 endeavors and 0 steals in Antiquity, none in Exploration).
+let befriendsNext = false;
 // Leaders whose spy was caught against us (revealed), waiting for our counter-spy.
 const caughtSpies = new Set();
 
@@ -113,6 +123,18 @@ export function modifierEffect(id) {
 }
 
 /**
+ * The victory class (VICTORY_CLASS_CULTURE, …) whose points a modifier switches on (EFFECT_PLAYER_ACTIVATE_VICTORY_POINT_TRACKER:
+ * its TrackerName is a GameInfo.VictoryScorings ScoringId, whose VictoryType's Victories row has the class), or null.
+ */
+export function trackerClassOf(id) {
+    const t = modifierTables();
+    if (t.effect.get(t.type.get(id)) !== "EFFECT_PLAYER_ACTIVATE_VICTORY_POINT_TRACKER") return null;
+    const tracker = t.args.get(id)?.TrackerName;
+    const scoring = tracker ? GameInfo.VictoryScorings?.find((r) => r.ScoringId === tracker) : null;
+    return scoring ? GameInfo.Victories?.lookup(scoring.VictoryType)?.VictoryClassType ?? null : null;
+}
+
+/**
  * This pass's numbers that the effects Policy Yield Previews cannot value scale with
  * (core/xpl-effect-value.js): the focus the priority serves, the age, the cities' production,
  * the empire's science, culture and gold per turn.
@@ -125,8 +147,14 @@ function leverContext(settings) {
         if (!c.isTown) production += Number(safe(() => c.Yields.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
     }
     let settlements = null;
+    let generals = null;
     return {
         focus: focusOfProfile(settings?.profile),
+        // The generals, read once a step when an effect asks (research/41 §4E).
+        get generals() {
+            generals ??= safe(() => generalsState(), null);
+            return generals;
+        },
         age: safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, null),
         production, science: net("YIELD_SCIENCE"), culture: net("YIELD_CULTURE"), gold: net("YIELD_GOLD"),
         // Each settlement's Happiness facts, read once a step when a card needs them (localHappiness).
@@ -720,6 +748,77 @@ function rewardIcons(storyType) {
     return out;
 }
 
+// What a story option's rewards are worth by their modifiers (research/game60 M9: at A89 an attribute point, LEADER_CHAIN_1041B,
+// lost to +25% production toward Ancient Walls, 1041C, whose YIELD_PRODUCTION icon counted a full production weight while the
+// ATTRIBUTE icon counted 0.5): an attribute point at least this much, a quest's rewards (paid once it is done) at this share.
+const STORY_ATTRIBUTE_MIN = 3;
+const STORY_QUEST_SHARE = 0.5;
+const STORY_TURNS_DEFAULT = 60; // turns a lasting reward counts when the age has no end on the clock
+
+/** An attribute point now: the best node we could buy with it (attributeOptions), at least STORY_ATTRIBUTE_MIN. */
+function attributePointWorth(weights, settings) {
+    const best = Math.max(0, ...(safe(() => attributeOptions(weights, leverContext(settings ?? {})), []) ?? []).map((o) => Number(o.value) || 0));
+    return Math.max(STORY_ATTRIBUTE_MIN, best);
+}
+
+/**
+ * Production toward one constructible in our cities (EFFECT_CITY_ADJUST_CONSTRUCTIBLE_PRODUCTION): its Percent of what that
+ * constructible costs where it is queued or planned this age (our queues, the building plan's placements), over the age's
+ * turns left, weighed as production.
+ */
+function constructibleProductionWorth(args, weights) {
+    const def = args?.ConstructibleType ? safe(() => GameInfo.Constructibles.lookup(args.ConstructibleType), null) : null;
+    const pct = Number(args?.Percent) || 0;
+    if (!def || !(pct > 0)) return 0;
+    const cities = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).filter((c) => !c.isTown);
+    let queued = 0;
+    let cost = 0;
+    for (const c of cities) {
+        const each = Number(safe(() => c.Production.getConstructibleProductionCost(def.ConstructibleType), 0)) || Number(def.Cost) || 0;
+        cost = Math.max(cost, each);
+        if ((safe(() => c.BuildQueue.getQueue(), []) ?? []).some((q) => q?.constructibleType === def.$hash)) queued++;
+    }
+    const planned = (safe(() => state.get().results.plans?.placements, []) ?? []).filter((p) => p.type === def.ConstructibleType).length;
+    const left = Number(safe(() => ageOutlook().turnsLeft, NaN));
+    const turns = Number.isFinite(left) && left > 0 ? left : STORY_TURNS_DEFAULT;
+    return (pct / 100) * Math.max(queued, planned) * (cost || Number(def.Cost) || 0) / turns * (weights?.[yieldIndex("YIELD_PRODUCTION")] ?? 1);
+}
+
+/**
+ * A story option's worth by its rewards' modifiers (NarrativeStory_Rewards → NarrativeRewards → effectsOf): an attribute
+ * point (attributePointWorth), production toward a constructible (constructibleProductionWorth); the icons the rest stands for
+ * (yields, great works, units…) as icons. Null when no reward is one of these two: the icons alone then. A quest's share is
+ * chooseStory's (questShare), on whichever value it takes.
+ */
+function storyRewardValue(to, icons, weights, settings) {
+    const rewards = new Set((GameInfo.NarrativeStory_Rewards?.filter((r) => r.NarrativeStoryType === to.NarrativeStoryType) ?? []).map((r) => r.NarrativeRewardType));
+    if (rewards.size === 0) return null;
+    const ids = (GameInfo.NarrativeRewards?.filter((r) => rewards.has(r.NarrativeRewardType)) ?? []).map((r) => r.ModifierID ?? r.ModifierId).filter(Boolean);
+    let value = 0;
+    let attribute = false;
+    let production = false;
+    for (const e of safe(() => effectsOf(ids), []) ?? []) {
+        if (e.effect === "EFFECT_PLAYER_ATTRIBUTE") {
+            value += attributePointWorth(weights, settings) * (Number(e.args?.Amount) || 1);
+            attribute = true;
+        } else if (e.effect === "EFFECT_CITY_ADJUST_CONSTRUCTIBLE_PRODUCTION") {
+            value += constructibleProductionWorth(e.args, weights);
+            production = true;
+        }
+    }
+    if (!attribute && !production) return null;
+    const rest = (icons ?? []).filter((i) => {
+        const t = String(i.RewardIconType ?? "");
+        return !(attribute && t.startsWith("ATTRIBUTE")) && !(production && t === "YIELD_PRODUCTION");
+    });
+    return value + storyValue(rest, weights);
+}
+
+/** A quest's rewards come once it is done: its option counts at STORY_QUEST_SHARE, by its modifiers or by its icons alike. */
+function questShare(to) {
+    return to.IsQuest === true || /^(true|1)$/i.test(String(to.IsQuest ?? "")) ? STORY_QUEST_SHARE : 1;
+}
+
 // A crisis story's option that grants the crisis's narrative tag (EFFECT_PLAYER_GRANT_NARRATIVE_TAG, NARRATIVE_TAG_CRISIS_*)
 // completes a crisis triumph: a crisis card for the next age's dedications (research/40 C, legacy notes P7). Worth this much.
 const CRISIS_TAG_VALUE = 3;
@@ -759,7 +858,9 @@ export function chooseStory(answered = new Set(), settings = null) {
         const negative = icons.some((i) => truthy(i.Negative));
         const happy = icons.some((i) => i.RewardIconType === "YIELD_HAPPINESS" && !truthy(i.Negative)) && !icons.some((i) => i.RewardIconType === "YIELD_HAPPINESS" && truthy(i.Negative));
         const crisis = safe(() => grantsCrisisTag(to.NarrativeStoryType), false) ? CRISIS_TAG_VALUE : 0;
-        options.push({ key: to.NarrativeStoryType, ai: !!(link?.AIPriority === true || link?.AIPriority === "true" || link?.AIPriority === 1), negative, happy, value: storyValue(icons, weights) + crisis });
+        // The rewards' modifiers where they say what an option is worth, else its icons (research/game60 M9).
+        const rewards = safe(() => storyRewardValue(to, icons, weights, settings), null);
+        options.push({ key: to.NarrativeStoryType, ai: !!(link?.AIPriority === true || link?.AIPriority === "true" || link?.AIPriority === 1), negative, happy, value: (rewards ?? storyValue(icons, weights)) * questShare(to) + crisis });
     }
     const calm = options.some((o) => o.happy) && unhappySettlement();
     // Happiness first in unrest; then what the profile values most (research/23 S5: the base game sets no
@@ -802,36 +903,17 @@ export function choosePantheon(settings = {}) {
 
 /**
  * Our settlements' tiles as religion counts them: farms, camps, fishing boats, mines, resource tiles and quarters (2+
- * buildings), and per settlement its specialists, population and natural wonders.
+ * buildings), and per settlement its specialists and natural wonders.
  */
 function empireTiles() {
-    const out = { farms: 0, camps: 0, fishing: 0, mines: 0, resources: 0, quarters: 0, specialists: 0, naturalWonders: 0, rural10: 0, urban10: 0 };
+    const out = { farms: 0, camps: 0, fishing: 0, mines: 0, resources: 0, quarters: 0, specialists: 0, naturalWonders: 0 };
     for (const city of safe(() => Players.get(pid()).Cities.getCities(), []) ?? []) {
-        let wonder = false;
-        for (const idx of safe(() => city.getPurchasedPlots(), []) ?? []) {
-            const loc = safe(() => GameplayMap.getLocationFromIndex(idx), null);
-            if (!loc) continue;
-            if (Number(safe(() => GameplayMap.getResourceType(loc.x, loc.y), -1)) >= 0) out.resources++;
-            if (safe(() => GameplayMap.isNaturalWonder(loc.x, loc.y), false)) wonder = true;
-            let buildings = 0;
-            for (const id of safe(() => MapConstructibles.getHiddenFilteredConstructibles(loc.x, loc.y), []) ?? []) {
-                const c = safe(() => Constructibles.getByComponentID(id), null);
-                const def = c ? safe(() => GameInfo.Constructibles.lookup(c.type), null) : null;
-                const t = def?.ConstructibleType ?? "";
-                if (def?.ConstructibleClass === "BUILDING") buildings++;
-                else if (/^IMPROVEMENT_(FARM|TERRACE_FARM|PASTURE|PLANTATION)/.test(t)) out.farms++;
-                else if (/^IMPROVEMENT_(CAMP|WOODCUTTER)/.test(t)) out.camps++;
-                else if (/FISHING_BOAT/.test(t)) out.fishing++;
-                else if (/^IMPROVEMENT_(MINE|CLAY_PIT|QUARRY)/.test(t)) out.mines++;
-            }
-            if (buildings >= 2) out.quarters++;
-        }
-        if (wonder) out.naturalWonders++;
+        const t = settlementTiles(city);
+        for (const k of ["farms", "camps", "fishing", "mines", "resources", "quarters"]) out[k] += t[k];
+        if (t.naturalWonder) out.naturalWonders++;
         let workers = 0;
         for (const w of safe(() => city.Workers.GetAllPlacementInfo(), []) ?? []) workers += Number(w.NumWorkers) || 0;
         if (workers >= 3) out.specialists++;
-        if (Number(safe(() => city.ruralPopulation, 0)) >= 10) out.rural10++;
-        if (Number(safe(() => city.urbanPopulation, 0)) >= 10) out.urban10++;
     }
     return out;
 }
@@ -881,7 +963,10 @@ function beliefFacts(settings) {
     }
     return {
         settlements: cities.length, cities: cities.filter((c) => !c.isTown).length, followers: cities.length, foreign,
-        specialists: t.specialists, naturalWonders: t.naturalWonders, rural10: t.rural10, urban10: t.urban10,
+        specialists: t.specialists, naturalWonders: t.naturalWonders,
+        // Lay Followers, Ecclesiasticism and Charoen pay for converting other civilizations' settlements, which our
+        // Missionaries never do (research/game60 M2): no such settlements count.
+        convertRural10: 0, convertUrban10: 0, convertTreasure: 0,
         distant: cities.filter((c) => safe(() => c.isDistantLands, false)).length,
         // City-states we are suzerain of: our Missionaries convert them once ours follow (research/40 C; Icons' relics).
         treasure: 0, wonders: 1, cityStates: ourCityStates().length, focus: focusOfProfile(settings?.profile),
@@ -1046,7 +1131,7 @@ export function answerFirstMeetings() {
  * someone else). Only "reject" left: the proposal stays for the player. Same data and
  * operation as the game's reaction panel (panel-diplomacy-project-reaction.js).
  */
-export function answerDiplomacy({ support = false } = {}) {
+export function answerDiplomacy({ support = false, reserve = 0 } = {}) {
     const out = [];
     const R = globalThis.DiplomaticResponseTypes;
     const ENDEAVOR = globalThis.DiplomacyActionGroups?.DIPLOMACY_ACTION_GROUP_ENDEAVOR;
@@ -1072,7 +1157,9 @@ export function answerDiplomacy({ support = false } = {}) {
         // (Lafayette's: a tradition slot for good to each supporter; research/40 A4) is supported whatever the option.
         const reform = event?.actionType !== undefined && event.actionType === globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GRANT_POLICY_SLOT;
         if ((support && ENDEAVOR !== undefined && event?.actionGroup === ENDEAVOR) || reform) {
-            pick = options.find((r) => r.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT && (Number(r.cost) || 0) <= balance) ?? pick;
+            // An endeavor's support from the Influence above befriending's reserve; a Reform's whatever it keeps.
+            const room = reform ? balance : balance - reserve;
+            pick = options.find((r) => r.responseType === R?.DIPLOMACY_RESPONSE_SUPPORT && (Number(r.cost) || 0) <= room) ?? pick;
         }
         if (!pick) {
             out.push({ key: "DIPLO_LEFT", args: [who, what] });
@@ -1091,14 +1178,24 @@ export function answerDiplomacy({ support = false } = {}) {
  *  - One Influence spend a pass (seen in game 5: 4–6 befriend requests in the same second, logged
  *    as started, and only the first ever started — the Influence paid for one; the two villages
  *    attacking us were never befriended): the first independent in order gets it, a new befriending
- *    (DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN) or, for one threatening us that we already befriend,
- *    more Influence into it (the panel's "+"). One offered that we cannot afford yet keeps the
- *    Influence for itself (nothing else is spent).
+ *    (DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN) or more Influence into one we already befriend (the panel's
+ *    "+"): under threat, when another leader's befriending of it would finish first (the befriend screen's
+ *    places: Game.Diplomacy.getCompletionData's turnsToCompletion), or when ours would not finish before the
+ *    age ends. One offered that we cannot afford yet keeps the Influence for itself (no other befriending
+ *    starts); from endeavors and steals only a threatening one's, or any on befriending's turn (befriendReserve).
+ *  - Not started (game 60, research/game60 M5: 2 of 6 lost to a leader who had started first, one started at
+ *    A121 that needed 30 turns): one another leader befriends unless ours would win the race (its turns unknown:
+ *    skipped), and one that cannot be done before the age ends (befriendTurns; a threatening one only needs the
+ *    Friendly stage, half of it, for its war with us to end).
+ *  - A village the game says we have not found (LOC_DIPLOMACY_ACTION_FAILURE_NO_VISION; it lists it with its
+ *    price all the same): not befriendable now, no Influence kept, a unit is sent toward it (game 60: 49 passes kept
+ *    the Influence for such villages and blocked every endeavor).
  *  - Order: those whose units threaten a settlement, then those at war with us (hostile), then the
  *    nearest to our settlements — measured to its village (not a city: villagesOf) or its city
  *    (a city-state). Before, villages had no distance at all, so the order was arbitrary.
+ * @param threats threatenedSettlements() @param ageTurnsLeft the age's turns left (ageOutlook)
  */
-export function befriendIndependents(threats = []) {
+export function befriendIndependents(threats = [], { ageTurnsLeft = Infinity } = {}) {
     const out = [];
     const GIVE = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GIVE_INFLUENCE_TOKEN;
     const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
@@ -1126,23 +1223,76 @@ export function befriendIndependents(threats = []) {
         .map((p) => ({ p, d: distance(p), threat: threatening.has(p.id), hostile: hostile(p) }))
         .sort((a, b) => Number(b.threat) - Number(a.threat) || Number(b.hostile) - Number(a.hostile) || a.d - b.d);
     const blocked = [];
-    // Influence goes to befriending this turn: one started, or one offered waits for Influence.
+    // Statuses under which an offered befriending keeps no Influence (not now), and those that send a unit toward it.
     const NOT_NOW = ["NOT_UNLOCKED", "NO_VIABLE_TARGETS", "BLOCKED", "ACTIVE"].map((n) => globalThis.DiplomacyProjectStatus?.[`PROJECT_${n}`]).filter((v) => v !== undefined);
     const UNUSABLE = ["NOT_UNLOCKED", "NO_VIABLE_TARGETS", "BLOCKED"].map((n) => globalThis.DiplomacyProjectStatus?.[`PROJECT_${n}`]).filter((v) => v !== undefined);
-    let waiting = false;
-    let spent = false; // this pass's Influence is spoken for
+    let reserve = 0; // Influence kept from endeavors and steals for a befriending we save for
+    let spent = false; // this pass's Influence is spoken for: no other befriending
+    const NO_VIABLE = globalThis.DiplomacyProjectStatus?.PROJECT_NO_VIABLE_TARGETS;
+    const balance = Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+    const duration = befriendTurns(GIVE);
+    const left = Number.isFinite(Number(ageTurnsLeft)) ? Number(ageTurnsLeft) : Infinity;
+    const turnsOf = (event) => {
+        const t = Number(safe(() => Game.Diplomacy.getCompletionData(event.uniqueID)?.turnsToCompletion, NaN));
+        return Number.isFinite(t) ? t : null;
+    };
+    const keep = (threat, price) => {
+        // Saving for it: a threatening one keeps its price from everything else, another only on befriending's turn.
+        if (threat || befriendsNext) reserve = Math.max(reserve, Number(price) > 0 ? Number(price) : Infinity);
+        spent = true;
+    };
     for (const { p, threat } of independents) {
+        // The village we hunt (it will not be befriended: research/41 §6): no Influence for it.
+        if (p.id === huntedIndependent()) continue;
         const name = () => independentNameOf(p.id);
         const events = safe(() => Game.Diplomacy.getPlayerEvents(p.id), []) ?? [];
         const ongoing = events.find((a) => a.initialPlayer === pid() && a.actionType === GIVE);
+        // Other leaders befriending it (the befriend screen's other bars), the soonest done first.
+        const rivals = events.filter((a) => a.actionType === GIVE && a.initialPlayer !== pid() && a.initialPlayer >= 0)
+            .map((a) => ({ a, turns: turnsOf(a) })).sort((x, y) => (x.turns ?? -1) - (y.turns ?? -1));
+        const rival = rivals[0] ?? null;
         if (ongoing) {
-            // Already befriending: under threat, more Influence speeds it up.
-            if (threat && !spent) {
+            // Already befriending: more Influence speeds it up under threat, against a leader whose befriending of it would
+            // finish first (a tie is lost, as the screen ranks it), and when ours would not be done before the age ends;
+            // those two only when the support still to give can make it (`best`: its turns at BEFRIEND_SUPPORT_MAX).
+            const mine = turnsOf(ongoing);
+            const data = safe(() => Game.Diplomacy.getDiplomaticEventData(ongoing.uniqueID), null);
+            const support = Number(data?.support) || 0;
+            const best = supportedTurns(ongoing, data);
+            const behind = !threat && rival && mine !== null && (rival.turns === null || rival.turns <= mine);
+            const short = !threat && !behind && mine !== null && mine > left;
+            const can = behind ? rival.turns !== null && best !== null && best < rival.turns : short ? best !== null && best <= left : true;
+            const why = threat ? "a threat"
+                : behind ? `${leaderNameOf(rival.a.initialPlayer)} done in ${rival.turns ?? "?"} turn(s), ours in ${mine}`
+                : short ? `ours done in ${mine} turn(s), ${left} left in the age` : null;
+            if (why && !can) {
+                if (befriendSkipNoted.get(p.id) !== Game.turn) {
+                    befriendSkipNoted.set(p.id, Game.turn);
+                    log.info(`befriend: ${name()}: no more Influence into ours (${why}; at most ${best ?? "?"} turn(s) with support ${BEFRIEND_SUPPORT_MAX})`);
+                }
+                continue;
+            }
+            if (why && !spent && (threat || support < BEFRIEND_SUPPORT_MAX)) {
                 const s = supportAction(ongoing.uniqueID, p);
                 if (s.length > 0) {
+                    if (!threat) log.info(`befriend: ${name()}: more Influence into ours (${why})`);
                     out.push(...s);
                     spent = true;
                 }
+            }
+            continue;
+        }
+        // Too late or lost to another leader (game 60): not started, no Influence kept. A threatening one's war ends at the
+        // Friendly stage, half the way.
+        const need = duration === null ? null : threat ? duration / 2 : duration;
+        const lost = rival && (rival.turns === null || need === null || rival.turns <= need);
+        const late = need !== null && need > left;
+        if (lost || late) {
+            if (befriendSkipNoted.get(p.id) !== Game.turn) {
+                befriendSkipNoted.set(p.id, Game.turn);
+                log.info(lost
+                    ? `befriend: ${name()}: ${leaderNameOf(rival.a.initialPlayer)} befriends it (done in ${rival.turns ?? "?"} turn(s)), ours would take ${need === null ? "?" : Math.ceil(need)}: not started`
+                    : `befriend: ${name()}: about ${Math.ceil(need)} turn(s) to befriend, ${left} left in the age: not started`);
             }
             continue;
         }
@@ -1150,6 +1300,24 @@ export function befriendIndependents(threats = []) {
         const args = project ? { Player1: pid(), Type: project.actionType, Amount: 1, ID: p.id } : null;
         const ok = project && (AVAILABLE === undefined || project.projectStatus === AVAILABLE)
             && safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success;
+        // NO_VIABLE_TARGETS (-3) is also the game's answer when we lack the Influence: it lists the village with its
+        // price, and the failure says "not enough Influence 71/180" (research/41 §1: game 44). That one is befriendable:
+        // the Influence is kept for it, as for an AVAILABLE one we cannot afford yet. Only this independent's own entry.
+        const target = (project?.targetList1 ?? []).find((t) => t?.targetID === p.id) ?? null;
+        const reasons = target?.resultData?.FailureReasons ?? [];
+        // The game lists a village it says we have not found with its price too (game 60: «Вы еще не нашли их деревню.»):
+        // not befriendable now, nothing kept for it, a unit goes toward it.
+        const unseen = reasons.some((r) => noVisionTexts().includes(r));
+        const short = !ok && !unseen && project && NO_VIABLE !== undefined && project.projectStatus === NO_VIABLE
+            && Number(target?.costYieldD) > balance;
+        if (short) {
+            if (threat && befriendNoted !== Game.turn) {
+                befriendNoted = Game.turn;
+                log.info(`befriend: ${name()} threatens us; its project status ${project.projectStatus}: ${balance}/${target.costYieldD} Influence, kept for it (${reasons.join("; ") || "no reason given"})`);
+            }
+            keep(threat, target.costYieldD);
+            continue;
+        }
         if (!ok) {
             // Not offered, or offered but not usable (no viable target, not unlocked, blocked: its village unseen,
             // research/23 E5: game 8, a camp raided us 40 turns, never befriended nor approached): a unit is sent
@@ -1157,28 +1325,102 @@ export function befriendIndependents(threats = []) {
             if (threat && (!project || UNUSABLE.includes(project.projectStatus))) blocked.push(p.id);
             if (threat && befriendNoted !== Game.turn) {
                 befriendNoted = Game.turn;
-                log.info(`befriend: ${name()} threatens us; its project ${project ? `status ${project.projectStatus}` : "not offered"}`);
+                if (unseen) {
+                    const v = villages.find((x) => x.id === p.id);
+                    const state = v ? safe(() => GameplayMap.getRevealedState(pid(), v.x, v.y), "?") : "?";
+                    const met = safe(() => Players.get(pid()).Diplomacy.hasMet(p.id), "?");
+                    log.info(`befriend: ${name()}: village not found, Influence not kept (village ${v ? `${v.x},${v.y} revealed state ${state}` : "unknown"}, met ${met}; Influence ${balance}, price ${target.costYieldD})`);
+                } else {
+                    const why = reasons.join("; ");
+                    log.info(`befriend: ${name()} threatens us; its project ${project ? `status ${project.projectStatus}` : "not offered"}; Influence ${balance}${target ? `, price ${target.costYieldD}` : ", no target listed"}${why ? ` (${why})` : ""}`);
+                }
             }
-            if (project && !NOT_NOW.includes(project.projectStatus)) {
-                waiting = true;
-                spent = true; // the Influence is kept for this one
-            }
+            if (project && !NOT_NOW.includes(project.projectStatus)) keep(threat, target?.costYieldD); // the Influence is kept for this one
             continue;
         }
         if (spent) {
-            waiting = true;
+            if (threat) reserve = Math.max(reserve, Number(target?.costYieldD) > 0 ? Number(target.costYieldD) : Infinity);
             continue;
         }
         Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
         out.push({ key: "BEFRIEND", args: [name()] });
+        befriendsNext = false;
         spent = true;
     }
     blockedIndependents = blocked;
-    befriendBusy = waiting || out.length > 0;
+    // Sent this pass: nothing else spends Influence (the balance changes only once the game handles it).
+    befriendReserve = out.length > 0 ? Infinity : reserve;
+    befriendReserveTurn = safe(() => Game.turn, -1);
     return out;
 }
 
 let befriendNoted = -1; // UI.log names a threatening independent's befriend status once a turn
+const befriendSkipNoted = new Map(); // independent -> the turn UI.log said why its befriending is not started
+const BEFRIEND_SUPPORT_MAX = 6; // more Influence into a befriending that is not threatened up to this support
+
+/**
+ * The turns our befriending would take once its support is at BEFRIEND_SUPPORT_MAX: what it still lacks (the event's
+ * completionScore less its progressScore, as the befriend screen shows "progress/total (+support a turn)"; else the
+ * completion data's turns × its progress a turn) over its progress a turn plus the support still to give. A bound: one
+ * support goes in a turn. @returns turns, or null when the game does not say
+ */
+function supportedTurns(event, data) {
+    const support = Number(data?.support) || 0;
+    let lacks = Number(data?.completionScore) - Number(data?.progressScore);
+    let rate = support;
+    if (!(lacks > 0) || !(rate > 0)) {
+        const c = safe(() => Game.Diplomacy.getCompletionData(event.uniqueID), null);
+        rate = Number(c?.progressPerTurn);
+        lacks = Number(c?.turnsToCompletion) * rate;
+    }
+    if (!(lacks > 0) || !(rate > 0)) return null;
+    return Math.ceil(lacks / (rate + Math.max(0, BEFRIEND_SUPPORT_MAX - support)));
+}
+
+/** The game's "you have not found their village" failure, composed as the project data carries it, and its key. */
+function noVisionTexts() {
+    const key = "LOC_DIPLOMACY_ACTION_FAILURE_NO_VISION";
+    return [safe(() => Locale.compose(key), key), key];
+}
+
+function leaderNameOf(id) {
+    return safe(() => Locale.compose(Players.get(id).leaderName), String(id));
+}
+
+/**
+ * Turns a new befriending takes at the support it starts with: the game-speed duration (Game.Diplomacy.modifyByGameSpeed,
+ * as the diplomacy panel scales a project's BaseDuration) over its BaseTokenCost. Antiquity, Standard speed: 60 / 2 = 30, as
+ * game 60's three befriendings each took (49→79, 80→110, 93→123). @returns turns, or null when the data is not there
+ */
+function befriendTurns(GIVE) {
+    const def = safe(() => GameInfo.DiplomacyActions.lookup(GIVE), null);
+    const base = Number(def?.BaseDuration) || 0;
+    const tokens = Number(def?.BaseTokenCost) || 0;
+    if (!(base > 0) || !(tokens > 0)) return null;
+    const d = Number(safe(() => Game.Diplomacy.modifyByGameSpeed(base), base)) || base;
+    return d / tokens;
+}
+
+/** Forgets this pass's Influence reserve and whose turn it is (tests; a new game). */
+export function resetBefriending() {
+    befriendReserve = 0;
+    befriendReserveTurn = -1;
+    befriendsNext = false;
+    befriendNoted = -1;
+    befriendSkipNoted.clear();
+}
+
+/**
+ * What befriending keeps this turn (befriendReserve), 0 when its step did not run this turn (switched off, or it stopped
+ * early): the last reserve, Infinity after a befriending was sent, would otherwise hold every endeavor, steal and
+ * reconciliation for good.
+ */
+function reserveNow() {
+    return befriendReserveTurn === safe(() => Game.turn, -1) ? befriendReserve : 0;
+}
+
+/** The Influence above what befriending keeps this pass. */
+const influenceFree = () => influence() - reserveNow();
 
 /** More Influence into our ongoing "befriend" with an independent (panel-diplomacy-actions.js). */
 function supportAction(actionID, p) {
@@ -1601,14 +1843,18 @@ export function answerIncomingDeals({ offensive = false } = {}) {
             gold: Number(safe(() => Players.Treasury.get(pid()).goldBalance, null) ?? safe(() => me.Treasury.goldBalance, 0)) || 0,
             influence: Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0,
         });
-        const held = offensive && v.accept && v.gives.cities === 0 && peaceIntentFor(p.id) === "CONTINUE";
+        const held = (offensive && v.accept && v.gives.cities === 0 && peaceIntentFor(p.id) === "CONTINUE")
+            // Our training war goes on until it ends by its own rules (research/41 §7D); a settlement for it is taken.
+            || (v.accept && v.gives.cities === 0 && trainingWarEnemy() === p.id);
         const accept = v.accept && !held;
         safe(() => D.sendWorkingDeal(id, accept ? P.ACCEPTED : P.REJECTED), null);
         answeredDeals.set(p.id, Game.turn);
         incomingDeals.delete(p.id);
         const leader = safe(() => Locale.compose(p.leaderName), String(p.id));
         log.warn(`deal: ${leader} offers ${v.peace ? "peace" : "no peace"}, asking ${v.asks.cities} settlement(s), ${v.asks.gold} gold, ${v.asks.influence} Influence, giving ${v.gives.cities} settlement(s): ${accept ? "accepted" : held ? "rejected (our assault goes on)" : "rejected"}`);
-        if (held) {
+        if (held && trainingWarEnemy() === p.id) {
+            out.push({ key: "TRAINING_PEACE_HELD", args: [leader] });
+        } else if (held) {
             out.push({ key: "PEACE_HELD", args: [leader, campaignState()?.target?.name ?? "?"] });
         } else if (accept) {
             peaceAsk.delete(p.id);
@@ -1642,6 +1888,14 @@ export async function seekPeace({ offensive = false } = {}) {
     if (diplomacyScreenOpen()) return out;
     for (const p of safe(() => Players.getAlive(), []) ?? []) {
         if (!p?.isMajor || p.id === pid() || !safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+        // Our training war: peace waits until it ends by its own rules (research/41 §7D).
+        if (trainingWarEnemy() === p.id) {
+            if (peaceHeld.get(p.id) !== "training") {
+                peaceHeld.set(p.id, "training");
+                out.push({ key: "TRAINING_PEACE_HELD", args: [safe(() => Locale.compose(p.leaderName), String(p.id))] });
+            }
+            continue;
+        }
         if (offensive && peaceIntentFor(p.id) === "CONTINUE") {
             const c = campaignState();
             if (peaceHeld.get(p.id) !== c?.id) {
@@ -1657,16 +1911,37 @@ export async function seekPeace({ offensive = false } = {}) {
         if (!safe(() => me.Diplomacy.canMakePeaceWith(p.id), null)?.Success) continue;
         if (safe(() => D.hasPendingDeal(pid(), p.id), false)) continue;
         const deal = { direction: DiplomacyDealDirection.OUTGOING, player1: pid(), player2: p.id };
-        try {
+        const leader = safe(() => Locale.compose(p.leaderName), String(p.id));
+        // Our settlements they hold are asked back first (research/game48: Киото, lost at A59, stayed Amina's after a white
+        // peace at A62; a settlement received in a peace deal has no unrest); refused, a white peace is inspected next.
+        const peace = () => {
             D.clearWorkingDeal(deal);
             D.addItemToWorkingDeal(deal, { type: DiplomacyDealItemTypes.AGREEMENTS, agreementType: DiplomacyDealItemAgreementTypes.MAKE_PEACE });
+        };
+        try {
+            peace();
         } catch (_e) {
             continue;
         }
-        const leader = safe(() => Locale.compose(p.leaderName), String(p.id));
-        dealAnswers.delete(p.id);
-        safe(() => D.sendWorkingDeal(deal, P.INSPECT), null);
-        const answer = await inspectAnswer(p.id, INSPECT_WAIT_MS);
+        const inspect = async () => {
+            dealAnswers.delete(p.id);
+            safe(() => D.sendWorkingDeal(deal, P.INSPECT), null);
+            return inspectAnswer(p.id, INSPECT_WAIT_MS);
+        };
+        let back = settlementsToAskBack(deal, p.id);
+        for (const item of back) safe(() => D.addItemToWorkingDeal(deal, item), null);
+        let answer = await inspect();
+        if (back.length > 0 && answer && answer.action !== P.ACCEPTED) {
+            if (answer.sessionId !== undefined && answer.sessionId !== null) safe(() => Game.DiplomacySessions.closeSession(answer.sessionId), null);
+            log.info(`peace: ${leader} would refuse a peace giving back ${back.map((i) => settlementName(i.cityId)).join(", ")}; a white peace next`);
+            back = [];
+            try {
+                peace();
+            } catch (_e) {
+                continue;
+            }
+            answer = await inspect();
+        }
         if (answer && answer.action !== P.ACCEPTED) {
             ask.refusals++;
             ask.next = Game.turn + backoff(ask.refusals);
@@ -1681,10 +1956,180 @@ export async function seekPeace({ offensive = false } = {}) {
         ask.next = Game.turn + (answer ? PEACE_EVERY : backoff(ask.refusals));
         ask.proposedTurn = Game.turn;
         peaceAsk.set(p.id, ask);
+        if (back?.length > 0) log.info(`peace: proposed to ${leader}, giving back ${back.map((i) => settlementName(i.cityId)).join(", ")}`);
         out.push({ key: "PEACE_PROPOSED", args: [leader] });
     }
     return out;
 }
+
+/**
+ * Their settlements that were ours (`city.originalOwner`, the game's own record), as the peace screen offers them from that
+ * leader: `Game.DiplomacyDeals.getPossibleWorkingDealItems(deal, them, CITIES)` items of subType OFFER, added as they are
+ * (panel-diplomacy-peace-deal.js moveDealItem). @returns [deal item]
+ */
+function settlementsToAskBack(deal, them) {
+    const OFFER = globalThis.DiplomacyDealItemCityTransferTypes?.OFFER;
+    const CITIES = globalThis.DiplomacyDealItemTypes?.CITIES;
+    if (OFFER === undefined || CITIES === undefined) return [];
+    const items = safe(() => Game.DiplomacyDeals.getPossibleWorkingDealItems(deal, them, CITIES), []) ?? [];
+    const back = items.filter((i) => i?.cityId && i.subType === OFFER && safe(() => Cities.get(i.cityId)?.originalOwner, -1) === pid());
+    // After our training war (research/41 §9 decision 3): their town nearest us, while our War Support leads by
+    // ASK_SUPPORT_GAP and the settlement cap has room (a settlement received in a deal has no unrest).
+    if (trainingFoes.has(them)) {
+        const stats = safe(() => Players.get(pid()).Stats, null);
+        const room = (Number(stats?.settlementCap) || 0) - (Number(stats?.numSettlements) || 0);
+        if ((warSupportNet(them)?.net ?? 0) >= TRAINING.ASK_SUPPORT_GAP && room > back.length) {
+            const centres = (safe(() => Players.get(pid()).Cities.getCities(), []) ?? []).map((c) => c.location).filter(Boolean);
+            const near = (c) => Math.min(Infinity, ...centres.map((o) => safe(() => GameplayMap.getPlotDistance(o.x, o.y, c.location.x, c.location.y), Infinity)));
+            const town = items.filter((i) => i?.cityId && i.subType === OFFER && !back.includes(i) && safe(() => Cities.get(i.cityId)?.isTown, false))
+                .map((i) => ({ i, d: safe(() => near(Cities.get(i.cityId)), Infinity) })).sort((a, b) => a.d - b.d)[0];
+            if (town) back.push(town.i);
+        }
+    }
+    return back;
+}
+
+const settlementName = (id) => safe(() => Locale.compose(Cities.get(id).name), "?");
+
+// ---- «Учебная война»: a training war on a weak neighbour (research/41 §7) --------------------------------------------------
+
+const trainingDenounced = new Map(); // leader -> { n, turn } denunciations for a training war this age
+const trainingFoes = new Set();      // leaders of our training wars this game (the peace deal may ask for a town)
+let trainingNoted = -1;              // the turn UI.log said why no training war starts
+const TRAINING_NOTE_EVERY = 10;
+// A War Support point's price before the war (the declare-war rows: 60 / 120 / 180 by age; research/41-notes/politics.md).
+const SUPPORT_PRICE = { AGE_ANTIQUITY: 60, AGE_EXPLORATION: 120, AGE_MODERN: 180 };
+
+export function resetTrainingWar() {
+    trainingDenounced.clear();
+    trainingFoes.clear();
+    trainingNoted = -1;
+}
+
+/** Our War Support kept ahead of theirs: a point bought when theirs reaches ours and its price fits (core supportWanted). */
+function buyWarSupport(enemy) {
+    const s = warSupportNet(enemy);
+    const OP = globalThis.PlayerOperationTypes?.SUPPORT_DIPLOMATIC_ACTION;
+    const TOKEN = globalThis.DiplomacyTokenTypes?.DIPLOMACY_TOKEN_GLOBAL;
+    if (!s || OP === undefined || TOKEN === undefined) return [];
+    const price = Number(safe(() => Game.Diplomacy.getInfluenceForNextSupport(s.id, pid(), s.initial), 0)) || 0;
+    const spare = Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+    if (!supportWanted({ net: s.net, price, spare })) return [];
+    const args = { ID: s.id, Type: TOKEN, Amount: 1, SubType: s.initial };
+    if (!safe(() => Game.PlayerOperations.canStart(pid(), OP, args, false), null)?.Success) return [];
+    Game.PlayerOperations.sendRequest(pid(), OP, args);
+    const leader = safe(() => Locale.compose(Players.get(enemy).leaderName), String(enemy));
+    log.info(`training war: ${leader}: War Support bought for ${price} (ours ${s.net} ahead before)`);
+    return [{ key: "WAR_SUPPORT_BOUGHT", args: [leader, price] }];
+}
+
+/**
+ * «Учебная война» (research/41 §7; the user, 21 October: "one close nation much weaker than us, optional, without making
+ * us much slower"), once a full pass with «Оборона»: under way, our War Support kept ahead of theirs; else the nearest met
+ * major that core trainingTarget accepts (weak, close, alone, Hostile so the war is Formal, our side and the time right,
+ * the soldiers ready) gets a Formal war, and the army gathers from the next pass (planTrainingWar); one Neutral or
+ * Unfriendly is denounced toward Hostile (2 times, 4 when very weak, 10 turns apart). One a game age; never a surprise war.
+ * @param f { threats, war: steps.warState(), watch, afterWin, strategy, focus, ageTurnsLeft }
+ * @returns log entries
+ */
+export function trainingWarStep(s, f = {}) {
+    const out = [];
+    const on = !!s?.autopilot?.trainingWar && !!s?.autopilot?.defend;
+    if (!on) {
+        if (trainingWarEnemy() !== null) out.push(...endTrainingWar("OFF"));
+        return out;
+    }
+    const enemy = trainingWarEnemy();
+    if (enemy !== null) return buyWarSupport(enemy);
+    const me = safe(() => Players.get(pid()), null);
+    if (!me) return out;
+    const age = safe(() => GameInfo.Ages.lookup(Game.age)?.AgeType, null);
+    const note = (text) => {
+        if (Game.turn - trainingNoted < TRAINING_NOTE_EVERY && trainingNoted <= Game.turn) return;
+        trainingNoted = Game.turn;
+        log.info(`training war: none: ${text}`);
+    };
+    const doneThisAge = safe(() => settings.recall(gameKey(), "trainingWarAge"), null) === age;
+    const ready = readinessForWar();
+    const readyOk = !!ready && ready.commander && ready.free >= TRAINING.MIN_UNITS && ready.melee >= TRAINING.MIN_MELEE;
+    const readyWhy = !ready ? "no unit step this turn" : `${ready.free} free soldiers (${ready.melee} melee), ${ready.commander ? "a" : "no"} free commander`;
+    const ours = landStrength(me);
+    const ourProduction = Number(safe(() => me.Stats.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0;
+    const ourSettlements = Number(safe(() => me.Stats.numSettlements, 0)) || 0;
+    const centres = (safe(() => me.Cities.getCities(), []) ?? []).map((c) => c.location).filter(Boolean);
+    const majors = (safe(() => Players.getAlive(), []) ?? []).filter((p) => p?.isMajor && p.id !== pid());
+    const FORMAL = globalThis.WarTypes?.FORMAL_WAR;
+    const REL = globalThis.DiplomacyPlayerRelationships ?? {};
+    const relName = (id) => ["HOSTILE", "UNFRIENDLY", "NEUTRAL", "FRIENDLY", "HELPFUL"].find((n) => REL[`PLAYER_RELATIONSHIP_${n}`] === safe(() => me.Diplomacy.getRelationshipEnum(id), null)) ?? "NEUTRAL";
+    const watch = f.watch ?? [];
+    const balance = Number(safe(() => me.DiplomacyTreasury.diplomacyBalance, 0)) || 0;
+    const candidates = [];
+    for (const p of majors) {
+        if (!safe(() => me.Diplomacy.hasMet(p.id), false)) continue;
+        const theirs = landStrength(p);
+        const cities = (safe(() => p.Cities.getCities(), []) ?? []).filter((c) => c?.location);
+        let distance = Infinity;
+        for (const c of cities) for (const o of centres) distance = Math.min(distance, safe(() => GameplayMap.getPlotDistance(o.x, o.y, c.location.x, c.location.y), Infinity));
+        const facts = {
+            met: true, atPeace: !safe(() => me.Diplomacy.isAtWarWith(p.id), false), ally: !!safe(() => me.Diplomacy.hasAllied(p.id), false),
+            cityState: !!p.isMinor, relation: relName(p.id),
+            formalOk: FORMAL !== undefined && !!safe(() => me.Diplomacy.canDeclareWarOn(p.id, FORMAL), null)?.Success,
+            theirSoldiers: theirs.all, ourSoldiers: ours.all, theirBest: theirs.best, ourBest: ours.best,
+            theirProduction: Number(safe(() => p.Stats.getNetYield(YieldTypes.YIELD_PRODUCTION), 0)) || 0, ourProduction,
+            theirSettlements: Number(safe(() => p.Stats.numSettlements, 0)) || cities.length, ourSettlements, distance,
+            thirdAlly: majors.some((x) => x.id !== p.id && !!safe(() => p.Diplomacy.hasAllied(x.id), false)),
+            threatened: (f.threats ?? []).length > 0, otherWar: (f.war?.atWar ?? []).length > 0,
+            otherRisk: (f.war?.risk ?? []).some((id) => id !== p.id),
+            supportOurs: Number(safe(() => me.Diplomacy.getTotalWarSupportBonusForPlayer(p.id, true), 0)) || 0,
+            supportTheirs: Number(safe(() => me.Diplomacy.getTotalWarSupportBonusForTarget(p.id, true), 0)) || 0,
+            influenceSpare: balance, supportPrice: SUPPORT_PRICE[age] ?? 0,
+            ageTurn: Game.turn, ageTurnsLeft: Number.isFinite(f.ageTurnsLeft) ? f.ageTurnsLeft : 999,
+            // Modern's ideologies (shared: no war; opposing: no peace) are not read: no training war in the final age.
+            ideologyBlock: !!safe(() => Game.AgeProgressManager.isFinalAge, false),
+            warsThisAge: doneThisAge ? 1 : 0, outcomeOpen: !f.afterWin,
+            ownChance: watch.some((w) => w.own && w.level === "CHANCE"), rivalDanger: watch.some((w) => !w.own && w.level === "DANGER"),
+            spaceFinal: f.strategy?.phase === "COMMIT" && f.focus === "SCIENCE", ready: readyOk, readyWhy,
+        };
+        candidates.push({ p, facts, res: trainingTarget(facts) });
+    }
+    candidates.sort((a, b) => a.facts.distance - b.facts.distance);
+    const leader = (p) => safe(() => Locale.compose(p.leaderName), String(p.id));
+    const target = candidates.find((c) => c.res.why === null);
+    if (target) {
+        const DECLARE = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_DECLARE_FORMAL_WAR;
+        const OP = globalThis.PlayerOperationTypes?.DECLARE_WAR;
+        const args = { Player1: pid(), Player2: target.p.id, Type: DECLARE };
+        if (DECLARE === undefined || OP === undefined || !safe(() => Game.PlayerOperations.canStart(pid(), OP, args, false), null)?.Success) {
+            note(`${leader(target.p)}: the game refuses a formal war now`);
+            return out;
+        }
+        Game.PlayerOperations.sendRequest(pid(), OP, args);
+        planTrainingWar(target.p.id);
+        trainingFoes.add(target.p.id);
+        safe(() => settings.remember(gameKey(), { trainingWarAge: age }), null);
+        const t = target.facts;
+        log.warn(`training war: declared on ${leader(target.p)}: soldiers ${t.theirSoldiers} against our ${t.ourSoldiers}, best melee ${t.theirBest}/${t.ourBest}, production ${Math.round(t.theirProduction)}/${Math.round(t.ourProduction)}, settlements ${t.theirSettlements}/${t.ourSettlements}, ${t.distance} tiles; War Support ${t.supportOurs} against ${t.supportTheirs}; ${readyWhy}`);
+        out.push({ key: "TRAINING_WAR_DECLARED", args: [leader(target.p)] });
+        return out;
+    }
+    // Toward Hostile: denounce the nearest one that would be a target but for the relationship.
+    const DENOUNCE = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_DENOUNCE;
+    const toHostile = candidates.find((c) => c.res.why === "relation" && c.res.need === "DENOUNCE");
+    if (toHostile && DENOUNCE !== undefined) {
+        const d = trainingDenounced.get(toHostile.p.id) ?? { n: 0, turn: -Infinity, age };
+        if (d.age !== age) Object.assign(d, { n: 0, turn: -Infinity, age });
+        if (denounceAllowed({ denounced: d.n, lastTurn: d.turn, turn: Game.turn, veryWeak: toHostile.res.veryWeak }) && startAction(toHostile.p.id, DENOUNCE)) {
+            trainingDenounced.set(toHostile.p.id, { n: d.n + 1, turn: Game.turn, age });
+            log.warn(`training war: denounced ${leader(toHostile.p)} (${d.n + 1}; relation ${toHostile.facts.relation}) toward a formal war`);
+            out.push({ key: "DENOUNCED", args: [leader(toHostile.p)] });
+            return out;
+        }
+    }
+    const nearest = candidates.find((c) => Number.isFinite(c.facts.distance)) ?? candidates[0];
+    note(nearest ? `${leader(nearest.p)} (${nearest.facts.distance} tiles): ${nearest.res.why}` : "no met major");
+    return out;
+}
+
 
 // ---- diplomacy with other leaders («Дипломатия») ---------------------------------------------
 
@@ -1749,6 +2194,67 @@ function noteHostileAct(event) {
 }
 
 /** Leaders whose espionage or sanctions hit us: id -> the last turn (reports seen, and actions under way against us). */
+// ---- probes for a training war (research/41 §2: P-WAR-1, P-STAT-1; UI.log only) ----------------------------------
+
+const warProbeNoted = new Map(); // leader id -> its last war-readiness line
+let statsProbed = -999;          // the turn P-STAT-1 last wrote
+const STATS_EVERY = 10;
+
+/** A player's land soldiers (commanders aside), those we see, and the best melee Combat among them (GameInfo.Unit_Stats). */
+function landStrength(p) {
+    const VISIBLE = globalThis.RevealedStates?.VISIBLE;
+    let all = 0;
+    let seen = 0;
+    let best = 0;
+    for (const u of safe(() => p.Units.getUnits(), []) ?? []) {
+        const def = safe(() => GameInfo.Units.lookup(u.type), null);
+        if (def?.Domain !== "DOMAIN_LAND" || def.CoreClass !== "CORE_CLASS_MILITARY" || u.isCommanderUnit) continue;
+        all++;
+        if (p.id === pid() || (VISIBLE !== undefined && u.location && safe(() => GameplayMap.getRevealedState(pid(), u.location.x, u.location.y), null) === VISIBLE)) seen++;
+        const st = safe(() => GameInfo.Unit_Stats.lookup(def.UnitType), null);
+        if (!(Number(st?.RangedCombat) > 0) && !(Number(st?.Bombard) > 0)) best = Math.max(best, Number(st?.Combat) || 0);
+    }
+    return { all, seen, best };
+}
+
+/**
+ * P-WAR-1: for each met major at peace with us, what the game's declare-war popup reads (diplomacy-manager.js
+ * raiseWarTypePopup): a surprise and a formal war allowed (with the reasons), the war support of each side and the
+ * Influence the target would get; written when it changes. P-STAT-1, every 10 turns: each major's production and gold a
+ * turn (Stats.getNetYield, as the diplomacy ribbon reads them), settlements, land soldiers (all and seen) and its best
+ * melee strength, ours first. Only the reads the game's own UI makes (gotcha 75): not the executable's Stats getters that
+ * no screen calls.
+ */
+export function probeWars() {
+    const me = safe(() => Players.get(pid()), null);
+    if (!me) return;
+    const FORMAL = globalThis.WarTypes?.FORMAL_WAR;
+    const REL = globalThis.DiplomacyPlayerRelationships ?? {};
+    const name = (id) => safe(() => Locale.compose(Players.get(id).leaderName), String(id));
+    const why = (r) => (r ? `${r.Success ? "yes" : "no"}${!r.Success && r.FailureReasons?.length ? ` (${r.FailureReasons.join("; ")})` : ""}` : "?");
+    const majors = (safe(() => Players.getAlive(), []) ?? []).filter((p) => p?.isMajor && p.id !== pid() && safe(() => me.Diplomacy.hasMet(p.id), false));
+    for (const p of majors) {
+        if (safe(() => me.Diplomacy.isAtWarWith(p.id), false)) continue;
+        const surprise = safe(() => me.Diplomacy.canDeclareWarOn(p.id), null);
+        const formal = FORMAL === undefined ? null : safe(() => me.Diplomacy.canDeclareWarOn(p.id, FORMAL), null);
+        const isFormal = !!formal?.Success;
+        const relation = safe(() => me.Diplomacy.getRelationshipEnum(p.id), null);
+        const rel = RELATION_RANK.find((n) => REL[`PLAYER_RELATIONSHIP_${n}`] === relation) ?? relation;
+        const line = `war probe: p${p.id} ${name(p.id)}: ${rel}; surprise war ${why(surprise)}; formal war ${why(formal)}; war support ours ${safe(() => me.Diplomacy.getTotalWarSupportBonusForPlayer(p.id, isFormal), "?")} theirs ${safe(() => me.Diplomacy.getTotalWarSupportBonusForTarget(p.id, isFormal), "?")}; their Influence +${safe(() => me.Diplomacy.getWarInfluenceBonusTarget(p.id, isFormal), "?")}`;
+        if (warProbeNoted.get(p.id) !== line) log.info(line);
+        warProbeNoted.set(p.id, line);
+    }
+    const turn = safe(() => Game.turn, 0);
+    if (turn - statsProbed < STATS_EVERY && turn >= statsProbed) return;
+    statsProbed = turn;
+    const Y = globalThis.YieldTypes ?? {};
+    for (const p of [me, ...majors]) {
+        const s = landStrength(p);
+        const yieldOf = (y) => Math.round(Number(safe(() => p.Stats.getNetYield(Y[y]), NaN)));
+        log.info(`war probe: stats T${turn} p${p.id}${p.id === pid() ? " (us)" : ` ${name(p.id)}`}: production ${yieldOf("YIELD_PRODUCTION")}, gold ${yieldOf("YIELD_GOLD")} a turn, settlements ${safe(() => p.Stats.numSettlements, "?")}, land soldiers ${s.all} (${s.seen} seen), best melee ${s.best}`);
+    }
+}
+
 export function hostileActs() {
     for (const e of safe(() => Game.Diplomacy.getPlayerEvents(pid()), []) ?? []) noteHostileAct(e);
     return hostileActsSeen;
@@ -1775,12 +2281,14 @@ function distanceToUs(p) {
  *    most science (research/40 B6), one at a time;
  *  - an endeavor («Инициатива»): the one worth most of those the game offers (research/40 A4; the
  *    priority's own first), with a leader not approached this age first, then the one we stand worst
- *    with (not Hostile: the game allows none), while no Influence goes to befriending independents.
+ *    with (not Hostile: the game allows none).
  *    Endeavors and reconciliation raise the relationship.
- * Under threat only the counter-spy (Influence goes to befriending). Never with a leader at war
- * with us; worst relationship first, then nearest.
+ * All but the counter-spy spend only the Influence above what befriending keeps this pass (befriendReserve: a threatening
+ * independent's price while we save for it; game 60: any threat stopped all of them, 2 endeavors and 0 steals in 140 turns,
+ * while the threatening villages could not be befriended at all). Never with a leader at war with us; worst relationship
+ * first, then nearest.
  */
-export function tendDiplomacy(settings, { threatened = false } = {}) {
+export function tendDiplomacy(settings) {
     const out = [];
     const A = globalThis.DiplomacyActionTypes ?? {};
     const me = safe(() => Players.get(pid()), null);
@@ -1806,7 +2314,7 @@ export function tendDiplomacy(settings, { threatened = false } = {}) {
             out.push({ key: "COUNTER_SPY", args: [leaderName(spy)] });
         }
     }
-    if (threatened) return out;
+    const reserve = reserveNow();
     const REL = globalThis.DiplomacyPlayerRelationships ?? {};
     const rank = (id) => {
         const v = safe(() => me.Diplomacy.getRelationshipEnum(id), null);
@@ -1820,35 +2328,36 @@ export function tendDiplomacy(settings, { threatened = false } = {}) {
     // 2. Reconciliation with an Unfriendly or Hostile leader.
     for (const l of leaders) {
         if (l.rank > 1) break;
-        if (start(l.id, A.DIPLOMACY_ACTION_SEND_DELEGATION)) {
+        if (start(l.id, A.DIPLOMACY_ACTION_SEND_DELEGATION, reserve)) {
             out.push({ key: "RECONCILE", args: [leaderName(l.id)] });
             break;
         }
     }
     // 3. Espionage for the focus's research (research/40 B6: game 41's rivals stole 45 technologies and 36 civics from us, we
     // none): a technology for science, a civic for culture, from the leader with the most science of those Neutral or
-    // better (a spy revealed costs relationship), one of ours at a time, while no Influence goes to befriending.
+    // better (a spy revealed costs relationship), one of ours at a time, from the Influence above befriending's reserve.
     const stealType = A[STEAL_FOR_FOCUS[focusOfProfile(settings?.profile)]];
-    if (!befriendBusy && stealType !== undefined && !ourActionRunning(stealType)) {
+    if (stealType !== undefined && !ourActionRunning(stealType)) {
         const science = (id) => Number(safe(() => Players.get(id).Stats.getNetYield(YieldTypes.YIELD_SCIENCE), 0)) || 0;
         for (const l of [...leaders].filter((x) => x.rank >= 2).sort((a, b) => science(b.id) - science(a.id))) {
-            if (!start(l.id, stealType)) continue;
+            if (!start(l.id, stealType, reserve)) continue;
+            befriendsNext = true;
             out.push({ key: "ESPIONAGE_STEAL", args: [actionName(stealType), leaderName(l.id)] });
             return out;
         }
     }
-    // 4. An endeavor, while no Influence goes to befriending independents: the one worth most of those the game offers us
+    // 4. An endeavor, from the Influence above befriending's reserve: the one worth most of those the game offers us
     // (research/40 A4: before, a list of six, so an endeavor a leader, an attribute node or a city-state bonus unlocked was
     // never started), with the leaders not yet approached this age first (Exploration's «Gregarious Animal» triumph: an
     // action with every leader, +1 policy slot; game 41's went to an AI at E58), then the one we stand worst with.
-    if (befriendBusy) return out;
     const targeted = endeavorTargets();
     const ordered = [...leaders].sort((a, b) => Number(targeted.has(a.id)) - Number(targeted.has(b.id)));
     for (const l of ordered) {
         if (l.rank === 0) continue;
         const offers = endeavorsOffered(l.id, settings?.profile);
         for (const o of offers) {
-            if (!start(l.id, o.actionType)) continue;
+            if (!start(l.id, o.actionType, reserve)) continue;
+            befriendsNext = true;
             noteEndeavorTarget(l.id);
             out.push({ key: "ENDEAVOR", args: [actionName(o.actionType), leaderName(l.id)] });
             return out;
@@ -1862,9 +2371,10 @@ const STEAL_FOR_FOCUS = { SCIENCE: "DIPLOMACY_ACTION_ESPIONAGE_STEAL_TECH", CULT
 
 /**
  * Starts a diplomatic action with a leader as the diplomacy panel's quick start does ({Amount: 1, Player1, Type, Player2,
- * ID}), when the game offers it now (PROJECT_AVAILABLE), the Influence pays for it and canStart agrees. @returns bool
+ * ID}), when the game offers it now (PROJECT_AVAILABLE), the Influence above `reserve` pays for it and canStart agrees.
+ * @returns bool
  */
-function startAction(target, actionType) {
+function startAction(target, actionType, reserve = 0) {
     if (actionType === undefined) return false;
     const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
     const G = globalThis.DiplomacyActionGroups?.NO_DIPLOMACY_ACTION_GROUP ?? -1;
@@ -1872,7 +2382,7 @@ function startAction(target, actionType) {
     const project = (safe(() => Game.Diplomacy.getProjectDataForUI(pid(), target, T, G, -1, T), []) ?? []).find((p) => p.actionType === actionType);
     if (!project || (AVAILABLE !== undefined && project.projectStatus !== AVAILABLE)) return false;
     const cost = Number(project.targetList1?.find((t) => t.targetID === target)?.costYieldD) || 0;
-    if (cost > (Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0)) return false;
+    if (cost > (Number(safe(() => Players.get(pid()).DiplomacyTreasury.diplomacyBalance, 0)) || 0) - reserve) return false;
     const args = { Amount: 1, Player1: pid(), Type: project.actionType, Player2: target, ID: target };
     if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) return false;
     Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
@@ -1945,12 +2455,12 @@ function cityStateName(p) {
  */
 export function incorporateCityState({ want = false, room = 0 } = {}) {
     const INC = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_CS_INCORPORATE;
-    if (INC === undefined || !want || !(room > 0) || befriendBusy || ourActionRunning(INC)) return [];
+    if (INC === undefined || !want || !(room > 0) || ourActionRunning(INC)) return [];
     for (const { p } of ourCityStates()) {
         const project = cityStateProject(p, INC);
         if (!project) continue;
         const cost = Number(project.targetList1?.find((t) => t.targetID === p.id)?.costYieldD ?? project.targetList1?.[0]?.costYieldD) || 0;
-        if (cost > influence()) continue;
+        if (cost > influenceFree()) continue;
         const args = { Player1: pid(), Type: INC, Amount: 1, ID: p.id };
         if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) continue;
         Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
@@ -2042,14 +2552,14 @@ function noteEndeavorTarget(id) {
 /**
  * Lafayette's Reform («Реформа», DIPLOMACY_ACTION_GRANT_POLICY_SLOT; research/40 A4): a policy slot for us, for good, once
  * per leader, and a tradition slot for each leader who supports it. Started with every leader the game allows, whatever
- * the «Дипломатия» option says (it costs only Influence), while no Influence goes to befriending independents and nothing
- * threatens us. @returns log entries
+ * the «Дипломатия» option says (it costs only Influence), from the Influence above what befriending keeps (befriendReserve).
+ * @returns log entries
  */
 let reformProbed = false;
 
-export function startReforms({ threatened = false } = {}) {
+export function startReforms() {
     const REFORM = globalThis.DiplomacyActionTypes?.DIPLOMACY_ACTION_GRANT_POLICY_SLOT;
-    if (REFORM === undefined || threatened || befriendBusy) return [];
+    if (REFORM === undefined) return [];
     const me = safe(() => Players.get(pid()), null);
     if (!me?.Diplomacy) return [];
     const T = globalThis.DiplomacyActionTargetTypes?.NO_DIPLOMACY_TARGET ?? -1;
@@ -2066,7 +2576,7 @@ export function startReforms({ threatened = false } = {}) {
         }
         if (!project || (AVAILABLE !== undefined && project.projectStatus !== AVAILABLE)) continue;
         const cost = Number(project.targetList1?.find((t) => t.targetID === p.id)?.costYieldD) || 0;
-        if (cost > balance) continue;
+        if (cost > balance - reserveNow()) continue;
         const args = { Amount: 1, Player1: pid(), Type: REFORM, Player2: p.id, ID: p.id };
         if (!safe(() => Game.PlayerOperations.canStart(pid(), project.operationType, args, false), null)?.Success) continue;
         Game.PlayerOperations.sendRequest(pid(), project.operationType, args);
@@ -2116,6 +2626,14 @@ export function turnBlocker() {
     const id = safe(() => Game.Notifications.findEndTurnBlocking(pid(), type), null);
     const name = id ? safe(() => Game.Notifications.getTypeName(Game.Notifications.find(id).Type), null) : null;
     return name ?? String(type);
+}
+
+/** The game's own text for what holds the turn, as its end-turn button shows it (panel-action.js: getMessage), or null. */
+export function turnBlockerMessage() {
+    const type = safe(() => Game.Notifications.getEndTurnBlockingType(pid()), 0);
+    if (!type || type === globalThis.EndTurnBlockingTypes?.NONE) return null;
+    const id = safe(() => Game.Notifications.findEndTurnBlocking(pid(), type), null);
+    return (id ? safe(() => Game.Notifications.getMessage(id), null) : null) || null;
 }
 
 // ---- one pass over every choice -----------------------------------------------------------
@@ -2202,7 +2720,7 @@ export async function makeChoices(settings, { retry = false } = {}) {
     out.push(...await foundReligion(settings));
     // «Наступление» (research/37 Phase 7) works with «Оборона»: the peace intent is consulted only then.
     const offensive = !!settings.autopilot?.offensive && !!settings.autopilot?.defend;
-    out.push(...choosePantheon(settings), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy && !befriendBusy }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals({ offensive }), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
+    out.push(...choosePantheon(settings), ...chooseGovernment(settings), ...chooseSyncretism(), ...chooseCityStateBonus(settings), ...answerFirstMeetings(), ...answerDiplomacy({ support: !!settings.autopilot?.diplomacy, reserve: reserveNow() }), ...readLeaderMessages(), ...answerCallsToArms({ retry }), ...answerIncomingDeals({ offensive }), ...readEspionageReports({ retry }), ...slotGreatWorks(), ...dismissAdvisorWarnings(), ...promoteUnits());
     out.push(...await seekPeace({ offensive }));
     if (retry && turnBlocker()) out.push(...acknowledge(), ...considerTownProjects());
     return out;

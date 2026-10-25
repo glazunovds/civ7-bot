@@ -8,8 +8,13 @@
  * settlement instead of 5, 5-6 tiles from a village allowed (still none within 4), unseen villages
  * ignored, overlap HIGH. @returns the tuning for a search (relaxed or the normal one)
  */
-export function siteTuning(relaxed = false) {
-    return relaxed ? Object.freeze({ ...TUNING, FOREIGN_MIN_DISTANCE: 4, VILLAGE_ANGER_DISTANCE: 4, RELAXED: true }) : TUNING;
+export function siteTuning(relaxed = false, { anyRoom = false } = {}) {
+    if (!relaxed) return TUNING;
+    // `anyRoom`: a settlement is worth its military points whatever land it has (the strategy's settleAnywhere: a military
+    // countdown to start or block). Game 63: one settlement from our countdown for the last 12 turns of Modern, two bought
+    // settlers idle; the relaxed search found 3 candidates the game accepts and rejected all 3 for ROOM.
+    const room = anyRoom ? { ROOM_HARD_MIN: { LOW: 0, MEDIUM: 0, HIGH: 0 }, RING1_MIN_FREE: 0 } : {};
+    return Object.freeze({ ...TUNING, FOREIGN_MIN_DISTANCE: 4, VILLAGE_ANGER_DISTANCE: 4, RELAXED: true, ...room });
 }
 export const RELAXED_MIN_PICKS = 2; // fewer picks than this (and far below the cap): search again, relaxed
 

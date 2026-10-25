@@ -12,7 +12,8 @@
  * resources (resource tiles), quarters, focus }.
  * Belief facts: { settlements, cities, followers (our settlements that will follow: the Missionaries convert our own,
  * research/40 B1), foreign (foreign settlements following ours), specialists (settlements with 3+ specialists),
- * naturalWonders (settlements with one), rural10 / urban10 (settlements with 10+ rural / urban population), treasure
+ * naturalWonders (settlements with one), convertRural10 / convertUrban10 / convertTreasure (another civilization's settlements
+ * with 10+ rural / urban population or making treasure fleets that our Missionaries convert: none, research/40 G4), treasure
  * (settlements making treasure fleets), distant (Distant Lands settlements), wonders (a wonder an age), focus }.
  */
 import { YIELD_KEYS } from './xpl-yields.js';
@@ -28,6 +29,12 @@ const ALTAR_ADJACENCY = 0.6;  // the share of Altars next to a mountain or natur
 // 3 culture victory points each, carried over).
 export const RELIC = Object.freeze({ YIELD_CULTURE: 2, YIELD_HAPPINESS: 2 });
 const RELIC_PATH_CULTURE = 2; // more a relic for the culture focus (its path)
+// A great work on display counts for its focus's victory path (relics in Exploration, artifacts in Modern for culture; codices
+// in Antiquity for science): this much more of the path's yield, for the building plan's slots (research/game60 M8).
+export const PATH_WORK_YIELD = Object.freeze({
+    CULTURE: Object.freeze({ GREATWORKOBJECT_RELIC: { yield: "YIELD_CULTURE", amount: RELIC_PATH_CULTURE }, GREATWORKOBJECT_ARTIFACT: { yield: "YIELD_CULTURE", amount: RELIC_PATH_CULTURE } }),
+    SCIENCE: Object.freeze({ GREATWORKOBJECT_WRITING: { yield: "YIELD_SCIENCE", amount: 2 } }),
+});
 
 export const PANTHEON_YIELDS = Object.freeze({
     PANTHEON_BONUS_1: (f) => ({ YIELD_DIPLOMACY: 2 * f.settlements }),                                    // City Patron Goddess
@@ -78,9 +85,11 @@ export const BELIEF_YIELDS = Object.freeze({
     BELIEF_BONUS_33: (f) => relics(Math.max(0, (f.cities ?? 0) - 1), f),                                 // Akhlaq: our cities (the Holy City follows already)
     BELIEF_BONUS_34: (f) => relics(2 * (f.specialists ?? 0), f),                                          // Sukha
     BELIEF_BONUS_35: (f) => relics(2 * (f.naturalWonders ?? 0), f),                                       // Barakah
-    BELIEF_BONUS_15: (f) => relics(f.rural10 ?? 0, f),                                                    // Lay Followers
-    BELIEF_BONUS_16: (f) => relics(f.urban10 ?? 0, f),                                                    // Ecclesiasticism
-    BELIEF_BONUS_14: (f) => relics(2 * (f.treasure ?? 0), f),                                             // Charoen
+    // Another civilization's settlements only (EFFECT_ADJUST_PLAYER_RELIC_CONVERTING_RURAL_POP / _URBAN_POP / _TREASURE_FLEETS;
+    // Akhlaq's own-city effect is another one): our Missionaries convert none (research/40 G4 keeps that opt-in), so 0.
+    BELIEF_BONUS_15: (f) => relics(f.convertRural10 ?? 0, f),                                             // Lay Followers
+    BELIEF_BONUS_16: (f) => relics(f.convertUrban10 ?? 0, f),                                             // Ecclesiasticism
+    BELIEF_BONUS_14: (f) => relics(2 * (f.convertTreasure ?? 0), f),                                      // Charoen
     BELIEF_BONUS_9: (f) => relics(2 * (f.cityStates ?? 0), f),                                            // Icons (city-states we convert: none yet)
     BELIEF_BONUS_10: () => ({}), BELIEF_BONUS_11: () => ({}), BELIEF_BONUS_12: () => ({}), BELIEF_BONUS_13: () => ({}), BELIEF_BONUS_29: () => ({}),
     // Enhancer
