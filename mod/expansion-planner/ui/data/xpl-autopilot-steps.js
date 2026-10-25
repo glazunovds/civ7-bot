@@ -7712,7 +7712,11 @@ export function goldPlan(settings, { focus = null, reserveTurns = 2, order = nul
     // for the next age's first-turn window instead (windowBank), held whole like the bank for Modern; not while a war is at
     // our door.
     // Game 62: on A69 a conversion was listed but out of reach (115 gold against 487), which dropped the bank and left no goal.
-    const affordable = lastTurns && conversions.some((r) => Number(r.town?.cost) > 0 && Number(r.town.cost) <= budget.all());
+    // Only Antiquity's last turns convert now: Exploration's window costs about the same (game 60: Самара 950 at T139 and at
+    // E1; game 61: 500 against 550). Exploration's keep the gold for Modern's window at about a fifth (game 64: Хатинь bought
+    // for 3,000 at E139, Modern opened with 891; game 62's M1 window priced 675 against 1,500 after the card).
+    const affordable = lastTurns && currentAge() !== "AGE_EXPLORATION"
+        && conversions.some((r) => Number(r.town?.cost) > 0 && Number(r.town.cost) <= budget.all());
     const nextWindow = modernBank || war.near || affordable ? null : safe(() => windowBank(rows, focus, keepCities), null);
     if (nextWindow) kinds.unshift("BANK");
     const candidates = {

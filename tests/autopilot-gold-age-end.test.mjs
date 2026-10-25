@@ -48,6 +48,18 @@ world.canBuild = (type, id) => {
 };
 world.canBuy = () => ({ Success: true, Cost: 24 });
 
+const AGE = (type) => GameInfo.Ages.lookup(type).$hash;
+/** Runs `fn` with the game in `type` (game 60's T139 and T140 were Antiquity's), the age restored after. */
+function inAge(type, fn) {
+    const age = Game.age;
+    Game.age = AGE(type);
+    try {
+        return fn();
+    } finally {
+        Game.age = age;
+    }
+}
+
 /** About `left` turns before the age ends (no pace known yet: that share of 120 turns); 0: its points are full. */
 function ageLeft(left) {
     GameTutorial.setProperty(Database.makeHash("_XPL_OBJ_AGE_SAMPLES"), null);
@@ -68,7 +80,7 @@ function pass(gold, income, settingsNow = culture) {
     return { p, repairs, towns };
 }
 
-test("T139: the last turns' conversion takes the reserve too, ahead of an improvement's repair (1,142 gold, a 24 repair, a 181 reserve, 950)", () => {
+test("T139: the last turns' conversion takes the reserve too, ahead of an improvement's repair (1,142 gold, a 24 repair, a 181 reserve, 950)", () => inAge("AGE_ANTIQUITY", () => {
     try {
         ageLeft(0);
         const { p, repairs, towns } = pass(1142, 90.5);
@@ -81,9 +93,9 @@ test("T139: the last turns' conversion takes the reserve too, ahead of an improv
     } finally {
         delete world.agePoints;
     }
-});
+}));
 
-test("T140: the goal stays while the whole treasury covers it (1,032 gold, a 199 reserve), and the conversion is bought", () => {
+test("T140: the goal stays while the whole treasury covers it (1,032 gold, a 199 reserve), and the conversion is bought", () => inAge("AGE_ANTIQUITY", () => {
     try {
         ageLeft(0);
         const { p } = pass(1032, 99.5);
@@ -93,11 +105,11 @@ test("T140: the goal stays while the whole treasury covers it (1,032 gold, a 199
     } finally {
         delete world.agePoints;
     }
-});
+}));
 
 // Review of game 60's build: at a deficit the reserve is DEFICIT_RESERVE_TURNS of it, there to keep the treasury above zero
 // (negative gold carries over too: «Cities will become Unhappy and Units may be forced to disband»), and it stays.
-test("at a deficit the last turns' conversion leaves the reserve (T139's gold at −20 a turn: a 200 reserve)", () => {
+test("at a deficit the last turns' conversion leaves the reserve (T139's gold at −20 a turn: a 200 reserve)", () => inAge("AGE_ANTIQUITY", () => {
     try {
         ageLeft(0);
         const { p } = pass(1142, -20);
@@ -108,7 +120,7 @@ test("at a deficit the last turns' conversion leaves the reserve (T139's gold at
     } finally {
         delete world.agePoints;
     }
-});
+}));
 
 test("mid-age the reserve stays: the same T139 numbers 40 turns before the end convert nothing; nor without «expect to keep cities» at the end", () => {
     try {
@@ -218,8 +230,14 @@ test("game 62: a conversion listed but out of the treasury's reach on the last t
         const { p, towns } = pass(600, 50);
         assert.deepEqual([p.budget.goal?.kind, p.budget.goal?.key], ["BANK", "WINDOW_BANK"], "Samara's 950 is out of reach with 600");
         assert.deepEqual(converted(), [], JSON.stringify(towns));
-        // With 1,142 the conversion is bought now (the T139 test), and no bank.
-        assert.notEqual(pass(1142, 90.5).p.budget.goal?.key, "WINDOW_BANK");
+        // Exploration's last turns keep the bank even when the treasury buys the conversion now (game 64: Хатинь for 3,000 at
+        // E139, where Modern's window costs about a fifth); Antiquity's buy it now (Exploration's window costs about the same).
+        assert.equal(pass(1142, 90.5).p.budget.goal?.key, "WINDOW_BANK");
+        assert.deepEqual(converted(), [], "Exploration: not at the full price");
+        inAge("AGE_ANTIQUITY", () => {
+            assert.notEqual(pass(1142, 90.5).p.budget.goal?.key, "WINDOW_BANK");
+            assert.deepEqual(converted(), ["Samara"], "Antiquity: bought now");
+        });
     } finally {
         delete world.agePoints;
     }
