@@ -6,7 +6,7 @@
     <Authors>glazunovzayac</Authors>
     <Package>Mod</Package>
     <AffectsSavedGames>0</AffectsSavedGames>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
   </Properties>
   <Dependencies>
     <Mod id="base-standard" title="LOC_MODULE_BASE_STANDARD_NAME"/>
