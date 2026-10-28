@@ -167,6 +167,7 @@ const lastDamage = new Map();     // unit key -> its damage at the last pass (a 
 const lastHazard = new Map();     // unit key -> what its tile dealt at the last pass (the plague's own damage is no hit)
 const hitSpots = [];              // [{ x, y, turn }]: where our units were hit lately (dangerNear)
 const movesSent = new Map();      // unit key -> { turn, x, y }: where moveTo last sent it (the plague line skips units sent off)
+const notTaken = new Map();       // unit key -> { turn, tiles: Set of "x,y" }: moves the game did not carry out that turn
 const plagueRooms = new Map();    // unit key -> { x, y, turn }: a tile a soldier of ours freed for it this turn (plagueArrivals)
 const settlerProgress = new Map(); // unit key -> { turn, turns, goal, stuck }: the way left to its site, a turn ago (X6)
 const SETTLER_IDLE_TURNS = 2;     // turns with no site before the settler takes one up to SETTLE_MAX_TURNS away
@@ -218,6 +219,7 @@ export function resetUnitGoals() {
     lastHazard.clear();
     hitSpots.length = 0;
     movesSent.clear();
+    notTaken.clear();
     plagueRooms.clear();
     seasBlockedTurn = -1;
     foundedRoles.clear();
@@ -309,7 +311,10 @@ function adoptCarriedOver(units) {
  * Orders the game did not carry out: units still waiting for orders on the tile where they got
  * one (seen in game: a settler sent toward a site three times in a turn, never moving, so the
  * turn waited on NOTIFICATION_COMMAND_UNITS). They are released (the skip step may skip them)
- * and their goal is dropped; a settler does not try that site again.
+ * and their goal is dropped; a settler does not try that site again. That move is not sent again this turn (moveTo), so no
+ * step orders it anew each round (game 65, A52: a hunt's Warrior was sent to 72,20 in every round, the game never moved it,
+ * and the turn waited on it). A unit that acted without moving (an army unpacked) and still has moves is released too, its
+ * goal kept (A51: the hunt's Legatus held the turn after its unpacking).
  * @param orderedAt Map unit key -> { x, y } where the order was given
  * @returns the released unit keys
  */
@@ -318,7 +323,19 @@ export function releaseStuckOrders(orderedAt) {
     for (const u of safe(() => Players.get(pid()).Units.getUnits(), []) ?? []) {
         const k = unitKey(u.id);
         const at = orderedAt.get(k);
-        if (!at || !isIdle(u) || !same(u.location, at)) continue;
+        if (!at || !same(u.location, at)) continue;
+        if (!isIdle(u)) {
+            if (readyForOrders(u)) released.push(k);
+            continue;
+        }
+        const sent = movesSent.get(k);
+        if (sent?.turn === Game.turn) {
+            const nt = notTaken.get(k)?.turn === Game.turn ? notTaken.get(k) : { turn: Game.turn, tiles: new Set() };
+            nt.tiles.add(`${sent.x},${sent.y}`);
+            notTaken.set(k, nt);
+            const p = safe(() => pathTo(u, sent), null);
+            log.info(`units: order not taken: ${safe(() => GameInfo.Units.lookup(u.type).UnitType, u.type)} u${u.id?.id} at ${at.x},${at.y} -> ${sent.x},${sent.y} (${p ? `path ${p.turns} turn(s)` : "no path"}); left for the skip step this turn`);
+        }
         const g = goals.get(k);
         // A way out of the plague: its errand comes back (that site did not fail).
         if (g?.hazard !== undefined) {
@@ -445,6 +462,8 @@ function moveTo(u, loc, { throughHazard = false } = {}) {
             if (!to) return false;
         }
     }
+    const failed = notTaken.get(unitKey(u.id));
+    if (failed?.turn === Game.turn && failed.tiles.has(`${to.x},${to.y}`)) return false;
     const op = globalThis.UnitOperationTypes?.MOVE_TO ?? "UNITOPERATION_MOVE_TO";
     if (!operate(u, op, { X: to.x, Y: to.y, Modifiers: globalThis.UnitOperationMoveModifiers?.MOVE_IGNORE_UNEXPLORED_DESTINATION ?? 0 })) return false;
     movesSent.set(unitKey(u.id), { turn: Game.turn, x: to.x, y: to.y });
@@ -4592,7 +4611,7 @@ function moveCampaign(units, ctx) {
     };
     for (const u of units) {
         const k = unitKey(u.id);
-        if (!c.members.has(k) || ctx.ordered.has(k) || u.isOnMap === false || !u.location) continue;
+        if (!c.members.has(k) || ctx.ordered.has(k) || ctx.leave?.has(k) || u.isOnMap === false || !u.location) continue;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         if (!def || (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE || u.canMove === false || u.hasMoved === true) continue;
         if (A && u.activityType === A.HEAL) continue;
@@ -5376,7 +5395,7 @@ function moveFieldOp(units, ctx) {
     };
     for (const u of units) {
         const k = unitKey(u.id);
-        if (!op.members.has(k) || ctx.ordered.has(k) || u.isOnMap === false || !u.location) continue;
+        if (!op.members.has(k) || ctx.ordered.has(k) || ctx.leave?.has(k) || u.isOnMap === false || !u.location) continue;
         const def = safe(() => GameInfo.Units.lookup(u.type), null);
         if (!def || (Number(u.Health?.damage) || 0) >= ESCAPE_DAMAGE || u.canMove === false || u.hasMoved === true) continue;
         if (A && u.activityType === A.HEAL) continue;
@@ -5414,7 +5433,7 @@ function moveFieldOp(units, ctx) {
         const out2 = stopUnsafeWalk(cmdr, units, ctx);
         if (out2) out.push(out2);
     }
-    if (cmdr && cmdr.isOnMap !== false && cmdr.location && !ctx.ordered.has(op.commander) && readyForOrders(cmdr)) {
+    if (cmdr && cmdr.isOnMap !== false && cmdr.location && !ctx.ordered.has(op.commander) && !ctx.leave?.has(op.commander) && readyForOrders(cmdr)) {
         const def = safe(() => GameInfo.Units.lookup(cmdr.type), null);
         // Members packed in its army (after game 54) unpack at the staging area, or by the fight toward their nearest soldier.
         const packedHere = units.filter((u) => u.isOnMap === false && op.members.has(unitKey(u.id)) && sameId(u.armyId, cmdr.armyId));
@@ -9421,6 +9440,7 @@ function commandUnitsPass(settings, options) {
     const garrison = new Set();
     const ctx = {
         routes: () => (routes ??= tradeRoutes(settings)), cities: new Set(walking.map((g) => g.city)), owners, unstacked: new Set(), stepTo: new Set(),
+        leave: options.leave ?? new Set(), // units whose order did not take this turn: no operation orders them again
         random: options.random ?? Math.random, approach: options.approach ?? [], garrison,
         riskOwners: new Set(options.riskOwners ?? []),
         // War risks that are Hostile: their soldiers frighten settlers at any distance (research/24 X4).
